@@ -121,7 +121,7 @@ The page plays 32 voices at most. A loop takes one voice, a group takes its `voi
 | Call | What it does |
 | --- | --- |
 | `connectSound(engine, options)` | Connects the page to the sketch's sounds. Call it once on a page, after `createEngine` resolves. `startOnInput` starts the audio on the user's first click, tap or key other than Escape, which are the inputs that let a browser start a page's audio. `muted` starts muted. |
-| `start()` | Starts the audio. Call it in the handler of a click, a tap or a key. It resolves once the audio runs, and each sound fades in as its file arrives. Called outside an input, as a page that plays its sound by default does, it loads the files, and the browser holds the audio until the user's first click, tap or key. The sounds then start at once. |
+| `start()` | Starts the audio. Call it in the handler of a click, a tap or a key. Called so, it resolves once the audio runs, and each sound fades in as its file arrives. Called outside an input, as a page that plays its sound by default does, it loads the files, and the browser holds the audio until the user's first click, tap or key. The sounds then start at once. |
 | `setMuted(muted)` | Mutes or unmutes every sound. |
 | `state` | `off` before `start`, then `starting` until the audio runs, `on`, `paused` while the engine is paused or the page is hidden, `interrupted` while the browser holds the audio until the user's next input, and `stopped` after the engine stops. |
 | `onState(handler)` | Calls the handler at each change of the state, such as to label a sound button. Returns a function that removes the handler. |

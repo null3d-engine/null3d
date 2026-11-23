@@ -235,8 +235,26 @@ const TOOL_MODULES = [
 		crate: 'null3d-sound',
 		folder: 'crates/null3d-sound',
 		path: join(root, 'packages/sound/dist/sound.wasm'),
+		/**
+		 * Flags of this module's own build. The mixer writes every frame of each voice's values in
+		 * each quantum, which the 4-wide instructions do in a quarter of the steps. Every browser
+		 * that runs null3D has them, since the engine's core needs them too.
+		 */
+		rustflags: '-Ctarget-feature=+simd128',
 	},
-] as const;
+] as const satisfies readonly ToolModule[];
+
+/** One of the modules that the build tools and the foundation add-ons load. */
+interface ToolModule {
+	readonly crate: string;
+	readonly folder: string;
+	readonly path: string;
+	readonly rustflags?: string;
+}
+
+/** The compiler flags of a tool module's build: the stripped names, and the module's own. */
+const toolRustflags = (module: ToolModule): string =>
+	module.rustflags ? `-Cstrip=symbols ${module.rustflags}` : '-Cstrip=symbols';
 
 interface Variant {
 	name: (typeof CORE_BUILDS)[number];
@@ -855,7 +873,7 @@ export function toolsKey(inputs: readonly string[], tools: ToolVersions): string
 			'kind=tools',
 			`code=${buildCodeHash(root)}`,
 			...inputs.map((input, index) => `input${index}=${input}`),
-			'rustflags=-Cstrip=symbols',
+			`rustflags=${TOOL_MODULES.map(toolRustflags).join(';')}`,
 			'target=wasm32-unknown-unknown',
 			'profile=release',
 			`rust=${tools.rust}`,
@@ -1118,10 +1136,10 @@ async function buildToolModules(
 	// of the dependencies they share, so each module's bytes would follow what else the call
 	// builds: with the shader compiler beside it, the asset module's `half` and `libm` gained
 	// features.
-	for (const { crate } of TOOL_MODULES)
+	for (const module of TOOL_MODULES)
 		await log.cargo(
-			['build', '-p', crate, '--release', '--target', 'wasm32-unknown-unknown'],
-			compilerOptions('-Cstrip=symbols'),
+			['build', '-p', module.crate, '--release', '--target', 'wasm32-unknown-unknown'],
+			compilerOptions(toolRustflags(module)),
 			targetDir,
 		);
 	const built = (crate: string) =>

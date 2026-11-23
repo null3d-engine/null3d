@@ -3,9 +3,10 @@
 //!
 //! In each render quantum the worklet copies the sketch's table into this module's memory and calls
 //! `sound_render`. The module works out each voice's place relative to the listener, its gain, its
-//! playback rate and its filter's cutoff, and writes them to two buffers: a gain for every frame of
-//! the quantum, eased so a change never clicks, and the voice's other values once per quantum. The
-//! worklet copies them into the browser's output arrays, the one part that stays in JavaScript.
+//! playback rate and its filter's cutoff, and writes each of them for every frame of the quantum:
+//! the gain eased across it, so a change never clicks, and the other values held. The worklet
+//! copies each of those runs into the browser's output arrays as a block, the one part that stays
+//! in JavaScript, so it passes no number per value and allocates nothing.
 //!
 //! A group of many emitters gets a few voices. Every few quanta the module ranks the group's
 //! emitters by how loud each would be where the listener stands, and hands the voices to the
@@ -240,11 +241,11 @@ struct Mixer {
     switch_step: f32,
     tone_step: f32,
     pause_step: f32,
-    idle_quanta: u32,
     last_frame: i32,
     primed: bool,
     moved: bool,
-    still_quanta: u32,
+    /// How long the sketch's frame count has stood still, in seconds, up to the idle wait.
+    still: f32,
     pause: f32,
     idle: bool,
     quantum: u32,
@@ -257,6 +258,13 @@ struct Mixer {
     gains: [f32; MAX_VOICES * MAX_FRAMES],
     /// Each voice's place, rate and cutoff for the quantum.
     values: [f32; MAX_VOICES * VALUES],
+    /// The same values for every frame of the quantum, `MAX_FRAMES` floats for each value of each
+    /// voice, in the order of `values`.
+    columns: [f32; MAX_VOICES * VALUES * MAX_FRAMES],
+    /// The value that each run of `columns` holds, and over how many of its frames, so a run whose
+    /// value holds from the last quantum is not written again.
+    column_value: [f32; MAX_VOICES * VALUES],
+    column_frames: [u32; MAX_VOICES * VALUES],
     /// The voice list that `sound_add` reads.
     scratch: [i32; MAX_VOICES],
 }
@@ -303,11 +311,10 @@ impl Mixer {
         switch_step: 0.0,
         tone_step: 0.0,
         pause_step: 0.0,
-        idle_quanta: 0,
         last_frame: 0,
         primed: false,
         moved: false,
-        still_quanta: 0,
+        still: 0.0,
         pause: 0.0,
         idle: false,
         quantum: 0,
@@ -316,6 +323,9 @@ impl Mixer {
         distance: 0.0,
         gains: [0.0; MAX_VOICES * MAX_FRAMES],
         values: [0.0; MAX_VOICES * VALUES],
+        columns: [0.0; MAX_VOICES * VALUES * MAX_FRAMES],
+        column_value: [0.0; MAX_VOICES * VALUES],
+        column_frames: [0; MAX_VOICES * VALUES],
         scratch: [0; MAX_VOICES],
     };
 
@@ -335,12 +345,14 @@ impl Mixer {
         self.frames = 0;
         self.primed = false;
         self.moved = false;
-        self.still_quanta = 0;
+        self.still = 0.0;
         self.pause = 0.0;
         self.idle = false;
         self.quantum = 0;
         self.gains.fill(0.0);
         self.values.fill(0.0);
+        // Every run is written again at the first render.
+        self.column_frames.fill(0);
     }
 
     /// Frees voice `v` at once.
@@ -372,19 +384,14 @@ impl Mixer {
         voice_count: usize,
     ) {
         let voice_count = voice_count.min(MAX_VOICES);
-        // The new sound's voices leave the sounds that held them first. A fading sound that gives up
-        // its last voice so frees its place, which keeps a place free whenever a voice is.
-        for k in 0..voice_count {
-            let v = self.scratch[k];
-            if v >= 0 && (v as usize) < self.voices {
-                self.clear(v as usize);
-            }
-        }
-        // A free place for the sound: one that no live sound holds and no voice still plays.
+        // A free place for the sound: one that no live sound holds and whose voices, if any still
+        // fade, all pass to the new sound. A fading sound that gives up its last voice so frees its
+        // place, which keeps a place free whenever a voice is. An add that finds none takes nothing.
+        let taken = |m: &Mixer, v: usize| m.scratch[..voice_count].contains(&(v as i32));
         let mut slot = NONE;
         for s in 0..MAX_VOICES {
-            let held = (0..self.voices).any(|v| self.owner[v] == s as i32);
-            if !self.sounds[s].live && !held {
+            let kept = (0..self.voices).any(|v| self.owner[v] == s as i32 && !taken(self, v));
+            if !self.sounds[s].live && !kept {
                 slot = s as i32;
                 break;
             }
@@ -393,6 +400,13 @@ impl Mixer {
             return;
         }
         let s = slot as usize;
+        // The new sound's voices leave the sounds that held them.
+        for k in 0..voice_count {
+            let v = self.scratch[k];
+            if v >= 0 && (v as usize) < self.voices {
+                self.clear(v as usize);
+            }
+        }
         let mut sound = Sound {
             id,
             kind,
@@ -455,7 +469,6 @@ impl Mixer {
         self.switch_step = step(SWITCH_TIME);
         self.tone_step = step(TONE_TIME);
         self.pause_step = step(PAUSE_TIME);
-        self.idle_quanta = libm::ceilf(IDLE_AFTER / seconds) as u32;
     }
 
     /// The emitter that voice `v` holds or waits to move to, or NONE.
@@ -551,7 +564,7 @@ impl Mixer {
                 continue;
             }
             let held = self.held_emitter(v);
-            let inside = held >= sound.first as i32 && held < end as i32;
+            let inside = held != NONE && (held as usize) >= sound.first && (held as usize) < end;
             let keep = inside && {
                 let loud = self.loudness[held as usize];
                 loud > SILENT && (self.chosen[..count].contains(&held) || loud >= cut)
@@ -620,24 +633,26 @@ impl Mixer {
         if !self.primed {
             self.primed = true;
             self.last_frame = frame;
-            self.still_quanta = 0;
+            self.still = 0.0;
         } else if frame != self.last_frame {
             self.last_frame = frame;
-            self.still_quanta = 0;
+            self.still = 0.0;
             self.moved = true;
             if self.idle {
                 self.idle = false;
                 report |= MOVING;
             }
-        } else if self.still_quanta < self.idle_quanta {
-            self.still_quanta += 1;
+        } else if self.still < IDLE_AFTER {
+            // The wait counts time, not renders, so a quantum that renders in pieces waits as long.
+            self.still += frames as f32 / self.sample_rate;
         }
         // No voice sounds until the count moves, and the sketch counts as stopped only once its
         // count has stood still for the whole wait.
-        let running = self.moved && self.still_quanta < self.idle_quanta;
+        let waited = self.still >= IDLE_AFTER;
+        let running = self.moved && !waited;
         let target_pause = if running { 1.0 } else { 0.0 };
         self.pause += (target_pause - self.pause) * self.pause_step;
-        if self.still_quanta >= self.idle_quanta && !self.idle && self.pause < SILENT {
+        if waited && !self.idle && self.pause < SILENT {
             self.idle = true;
             report |= STOPPED;
         }
@@ -671,6 +686,21 @@ impl Mixer {
 
         for v in 0..self.voices {
             self.voice(v, frames, volume);
+            // Each value holds across the quantum. A run that holds it already over these frames, as
+            // a still place or a settled rate does, is left as it is.
+            for i in 0..VALUES {
+                let run = v * VALUES + i;
+                let value = self.values[run];
+                if self.column_value[run].to_bits() == value.to_bits()
+                    && self.column_frames[run] as usize >= frames
+                {
+                    continue;
+                }
+                let start = run * MAX_FRAMES;
+                self.columns[start..start + frames].fill(value);
+                self.column_value[run] = value;
+                self.column_frames[run] = frames as u32;
+            }
         }
         report
     }
@@ -922,13 +952,14 @@ pub extern "C" fn sound_gains() -> *const f32 {
     unsafe { mixer() }.gains.as_ptr()
 }
 
-/// Each voice's place, rate and cutoff for the last quantum, `VALUES` floats per voice.
+/// Each voice's place, rate and cutoff for every frame of the last quantum: `MAX_FRAMES` floats for
+/// each of the `VALUES` values of each voice.
 #[unsafe(no_mangle)]
-pub extern "C" fn sound_values() -> *const f32 {
-    unsafe { mixer() }.values.as_ptr()
+pub extern "C" fn sound_columns() -> *const f32 {
+    unsafe { mixer() }.columns.as_ptr()
 }
 
-/// The frames that each voice's gains take in `sound_gains`.
+/// The frames that each run of `sound_gains` and `sound_columns` takes.
 #[unsafe(no_mangle)]
 pub extern "C" fn sound_max_frames() -> u32 {
     MAX_FRAMES as u32
@@ -1096,6 +1127,55 @@ mod tests {
         m.emitter[3] = MAX_CAPACITY as i32;
         run(&mut m, SETTLE);
         assert_eq!(m.owner[3], m.owner[5]);
+    }
+
+    #[test]
+    fn a_group_whose_first_emitter_is_past_any_table_ranks_nothing() {
+        let mut m = mixer_with_table();
+        m.scratch[0] = 0;
+        m.add(4, GROUP, u32::MAX as usize, 32, true, 1.0, 0.0, false, 1);
+        run(&mut m, SETTLE);
+        assert_eq!(last_gain(&m, 0), 0.0);
+    }
+
+    #[test]
+    fn an_add_that_finds_no_place_takes_no_voice() {
+        let mut m = mixer_with_table();
+        // 32 live one-voice loops hold every place; a 33rd, sent in error on voice 0, is refused.
+        for v in 0..MAX_VOICES {
+            m.scratch[0] = v as i32;
+            m.add(v as i32, LOOP, v % CAPACITY, 1, false, 0.0, 0.0, false, 1);
+            m.ready[v] = true;
+        }
+        m.scratch[0] = 0;
+        m.add(99, LOOP, 3, 1, false, 0.0, 0.0, false, 1);
+        run(&mut m, SETTLE);
+        assert!((last_gain(&m, 0) - 1.0).abs() < 1e-3);
+    }
+
+    #[test]
+    fn each_value_holds_across_every_frame_of_each_quantum() {
+        let mut m = mixer_with_table();
+        add(&mut m, LOOP, 0, 1, &[0], 2.0);
+        m.ready[0] = true;
+        m.table[12 + 2] = -4.0;
+        run(&mut m, SETTLE);
+        // A long render, then a short one at a moved place: every frame holds the new value.
+        m.render(MAX_FRAMES);
+        m.table[12 + 2] = -6.0;
+        run(&mut m, 1);
+        let z = 2 * MAX_FRAMES;
+        assert!(
+            m.columns[z..z + FRAMES]
+                .iter()
+                .all(|&v| (v + 6.0).abs() < 1e-4)
+        );
+        let rate = 3 * MAX_FRAMES;
+        assert!(
+            m.columns[rate..rate + FRAMES]
+                .iter()
+                .all(|&v| (v - 1.0).abs() < 1e-4)
+        );
     }
 
     #[test]
