@@ -258,7 +258,7 @@ export function createIslandSound(ctx: SketchContext, camera: Camera): IslandSou
 			wind.setTone(0.55 + 0.35 * strength * (0.6 + 0.4 * smoothstep(0, 150, height)));
 
 			leaves.setLevel(
-				0.5 * canopy * nearTrees * Math.min(1, 0.15 + 0.6 * strength) * SOUND_GAIN.leaves,
+				0.18 * canopy * nearTrees * Math.min(1, 0.15 + 0.6 * strength) * SOUND_GAIN.leaves,
 			);
 			leaves.setTone(0.68 + 0.2 * strength);
 

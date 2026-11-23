@@ -144,7 +144,7 @@ export function createCreekSound(ctx: SketchContext, camera: Camera, wind: Wind)
 			}
 			const rustle = 1 - smoothstep(RUSTLE_NEAR, RUSTLE_FAR, Math.max(0, nearest));
 			leaves.setLevel(
-				0.5 * rustle * Math.min(1, 0.15 + 0.6 * strength) * SOUND_GAIN.leaves * above,
+				0.15 * rustle * Math.min(1, 0.15 + 0.6 * strength) * SOUND_GAIN.leaves * above,
 			);
 			leaves.setTone(0.68 + 0.2 * strength);
 			sound.update();
