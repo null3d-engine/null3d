@@ -47,6 +47,38 @@ import {
 	vehicleFadeAt,
 } from './traffic';
 
+/** True when a walk leaves the roads for the sand, which takes its own surface. */
+function reachesSand(walk: Path): boolean {
+	for (let at = 0; at <= walk.length; at += 2) {
+		pathAt(walk, at, POSE);
+		if (roadEdge(POSE.x, POSE.z) > 3.6) return true;
+	}
+	return false;
+}
+
+/** The stored middle line's height at the nearest point of the road network, and its distance. */
+function roadLineHeight(x: number, z: number): { y: number; distance: number } {
+	let y = 0;
+	let distance = Number.POSITIVE_INFINITY;
+	for (const road of ROADS) {
+		const points = road.points;
+		for (let k = 0; k + 1 < points.length; k++) {
+			const a = points[k] as { x: number; y: number; z: number };
+			const b = points[k + 1] as { x: number; y: number; z: number };
+			const dx = b.x - a.x;
+			const dz = b.z - a.z;
+			const length2 = dx * dx + dz * dz || 1;
+			const t = Math.max(0, Math.min(1, ((x - a.x) * dx + (z - a.z) * dz) / length2));
+			const d = Math.hypot(x - (a.x + dx * t), z - (a.z + dz * t));
+			if (d < distance) {
+				distance = d;
+				y = a.y + (b.y - a.y) * t;
+			}
+		}
+	}
+	return { y, distance };
+}
+
 /** The point that a sample writes into, so a check allocates nothing per step. */
 const POSE: Pose = { x: 0, y: 0, z: 0, yaw: 0 };
 
@@ -327,6 +359,53 @@ describe('the people', () => {
 				expect(POSE.y).toBeGreaterThan(SEA_LEVEL + 0.5);
 				expect(slopeAt(POSE.x, POSE.z)).toBeLessThan(0.4);
 			}
+		}
+	});
+
+	it('lifts a pavement walk to the height of the pavement that the town draws', () => {
+		// The town draws a road's flat shoulder about this far above the stored middle line. A walk
+		// that took its points from that line stood inside the surface that people see. A junction's
+		// nearest road can be another one, so each walk is judged by the middle of its lifts.
+		let walks = 0;
+		for (const person of PLAN.people) {
+			if (reachesSand(person.walk)) continue;
+			const lifts: number[] = [];
+			for (let at = 2; at <= person.walk.length - 2; at += 1) {
+				pathAt(person.walk, at, POSE);
+				if (roadEdge(POSE.x, POSE.z) > 1.6) continue;
+				lifts.push(POSE.y - roadLineHeight(POSE.x, POSE.z).y);
+			}
+			if (lifts.length < 12) continue;
+			lifts.sort((a, b) => a - b);
+			const median = lifts[lifts.length >> 1] as number;
+			expect(median).toBeGreaterThanOrEqual(0.24);
+			expect(median).toBeLessThanOrEqual(0.28);
+			walks++;
+		}
+		expect(walks).toBeGreaterThan(5);
+	});
+
+	it("stands every person's feet on the drawn surface, not inside it", () => {
+		for (const person of PLAN.people) {
+			// The way to the sand takes the ground's own height at each of its points, and a
+			// straight stretch between two of them follows the sand's curve closely enough; this
+			// test is about the pavement, which stood a quarter meter inside its surface.
+			if (reachesSand(person.walk)) continue;
+			// A pavement walk stands on the drawn shoulder: the middle of its sinking is within a
+			// centimetre, and no point of it is deeper than a step's edge.
+			const sinking: number[] = [];
+			for (let at = 5; at <= person.walk.length - 2; at += 1) {
+				pathAt(person.walk, at, POSE);
+				if (roadEdge(POSE.x, POSE.z) > 1.6) continue;
+				sinking.push(POSE.y - (roadLineHeight(POSE.x, POSE.z).y + 0.25));
+			}
+			if (sinking.length < 12) continue;
+			sinking.sort((a, b) => a - b);
+			const median = sinking[sinking.length >> 1] as number;
+			expect(median).toBeGreaterThanOrEqual(-0.01);
+			// A junction's nearest road can be another one, so only a loose ceiling holds here; the
+			// lift test above is the tight check on the height itself.
+			expect(median).toBeLessThanOrEqual(0.3);
 		}
 	});
 
@@ -617,26 +696,24 @@ describe('the people', () => {
 		expect(restarted).toBe(PLAN.people.length);
 	});
 
-	it('runs the far proxies with a scale that fades, rather than a jump', () => {
-		// The fade is read from the person's own clock, so it rises from nothing over its first
-		// moments in view and falls to nothing at the end.
+	it('hides a person at once at the end of a walk, with no shrinking', () => {
+		// A person draws whole while walking and is gone at the next step: no frame shows a part
+		// of them at a smaller size.
 		const state: PersonState = { x: 0, y: 0, z: 0, yaw: 0, hidden: false, fade: -1 };
-		let rising = false;
-		let falling = false;
+		let visible = 0;
+		let hidden = 0;
 		for (const person of PLAN.people) {
-			let last = 0;
-			for (let seconds = 0; seconds < person.cycle; seconds += 0.05) {
+			for (let seconds = 0; seconds < person.cycle * 2; seconds += 0.02) {
 				personAt(person, seconds, state);
-				if (state.fade > 0 && state.fade < 1) {
-					if (state.fade > last) rising = true;
-					else falling = true;
-				}
-				last = state.fade;
+				expect(state.fade === 0 || state.fade === 1).toBe(true);
+				if (state.hidden) hidden++;
+				else visible++;
+				// A hidden person is never drawn and a walking one is drawn whole.
+				expect(state.hidden).toBe(state.fade === 0);
 			}
-			if (rising && falling) break;
 		}
-		expect(rising).toBe(true);
-		expect(falling).toBe(true);
+		expect(visible).toBeGreaterThan(0);
+		expect(hidden).toBeGreaterThan(0);
 	});
 });
 
@@ -737,6 +814,8 @@ function fakeScene(): {
 		dirty: boolean;
 		markDirty(): void;
 	}[];
+	/** The walker copies that the scene has stood, so a test can count them. */
+	copies: { count: number };
 	ctx: SketchContext;
 } {
 	const batches: {
@@ -749,63 +828,83 @@ function fakeScene(): {
 	}[] = [];
 	const mesh = {} as MeshGeometry;
 	const material = {} as Material;
+	const scene = {
+		createInstances: (_mesh: MeshGeometry, count: number) => {
+			const batch = {
+				count,
+				positions: new Float32Array(count * 3),
+				rotations: new Float32Array(count * 4),
+				scales: new Float32Array(count * 3),
+				dirty: false,
+				markDirty() {
+					batch.dirty = true;
+				},
+			};
+			batches.push(batch);
+			return batch;
+		},
+	};
+	const copies = { count: 0 };
 	const ctx = {
 		materials: { standard: () => material },
 		geometry: { box: () => mesh, capsule: () => mesh },
 		scene: {
-			createInstances: (_mesh: MeshGeometry, count: number) => {
-				const batch = {
-					count,
-					positions: new Float32Array(count * 3),
-					rotations: new Float32Array(count * 4),
-					scales: new Float32Array(count * 3),
-					dirty: false,
-					markDirty() {
-						batch.dirty = true;
-					},
+			...scene,
+			instantiate: () => {
+				copies.count++;
+				const copy = {
+					find: () => undefined,
+					setVisible: () => undefined,
+					setPosition: () => undefined,
+					setRotationEuler: () => undefined,
+					setScale: () => undefined,
+					destroy: () => undefined,
+					animator: () => ({ play: () => undefined, stop: () => undefined }),
 				};
-				batches.push(batch);
-				return batch;
+				return copy;
 			},
 		},
 	} as unknown as SketchContext;
-	return { batches, ctx };
+	return { batches, copies, ctx };
 }
 
 describe('the fade of an actor', () => {
-	it('shrinks every part of a person about its ground point, so the model keeps its shape', () => {
+	it('shrinks every part of a car about its ground point, so the model keeps its shape', () => {
 		const { batches, ctx } = fakeScene();
 		const mesh = {} as MeshGeometry;
 		const material = {} as Material;
-		// A person of three parts: feet on the ground, a body above them and a head over it.
-		const lifts = [0, 0.9, 1.6] as const;
+		// A car of three parts: wheels on the road, a hull over them and a cabin over that.
+		const lifts = [0, 0.5, 1.1] as const;
 		const models = {
-			car: [],
+			car: lifts.map((lift) => ({ mesh, material, lift })),
 			bus: [],
-			people: [
-				{
-					parts: lifts.map((lift) => ({ mesh, material, lift })),
-				},
-			],
+			people: [],
 		};
-		const options = { people: 1, cars: 0, parkedCars: 0, bus: false, walkers: 0 } as const;
+		const options = {
+			people: 0,
+			cars: 1,
+			parkedCars: 0,
+			bus: false,
+			walkers: 0,
+			watch: [[0, 0, 0] as const],
+		} as const;
 		const traffic = createTraffic(ctx, models, options);
-		const actor = planTraffic(options).people[0] as PersonActor;
-		const state: PersonState = { x: 0, y: 0, z: 0, yaw: 0, hidden: false, fade: 0 };
+		const actor = planTraffic(options).vehicles[0] as (typeof PLAN.vehicles)[number];
+		const pose: Pose = { x: 0, y: 0, z: 0, yaw: 0 };
 		// Every part of every fade value sits on the line from the ground to its full height.
 		let values = 0;
-		for (let t = 0; t < 120; t += 0.02) {
-			personAt(actor, t, state);
-			if (state.fade <= 0.01 || state.fade >= 0.99) continue;
+		for (let t = 0; t < 200; t += 0.02) {
+			const fade = vehicleFadeAt(actor, t);
+			if (fade <= 0.05 || fade >= 0.95) continue;
+			vehicleAt(actor, t, pose);
 			traffic.update(t);
 			values++;
-			const fade = state.fade;
 			lifts.forEach((lift, k) => {
 				const batch = batches[k] as (typeof batches)[number];
-				const rise = (batch.positions[1] as number) - state.y;
+				const rise = (batch.positions[1] as number) - pose.y;
 				expect(rise).toBeGreaterThan((lift - 0.05) * fade);
 				expect(rise).toBeLessThan((lift + 0.05) * fade + 1e-6);
-				expect(batch.scales[0] as number).toBeCloseTo(fade, 5);
+				expect(batch.scales[0] as number).toBeCloseTo(fade, 3);
 			});
 		}
 		expect(values).toBeGreaterThan(10);
@@ -862,6 +961,63 @@ describe('the fade of an actor', () => {
 				// The middle of a visible stretch is fully drawn, so the turn does not blink.
 				expect(state.fade).toBe(1);
 			}
+		}
+	});
+});
+
+describe('the walkers', () => {
+	it('draws twelve people as skinned walkers by default', () => {
+		const mesh = {} as MeshGeometry;
+		const material = {} as Material;
+		const walker = {
+			prefab: {} as never,
+			parts: [{ name: 'body' }],
+			hidden: [],
+			clip: 'walk',
+		};
+		const models = {
+			car: [],
+			bus: [],
+			people: [{ parts: [{ mesh, material }], walker }],
+		};
+		const { copies, ctx } = fakeScene();
+		// A scene that names no count takes the module's default.
+		createTraffic(ctx, models, {
+			people: 18,
+			cars: 0,
+			parkedCars: 0,
+			bus: false,
+			watch: [[0, 0, 0]],
+		});
+		expect(copies.count).toBe(12);
+	});
+
+	it('draws twelve or all eighteen people as skinned walkers when asked', () => {
+		const mesh = {} as MeshGeometry;
+		const material = {} as Material;
+		const walker = {
+			prefab: {} as never,
+			parts: [{ name: 'body' }],
+			hidden: [],
+			clip: 'walk',
+		};
+		const models = {
+			car: [],
+			bus: [],
+			people: [{ parts: [{ mesh, material }], walker }],
+		};
+		for (const count of [12, 18]) {
+			const { copies, ctx } = fakeScene();
+			createTraffic(ctx, models, {
+				people: 18,
+				cars: 0,
+				parkedCars: 0,
+				bus: false,
+				walkers: count,
+				watch: [[0, 0, 0]],
+			});
+			// One skinned copy stands for each person that the count asks for.
+			expect(copies.count).toBe(count);
 		}
 	});
 });

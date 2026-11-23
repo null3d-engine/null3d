@@ -313,12 +313,18 @@ const DEFAULT_CARS = 9;
 const DEFAULT_PARKED = 8;
 const DEFAULT_PEOPLE = 18;
 /** How many people walk as models near the camera's route, by default. */
-const DEFAULT_WALKERS = 6;
+const DEFAULT_WALKERS = 12;
 /** How near a walk must pass a watched place to read as close, in meters. */
 const WATCH_STEP = 2;
 
 /** How far past a road's edge a pavement runs, in meters. */
 const PAVEMENT = 1;
+/**
+ * The height of the drawn pavement above a road's stored middle line, in meters. The town draws its
+ * road's flat shoulder at that height, so a walk that takes its points from the stored line stands
+ * this much lower than the surface that people see.
+ */
+const PAVEMENT_LIFT = 0.26;
 /** How near a road's end must lie to another road's middle line to make a junction, in meters. */
 const JUNCTION_TOL = 4;
 /** The shortest loop that a car runs, in meters, so that a car never whips round a tight circle. */
@@ -389,8 +395,6 @@ const STRIDE_ROLL = 0.035;
 const STRIDE_SWAY = 0.025;
 /** The seconds that a stride takes to fade in at the start of a walk and out at its end. */
 const STRIDE_EASE = 0.35;
-/** The seconds that a person takes to fade from sight at the end of a walk and back at its start. */
-const PERSON_FADE = 0.45;
 /** The seconds that a person stays out of sight between two walks, so the move reads as a fade. */
 const TRIP_GAP = [0.6, 1.8] as const;
 /** How many walks a person's itinerary holds, the first one included. */
@@ -1662,59 +1666,12 @@ export function personAt(
 	return out;
 }
 
-/** The visible stretch of a script that each leg belongs to, as its start and end times. */
-const VISIBLE_STRETCHES = new WeakMap<Script, { start: Float64Array; end: Float64Array }>();
-
-/** The stretches of a script that hold a person in view, worked out once per script. */
-function visibleStretchesOf(script: Script): { start: Float64Array; end: Float64Array } {
-	let found = VISIBLE_STRETCHES.get(script);
-	if (found) return found;
-	const count = script.legs.length;
-	const start = new Float64Array(count);
-	const end = new Float64Array(count);
-	let before = 0;
-	let at = 0;
-	while (at < count) {
-		if ((script.legs[at] as Leg).hidden) {
-			before += (script.legs[at] as Leg).seconds;
-			at++;
-			continue;
-		}
-		// Find the whole stretch first, so every leg of it knows the same two ends.
-		const from = before;
-		const first = at;
-		let to = before;
-		while (at < count && !(script.legs[at] as Leg).hidden) {
-			to += (script.legs[at] as Leg).seconds;
-			at++;
-		}
-		for (let k = first; k < at; k++) {
-			start[k] = from;
-			end[k] = to;
-		}
-		before = to;
-	}
-	found = { start, end };
-	VISIBLE_STRETCHES.set(script, found);
-	return found;
-}
-
 /**
- * The share of a person that draws at a time of its script. It fades over the first and last
- * moment of a stretch that holds the person in view, so a walk out and back stays visible across
- * the turn and only its ends are faded.
+ * The share of a person that draws at a time of its script. A person is drawn whole while it walks
+ * and is gone at once when the script takes it out of sight: no shrinking, so no part can come apart.
  */
-function fadeOf(script: Script, local: number, hidden: boolean): number {
-	if (hidden) return 0;
-	const { leg, index } = legAt(script, local, LEG_STATE);
-	if (leg.seconds <= 1e-9) return 0;
-	const { start, end } = visibleStretchesOf(script);
-	const fade = Math.min(
-		1,
-		(local - (start[index] as number)) / PERSON_FADE,
-		((end[index] as number) - local) / PERSON_FADE,
-	);
-	return Math.max(0, fade);
+function fadeOf(_script: Script, _local: number, hidden: boolean): number {
+	return hidden ? 0 : 1;
 }
 
 /** The rise, roll and surge of a person's stride at a time. */
@@ -2156,6 +2113,20 @@ function houseRoute(road: Road, lot: Lot, destination: number): { path: Path; si
 	return { path: makePath([start, ...pavement]), side };
 }
 
+/**
+ * Lifts a road-derived walk to the height of the pavement that the town draws there. The path's
+ * own distances stay as they were, so lifting a walk changes no length, no clearance and no phase;
+ * a walk that starts at a door keeps its threshold on the lot's own ground.
+ */
+function liftWalk(walk: Path, fromDoor: boolean): Path {
+	const xyz = walk.xyz.slice();
+	for (let k = 0; k < xyz.length; k += 3) {
+		if (fromDoor && k === 0) continue;
+		xyz[k + 1] = (xyz[k + 1] as number) + PAVEMENT_LIFT;
+	}
+	return { xyz, distance: walk.distance, length: walk.length };
+}
+
 /** Builds a walk along one side of a road between two arc distances. */
 function pavementWalk(road: Road, from: number, to: number, side: number): Path {
 	const cumulative = arcsOf(road);
@@ -2350,6 +2321,10 @@ interface WalkDefinition {
 	/** The road and side that a rider's car stands beside, at the walk's far end. */
 	readonly road?: Road;
 	readonly roadSide?: number;
+	/** True for a walk that runs on a drawn pavement, which stands above the stored road line. */
+	readonly pavement?: boolean;
+	/** True for a walk that starts at a house's door, whose threshold keeps the lot's ground. */
+	readonly fromDoor?: boolean;
 }
 
 /** Builds the default plan of vehicles and people from the stored roads. */
@@ -2593,6 +2568,8 @@ export function planTraffic(options: TrafficOptions = {}): TrafficPlan {
 				car: parking?.car,
 				road,
 				roadSide: parking ? side : undefined,
+				pavement: true,
+				fromDoor: true,
 			});
 			kept++;
 		}
@@ -2614,6 +2591,7 @@ export function planTraffic(options: TrafficOptions = {}): TrafficPlan {
 			endSeconds: 0.6 + rand() * 1.2,
 			sides: SIDES_ONE,
 			sideSlot: 0,
+			pavement: true,
 		});
 	}
 	// People walk the harbour's promenade.
@@ -2629,6 +2607,7 @@ export function planTraffic(options: TrafficOptions = {}): TrafficPlan {
 			endSeconds: 0.6 + rand() * 1.2,
 			sides: SIDES_FOUR,
 			sideSlot: k,
+			pavement: true,
 		});
 	}
 	// People walk down to the sand and back.
@@ -2795,7 +2774,11 @@ export function planTraffic(options: TrafficOptions = {}): TrafficPlan {
 			definition.endSeconds,
 			ride,
 		);
-		const trips: PersonTrip[] = [{ walk: draft.walk, script: first, start: 0 }];
+		// A pavement walk draws at the pavement's height; its lengths stay as the plan cut them.
+		const baseWalk = definition.pavement
+			? liftWalk(draft.walk, definition.fromDoor === true)
+			: draft.walk;
+		const trips: PersonTrip[] = [{ walk: baseWalk, script: first, start: 0 }];
 		let cycle = first.cycle;
 		for (let k = 1; k < TRIP_COUNT; k++) {
 			const walk = draft.walk;
@@ -2804,7 +2787,7 @@ export function planTraffic(options: TrafficOptions = {}): TrafficPlan {
 			const from = Math.max(0, rand() * longest);
 			const tail = TRIP_GAP[0] + rand() * (TRIP_GAP[1] - TRIP_GAP[0]);
 			const script = buildLaterTrip(walk, draft.speed, from, tail);
-			trips.push({ walk, script, start: cycle });
+			trips.push({ walk: baseWalk, script, start: cycle });
 			cycle += script.cycle;
 		}
 		const phase = ((index + 0.05 + rand() * 0.8) / peoplePerRoute) * cycle;
@@ -2813,7 +2796,7 @@ export function planTraffic(options: TrafficOptions = {}): TrafficPlan {
 			carSpots.push(draft.car);
 		}
 		return {
-			walk: draft.walk,
+			walk: baseWalk,
 			speed: draft.speed,
 			phase,
 			lateral: 0,

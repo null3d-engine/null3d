@@ -318,7 +318,12 @@ export default defineSketch(
 					return undefined;
 				})
 			: undefined;
-		const trafficOptions: TrafficOptions = { watch: WATCH };
+		// `?walkers=12` sets how many people draw as skinned walkers, so a cost run can compare counts.
+		const walkers = Number(params.get('walkers'));
+		const trafficOptions: TrafficOptions = {
+			watch: WATCH,
+			...(Number.isFinite(walkers) && walkers > 0 && { walkers }),
+		};
 		let traffic = createTraffic(ctx, life ?? createPlaceholderModels(ctx), trafficOptions);
 		// A live page loads the models after its first frame, so the load never holds the first frame.
 		// The placeholders move meanwhile, and they leave when the models stand.
