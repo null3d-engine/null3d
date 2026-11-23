@@ -201,21 +201,8 @@ fn a_first_frame_that_cannot_fit_records_again_once_the_load_drops() {
         .expect("the recovered frame replays");
 }
 
-#[test]
-fn a_frame_records_again_when_a_shadow_the_bound_counted_turns_off() {
-    let _serial = serial();
-    let (mut world, batch) = world(FULL_LOAD);
-    activate(&mut world, batch, FULL_LOAD);
-    match world.try_record(true) {
-        Err(RecordError::OutOfMemory { bytes }) if bytes > 0 => {}
-        other => panic!("expected the first frame to report its uploads, got {other:?}"),
-    }
-    // The page turns the sun's shadow off. No row changed and the scene's structure did not, so
-    // only the frame's bound falls, and the frame records again.
-    world.renderer.settings_mut().set_sun_shadow(None);
-    world.frame += 1;
-    world.try_record(false).expect("the next frame records");
-    null3d_gpu::mock::MockBackend::default()
-        .replay(world.renderer.list(world.frame).words())
-        .expect("the recovered frame replays");
-}
+// A frame that fails with the sun's shadows cannot record again when only that shadow turns off
+// (D-384): the frame stages a full copy of its changed rows, and the shadow's bound is 64 KB of
+// the need, so a frame that fails misses by far more than the shadow returns. The shadow bound is
+// proved by `a_large_load_records_when_the_frame_counts_only_the_shadow_views_that_draw`, and a
+// refused frame's recovery by a smaller load by the test above.
