@@ -42,14 +42,14 @@ export function createCreekSound(ctx: SketchContext, camera: Camera, wind: Wind)
 	const creek = sound.group({
 		file: sampleUrl('sources/sound/loops/stream/stream.mp3'),
 		count: xs.length,
-		voices: 3,
-		near: 2.5,
-		far: 60,
+		voices: 4,
+		near: 4,
+		far: 50,
 	});
 	xs.forEach((x, k) => {
 		const [along, across] = streamCurrent(x);
 		creek.setPosition(k, x, WATER + 0.1, streamZ(x));
-		creek.setLevel(k, 0.35 + 0.65 * Math.min(1, Math.hypot(along, across) / QUICK));
+		creek.setLevel(k, 0.4 + 0.4 * Math.min(1, Math.hypot(along, across) / QUICK));
 	});
 
 	// Each fall sounds from the middle of its drop, a little out from the rim.
@@ -58,8 +58,8 @@ export function createCreekSound(ctx: SketchContext, camera: Camera, wind: Wind)
 		const out = Math.sign(x) * 1.5;
 		sound.loop({
 			file: fallFile,
-			near: 5,
-			far: 400,
+			near: 6,
+			far: 120,
 			position: [x + out, WATER - FALL.drop / 2, streamZ(x)],
 		});
 	}
@@ -92,10 +92,10 @@ export function createCreekSound(ctx: SketchContext, camera: Camera, wind: Wind)
 			camera.getWorldPosition(eye);
 			wind.sample(eye[0] as number, eye[1] as number, eye[2] as number, flow);
 			const strength = Math.min(1, Math.hypot(flow[0], flow[2]) / FULL_WIND);
-			air.setLevel(0.25 + 0.6 * strength);
+			air.setLevel(0.08 + 0.45 * strength * strength);
 			air.setTone(0.4 + 0.6 * strength);
 			// Every crown rustles with the air at the camera, which a gust raises as it passes.
-			leaves.levels.fill(Math.min(1, 0.2 + 1.2 * strength));
+			leaves.levels.fill(Math.min(1, 0.15 + 0.7 * strength));
 			leaves.tones.fill(0.55 + 0.45 * strength);
 			sound.update();
 		},

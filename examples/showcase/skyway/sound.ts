@@ -24,6 +24,12 @@ const TOP_SPEED = 60;
 /** The seconds between two thunderclaps in a storm, at the least and at the most. */
 const THUNDER_EVERY = [9, 26] as const;
 
+/** A smooth step from 0 at `low` to 1 at `high`. */
+function smoothstep(low: number, high: number, value: number): number {
+	const t = Math.min(1, Math.max(0, (value - low) / (high - low)));
+	return t * t * (3 - 2 * t);
+}
+
 /** Skyway's sound, which the sketch updates once a frame after the camera and the cars move. */
 export interface SkywaySound {
 	/** Writes the listener, the cars' places and every level. Call it once a frame. */
@@ -111,10 +117,15 @@ export function createSkywaySound(ctx: SketchContext, parts: SkywaySoundParts): 
 				lanes.levels.set(laneHeard);
 			}
 
-			// The glass of the seat dulls what lies outside it.
+			// The glass of the seat dulls what lies outside it, and muffles it.
 			const inside = hero.view === 'cockpit';
-			rainBed.setLevel(rain ? (storm ? 0.85 : 0.6) : 0);
+			const sheltered = inside ? 0.55 : 1;
+			rainBed.setLevel(rain ? (storm ? 0.85 : 0.6) * sheltered : 0);
 			rainBed.setTone(inside ? 0.45 : storm ? 1 : 0.85);
+			// The street's hum falls away as the car climbs, so a high flight is not a street corner.
+			camera.getWorldPosition(at);
+			const over = at[1] as number;
+			city.setLevel(0.4 * (1 - 0.6 * smoothstep(40, 300, over)));
 			city.setTone(inside ? 0.5 : 0.8);
 
 			// A storm rolls thunder now and then, mostly far off, around the camera.
