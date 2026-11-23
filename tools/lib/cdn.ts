@@ -87,6 +87,7 @@ export const CDN_ADDONS: readonly string[] = [
 	'grass',
 	'impostors',
 	'particles',
+	'sound',
 	'splats',
 	'terrain',
 	'three-compat',

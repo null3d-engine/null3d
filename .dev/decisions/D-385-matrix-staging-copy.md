@@ -1,4 +1,4 @@
-# D-384: a frame keeps its own copy of the matrix rows it changes
+# D-385: a frame keeps its own copy of the matrix rows it changes
 
 Status: decided. Task: the island showcase's engine work.
 

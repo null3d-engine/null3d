@@ -65,6 +65,7 @@ Settle its state before you design the scene.
 | A river or a lake, with waves, foam and soft shores | `@null3d/water` | built; see the docs page api/water |
 | Trees, shrubs, ferns and their placement by ecological rules | the vegetation add-on | not published; it is unfinished and ships nowhere, so make plants in code or from glTF models, with the wind add-on for the sway |
 | Wind that plants, flags and smoke read, with travelling gusts and pushes | `@null3d/wind` | built (the field carries no state between frames yet; see the docs page api/wind) |
+| Sound placed in the scene: loops, groups of many sources and one-shots | `@null3d/sound` | built; see the docs page api/sound |
 | three.js look modes for a port | `@null3d/three-compat` | built |
 
 ## Rules

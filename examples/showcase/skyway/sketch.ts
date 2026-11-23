@@ -27,6 +27,7 @@ import { createHero, DRIVE_KEYS, type View } from './hero';
 import { HALF } from './layout';
 import { createReflection } from './reflection';
 import { createRoamers } from './roamers';
+import { createSkywaySound } from './sound';
 import { CAR_LOOK, CARS, createTraffic } from './traffic';
 
 /** The camera's vertical field of view in degrees. */
@@ -404,6 +405,8 @@ export default defineSketch(async (ctx) => {
 		},
 	});
 
+	// The engines, the rain, the thunder and the city, which the page's speaker button starts.
+	const sound = createSkywaySound(ctx, { camera, hero, roamers, traffic });
 	/** The camera's place a frame ago, for the speed that the lens smears by. */
 	const was = vec3.create();
 	// The camera keeps its distance from where it turns, so the change of its place is its travel.
@@ -447,6 +450,7 @@ export default defineSketch(async (ctx) => {
 			// The particles move in the late update, where every object's world place is this frame's.
 			spray?.update();
 			vapour?.update();
+			sound.update(time.now, controls.on.rain === true, controls.on.storm === true);
 		},
 	};
 });

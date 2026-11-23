@@ -55,6 +55,10 @@ export const NETWORK_USES: Readonly<Record<string, NetworkUse>> = {
 		fetch: 1,
 		why: "reads a worker script's status while the engine names a startup failure",
 	},
+	'packages/sound/src/page.ts': {
+		fetch: 2,
+		why: "downloads the add-on's own mixer module, beside its code, and the sound files that the sketch names, once the sound starts",
+	},
 	'packages/splats/src/system.ts': {
 		fetch: 1,
 		why: "downloads the SPZ file that the sketch names, and a streamed cloud's index beside it",

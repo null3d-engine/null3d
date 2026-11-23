@@ -13,6 +13,7 @@
 // `?mood=Midday&dslr`. `?grown` grows the trees before the first frame, as a held frame does, so a
 // test that compares live frames sees the whole scene from its first frame on.
 import { defineSketch } from '@null3d/engine';
+import type { Wind } from '@null3d/wind';
 import { type CameraBounds, createCinematic, type Shot } from '../../lib/cinematic';
 import { EFFECT_LAYER, INTERIOR_LAYER, SUN_LAYERS } from '../../lib/layers';
 import { createShowcaseEffects } from '../../lib/showcase-effects';
@@ -25,6 +26,7 @@ import { groundHeight } from './plan';
 import { createPoolWater } from './poolwater';
 import { createSea } from './sea';
 import { SHADOW_DISTANCE, SHADOW_REACH } from './shadow';
+import { createIslandSound } from './sound';
 import { createTown, type TownNight } from './town';
 import { createPlaceholderModels, createTraffic, type TrafficOptions } from './traffic';
 import { CASTER_LAYER, createCypressSpires, createIslandWind, createTrees } from './trees';
@@ -397,7 +399,9 @@ export default defineSketch(
 		// The cypresses need no species assets, so a page that grows the rest later places them before
 		// the first frame.
 		if (!grownFirst) createCypressSpires(ctx);
-		let trees: { update(): void } | undefined;
+		// The sea, the surf, the wind, the leaves and the traffic, which the page's speaker button starts.
+		const sound = createIslandSound(ctx, camera);
+		let trees: { update(): void; wind: Wind } | undefined;
 		let growing = false;
 		const grow = (): void => {
 			if (growing) return;
@@ -405,12 +409,14 @@ export default defineSketch(
 			void createTrees(ctx, camera, { spires: false, wind }).then(
 				(grown) => {
 					trees = grown;
+					sound.setWind(grown.wind);
 				},
 				(error: unknown) => console.error(error),
 			);
 		};
 		if (grownFirst) {
 			trees = await createTrees(ctx, camera, { wind });
+			sound.setWind(trees.wind);
 			// A held frame waits for the town's models too, so it never catches the code-built
 			// landmarks beside the model ones.
 			await town;
@@ -452,6 +458,9 @@ export default defineSketch(
 				birds.update();
 				trees?.update();
 				poolwater?.update();
+			},
+			onLateUpdate() {
+				sound.update();
 			},
 		};
 	},

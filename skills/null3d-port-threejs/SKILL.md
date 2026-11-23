@@ -45,7 +45,7 @@ Capture reference images and timings from the running three.js app at fixed came
 
 ### Phase 3: Split the architecture
 
-In null3D, a 3D scene is called a sketch, and it lives in `sketch.ts`. Decide what stays on the page: DOM, HTML UI, GUI panels, audio, video elements and storage. The rest moves to `sketch.ts`: the scene, the loop, input handling, controls, and state such as scores or selections. Design the few messages between them. Read `references/architecture-and-loop.md`; for React Three Fiber apps, `references/react-three-fiber.md`.
+In null3D, a 3D scene is called a sketch, and it lives in `sketch.ts`. Decide what stays on the page: DOM, HTML UI, GUI panels, the start of the audio, video elements and storage. The rest moves to `sketch.ts`: the scene, the loop, input handling, controls, and state such as scores or selections. Design the few messages between them. Read `references/architecture-and-loop.md`; for React Three Fiber apps, `references/react-three-fiber.md`.
 
 For a large app, a two-step route lowers risk. First port with `createEngine({ sketchThread: 'main' })`, so sketch code runs on the main thread, where it can still reach the DOM. Then move it to the worker once parity holds.
 
@@ -219,5 +219,5 @@ The resize handler, the pixel-ratio call, `scene.add` and the render call disapp
 - Every camera view passes its parity test on WebGPU and WebGL2, or its difference is explained and accepted.
 - Performance was measured against the baseline on the same device and browser, with a production build of each app (`references/verification.md`, section 5).
 - Per-frame code allocates nothing, and many similar objects use instance batches.
-- DOM, audio and storage code sits in `page.ts`.
+- DOM and storage code sits in `page.ts`. three.js audio becomes `@null3d/sound`: sounds made in the sketch, started on the page.
 - `PORTING-REPORT.md` lists results, visual changes and omissions.

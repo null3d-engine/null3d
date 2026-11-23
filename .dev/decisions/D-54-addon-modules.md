@@ -168,7 +168,7 @@ A page can draw a scene with one HTML file and no bundler, from a CDN, as three.
 
 The engine's npm package carries no built shader JavaScript, because a project's Vite build takes it from the release asset. A page that has no build step has no plugin to resolve those imports, so its copy of `lib/` alone fails: the engine's import of `../generated/shaders.js` answers no file. Every other address the engine loads is relative to its own module, and the `blob:` bootstrap already starts each worker from another origin.
 
-An add-on's built code imports the engine by its package name, `@null3d/engine`. A page's import map resolves that name for the page's own modules. It does not reach a worker, and an add-on's code runs in the sketch worker and the job workers. So a copy of the package beside the engine would start on the page and fail on the first worker.
+An add-on's built code imports the engine by its package name, `@null3d/engine`. A page's import map resolves that name for the page's own modules. It does not reach a worker, and an add-on's code runs in the sketch worker and the job workers. So a copy of the package beside the engine would start on the page and fail on the first worker. The sound add-on also has a page half, which runs on the page, and a mixer, which runs on the audio thread. The mixer is a WebAssembly module and a worklet that imports nothing ([D-384](D-384-sound-add-on.md)).
 
 ### The build
 

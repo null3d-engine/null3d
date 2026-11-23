@@ -127,6 +127,12 @@ export interface Demo {
 	 * starts the demo's page part, `examples/<name>/page.ts`. A held frame draws the sketch alone.
 	 */
 	pagePart?: boolean;
+	/**
+	 * True for a demo whose sketch plays sound with `@null3d/sound`. On a live page, `startDemo`
+	 * starts the sound and adds a speaker button over the canvas's top right corner that turns it
+	 * off or on. Local storage keeps that choice for every demo.
+	 */
+	sound?: boolean;
 }
 
 /** A choice that a page offers for a demo: one button for each option. */
@@ -154,10 +160,10 @@ export const DEMOS: readonly Demo[] = [
 		summary:
 			'A clear creek crosses the top of a round cliff from rim to rim, fed by a spring pool, over a cobbled bed that shows through the water, and leaves over both rims in white falls. Mossy stones line its banks. Stone steps climb from the creek through a roofed gate between stone lanterns to a bronze Buddha on a terrace, above raked gravel and moss islands. Dark walls of pillars and ledges run down into the cloud, which billows and drifts in the light of the time of day.',
 		assets:
-			'Shows how a statue, a gate with its roof dragons, lanterns, boulders, cloud-pruned pines, ferns and hostas load from optimized glTF models, made from generated meshes and finished by script in Blender, each with levels of detail.',
-
+			'Shows how a statue, a gate with its roof dragons, lanterns, boulders, cloud-pruned pines, ferns and hostas load from optimized glTF models, made from generated meshes and finished by script in Blender, each with levels of detail, and how recorded loops of the creek, the falls, the wind and the leaves load once the speaker button starts the sound.',
 		controls: [...SHOWCASE_CONTROLS, { keys: ['G'], does: 'Send a gust down the valley' }],
 		gustKey: 'KeyG',
+		sound: true,
 		hold: 0.5,
 		// A software GPU draws the scene with its bloom, its water and its models, which takes it
 		// well past a minute on a loaded runner, past three on an emulated Firefox GPU, and past five
@@ -174,9 +180,10 @@ export const DEMOS: readonly Demo[] = [
 		summary:
 			'A hilly island alone in the sea on a summer morning, with forests of cypress, umbrella pine, olive and holm oak, oleanders along its lanes, a long beach, a golf course on its headland and a harbour town. Turn around the whole island, or zoom down to any place on it.',
 		assets:
-			'Shows how thousands of trees load from optimized glTF models built by script in Blender, with levels of detail and far cards.',
+			'Shows how thousands of trees load from optimized glTF models built by script in Blender, with levels of detail and far cards, and how recorded loops of the sea, the surf, the wind and the leaves load once the speaker button starts the sound.',
 		momentTransparency: true,
 		controls: SHOWCASE_CONTROLS,
+		sound: true,
 		hold: 0.5,
 		// A software GPU builds the pipelines of the town, the trees and the water, and draws the
 		// island's first frame slowly while the heavy shards share a runner. The figure leaves room
@@ -192,7 +199,10 @@ export const DEMOS: readonly Demo[] = [
 		scene: 'A rainy megacity from a hover car',
 		summary:
 			'Fly a hover car through a rainy night city: thousands of hover cars streaming along sky lanes stacked at many heights, towers whose windows light room by room, glowing shop fronts and signs, wet streets that mirror the light, and a hero car whose panels read the flight. It leads the camera under the rain, or the user drives it, from behind or from its seat.',
+		assets:
+			'Shows how recorded loops of the hover cars, the rain, the thunder and the city load once the speaker button starts the sound; the city itself is made in code.',
 		controls: SKYWAY_CONTROLS,
+		sound: true,
 		hold: 1,
 		timeoutSeconds: 300,
 	},
@@ -816,6 +826,22 @@ export const DEMOS: readonly Demo[] = [
 		hold: 2,
 		timeoutSeconds: 60,
 		choices: [{ name: 'mode', label: 'Mode', options: ['Translate', 'Rotate', 'Scale'] }],
+	},
+	{
+		name: 'sound',
+		group: 'Motion and interaction',
+		sketch: new URL('./sound/sketch.ts', import.meta.url),
+		code: 'sound/',
+		title: 'Positional sound',
+		scene: 'Thunderstorm on the moor',
+		summary:
+			"Lightning strikes a dark moor every few seconds, and a click strikes where it lands. Each strike's thunder comes from where it struck, once sound could have crossed to the camera at 343 meters a second. So a far rumble comes seconds after its flash, quieter and duller, while a label counts the seconds. The rain fills both ears, and a brook past a ring of standing stones sounds from its nearest stretch as the camera circles.",
+		assets:
+			"Shows how recorded loops of the rain and the brook, and the thunder's two recordings, load once the sound starts; the moor itself is made in code.",
+		controls: [{ keys: ['Click'], does: 'Strike the moor with lightning' }],
+		sound: true,
+		hold: 1,
+		timeoutSeconds: 60,
 	},
 	{
 		name: 'math',

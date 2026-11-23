@@ -554,7 +554,7 @@ export async function createTrees(
 	ctx: SketchContext,
 	camera: Camera,
 	{ spires = true, wind: shared }: { spires?: boolean; wind?: Wind } = {},
-): Promise<{ update(): void }> {
+): Promise<{ update(): void; wind: Wind }> {
 	const preset = ctx.quality.preset;
 	const { kept, fills } = treeStands(ctx);
 	const wind = shared ?? createIslandWind(ctx, camera);
@@ -688,6 +688,8 @@ export async function createTrees(
 		for (const lawn of lawns) lawn.fit(ctx.quality.preset);
 	});
 	return {
+		// The island's sound reads the same air, for the wind's and the leaves' levels.
+		wind,
 		update() {
 			// The field's box follows the camera, and a gust fades, so it steps every frame. A page
 			// that shares the field steps it for every reader.
