@@ -449,13 +449,28 @@ impl Mixer {
         self.idle_quanta = libm::ceilf(IDLE_AFTER / seconds) as u32;
     }
 
-    /// Works out the place at `at` in `values` relative to the listener and its distance. Returns
-    /// false for a place that is not a number, which leaves its emitter silent.
-    fn place(&mut self, values: &[f32], at: usize) -> bool {
+    /// The emitter that voice `v` holds or waits to move to, or NONE.
+    fn held_emitter(&self, v: usize) -> i32 {
+        if self.next[v] != NONE {
+            self.next[v]
+        } else {
+            self.emitter[v]
+        }
+    }
+
+    /// Works out emitter `e`'s place from the table relative to the listener, and its distance.
+    fn place_of(&mut self, e: usize) -> bool {
+        let at = self.layout.places + 3 * e;
+        self.place(self.table[at], self.table[at + 1], self.table[at + 2])
+    }
+
+    /// Works out the place `x`, `y`, `z` relative to the listener and its distance. Returns false
+    /// for a place that is not a number, which leaves its emitter silent.
+    fn place(&mut self, x: f32, y: f32, z: f32) -> bool {
         let [lx, ly, lz, qx, qy, qz, qw] = self.listener;
-        let px = values[at] - lx;
-        let py = values[at + 1] - ly;
-        let pz = values[at + 2] - lz;
+        let px = x - lx;
+        let py = y - ly;
+        let pz = z - lz;
         let distance = sqrtf(px * px + py * py + pz * pz);
         if !distance.is_finite() {
             return false;
@@ -480,20 +495,18 @@ impl Mixer {
         let sound = self.sounds[s];
         let layout = self.layout;
         let wanted = sound.voice_count;
+        // A group whose voices were all refused has nothing to hand out.
+        if wanted == 0 {
+            return;
+        }
         let mut count = 0;
         // A sound's emitters lie within the table; one that the sketch named past it stays silent.
         let end = (sound.first + sound.count).min(layout.capacity);
         for e in sound.first..end {
             let level = level_of(self.table[layout.levels + e]);
             let mut value = 0.0;
-            if level > 0.0 {
-                let table = &self.table;
-                // The place reads the table; a copy of three floats keeps the borrow short.
-                let at = layout.places + 3 * e;
-                let point = [table[at], table[at + 1], table[at + 2]];
-                if self.place(&point, 0) {
-                    value = level * sound.distance_gain(self.distance);
-                }
+            if level > 0.0 && self.place_of(e) {
+                value = level * sound.distance_gain(self.distance);
             }
             self.loudness[e] = value;
             if value.is_nan() || value <= SILENT {
@@ -523,11 +536,7 @@ impl Mixer {
         // A voice keeps its emitter while that emitter is chosen, or stays near the cut.
         for j in 0..wanted {
             let v = sound.voices[j] as usize;
-            let held = if self.next[v] != NONE {
-                self.next[v]
-            } else {
-                self.emitter[v]
-            };
+            let held = self.held_emitter(v);
             let keep = held != NONE && {
                 let loud = self.loudness[held as usize];
                 loud > SILENT && (self.chosen[..count].contains(&held) || loud >= cut)
@@ -542,11 +551,7 @@ impl Mixer {
             let mut free_voice = NONE;
             for j in 0..wanted {
                 let v = sound.voices[j] as usize;
-                let held = if self.next[v] != NONE {
-                    self.next[v]
-                } else {
-                    self.emitter[v]
-                };
+                let held = self.held_emitter(v);
                 if held == e && !self.free[v] {
                     held_by = v as i32;
                 } else if free_voice == NONE && self.free[v] {
@@ -708,12 +713,9 @@ impl Mixer {
             let mut share = 1.0;
             if sound.positional {
                 let found = if shot {
-                    let point = [self.held[h], self.held[h + 1], self.held[h + 2]];
-                    self.place(&point, 0)
+                    self.place(self.held[h], self.held[h + 1], self.held[h + 2])
                 } else {
-                    let at = layout.places + 3 * e;
-                    let point = [self.table[at], self.table[at + 1], self.table[at + 2]];
-                    self.place(&point, 0)
+                    self.place_of(e)
                 };
                 if found {
                     share = sound.distance_gain(self.distance);
@@ -1025,6 +1027,17 @@ mod tests {
         }
         assert_eq!(reports, STOPPED);
         assert!(last_gain(&m, 0) < SILENT);
+    }
+
+    #[test]
+    fn a_group_whose_voices_were_all_refused_ranks_nothing_and_stops_nothing() {
+        let mut m = mixer_with_table();
+        // A voice past the mixer's voices is refused, which leaves the group none.
+        add(&mut m, GROUP, 0, 4, &[MAX_VOICES as i32], 1.0);
+        add(&mut m, LOOP, 4, 1, &[0], 0.0);
+        m.ready[0] = true;
+        run(&mut m, SETTLE);
+        assert!((last_gain(&m, 0) - 1.0).abs() < 1e-3);
     }
 
     #[test]
