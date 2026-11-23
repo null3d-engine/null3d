@@ -399,6 +399,12 @@ impl SceneBvh {
         if changed {
             return false;
         }
+        // The trees' ids give every slot its own below the rows' base, so a scene that grew past
+        // that base lists again: a new slot would otherwise take a row's id, and the record of
+        // the listing would have no bit for it.
+        if scene.capacity() + 1 != self.row_base {
+            return false;
+        }
         let fresh = |slot: u32| drawn(slot) && !self.listed.get(slot);
         let added = created.iter_ones().filter(|&slot| fresh(slot)).count() as u32;
         if added > MAX_PENDING || self.dynamics.try_reserve(added).is_err() {
@@ -843,6 +849,39 @@ mod tests {
         assert_eq!(bvh.statics.len(), 2, "the listing missed a source");
         assert!(hit_at(&scene, &bvh, [0.0, 0.0, 0.0]).is_some());
         assert!(hit_at(&scene, &bvh, [0.0, 0.0, 40.0]).is_some());
+    }
+
+    #[test]
+    fn a_scene_that_grew_since_the_listing_takes_its_new_sources() {
+        // The record of the listing holds one bit for each slot, and a scene that grows past it
+        // takes its new sources beside the trees rather than failing on a bit past the record.
+        let jobs = JobSystem::new(0);
+        let mut scene = SceneStorage::with_capacity(4);
+        let (_, first) = object(&mut scene, [0.0, 0.0, 0.0]);
+        scene.apply_commands(&[first], 1).unwrap();
+        scene.update_transforms(&jobs);
+        let mut bvh = SceneBvh::new();
+        bvh.sync(&scene, &BatchTable::with_capacity(0), &jobs, &bounds)
+            .unwrap();
+        // The scene grows past the slots the listing recorded, and four sources fill it.
+        scene.try_grow(8).unwrap();
+        scene.begin_frame(2);
+        let mut made = Vec::new();
+        for k in 0..4u32 {
+            let (_, create) = object(&mut scene, [0.0, 0.0, 12.0 * (k as f32 + 1.0)]);
+            made.push(create);
+        }
+        scene.apply_commands(&made, 2).unwrap();
+        scene.update_transforms(&jobs);
+        bvh.sync(&scene, &BatchTable::with_capacity(0), &jobs, &bounds)
+            .unwrap();
+        for k in 0..4u32 {
+            assert!(
+                hit_at(&scene, &bvh, [0.0, 0.0, 12.0 * (f64::from(k) + 1.0)]).is_some(),
+                "the source at slot {} was not found",
+                k + 2
+            );
+        }
     }
 
     #[test]
