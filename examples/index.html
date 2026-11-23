@@ -299,6 +299,35 @@
 			.about .quiet a { color: var(--muted); }
 			.corner__help { display: flex; flex-direction: column; align-items: flex-start; }
 			.corner__help-panel { display: flex; flex-direction: column; align-items: flex-start; gap: 0.35rem; }
+			.corner__help-card {
+				position: relative;
+				padding: 0.45rem 0.5rem 0.55rem 0.6rem;
+				border-radius: 12px;
+				background: rgb(14 18 27 / 0.55);
+				border: 1px solid rgb(255 255 255 / 0.18);
+				backdrop-filter: blur(18px) saturate(1.2);
+				-webkit-backdrop-filter: blur(18px) saturate(1.2);
+			}
+			.corner__help-card[hidden] { display: none; }
+			.corner__help-close {
+				position: absolute;
+				top: 0.15rem;
+				right: 0.2rem;
+				width: 26px;
+				height: 26px;
+				padding: 0;
+				color: var(--muted);
+				font: inherit;
+				font-size: 18px;
+				line-height: 1;
+				background: transparent;
+				border: 1px solid transparent;
+				border-radius: 50%;
+				cursor: pointer;
+			}
+			.corner__help-close:hover { color: var(--text); background: rgb(255 255 255 / 0.1); }
+			.corner__help-close:focus-visible { outline: 2px solid #7fd1ff; outline-offset: 2px; }
+			.corner__help .keys { padding-right: 1.5rem; }
 			.corner__help-toggle {
 				display: inline-flex;
 				align-items: center;

@@ -219,37 +219,45 @@ function keyHelp(demo: Demo): HTMLElement | undefined {
 const HELP_OPEN = 'null3d.help-open';
 
 /**
- * The key help behind a small toggle, so the list folds away from the picture. The visitor's
- * choice is kept across visits: a folded list leaves the scene clear, and an open one is there
- * for a visitor who wants it.
+ * The key help in a card of its own, open by default and closed by the small icon at its top
+ * right, so the visitor can clear the picture. A closed list leaves a compact button that opens
+ * it again, and the choice is kept across visits.
  */
 function helpPanel(panel: HTMLElement): HTMLElement {
 	const box = element('div');
 	box.className = 'corner__help-panel';
-	const toggle = element('button', 'Controls');
-	toggle.type = 'button';
-	toggle.className = 'corner__help-toggle';
+	const card = element('div');
+	card.className = 'corner__help-card';
+	const close = element('button', '×');
+	close.type = 'button';
+	close.className = 'corner__help-close';
+	close.setAttribute('aria-label', 'Hide the controls');
+	const reopen = element('button', 'Controls');
+	reopen.type = 'button';
+	reopen.className = 'corner__help-toggle';
 	const stored = (): boolean => {
 		try {
-			return localStorage.getItem(HELP_OPEN) === '1';
+			return localStorage.getItem(HELP_OPEN) !== '0';
 		} catch {
-			return false;
+			return true;
 		}
 	};
 	let open = stored();
 	const show = (wanted: boolean): void => {
 		open = wanted;
-		toggle.setAttribute('aria-expanded', String(open));
-		panel.hidden = !open;
+		card.hidden = !open;
+		reopen.hidden = open;
 		try {
 			localStorage.setItem(HELP_OPEN, open ? '1' : '0');
 		} catch {
 			// A browser that refuses storage keeps the choice for this visit only.
 		}
 	};
-	toggle.addEventListener('click', () => show(!open));
+	close.addEventListener('click', () => show(false));
+	reopen.addEventListener('click', () => show(true));
+	card.append(panel, close);
+	box.append(card, reopen);
 	show(open);
-	box.append(toggle, panel);
 	return box;
 }
 
