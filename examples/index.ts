@@ -502,6 +502,16 @@ listDemos();
 restoreNavScroll();
 rememberNavScroll();
 handleDrawer();
+
+// A production build caches the page and the engine's files for the next visit, and for offline
+// play; the dev server's pages stay out of the cache, since its modules change on every edit.
+// A bundler declares `import.meta.env` itself, so it is read through a cast here.
+const buildEnv = (import.meta as { env?: { PROD?: boolean } }).env;
+if (buildEnv?.PROD && 'serviceWorker' in navigator) {
+	window.addEventListener('load', () => {
+		void navigator.serviceWorker.register('./sw.js').catch(() => {});
+	});
+}
 if (comparison) void runComparison(stage, comparison);
 else if (current) void runDemo(current);
 else welcome(compareName ?? name ?? undefined);
