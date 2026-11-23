@@ -461,8 +461,8 @@ export default defineSketch(
 				trees?.update();
 				poolwater?.update();
 			},
-			onLateUpdate() {
-				sound.update();
+			onLateUpdate(dt) {
+				sound.update(dt);
 			},
 		};
 	},

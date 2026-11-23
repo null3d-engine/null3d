@@ -31,6 +31,8 @@ const SURF_POINTS = 28;
 const SURF_OFFSHORE = 18;
 /** The wind's speed, in meters a second, at which the wind and the leaves reach their full level. */
 const FULL_WIND = 9;
+/** How fast a vehicle's level and pitch reach their curves, as a share of the gap each second. */
+const SMOOTHING = 6;
 /** The wind's speed before the wind add-on runs: its steady wind. */
 const STEADY_WIND = 4;
 
@@ -85,8 +87,31 @@ export interface IslandSound {
 		readonly speeds: Float32Array;
 		readonly counts: { readonly cars: number; readonly buses: number };
 	}): void;
-	/** Writes the listener and every level. Call it once a frame in `onLateUpdate`. */
-	update(): void;
+	/** Writes the listener and every level. Call it once a frame in `onLateUpdate`, with the step. */
+	update(dt?: number): void;
+}
+
+/**
+ * A car's engine level at its speed: it fades in as the car pulls away from a stop and rises with its
+ * speed. The curve is continuous through the stop, so a held car does not cut its engine off.
+ */
+export function carLevel(speed: number): number {
+	return (0.55 + 0.45 * Math.min(1, speed / 14)) * smoothstep(0, 0.6, speed);
+}
+
+/** A bus's engine level at its speed: it idles at its stops and rises with its speed, crossing smoothly. */
+export function busLevel(speed: number): number {
+	return 0.35 + 0.35 * smoothstep(0.2, 2, speed);
+}
+
+/** A car's engine pitch at its speed, from a standing start to its fastest. */
+export function carRate(speed: number): number {
+	return 0.85 + Math.min(1, speed / 14) * 0.35 * smoothstep(0, 0.6, speed);
+}
+
+/** A bus's engine pitch at its speed. */
+export function busRate(speed: number): number {
+	return 0.9 + Math.min(1, speed / 12) * 0.25;
 }
 
 /** Makes the island's sound for the camera that hears it. */
@@ -140,6 +165,11 @@ export function createIslandSound(ctx: SketchContext, camera: Camera): IslandSou
 	let cars: SoundGroup | undefined;
 	let bus: SoundLoop | undefined;
 	let traffic: Parameters<IslandSound['setTraffic']>[0] | undefined;
+	// The levels and pitches the mixer is showing now, which move toward their curves rather than jumping.
+	const carShown: number[] = [];
+	const carPitch: number[] = [];
+	let busShown = 0;
+	let busPitch = 1;
 
 	let field: Wind | undefined;
 	const eye = new Float64Array(3);
@@ -161,9 +191,17 @@ export function createIslandSound(ctx: SketchContext, camera: Camera): IslandSou
 			bus?.destroy();
 			bus = undefined;
 			cars = sound.group({ file: carFile, count: next.counts.cars, voices: 4, near: 4, far: 160 });
+			carShown.length = 0;
+			carPitch.length = 0;
+			for (let k = 0; k < next.counts.cars; k++) {
+				carShown.push(0);
+				carPitch.push(1);
+			}
+			busShown = 0;
+			busPitch = 1;
 			if (next.counts.buses > 0) bus = sound.loop({ file: busFile, near: 5, far: 220, level: 0 });
 		},
-		update() {
+		update(dt = 0) {
 			camera.getWorldPosition(eye);
 			const [x = 0, y = 0, z = 0] = eye;
 			const ground = Math.max(groundHeight(x, z), SEA_LEVEL);
@@ -192,14 +230,20 @@ export function createIslandSound(ctx: SketchContext, camera: Camera): IslandSou
 			leaves.setTone(0.55 + 0.45 * strength);
 
 			if (traffic) {
+				// The levels and the pitches follow their curves through a smoothing step, so a car that
+				// is held at a stop fades rather than cutting off, and a bus pulling away swells.
+				const ease = Math.min(1, Math.max(0, dt) * SMOOTHING);
 				const n = traffic.counts.cars;
 				if (cars) {
 					cars.positions.set(traffic.vehicles.subarray(0, n * 3));
 					for (let k = 0; k < n; k++) {
 						const speed = traffic.speeds[k] as number;
-						// A car out of sight reports 0 and keeps quiet; a moving one grows louder.
-						cars.setLevel(k, speed > 0.2 ? 0.55 + 0.45 * Math.min(1, speed / 14) : 0);
-						cars.setRate(k, 0.85 + Math.min(1, speed / 14) * 0.35);
+						const level = carLevel(speed);
+						const rate = carRate(speed);
+						carShown[k] = (carShown[k] as number) + (level - (carShown[k] as number)) * ease;
+						carPitch[k] = (carPitch[k] as number) + (rate - (carPitch[k] as number)) * ease;
+						cars.setLevel(k, carShown[k] as number);
+						cars.setRate(k, carPitch[k] as number);
 					}
 				}
 				if (bus) {
@@ -210,9 +254,10 @@ export function createIslandSound(ctx: SketchContext, camera: Camera): IslandSou
 						(traffic.vehicles[b * 3 + 1] as number) + 1,
 						traffic.vehicles[b * 3 + 2] as number,
 					);
-					// A bus at a stop idles rather than falls silent.
-					bus.setLevel(speed > 0.2 ? 0.7 : 0.35);
-					bus.setRate(0.9 + Math.min(1, speed / 12) * 0.25);
+					busShown = busShown + (busLevel(speed) - busShown) * ease;
+					busPitch = busPitch + (busRate(speed) - busPitch) * ease;
+					bus.setLevel(busShown);
+					bus.setRate(busPitch);
 				}
 			}
 			sound.update();

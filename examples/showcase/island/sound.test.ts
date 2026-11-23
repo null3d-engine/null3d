@@ -31,7 +31,7 @@ mock.module('@null3d/sound', () => ({
 	}),
 }));
 
-const { createIslandSound } = await import('./sound');
+const { busLevel, busRate, carLevel, carRate, createIslandSound } = await import('./sound');
 
 /** A traffic of the given counts, with its vehicles parked far from the sea's points. */
 function trafficOf(cars: number, buses: number) {
@@ -68,5 +68,39 @@ describe("the island's traffic sounds", () => {
 		expect(made.loops).toBe(loops);
 		// The car group and the bus loop of the first traffic were sent away.
 		expect(made.destroyed).toBe(2);
+	});
+});
+
+describe("the vehicles' engine curves", () => {
+	it('fade a car in and out through its stop without a step', () => {
+		// A car held at a stop is silent, and the curve passes through zero rather than jumping to it.
+		expect(carLevel(0)).toBe(0);
+		expect(carLevel(0.05)).toBeLessThan(0.02);
+		expect(carLevel(0.6)).toBeGreaterThan(0.3);
+		let previous = 0;
+		for (let speed = 0; speed <= 16; speed += 0.01) {
+			const level = carLevel(speed);
+			expect(level).toBeGreaterThanOrEqual(previous - 1e-9);
+			// A slope a hair above one level per meter a second: a held car fades rather than cuts.
+			expect(level - previous).toBeLessThan(0.03);
+			previous = level;
+		}
+	});
+
+	it('keep a bus audible at its stop and swell it smoothly as it pulls away', () => {
+		expect(busLevel(0)).toBeCloseTo(0.35, 5);
+		expect(busLevel(3)).toBeCloseTo(0.7, 5);
+		let previous = busLevel(0);
+		for (let speed = 0; speed <= 6; speed += 0.02) {
+			const level = busLevel(speed);
+			expect(level - previous).toBeLessThan(0.02);
+			previous = level;
+		}
+	});
+
+	it('hold a standing engine at rest and lift its pitch with speed', () => {
+		expect(carRate(0)).toBeCloseTo(0.85, 5);
+		expect(carRate(14)).toBeGreaterThan(1.1);
+		expect(busRate(0)).toBeCloseTo(0.9, 5);
 	});
 });
