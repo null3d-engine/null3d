@@ -244,11 +244,12 @@ const MEMORY_EVERY = 8;
 /** Frames over which the sketch thread averages its parallel work before it asks for job workers. */
 const JOB_WINDOW = 30;
 /**
- * The longest a window waits for its frames, in seconds of wall time, and the fewest frames it
- * judges: a software GPU draws so few frames a second that a window of frames alone would never
- * end inside a page's run, so the deadline ends the window once it holds the fewest frames, fast
- * enough for the sketch to ask for the job workers it can use. The mean over those frames decides
- * as it does for a full window.
+ * The longest a window waits for its frames, in seconds of the sketch's own time, and the fewest
+ * frames it judges: a software GPU draws so few frames a second that a window of frames alone
+ * would never end inside a page's run, so the deadline ends the window once it holds the fewest
+ * frames. The runner reads no clock for this and allocates nothing per frame: its own step time
+ * carries the deadline, and a step is capped at a quarter second, so the deadline takes as few as
+ * eight frames. The mean over the frames it has then decides as it does for a full window.
  */
 const JOB_WINDOW_SECONDS = 2;
 /** The fewest frames a window needs before the deadline may end it. */
@@ -439,7 +440,7 @@ export class SketchRunner {
 	 */
 	private jobWindowUs = 0;
 	private jobWindowFrames = 0;
-	/** The wall-clock time at which the window's first frame arrived, in milliseconds. */
+	/** The sketch time at which the window's first frame arrived, in seconds. */
 	private jobWindowStart = 0;
 	/** The sketch time at which the sketch thread times its parallel loops again, while they pause. */
 	private jobPauseUntil = -1;
@@ -1133,13 +1134,13 @@ export class SketchRunner {
 			this.timeHandedLoops(glue, true);
 			return;
 		}
-		if (this.jobWindowFrames === 0) this.jobWindowStart = performance.now();
+		if (this.jobWindowFrames === 0) this.jobWindowStart = this.clock.now;
 		this.jobWindowUs += glue.takeHandedUs();
 		this.jobWindowFrames++;
 		const byFrames = this.jobWindowFrames >= JOB_WINDOW;
 		const byDeadline =
 			this.jobWindowFrames >= JOB_WINDOW_MIN_FRAMES &&
-			performance.now() - this.jobWindowStart >= JOB_WINDOW_SECONDS * 1000;
+			this.clock.now - this.jobWindowStart >= JOB_WINDOW_SECONDS;
 		if (!byFrames && !byDeadline) return;
 		const enough = this.jobWindowUs >= JOB_GROW_US * this.jobWindowFrames;
 		this.jobWindowUs = 0;
