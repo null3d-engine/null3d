@@ -23,7 +23,7 @@ The engine docs are the source of truth. This skill describes null3D 0.1.0 and m
 3. Each page starts with front matter. `status: stable` or `experimental` means the API exists, and experimental APIs may still change. `planned` means it does not exist in this version. A note under an experimental title can name parts not built yet: treat those as planned. Do not call a planned API; tell the user, and use the page's workaround.
 4. If the docs and this skill disagree, follow the docs and report the difference, so the skill can be fixed.
 
-Doc IDs appear in backticks, for example `concepts/architecture`. A number in parentheses, such as (0.2), names the roadmap step that adds the part, and no number means step 0.1. The first release, null3D 0.1.0, holds steps 0.1, 0.2 and 0.3.
+Doc IDs appear in backticks, for example `concepts/architecture`. A number in parentheses, such as (0.2), names the roadmap step that adds the part, and no number means step 0.1. null3D 0.1.0 holds steps 0.1 to 0.3.
 
 ## 2. The model
 
@@ -97,8 +97,8 @@ Each rule comes with its reason, which covers cases the rule does not name.
 1. Allocate nothing in `onUpdate`, `onFixedUpdate` or `onLateUpdate`: no `new`, no array or object literals, no closures, no `map` or `filter`. Create scratch values at setup, such as `const tmp = vec3.create()`. A garbage collection pause stalls the frame.
 2. Use an instance batch for many copies of one mesh: one engine object and one typed array, where `createMesh` calls would mean many objects. (`concepts/instances`)
 3. Move many objects by writing arrays, not by setters in a loop: each setter crosses into WebAssembly, a typed-array write does not.
-4. Create an object with `dynamic: true` only if it changes most frames; write arrays for dynamic objects and batches.
-5. Pool short-lived objects such as bullets in a batch with a fixed capacity and `setActiveCount`. A structural change (create, destroy, a new mesh or material) rebuilds the draw tables; `setVisible` and `setActiveCount` do not. The engine sizes memory for what the scene holds, so create meshes, materials and batches at setup.
+4. Create `dynamic: true` objects only for what changes most frames; write arrays for those and batches.
+5. Pool short-lived objects such as bullets in a batch with a fixed capacity and `setActiveCount`. A structural change (create, destroy, a new mesh or material) rebuilds the draw tables; `setVisible` and `setActiveCount` do not. Create meshes, materials and batches at setup, since the engine sizes memory for what the scene holds.
 6. Load and warm up before play: `await assets.preload([...])` and `await scene.warmUp()` behind a loading screen. A shader feature, such as a normal map, is fixed when you create the material, and the first frame waits for its pipeline, so create every variant before play. (`guides/loading-screens`)
 7. Keep the DOM on the page and messages rare: send events, not per-frame state. Labels that follow objects use `ui.trackLabel` (0.2), which needs no messages. (`guides/ui-overlays`)
 8. Use layer masks to limit work. A camera with a mask draws fewer objects, and a raycast (0.2) with a mask tests fewer. (`concepts/render-layers`)
@@ -108,7 +108,7 @@ Each rule comes with its reason, which covers cases the rule does not name.
 12. Never branch on GPU names or user agents; read `engine.capabilities`. A name does not say what is enabled; `capabilities.drawPath` says why the direct path is on or off.
 13. Put performance-sensitive work in Rust, where the engine's per-frame loops run; your TypeScript is an interface to it. Use bulk calls over many objects. For a loop that grows with the scene, use a Rust WebAssembly module on the job workers through `runTask`; a task answers between frames, so a loop for the current frame belongs in the engine's calls. Keep setup, wiring and page logic in TypeScript. (`guides/performance`, `api/tasks`)
 14. Night scenes: make the sky's stand-in light follow the hour. A fixed ambient or hemisphere light lights sand and walls as bright at night as at noon. Scale and cool it; set exposure at the hour shown longest. (`concepts/lighting`)
-15. A far card must read as its mesh: bake its mesh, unlit sRGB color, a normal per texel or a dome, enough views; check a matched crop. (`api/impostors`)
+15. A far card must read as its mesh: bake its views (five by five or more), unlit sRGB, a normal per texel, check a matched crop. One side view serves only cards of a few tens of pixels. (`api/impostors`)
 
 ## 5. When the engine may not have the feature
 

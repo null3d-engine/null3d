@@ -107,11 +107,12 @@ The bake stores each point's normal in the object's own frame. At draw time the 
 ## Make a card read as its mesh
 
 A card that draws a different picture from its mesh reads as another species. The difference shows
-most in how the crown lights, not in its outline. The island's trees bake a card as one unlit side
-view, with one outward-and-up normal over each face and no normal bake. Measured against its mesh at
-the hand-over, that card is 34 to 79 per cent brighter. Its crown's shading spread is 31 to 44 per
-cent lower, and its trunk is 54 to 185 per cent brighter in red and green. Without the sun the same
-card is darker than its mesh. The baked color was sound; the card lit as no surface of the tree does.
+most in how the crown lights, not in its outline. The island's trees once baked a card as one unlit
+side view, with one outward-and-up normal over each face and no normal bake. Measured against its
+mesh at the hand-over, that card was 34 to 79 per cent brighter. Its crown's shading spread was 31
+to 44 per cent lower, and its trunk 54 to 185 per cent brighter in red and green. Without the sun
+the same card was darker than its mesh. The baked color was sound; the card lit as no surface of the
+tree does.
 
 The bake decides the result:
 
@@ -129,16 +130,68 @@ The bake decides the result:
   wants 32 to 64 texels across its cell.
 - Take the bake's `size` and its foot. A card at scale 1 stands on the object's lowest point. A card
   pivoted at its middle sinks into the ground.
-- Light a hand-made card with a dome normal when it stores one side view. A view-independent
-  normal built per pixel about the plant's foot lets a crown catch the sun as a rounded mass. A
-  trunk then shades as a trunk. `examples/lib/card-material.ts` builds it from the side view's
-  height share. The approximation has a
-  limit: one stored view cannot vary with the view. A trunk's flat face still catches the sun as a
-  plane. Per-view normals, or more stored views, are exact and cost texture memory.
+- Bake the views with the engine's baker unless the card stays tiny. `bakeImpostorAtlas` draws a
+  real grid of views and stores a normal for every texel, so a card blends the views nearest the
+  eye and lights as its mesh does from every direction. A hand-painted side view cannot: it shows
+  the same picture from every side, and a hand-painted top picture on a horizontal plane reads as a
+  flat plate at a shallow sight. Keep a hand bake only for a card that never covers more than a few
+  tens of pixels. The island's showcase cards reached 140 to 215 pixels at their switch, and their
+  hand bakes read as stacked plates there; the engine's bake is their card now.
 - Check a card beside its mesh before accepting it. Draw both at one pose under one light, and crop
   each to the same size. Compare the mean color per channel within 10 per cent. Compare the
   silhouette's area within 10 per cent, and the crown's shading spread within 25 per cent. A card
   outside those limits reads as another tree at the distance where it appears.
+
+## Bake several views, not one side
+
+A card's picture is what the player sees of the object, so it should hold as many views as the
+card's apparent size needs. `bakeImpostorAtlas` draws the mesh from every cell of an octahedral
+grid; the cell's square of texels holds the color, and the surface atlas holds each texel's normal
+in the object's own frame with its depth and its coverage. `createImpostors` blends the three views
+nearest the eye and lights the blend from those normals, so a card turns with the camera and still
+catches the sun on the side the mesh would.
+
+Two numbers decide the picture:
+
+- **Views.** The grid's cells sit 53 degrees apart at worst on four by four, 42.5 on five by five,
+  and 23 on ten by ten. More views smooth the blend as the eye turns; a far crown wants about five
+  by five, and a card the size of a landmark wants ten by ten.
+- **Texels.** A cell's texels should cover the card's pixels about one for one. A card 80 pixels
+  across wants 32 to 64 texels a cell, and one 215 pixels across wants about 128 to 256. The atlas
+  grows with the square of the texels, and each object takes two atlases.
+
+The island's five plants bake a five by five grid at 128 texels a cell: two 640-square atlases a
+plant, 3.3 MB of texture apiece at four bytes a texel, and a tenth to four tenths of a second a
+plant in its build.
+
+```ts
+import { bakeImpostorAtlas, octahedralAtlas } from '@null3d/impostors';
+
+const bake = bakeImpostorAtlas({
+  atlas: octahedralAtlas(25), // five by five views, 42.5 degrees apart at worst
+  texels: 128, // a card up to about 215 pixels across
+  parts: [
+    {
+      positions,
+      normals,
+      uvs,
+      indices,
+      colors, // the vertex colors that the mesh's material multiplies in
+      color: leafMap, // the base color picture, sRGB
+      coverage: leafAlpha, // the same picture's alpha, linear, in blue
+      alphaCutoff: 0.5,
+      doubleSided: true,
+    },
+  ],
+  min,
+  max,
+});
+const color = textures.fromData({ ...bake.color, colorSpace: 'srgb', wrap: 'clamp', mipmaps: false });
+const surface = textures.fromData({ ...bake.surface, colorSpace: 'linear', wrap: 'clamp', mipmaps: false });
+// Stand the copies with the bake's own figures:
+// createImpostors(ctx, { color, surface, atlas: bake.atlas, positions, size: bake.size,
+//   room: bake.room, depth: bake.depth })
+```
 
 ## Hand the near meshes over to the cards
 
