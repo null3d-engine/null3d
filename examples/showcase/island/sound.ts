@@ -18,7 +18,7 @@ import type { Camera, SketchContext } from '@null3d/engine';
 import { createSound, type Sound, type SoundGroup, type SoundLoop } from '@null3d/sound';
 import type { Wind } from '@null3d/wind';
 import { sampleUrl } from '../../lib/samples';
-import { groundHeight } from './ground';
+import { FOUNTAIN_WATER, groundHeight } from './ground';
 import { BAY, beachShare, inland, SEA_LEVEL } from './island';
 import { canopyAt } from './plan';
 
@@ -166,6 +166,16 @@ export function createIslandSound(ctx: SketchContext, camera: Camera): IslandSou
 		level: 0,
 	});
 
+	// The square's fountain runs at the town's middle. It is the only sound there, and the listener hears
+	// it only from close by, so the square sounds like its fountain rather than like silence.
+	const fountain = sound.loop({
+		file: sampleUrl('sources/sound/loops/stream/stream.mp3'),
+		near: 6,
+		far: 40,
+		level: 0.5,
+	});
+	fountain.setPosition(FOUNTAIN_WATER.x, FOUNTAIN_WATER.basinAbove + 1, FOUNTAIN_WATER.z);
+
 	// The cars and the bus come from the road under them. A car keeps quiet while it stands, or while
 	// the traffic holds it out of sight, and grows louder and higher as it runs.
 	const carFile = sampleUrl('sources/sound/loops/car/car.mp3');
@@ -231,7 +241,7 @@ export function createIslandSound(ctx: SketchContext, camera: Camera): IslandSou
 			const exposure =
 				(0.35 + 0.5 * smoothstep(2, 160, height) + 0.15 * smoothstep(0, 250, out)) *
 				(1 - 0.5 * canopy * nearTrees);
-			wind.setLevel(0.45 * strength * strength * strength * exposure);
+			wind.setLevel(0.35 * strength * strength * exposure);
 			wind.setTone(0.35 + 0.65 * strength * (0.6 + 0.4 * smoothstep(0, 150, height)));
 
 			leaves.setLevel(0.5 * canopy * nearTrees * Math.min(1, 0.15 + 0.6 * strength));

@@ -112,6 +112,11 @@ bounce.play(x, y, z, Math.min(1, impact / 8));
 - Keep beds below the sources that tell a story. The sea at 0.6 and a passing car at 1 lets the car stand out.
 - Tie a sound to the motion that makes it. Rustling leaves follow the wind's speed and the trees near the camera, and an engine's rate follows its car's speed.
 - Tie a bed's level to the scene. A level that follows the distance to the shore never jumps when the camera cuts.
+- Give every source a reach that matches what makes it. Waves are heard near water, and an engine near its own car. A bed that carries a thousand meters makes an opening view over open water roar. A scene's first frame is the test: where nothing makes a sound, the mix is silent.
+- Never write a level as a step. Move it along a curve that passes through its neighbors, so a car that stops fades through silence rather than cutting off at a threshold. Let the frame's own time smooth what the scene writes.
+- Count the voices of a group. They add as power, so three points at full level sound about five decibels louder than a loop's one file. Give a group's points a lower level than a loop's.
+- Write massed ambience as one loop scaled by density, such as a wood's leaves from the canopy around the camera. One source for each of fifty trees adds up in a way no listener calls rustling. A density that levels off cannot pile up.
+- Check the mix at fixed camera places, not by ear alone: the opening pose, the shore, a town square and the climb. The opening should be silent, and each place should lead with the sound its view shows. No level should move faster between frames than a listener would expect.
 
 ## How the sound reaches the speakers
 

@@ -29,6 +29,7 @@ Each recipe states the goal, gives the code, explains why it is written that way
 23. Outdoor land with an edge the camera never sees
 24. Trees that sway in the wind
 25. A game whose simulation a server replays (0.3)
+26. Sound that fits the scene
 
 ## 1. Start a new project
 
@@ -974,3 +975,17 @@ exact.quat.fromEuler(state.look, state.pitch, state.yaw, 0, 'YXZ');
 
 To ship the engine as a folder of files that the game's own module imports, build a two-line entry with Vite and the null3D plugin. The entry is `export { createEngine } from '@null3d/engine'` and `export const SKETCH = new URL('./sketch.ts', import.meta.url)`. Set `base: './'`, `build.modulePreload: false`, `preserveEntrySignatures: 'exports-only'` and `entryFileNames: 'entry.js'`. Record the game's shader permutation words on both GPU paths and at the low and high presets. Use `--live` pages and `--click <selector>` when the page starts its engine on a click. Record against a development build of the folder (`vite build --mode development`), because a production build ignores `?permutations`, `?gpu` and `?preset`. Build the shader modules from the list in a null3D checkout with `NULL3D_SHADER_PERMUTATIONS=<list> bun run shaders`. Then build the game with `NULL3D_ENGINE_SHADERS` naming the checkout's `packages/engine/src/generated`. A game that drew with 5 words held 300 files and 26 MB. The 172 words of null3D's examples make 762 files and 226 MB. A release asset holds the full set, so narrow first. Docs: `guides/deterministic-simulation`, `guides/assets-pipeline`.
 
+
+## 26. Sound that fits the scene
+
+Lay the sound out in `sketch.ts` with `createSound`, update it in `onLateUpdate`, and start it from the page's speaker button (`examples/lib/sound-button.ts` shows the page's half). Four rules keep a mix from reading as noise.
+
+Give every source a reach that matches what makes it. A loop's `far` is the end of its audibility: waves near water, an engine near its car, and nothing across the map. A bed that reaches a kilometer makes an opening view over open water roar, so set the same distances for a demo that a listener would expect standing there.
+
+Never write a level as a step. A car that stops keeps its voice until its speed crosses a threshold, and the level then snaps from running to silence. Write the level along a curve that passes through zero, such as a smoothstep up from standstill. Smooth what the scene writes over the frame's own time: `level += (target - level) * Math.min(1, dt * 6)`.
+
+Count the voices of a group. Its voices add as power, so three points at full level sound about 5 dB louder than a loop's one file. Give a group's points a lower level than a loop's. Write massed ambience, such as a wood's leaves, a crowd or rain on roofs, as one loop. Its level follows the density around the camera, never one source for each object.
+
+Check the mix at fixed camera places, not by ear alone. The opening pose should be silent where nothing makes a sound, each place should lead with the sound its view shows, and no level should move faster between frames than a listener would expect. An app can read each voice's gain while it drives the scene, as the add-on's own tests do.
+
+Docs: `guides/audio`, `api/sound`.

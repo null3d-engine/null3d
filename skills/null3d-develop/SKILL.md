@@ -97,7 +97,7 @@ Each rule comes with its reason, which covers cases the rule does not name.
 1. Allocate nothing in `onUpdate`, `onFixedUpdate` or `onLateUpdate`: no `new`, no array or object literals, no closures, no `map` or `filter`. Create scratch values at setup, such as `const tmp = vec3.create()`. A garbage collection pause stalls the frame.
 2. Use an instance batch for many copies of one mesh: one engine object and one typed array, where `createMesh` calls would mean many objects. (`concepts/instances`)
 3. Move many objects by writing arrays, not by setters in a loop: each setter crosses into WebAssembly, a typed-array write does not.
-4. Create an object with `dynamic: true` only if it changes most frames. Static objects rely on setters to mark them changed, so write arrays for dynamic objects and batches.
+4. Create an object with `dynamic: true` only if it changes most frames; write arrays for dynamic objects and batches.
 5. Pool short-lived objects such as bullets in a batch with a fixed capacity and `setActiveCount`. A structural change (create, destroy, a new mesh or material) rebuilds the draw tables; `setVisible` and `setActiveCount` do not. The engine sizes memory for what the scene holds, so create meshes, materials and batches at setup.
 6. Load and warm up before play: `await assets.preload([...])` and `await scene.warmUp()` behind a loading screen. A shader feature, such as a normal map, is fixed when you create the material, and the first frame waits for its pipeline, so create every variant before play. (`guides/loading-screens`)
 7. Keep the DOM on the page and messages rare: send events, not per-frame state. Labels that follow objects use `ui.trackLabel` (0.2), which needs no messages. (`guides/ui-overlays`)
