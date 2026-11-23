@@ -29,8 +29,8 @@ describe('the sound table', () => {
 		}
 	});
 
-	test('keeps beds stereo at -20 LUFS and one-shots at -16 LUFS', () => {
-		for (const sound of SOUNDS) expect(sound.loudness).toBe(sound.loop ? -20 : -16);
+	test('sets every loop to -20 LUFS and every one-shot by its true peak', () => {
+		for (const sound of SOUNDS) expect(sound.loudness).toBe(sound.loop ? -20 : null);
 	});
 });
 

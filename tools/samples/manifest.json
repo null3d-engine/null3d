@@ -7851,7 +7851,7 @@
 			],
 			"source": "https://freesound.org/people/Fission9/sounds/505113/",
 			"fetched": "2026-11-23",
-			"changes": "Cut from sound/raw/thunder-near by tools/samples/sound/loops.ts in the engine repository: 11.5 s from 0:00.3; resampled to 48 kHz; faded out over its last 3 s; brought to -16 LUFS integrated, with a lookahead limiter holding its true peak under -1 dBTP; encoded as VBR MP3 by libmp3lame at quality 5.",
+			"changes": "Cut from sound/raw/thunder-near by tools/samples/sound/loops.ts in the engine repository: 11.5 s from 0:00.3; resampled to 48 kHz; faded out over its last 3 s; its true peak set at -1 dBTP by gain alone, with no limiter, so it measures -23.7 LUFS integrated; encoded as VBR MP3 by libmp3lame at quality 5.",
 			"dir": "sources/sound/loops/thunder-near",
 			"origin": {
 				"kind": "converted",
@@ -7861,8 +7861,8 @@
 			"files": [
 				{
 					"path": "sources/sound/loops/thunder-near/thunder-near.mp3",
-					"bytes": 148580,
-					"sha256": "96e7df6a8cf9cb60103da974c9e8c84e9604b0c5965007da13160255b3f59511"
+					"bytes": 114452,
+					"sha256": "6d7ce53e32c8cfedf0c8c0b7ce142f6e6e3f9dfcf96f996e71d8f9e1783efea9"
 				}
 			]
 		},
@@ -7880,7 +7880,7 @@
 			],
 			"source": "https://freesound.org/people/hifijohn/sounds/242735/",
 			"fetched": "2026-11-23",
-			"changes": "Cut from sound/raw/thunder-far by tools/samples/sound/loops.ts in the engine repository: 12 s from 0:39.4; resampled to 48 kHz; faded out over its last 3 s; brought to -16 LUFS integrated, with a lookahead limiter holding its true peak under -1 dBTP; encoded as VBR MP3 by libmp3lame at quality 5.",
+			"changes": "Cut from sound/raw/thunder-far by tools/samples/sound/loops.ts in the engine repository: 12 s from 0:39.4; resampled to 48 kHz; faded out over its last 3 s; its true peak set at -1 dBTP by gain alone, with no limiter, so it measures -21.6 LUFS integrated; encoded as VBR MP3 by libmp3lame at quality 5.",
 			"dir": "sources/sound/loops/thunder-far",
 			"origin": {
 				"kind": "converted",
@@ -7890,8 +7890,8 @@
 			"files": [
 				{
 					"path": "sources/sound/loops/thunder-far/thunder-far.mp3",
-					"bytes": 158492,
-					"sha256": "dc329269297f542cda0ebe816212d80020786d1bcb97eee765d20555f54d19db"
+					"bytes": 127412,
+					"sha256": "4ac48ed0e1e606f12dac923cf566e8432a8c06e6c8c70eb87b1ce7ea229222f3"
 				}
 			]
 		},

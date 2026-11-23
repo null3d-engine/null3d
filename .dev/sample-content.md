@@ -143,7 +143,7 @@ Build them with `bun tools/samples/sound/loops.ts <folder>`. It needs ffmpeg wit
 
 1. Cuts its stretch of the recording, filters it, resamples it to 48 kHz, and mixes a point source to mono. A gentle high-pass takes out rumble where the recording has it.
 2. Joins a loop's end to its start. The cut runs one fade longer than the loop, and that tail fades out over the head with equal power. So the loop's last sample runs on into its first. A bed's fade takes 2 s and an engine's 0.4 s. A one-shot fades out at its end instead.
-3. Sets a gain that brings a loop to -20 LUFS integrated and a one-shot to -16 LUFS. A lookahead limiter holds the true peak at -1 dBTP or under where the peaks need it. A loop goes through the limiter as three copies and keeps the middle one, so the limiter runs on across the seam.
+3. Sets a gain that brings a loop to -20 LUFS integrated. A lookahead limiter holds a loop's true peak at -1 dBTP or under where the peaks need it. A loop goes through the limiter as three copies and keeps the middle one, so the limiter runs on across the seam. A one-shot's gain sets its true peak at -1 dBTP, with no limiter, so a thunder's crack stays whole. Its loudness is whatever that gives, and a demo sets its level.
 4. Encodes VBR MP3 with libmp3lame, at about 130 kbps in stereo and 65 to 85 kbps in mono. The encoder writes a file, not a pipe, so it can fill in the LAME header. That header records the encoder's delay and padding.
 5. Decodes the MP3 again and checks it. The length must match, and the loudness and true peak must meet their targets. The sound add-on trims quiet samples at each end as codec padding. So no loop may start or end below that level, and no one-shot may start below it. At a loop's seam, the step between neighbouring samples must stay under half the largest step inside it. The build stops on a failure, and prints each sound's figures.
 
@@ -166,11 +166,11 @@ To publish them:
 | `hover` | A designed hover engine's steady hum | 6 s loop | Mono | 48 KB |
 | `hover-pass` | A lighter take of the same hum for hover cars that pass at speed: the whine and air, without the low hum | 3 s loop | Mono | 27 KB |
 | `rain` | Light rain on a city street at night | 40 s loop | Stereo | 673 KB |
-| `thunder-near` | A close clap of thunder and its roll | 11.5 s one-shot | Stereo | 145 KB |
-| `thunder-far` | Distant thunder rolling | 12 s one-shot | Stereo | 155 KB |
+| `thunder-near` | A close clap of thunder and its roll, at -23.7 LUFS | 11.5 s one-shot | Stereo | 112 KB |
+| `thunder-far` | Distant thunder rolling, at -21.6 LUFS | 12 s one-shot | Stereo | 124 KB |
 | `city` | A quiet city evening: far traffic and the air of the streets | 45 s loop | Stereo | 672 KB |
 
-The outputs take 5.3 MB, and the raw recordings 21.4 MB. The car and the bus are engines held at one speed: a car at 2,000 rpm and a coach at idle. A car that drives past a microphone changes in level and pitch, so its recording does not loop. The demos set an engine's speed with the playback rate.
+The outputs take 5.2 MB, and the raw recordings 21.4 MB. The car and the bus are engines held at one speed: a car at 2,000 rpm and a coach at idle. A car that drives past a microphone changes in level and pitch, so its recording does not loop. The demos set an engine's speed with the playback rate.
 
 ## The sample check
 

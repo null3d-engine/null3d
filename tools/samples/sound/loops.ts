@@ -12,9 +12,10 @@
 // 2. A loop takes one more crossfade's length than it keeps, and crossfades that tail into its
 //    head with equal power, so its last sample runs on into its first. A one-shot's cut starts at
 //    its first sound, and it fades out over its last moments.
-// 3. A gain brings the integrated loudness to the sound's target. When the true peak would pass
-//    the ceiling, a lookahead limiter holds it below. A loop goes through the limiter three times
-//    over and keeps the middle copy, so the limiter's gain runs on across the seam too.
+// 3. A loop's gain brings its integrated loudness to its target. When the true peak would pass the
+//    ceiling, a lookahead limiter holds it below. The loop goes through the limiter three times
+//    over and keeps the middle copy, so the limiter's gain runs on across the seam too. A
+//    one-shot's gain sets its true peak at the ceiling, with no limiter, so its crack stays whole.
 // 4. libmp3lame encodes it as VBR MP3, into `<output>/<name>/<name>.mp3`, the folder of the
 //    sound's asset in the sample-assets repository.
 // 5. The check decodes the MP3 again and prints its loudness, true peak, length and size. For a
@@ -36,6 +37,8 @@ const FFMPEG = process.env.FFMPEG ?? 'ffmpeg';
 export const RATE = 48_000;
 /** The highest true peak an output may reach, in dBTP. */
 export const PEAK_CEILING = -1;
+/** How far below the ceiling a one-shot's true peak may land, in dB. */
+const PEAK_TOLERANCE = 0.3;
 /** How far the integrated loudness may miss its target, in LU. */
 const LOUDNESS_TOLERANCE = 0.3;
 /** The seconds that a decode starts before a cut, so the filters have settled when it begins. */
@@ -69,15 +72,18 @@ export interface Sound {
 	readonly fade: number;
 	/** Whether the output loops. */
 	readonly loop: boolean;
-	/** The integrated loudness that the output takes, in LUFS. */
-	readonly loudness: number;
+	/**
+	 * The integrated loudness that the output takes, in LUFS, with a limiter holding its true peak
+	 * under the ceiling. Null sets the true peak at the ceiling instead, with no limiter, which keeps
+	 * a one-shot's crack whole: its loudness is whatever that gives, and the demo sets its level.
+	 */
+	readonly loudness: number | null;
 	/** libmp3lame's VBR quality, from 0 (largest) to 9 (smallest). */
 	readonly quality: number;
 }
 
-/** Loops are quieter than one-shots, which stand out from the beds they play over. */
+/** The integrated loudness of every loop, so the demos can mix the beds and engines by gain. */
 const BED = -20;
-const ONE_SHOT = -16;
 
 /** VBR qualities that give about 130 kbps in stereo and about 80 kbps in mono. */
 const STEREO_QUALITY = 5;
@@ -251,7 +257,7 @@ export const SOUNDS: readonly Sound[] = [
 		channels: 2,
 		fade: 3,
 		loop: false,
-		loudness: ONE_SHOT,
+		loudness: null,
 		quality: STEREO_QUALITY,
 	},
 	{
@@ -263,7 +269,7 @@ export const SOUNDS: readonly Sound[] = [
 		channels: 2,
 		fade: 3,
 		loop: false,
-		loudness: ONE_SHOT,
+		loudness: null,
 		quality: STEREO_QUALITY,
 	},
 	{
@@ -553,26 +559,31 @@ export interface Report {
 }
 
 /**
- * The output's MP3: the gain that meets its loudness target with its true peak under the ceiling,
- * measured on the decoded MP3 and set again until both hold.
+ * The output's MP3, with the gain set again from the decoded MP3 until its level holds: a loop's
+ * loudness on its target with its true peak under the ceiling, or a one-shot's true peak just under
+ * the ceiling.
  */
 function master(sound: Sound, cut: Float32Array): { mp3: Uint8Array; report: Report } {
-	const { channels } = sound;
+	const { channels, loudness: target } = sound;
 	const pcm = sound.loop
 		? crossfadeLoop(cut, channels, Math.round(sound.fade * RATE))
 		: fadeOut(cut, channels, Math.round(sound.fade * RATE));
-	let gain = sound.loudness - measure(pcm, channels).loudness;
+	const start = measure(pcm, channels);
+	const peakAim = PEAK_CEILING - PEAK_TOLERANCE / 2;
+	let gain = target === null ? peakAim - start.peak : target - start.loudness;
 	let ceiling = PEAK_CEILING - 0.5;
 	for (let attempt = 0; attempt < 8; attempt++) {
 		let level = scaled(pcm, gain);
 		const before = measure(level, channels).peak;
-		const limited = before > ceiling;
+		const limited = target !== null && before > ceiling;
 		if (limited) level = limit(level, channels, ceiling, sound.loop);
 		const mp3 = encode(level, channels, sound.quality);
 		const decoded = decodeMp3(mp3, channels);
 		const { loudness, peak } = measure(decoded, channels);
-		const loudnessOk = Math.abs(loudness - sound.loudness) <= LOUDNESS_TOLERANCE;
-		if (loudnessOk && peak <= PEAK_CEILING) {
+		const loudnessOk = target === null || Math.abs(loudness - target) <= LOUDNESS_TOLERANCE;
+		const peakOk =
+			peak <= PEAK_CEILING && (target !== null || peak >= PEAK_CEILING - PEAK_TOLERANCE);
+		if (loudnessOk && peakOk) {
 			const steps = sound.loop ? seamSteps(decoded, channels) : {};
 			return {
 				mp3,
@@ -589,10 +600,14 @@ function master(sound: Sound, cut: Float32Array): { mp3: Uint8Array; report: Rep
 				},
 			};
 		}
-		if (!loudnessOk) gain += sound.loudness - loudness;
-		if (peak > PEAK_CEILING) ceiling -= peak - PEAK_CEILING + 0.1;
+		if (target === null) gain += peakAim - peak;
+		else {
+			if (!loudnessOk) gain += target - loudness;
+			if (peak > PEAK_CEILING) ceiling -= peak - PEAK_CEILING + 0.1;
+		}
 	}
-	throw new Error(`${sound.name}: no gain meets ${sound.loudness} LUFS under ${PEAK_CEILING} dBTP`);
+	const aim = target === null ? 'a true peak' : `${target} LUFS under`;
+	throw new Error(`${sound.name}: no gain gives ${aim} ${PEAK_CEILING} dBTP`);
 }
 
 /** Problems with a report that stop the build. */
