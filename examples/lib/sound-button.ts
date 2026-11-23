@@ -42,9 +42,8 @@ export function addSoundButton(engine: Engine, hud: HTMLElement, signal: AbortSi
 	button.append(icon);
 	/** Shows whether the sound plays: waves while it does, a cross while it is off or muted. */
 	const show = () => {
-		const playing =
-			(sound.state === 'on' || sound.state === 'paused' || sound.state === 'interrupted') &&
-			!sound.muted;
+		// An interrupted sound waits for a press to come back, so it shows as not playing.
+		const playing = (sound.state === 'on' || sound.state === 'paused') && !sound.muted;
 		waves.style.display = playing ? '' : 'none';
 		cross.style.display = playing ? 'none' : '';
 		button.setAttribute('aria-pressed', String(playing));

@@ -13,10 +13,10 @@ import { createSound } from '@null3d/sound';
 import type { TrafficLanes } from '../../addons/traffic-lanes/index';
 import { sampleUrl } from '../../lib/samples';
 import type { Hero } from './hero';
-import type { Roamers } from './roamers';
+import { ROAMERS, type Roamers } from './roamers';
 
-/** The most roamers that fly at once, on the heaviest preset. */
-const MOST_ROAMERS = 64;
+/** The most roamers that fly at once, on the heaviest preset: the size of their batch. */
+const MOST_ROAMERS = Math.max(...Object.values(ROAMERS));
 /** The lane cars whose places the lanes give: the cars that hold their real lights. */
 const LANE_CARS = 6;
 /** The hero's speed, in meters a second, at which its engine reaches its highest pitch. */
@@ -89,10 +89,10 @@ export function createSkywaySound(ctx: SketchContext, parts: SkywaySoundParts): 
 			engine.setLevel(0.55 + 0.45 * pace);
 
 			if (roamers) {
-				// The whole batch's rows copy in one call; the roamers past the active count fall silent.
-				const places = roamers.places;
+				// The whole batch's rows copy in one call; the roamers past the active count fall silent. The
+				// group holds as many members as the batch has rows.
 				const active = Math.min(roamers.active, MOST_ROAMERS);
-				if (places.length <= roaming.positions.length) roaming.positions.set(places);
+				roaming.positions.set(roamers.places);
 				roaming.levels.fill(1, 0, active);
 				roaming.levels.fill(0, active);
 			}
@@ -122,7 +122,7 @@ export function createSkywaySound(ctx: SketchContext, parts: SkywaySoundParts): 
 					(at[0] as number) + Math.cos(bearing) * distance,
 					(at[1] as number) + 200,
 					(at[2] as number) + Math.sin(bearing) * distance,
-					close ? 1 : 0.8 + 0.2 * draw(),
+					close ? 0.6 : 0.45 + 0.15 * draw(),
 					0.9 + 0.2 * draw(),
 				);
 				nextThunder = time + THUNDER_EVERY[0] + (THUNDER_EVERY[1] - THUNDER_EVERY[0]) * draw();
