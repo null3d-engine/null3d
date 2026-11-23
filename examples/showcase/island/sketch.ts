@@ -91,6 +91,41 @@ export const SHOTS: readonly Shot[] = [
 	{ position: [655, 265, 425], target: [40, 80, -40], seconds: 6.5 },
 ];
 
+/**
+ * The light that the sky above and the dry ground below throw back into the scene, by day and by
+ * night: the day's warm light lifts the shadows' undersides, and the night's keeps a faint, cool
+ * glow so nothing reads as black.
+ */
+const AMBIENT_DAY = { sky: '#b9a890', ground: '#c2965c', intensity: 0.8 } as const;
+const AMBIENT_NIGHT = { sky: '#2a3550', ground: '#14161c', intensity: 0.06 } as const;
+
+/** The light between the day's and the night's, by the share of a town's lamps that are lit. */
+function ambientAt(night: number): {
+	sky: [number, number, number];
+	ground: [number, number, number];
+	intensity: number;
+} {
+	const mix = (day: string, dark: string): [number, number, number] => {
+		const [a, b] = [hexOf(day), hexOf(dark)];
+		return [
+			a[0] + (b[0] - a[0]) * night,
+			a[1] + (b[1] - a[1]) * night,
+			a[2] + (b[2] - a[2]) * night,
+		];
+	};
+	return {
+		sky: mix(AMBIENT_DAY.sky, AMBIENT_NIGHT.sky),
+		ground: mix(AMBIENT_DAY.ground, AMBIENT_NIGHT.ground),
+		intensity: AMBIENT_DAY.intensity + (AMBIENT_NIGHT.intensity - AMBIENT_DAY.intensity) * night,
+	};
+}
+
+/** A hex color as three numbers from 0 to 1, in its own sRGB values. */
+function hexOf(hex: string): [number, number, number] {
+	const value = Number.parseInt(hex.slice(1), 16);
+	return [((value >> 16) & 0xff) / 255, ((value >> 8) & 0xff) / 255, (value & 0xff) / 255];
+}
+
 const params = new URL(import.meta.url).searchParams;
 
 /** The places that the camera's route visits, where the island's people walk as models. */
@@ -124,8 +159,14 @@ export default defineSketch(
 				contactDistance: 0.25,
 			},
 		});
-		// Warm light thrown back from the dry ground lifts the shadows' undersides, so they do not read sky blue.
-		scene.createHemisphereLight({ skyColor: '#b9a890', groundColor: '#c2965c', intensity: 0.8 });
+		// Warm light thrown back from the dry ground lifts the shadows' undersides, so they do not read sky blue
+		// by day. It follows the hour: by night it fades to a faint, cool moonlit glow, so the beaches and
+		// houses settle into the dark instead of glowing.
+		const ambient = scene.createHemisphereLight({
+			skyColor: AMBIENT_DAY.sky,
+			groundColor: AMBIENT_DAY.ground,
+			intensity: 0,
+		});
 		// Bloom, auto exposure and the vignette start off; the HUD's Post buttons turn each on. Ambient
 		// occlusion starts on, so the scene's shadows read.
 		post.set({ ao: { radius: 0.7 } });
@@ -339,6 +380,11 @@ export default defineSketch(
 				if (!grownFirst && time.frame >= 2) settleTraffic();
 				const t = time.now;
 				stage.update(dt);
+				// The scene's own ambient takes the hour, eased by the same share as the town's lamps.
+				const ambientNow = ambientAt(stage.lamps);
+				ambient.setColor(ambientNow.sky);
+				ambient.setGroundColor(ambientNow.ground);
+				ambient.setIntensity(ambientNow.intensity);
 				controls.update(t);
 				film.update(dt);
 				const lens = controls.lens();

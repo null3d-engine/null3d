@@ -402,6 +402,8 @@ return {
 
 `timeOfDay` returns a new object, so this updates a few times a second, not in every frame. The sky's environment takes about 20 frames to follow a change anyway. After sunset the light is the moon, and `skyIntensity` dims the sky to a deep blue. Then the sunset's sky fades into a navy night sky lit from the moon, whose disc the sky draws. Copy every field of `day.sky` each time: it holds the moon's sky as a second sky while night falls. The sky lights nothing by itself, so the sun light and the sky's environment light the scene.
 
+An ambient or hemisphere light that stands for the sky follows the hour too. A fixed one lights sand, walls and roads as brightly under a starry sky as at noon. Scale it and cool it at night, and keep a faint share so shadows keep their shape. Choose exposure at the hour the scene shows longest. A demo stage gives the share of a town's lamps as `stage.lamps`. Docs: `concepts/lighting` ("A scene that shows a time of day").
+
 For a landscape, use the physical sky instead. Its air hazes far hills blue and pale, its twilight lasts after sunset, and at night it shows the moon's phase and the stars. Pass `{ model: 'physical' }`, then in place of the two `setBackground` and `setEnvironment` lines and the fog:
 
 ```ts

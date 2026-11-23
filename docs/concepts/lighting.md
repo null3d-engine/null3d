@@ -155,6 +155,14 @@ An ambient light gives every surface the same light. A hemisphere light blends f
 
 Both lights are diffuse only, as in three.js: they light a surface's color and give no highlights. An environment's light adds to theirs. The environment's `intensity` and a material's `envIntensity` scale only the environment's own light. The occlusion map and ambient occlusion darken the light of all of them.
 
+### A scene that shows a time of day
+
+A light that stands for the sky must follow the hour. An ambient or hemisphere light with a fixed color and intensity is a day light. Under a night sky it lights sand, wall and road as brightly as at noon. The scene then reads as a dark sky over a lit town.
+
+Scale the light with the hour, shifting its colors cool at night. The island showcase holds its hemisphere light at 0.8 with warm sky and ground colors by day. By night it takes it to a cool 0.06, driven by the share of a town's lamps that are lit. The moon's directional light and the lamps then carry the night, and a faint ambient keeps the dark from going black.
+
+Exposure is one value for the whole scene. An exposure high enough for a bright day lifts a moonlit scene by the same factor, so choose it at the hour the scene shows longest. A demo stage offers the share of a town's lamps as `stage.lamps`, from 0 by day to 1 at night, which drives such a light.
+
 ## Lights far from the origin
 
 The engine keeps each object's position relative to a grid cell, a cube of space about 1 km wide. Scenes far from the origin then stay precise. Lights take part too. Each frame the engine finds every point and spot light's position relative to the camera, with the offset between their cells in 64-bit floats. A lamp 1,000 km from the origin is then as precise, next to the camera, as a lamp at the origin.
