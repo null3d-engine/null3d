@@ -426,17 +426,25 @@ function shoreFoam(ocean: Ocean): ShoreFoam {
 	};
 }
 
-/** Makes the sea, and returns the call that keeps its surface and its surf up to date. */
-export function createSea(ctx: SketchContext, camera: Camera): { update(): void } {
+/**
+ * Makes the sea, and returns the call that keeps its surface and its surf up to date. A tint
+ * multiplies the bed's, the foam's and the surf's own colours, so open water and white water
+ * darken with the hour as the open ground does.
+ */
+export function createSea(
+	ctx: SketchContext,
+	camera: Camera,
+): { update(tint?: readonly [number, number, number]): void } {
 	// Deep water scatters blue light up from within. The bed fades into that colour as it falls away, so
 	// clear water shows no rock or empty space in the deep, and no line where the fade ends.
+	const bed = ctx.materials.standard({
+		vertexColors: true,
+		roughness: 0.9,
+		metalness: 0,
+	});
 	ctx.scene.createMesh({
 		mesh: ctx.geometry.fromArrays(deepBed()),
-		material: ctx.materials.standard({
-			vertexColors: true,
-			roughness: 0.9,
-			metalness: 0,
-		}),
+		material: bed,
 		castShadows: false,
 		receiveShadows: false,
 	});
@@ -485,17 +493,18 @@ export function createSea(ctx: SketchContext, camera: Camera): { update(): void 
 	const foam = shoreFoam(ocean);
 	const lace = foamMap(ctx);
 	const foamGeometry = ctx.geometry.fromArrays(foam.mesh);
+	const foamMaterial = ctx.materials.standard({
+		map: lace,
+		vertexColors: true,
+		roughness: 0.9,
+		alphaMode: 'blend',
+		// The foam and the surf cross each other, so neither hides the other.
+		depthWrite: false,
+		doubleSided: true,
+	});
 	const foamMesh = ctx.scene.createMesh({
 		mesh: foamGeometry,
-		material: ctx.materials.standard({
-			map: lace,
-			vertexColors: true,
-			roughness: 0.9,
-			alphaMode: 'blend',
-			// The foam and the surf cross each other, so neither hides the other.
-			depthWrite: false,
-			doubleSided: true,
-		}),
+		material: foamMaterial,
 		castShadows: false,
 		receiveShadows: true,
 		// The mirror holds no foam: it lies on the water and shows only its dark underside there.
@@ -503,16 +512,17 @@ export function createSea(ctx: SketchContext, camera: Camera): { update(): void 
 	});
 	const surf = breakers(ocean);
 	const surfGeometry = ctx.geometry.fromArrays(surf.mesh);
+	const surfMaterial = ctx.materials.standard({
+		map: lace,
+		vertexColors: true,
+		roughness: 0.85,
+		alphaMode: 'blend',
+		depthWrite: false,
+		doubleSided: true,
+	});
 	const surfMesh = ctx.scene.createMesh({
 		mesh: surfGeometry,
-		material: ctx.materials.standard({
-			map: lace,
-			vertexColors: true,
-			roughness: 0.85,
-			alphaMode: 'blend',
-			depthWrite: false,
-			doubleSided: true,
-		}),
+		material: surfMaterial,
 		castShadows: false,
 		receiveShadows: true,
 		// The mirror holds no foam: it lies on the water and shows only its dark underside there.
@@ -525,8 +535,20 @@ export function createSea(ctx: SketchContext, camera: Camera): { update(): void 
 	foamMesh.setBounds(centre, radius);
 	surfMesh.setBounds(centre, radius);
 	let read = 0;
+	/** The night multiplier that the bed, the foam and the surf hold, or undefined before the first frame. */
+	let dimmedAt: readonly [number, number, number] | undefined;
 	return {
-		update() {
+		update(tint) {
+			// The sand under the bay and the white water darken with the hour, as the open ground does.
+			if (
+				tint &&
+				(!dimmedAt || dimmedAt[0] !== tint[0] || dimmedAt[1] !== tint[1] || dimmedAt[2] !== tint[2])
+			) {
+				dimmedAt = [tint[0], tint[1], tint[2]];
+				bed.set({ color: dimmedAt });
+				foamMaterial.set({ color: dimmedAt });
+				surfMaterial.set({ color: dimmedAt });
+			}
 			ocean.update();
 			const t = ctx.time.now;
 			// The crests cross the bay at a few meters a second, so their places follow every frame. The

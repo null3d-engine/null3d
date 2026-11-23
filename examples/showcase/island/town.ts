@@ -5,7 +5,9 @@
 // thing is one mesh in an instance batch.
 import {
 	type InstanceBatch,
+	type Material,
 	type Object3D,
+	type PointLight,
 	quat,
 	type SketchContext,
 	type Texture,
@@ -13,6 +15,8 @@ import {
 import { type Part, standPart } from '../../lib/blender-models';
 import { INTERIOR_LAYER } from '../../lib/layers';
 import { Noise, random } from '../../lib/procedural';
+import { nightAlbedo } from '../../lib/stage';
+import { ROOST_LAMPS } from './birds';
 import { FOUNTAIN_WATER, STAIR_HALF, WAY_HALF } from './ground';
 import { type HouseLot, loadHouses, standHouse, standsByKind } from './houses';
 import {
@@ -2312,12 +2316,14 @@ export function parasolClubs(): ParasolSpot[] {
 	return kept;
 }
 
-function createBeach(ctx: SketchContext): InstanceBatch {
+function createBeach(ctx: SketchContext, night: Nightwork): InstanceBatch {
 	const next = random(421);
 	const { scene, geometry, materials } = ctx;
 	const spots = parasolClubs();
+	const canvas = materials.standard({ vertexColors: true, roughness: 0.8, doubleSided: true });
+	night.dim(canvas);
 	const set = scene.createInstances(geometry.fromArrays(finish(parasol())), spots.length, {
-		material: materials.standard({ vertexColors: true, roughness: 0.8, doubleSided: true }),
+		material: canvas,
 		colors: true,
 		castShadows: true,
 		receiveShadows: true,
@@ -2369,7 +2375,7 @@ export function holeOnTop(stations: readonly (readonly [number, number, number])
  * each fairway winds as a ribbon with crisp edges and mown bands, ending at a round green with its
  * flag. Kidney bunkers with raised grass lips lie along the fairways and around the greens.
  */
-function createGolf(ctx: SketchContext): void {
+function createGolf(ctx: SketchContext, night: Nightwork): void {
 	const { scene, geometry, materials } = ctx;
 	const b = build();
 	const flags = build();
@@ -2539,13 +2545,16 @@ function createGolf(ctx: SketchContext): void {
 		);
 	}
 	const material = materials.standard({ vertexColors: true, roughness: 0.95 });
+	const grain = materials.standard({
+		map: grainMap(ctx, 61, 190),
+		vertexColors: true,
+		roughness: 0.95,
+	});
+	night.dim(material);
+	night.dim(grain);
 	scene.createMesh({
 		mesh: geometry.fromArrays(finish(onGroundUvs(b, TURF_GRAIN_TILE))),
-		material: materials.standard({
-			map: grainMap(ctx, 61, 190),
-			vertexColors: true,
-			roughness: 0.95,
-		}),
+		material: grain,
 		receiveShadows: true,
 	});
 	scene.createMesh({ mesh: geometry.fromArrays(finish(flags)), material, castShadows: true });
@@ -2878,7 +2887,7 @@ const GAZEBO_CLEAR = 7;
 /** The last stretch of a lawn, in meters, over which its cover and its colour fade into the ground. */
 const LAWN_EDGE_FADE = 0.5;
 
-function createParks(ctx: SketchContext, surfaces: Surfaces): InstanceBatch {
+function createParks(ctx: SketchContext, surfaces: Surfaces, night: Nightwork): InstanceBatch {
 	const { scene, geometry, materials } = ctx;
 	const b = build();
 	const walls = build();
@@ -2992,6 +3001,7 @@ function createParks(ctx: SketchContext, surfaces: Surfaces): InstanceBatch {
 		row(posts, k, p.x, p.y, p.z, 0);
 	});
 	posts.markDirty();
+	standHeads(ctx, night, lamps);
 	const green = scene.createInstances(geometry.fromArrays(finish(shrub())), hedges.length, {
 		material: materials.standard({ vertexColors: true, roughness: 0.95, doubleSided: true }),
 		colors: true,
@@ -3317,8 +3327,181 @@ function createKnob(ctx: SketchContext): void {
 	bushes.markDirty();
 }
 
+/** The town's night: the lamps' glass and the houses' windows light up, and lights follow the view. */
+export interface TownNight {
+	/**
+	 * Switches the glass and the windows by the share of the town's lamps that are lit and the hour,
+	 * and moves the pool of lights to the lamps nearest `eye`.
+	 */
+	update(eye: readonly [number, number, number], lamps: number, hours: number): void;
+}
+
+/** The warm light of the town's lamps, linear: their glass, their windows and the pools they cast. */
+const LAMP_GLOW: readonly [number, number, number] = [1.0, 0.7, 0.36];
+/**
+ * The hour, from dusk on, when the houses' windows go out, about eleven at night: the stage's own
+ * Night mood stands at 23:00, so the windows stay lit through its first half hour.
+ */
+const WINDOWS_OUT = 23.5;
+/** The point lights that follow the view, the range of each in meters, and the light of one. */
+const POOL_COUNT = 32;
+const POOL_RANGE = 10;
+const POOL_LUMEN = 700;
+/** How far the camera may move, in meters, before the pool takes the lamps nearest it again. */
+const POOL_STEP = 4;
+/** The names of a model's parts that hold lit panes, such as a house's glass. */
+const GLASS_PART = /glass|window|pane/i;
+
+/** The glass of a street lamp's lantern, as a mesh of its own so that it can glow. */
+function lanternGlass(): Build {
+	const b = build();
+	box(b, -0.19, 3.6, -0.19, 0.19, 4.1, 0.19, [1, 1, 1]);
+	return b;
+}
+
+/** The switches of the town's night, which each part of the town adds to as it builds. */
+interface Nightwork {
+	/** The lamp glass's material, whose colour the share drives. */
+	readonly headMaterial: Material;
+	/** The windows' material, whose colour the share and the hour drive. */
+	readonly windowMaterial: Material;
+	/** Adds a lamp's foot to the pool's list. */
+	lamp(x: number, y: number, z: number): void;
+	/** Takes a batch of glowing glass as one of the town's own. */
+	head(batch: InstanceBatch): void;
+	/** Takes a batch of glowing panes as one of the town's own. */
+	window(batch: InstanceBatch): void;
+	/** Takes a material whose surface darkens with the hour, such as the golf turf or the parasols. */
+	dim(material: Material): void;
+}
+
+/** What a caller may ask of the town, such as a cost run with a smaller pool of lights. */
+export interface TownOptions {
+	/**
+	 * The point lights that follow the view, from 0 to 48. Left out, the town takes its own count.
+	 * A cost run compares counts; 0 keeps the lamp glass and the windows, with no pooled light.
+	 */
+	readonly lights?: number;
+}
+
+/** The town's night, made before the town draws, so the first frame's lamps can glow. */
+function createTownNight(ctx: SketchContext, count = POOL_COUNT): TownNight & Nightwork {
+	const pool = Math.min(48, Math.max(0, Math.floor(count)));
+	const { scene, materials } = ctx;
+	// The glass keeps its warm colour through the tone curve, as a lamp that glows should.
+	const headMaterial = materials.unlit({ color: [0, 0, 0], toneMapped: false });
+	// A pane covers the glass part that its model also draws, so it sits a step nearer.
+	const windowMaterial = materials.unlit({
+		color: [0, 0, 0],
+		toneMapped: false,
+		depthBias: { constant: -1, slopeScale: -1 },
+	});
+	const heads: InstanceBatch[] = [];
+	const windows: InstanceBatch[] = [];
+	const dimmed: Material[] = [];
+	/** The share of the lights that the dimmed materials hold, or undefined before the first frame. */
+	let dimmedAt: number | undefined;
+	const places: number[] = [];
+	const lights = Array.from({ length: pool }, () =>
+		scene.createPointLight({
+			color: [...LAMP_GLOW],
+			intensity: 0,
+			range: POOL_RANGE,
+			castShadows: false,
+		}),
+	);
+	/** The lamps that the pool holds, as indices into the places, by step of three. */
+	let held: number[] = [];
+	let at: [number, number, number] | undefined;
+	const take = (eye: readonly [number, number, number]): void => {
+		const near: { d: number; k: number }[] = [];
+		for (let k = 0; k < places.length; k += 3) {
+			const dx = (places[k] as number) - eye[0];
+			const dy = (places[k + 1] as number) - eye[1];
+			const dz = (places[k + 2] as number) - eye[2];
+			near.push({ d: dx * dx + dy * dy + dz * dz, k });
+		}
+		near.sort((a, b) => a.d - b.d);
+		held = near.slice(0, lights.length).map((one) => one.k);
+	};
+	return {
+		headMaterial,
+		windowMaterial,
+		lamp(x, y, z) {
+			places.push(x, y, z);
+		},
+		head(batch) {
+			heads.push(batch);
+		},
+		window(batch) {
+			windows.push(batch);
+		},
+		dim(material) {
+			dimmed.push(material);
+		},
+		update(eye, lamps, hours) {
+			// Open ground darkens with the hour: the day's own albedo gives way to the night multiplier.
+			if (lamps !== dimmedAt) {
+				dimmedAt = lamps;
+				const tint = nightAlbedo(lamps);
+				for (const material of dimmed) material.set({ color: tint });
+			}
+			// The town's own switch: the crows roost at the same share, so dusk reads as one moment.
+			const lit = lamps >= ROOST_LAMPS;
+			headMaterial.set({ color: lit ? [...LAMP_GLOW] : [0, 0, 0] });
+			for (const batch of heads) batch.setActiveCount(lit ? batch.count : 0);
+			// The houses' windows go out at the hour, while the street lamps stay lit.
+			const windowsLit = lit && hours < WINDOWS_OUT;
+			windowMaterial.set({ color: windowsLit ? [...LAMP_GLOW] : [0, 0, 0] });
+			for (const batch of windows) batch.setActiveCount(windowsLit ? batch.count : 0);
+			if (!lit) {
+				for (const light of lights) light.setVisible(false);
+				return;
+			}
+			if (!at || Math.hypot(at[0] - eye[0], at[1] - eye[1], at[2] - eye[2]) > POOL_STEP) {
+				take(eye);
+				at = [eye[0], eye[1], eye[2]];
+			}
+			for (let i = 0; i < lights.length; i++) {
+				const light = lights[i] as PointLight;
+				const k = held[i];
+				if (k === undefined) {
+					light.setVisible(false);
+					continue;
+				}
+				light.setVisible(true);
+				light.setPosition(
+					places[k] as number,
+					(places[k + 1] as number) + 3.8,
+					places[k + 2] as number,
+				);
+				light.setIntensity(POOL_LUMEN * lamps);
+			}
+		},
+	};
+}
+
+/** Stands the lantern glass of each lamp, and gives them to the night. */
+function standHeads(
+	ctx: SketchContext,
+	night: Nightwork,
+	places: readonly { x: number; y: number; z: number }[],
+): void {
+	const { scene, geometry } = ctx;
+	const heads = scene.createInstances(geometry.fromArrays(finish(lanternGlass())), places.length, {
+		material: night.headMaterial,
+	});
+	places.forEach((p, k) => {
+		row(heads, k, p.x, p.y, p.z, 0);
+		night.lamp(p.x, p.y, p.z);
+	});
+	heads.markDirty();
+	heads.setActiveCount(0);
+	night.head(heads);
+}
+
 /** Street lamps along the town's streets and around the square. */
-function createLamps(ctx: SketchContext): void {
+function createLamps(ctx: SketchContext, night: Nightwork): void {
 	const { scene, geometry, materials } = ctx;
 	const places: { x: number; y: number; z: number }[] = [];
 	for (const { points, half } of ROADS) {
@@ -3356,10 +3539,11 @@ function createLamps(ctx: SketchContext): void {
 		row(lamps, k, p.x, p.y, p.z, 0);
 	});
 	lamps.markDirty();
+	standHeads(ctx, night, places);
 }
 
 /** Draws everything that the town plan places, apart from its trees. */
-export function createTown(ctx: SketchContext): Promise<void> {
+export function createTown(ctx: SketchContext, options: TownOptions = {}): Promise<TownNight> {
 	const { scene, geometry, materials } = ctx;
 	const surfaces: Surfaces = {
 		plaster: materials.standard({
@@ -3409,29 +3593,34 @@ export function createTown(ctx: SketchContext): Promise<void> {
 	createClimbers(ctx);
 	const square = createSquare(ctx, surfaces);
 	const harbour = createHarbour(ctx, surfaces);
-	const parasols = createBeach(ctx);
-	createGolf(ctx);
-	const benches = createParks(ctx, surfaces);
+	const night = createTownNight(ctx, options.lights ?? POOL_COUNT);
+	const parasols = createBeach(ctx, night);
+	createGolf(ctx, night);
+	const benches = createParks(ctx, surfaces, night);
 	const keeps = createKeeps(ctx, surfaces);
 	const coast = createRocks(ctx);
 	createKnob(ctx);
-	createLamps(ctx);
-	return settleLandmarks(ctx, {
-		church: square.church,
-		churchY: square.churchY,
-		lighthouse: harbour.lighthouse,
-		lighthouseAt: harbour.at,
-		keeps,
-		houses,
-		props: {
-			sailboats: harbour.sailboats,
-			skiffs: harbour.skiffs,
-			stones: harbour.stones,
-			parasols,
-			benches,
-			coast,
+	createLamps(ctx, night);
+	return settleLandmarks(
+		ctx,
+		{
+			church: square.church,
+			churchY: square.churchY,
+			lighthouse: harbour.lighthouse,
+			lighthouseAt: harbour.at,
+			keeps,
+			houses,
+			props: {
+				sailboats: harbour.sailboats,
+				skiffs: harbour.skiffs,
+				stones: harbour.stones,
+				parasols,
+				benches,
+				coast,
+			},
 		},
-	});
+		night,
+	).then(() => night);
 }
 
 /** What the code-built kit stands for each landmark until the models arrive. */
@@ -3457,7 +3646,11 @@ interface KitLandmarks {
  * sample file keeps the kit, so the demo runs before the asset is published. The load starts after
  * the town is built, so it never holds up the first frame.
  */
-async function settleLandmarks(ctx: SketchContext, kit: KitLandmarks): Promise<void> {
+async function settleLandmarks(
+	ctx: SketchContext,
+	kit: KitLandmarks,
+	night: Nightwork,
+): Promise<void> {
 	// The two model files load together. Either may fail without losing the other's models.
 	const [models, houseModels, props] = await Promise.all([
 		loadLandmarks(ctx).catch((error) => {
@@ -3482,6 +3675,11 @@ async function settleLandmarks(ctx: SketchContext, kit: KitLandmarks): Promise<v
 	const placed: InstanceBatch[] = [];
 	const stand = (part: Part, x: number, y: number, z: number, yaw = 0): void => {
 		placed.push(standPart(ctx, part, [{ x, y, z, yaw, size: 1 }], part.material));
+		if (GLASS_PART.test(part.name)) {
+			const panes = standPart(ctx, part, [{ x, y, z, yaw, size: 1 }], night.windowMaterial);
+			panes.setActiveCount(0);
+			night.window(panes);
+		}
 	};
 	/**
 	 * Stands one landmark's parts. If any part cannot stand, it takes back the ones it did and
@@ -3557,6 +3755,11 @@ async function settleLandmarks(ctx: SketchContext, kit: KitLandmarks): Promise<v
 			if (where.length === 0) return;
 			try {
 				standHouse(ctx, model, where);
+				if (model.parts.glass) {
+					const panes = standPart(ctx, model.parts.glass, where, night.windowMaterial);
+					panes.setActiveCount(0);
+					night.window(panes);
+				}
 				for (const batch of kit.houses.byKind[kind] ?? []) batch.destroy();
 			} catch (error) {
 				console.warn(

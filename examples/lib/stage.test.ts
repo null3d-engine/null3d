@@ -9,6 +9,7 @@ import {
 	moodMix,
 	moodShare,
 	nearestMood,
+	nightAlbedo,
 	type StageOptions,
 	type StagePart,
 } from './stage';
@@ -372,4 +373,22 @@ test("a scene's weather thickens the fog and dims the light, and clears again", 
 	expect(last.fog?.density as number).toBeCloseTo(clearDensity, 4);
 	expect(last.backgroundOptions?.intensity as number).toBeCloseTo(clearSky, 4);
 	expect(last.sunIntensity as number).toBeCloseTo(clearSun, 4);
+});
+
+test('open ground darkens from its day colour to a cool night colour as the lamps come on', () => {
+	// The day's own colour, untouched.
+	expect(nightAlbedo(0)).toEqual([1, 1, 1]);
+	const night = nightAlbedo(1);
+	expect(night[0]).toBeCloseTo(0.06, 5);
+	expect(night[1]).toBeCloseTo(0.07, 5);
+	expect(night[2]).toBeCloseTo(0.1, 5);
+	// A share outside the range holds the ends, so a stray value cannot over-darken or brighten.
+	expect(nightAlbedo(-1)).toEqual([1, 1, 1]);
+	expect(nightAlbedo(2)).toEqual(night);
+	// The night colour leans cool: blue keeps the largest share of its own value.
+	expect(night[2] / night[0]).toBeGreaterThan(1);
+	// A frame that writes into its own array gets the same colour back.
+	const held: [number, number, number] = [1, 1, 1];
+	expect(nightAlbedo(1, held)).toBe(held);
+	expect(held).toEqual(night);
 });

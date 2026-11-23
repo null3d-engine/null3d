@@ -16,7 +16,7 @@ import { defineSketch } from '@null3d/engine';
 import { type CameraBounds, createCinematic, type Shot } from '../../lib/cinematic';
 import { EFFECT_LAYER, INTERIOR_LAYER, SUN_LAYERS } from '../../lib/layers';
 import { createShowcaseEffects } from '../../lib/showcase-effects';
-import { createMoods, isMood } from '../../lib/stage';
+import { createMoods, isMood, nightAlbedo } from '../../lib/stage';
 import { BIRD_COUNT, createBirds, ROOST_LAMPS } from './birds';
 import { SEA_LEVEL } from './island';
 import { createLand } from './land';
@@ -24,7 +24,7 @@ import { loadLifeModels } from './models';
 import { groundHeight } from './plan';
 import { createSea } from './sea';
 import { SHADOW_DISTANCE, SHADOW_REACH } from './shadow';
-import { createTown } from './town';
+import { createTown, type TownNight } from './town';
 import { createPlaceholderModels, createTraffic, type TrafficOptions } from './traffic';
 import { CASTER_LAYER, createCypressSpires, createTrees } from './trees';
 
@@ -317,7 +317,15 @@ export default defineSketch(
 
 		const land = createLand(ctx);
 		const sea = createSea(ctx, camera);
-		const town = createTown(ctx);
+		let night: TownNight | undefined;
+		// `?pool=N` sets how many lights follow the view, so a cost run compares counts.
+		const askedPool = params.get('pool');
+		const pool = askedPool === null ? undefined : Number(askedPool);
+		const town = createTown(ctx, {
+			...(pool !== undefined && Number.isFinite(pool) && { lights: Math.max(0, pool) }),
+		}).then((made) => {
+			night = made;
+		});
 		page.post('loading', 'Growing the trees');
 		// The species and the lawns take seconds to grow. A live page draws the island without them and
 		// lets them appear as they land; a held picture, a page that asks with `?grown`, or the WebGL2
@@ -403,6 +411,8 @@ export default defineSketch(
 		}
 
 		const eye: [number, number, number] = [0, 0, 0];
+		/** The day-to-night colour of the open ground, the water and the white water, written each frame. */
+		const tint: [number, number, number] = [1, 1, 1];
 		return {
 			onUpdate(dt) {
 				// The forest grows once the first frame has drawn, so its species and lawns cost nothing
@@ -421,8 +431,12 @@ export default defineSketch(
 				const lens = controls.lens();
 				if (lens) post.set(lens);
 				camera.getPosition(eye);
+				night?.update(eye, stage.lamps, stage.hours);
+				// Open ground and open water darken with the hour, so neither outshines the town.
+				nightAlbedo(stage.lamps, tint);
+				land.setTint(tint);
 				land.update(eye);
-				sea.update();
+				sea.update(tint);
 				traffic.update(time.now);
 				birds.update();
 				trees?.update();

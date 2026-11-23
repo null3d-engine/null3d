@@ -171,6 +171,29 @@ export function lampShare(sunHeight: number): number {
 	return LAMPS_DUSK + (1 - LAMPS_DUSK) * smoothstep(0, LAMPS_FULL, sunHeight);
 }
 
+/**
+ * The multiplier that a surface's own colour takes at full night. A pale surface, such as sand or
+ * mown turf, throws back much more moonlight than a roof or a hillside, so without it the brightest
+ * open ground reads as a lit patch in a dark island. It leans cool, as moonlight does.
+ */
+const NIGHT_ALBEDO: readonly [number, number, number] = [0.06, 0.07, 0.1];
+
+/**
+ * The multiplier of a surface's colour at a share of the town's lights, from its day colour at 0 to
+ * its night colour at 1, so open ground darkens with the hour as the lamps come on. It writes into
+ * `out` when a frame calls it every time.
+ */
+export function nightAlbedo(
+	share: number,
+	out: [number, number, number] = [1, 1, 1],
+): [number, number, number] {
+	const t = Math.min(1, Math.max(0, share));
+	out[0] = blend(1, NIGHT_ALBEDO[0], t);
+	out[1] = blend(1, NIGHT_ALBEDO[1], t);
+	out[2] = blend(1, NIGHT_ALBEDO[2], t);
+	return out;
+}
+
 /** True when two vectors match to within a step nothing can see. */
 function near(a: Vec3, b: Vec3): boolean {
 	for (let k = 0; k < 3; k++)
