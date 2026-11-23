@@ -1,5 +1,6 @@
 // The island's sound: the sea all round it, the surf on the bay's beach, the wind, the leaves of the
-// woods, and the traffic on the roads. The page's speaker button starts it (examples/lib/sound-button.ts).
+// woods, and the traffic on the roads. Every source keeps a short reach, so the island is quiet where
+// nothing stands near the camera: the opening view, high and far offshore, hears nothing. The page's speaker button starts it (examples/lib/sound-button.ts).
 //
 // The sea and the surf come from places. Each is a group of points along the water, of which the
 // add-on's mixer plays the nearest few, so the sound comes from the nearest stretch of sea or beach
@@ -29,6 +30,8 @@ const SEA_OFFSHORE = 60;
 const SURF_POINTS = 28;
 /** How far past the waterline the surf's points stand, where the breakers run, in meters. */
 const SURF_OFFSHORE = 18;
+/** How far the open-water sea rises, and the distance from shore and height over which it fades in. */
+const SEA_OPEN = 0.55;
 /** The wind's speed, in meters a second, at which the wind and the leaves reach their full level. */
 const FULL_WIND = 9;
 /** How fast a vehicle's level and pitch reach their curves, as a share of the gap each second. */
@@ -96,12 +99,12 @@ export interface IslandSound {
  * speed. The curve is continuous through the stop, so a held car does not cut its engine off.
  */
 export function carLevel(speed: number): number {
-	return (0.55 + 0.45 * Math.min(1, speed / 14)) * smoothstep(0, 0.6, speed);
+	return (0.4 + 0.35 * Math.min(1, speed / 14)) * smoothstep(0, 0.6, speed);
 }
 
 /** A bus's engine level at its speed: it idles at its stops and rises with its speed, crossing smoothly. */
 export function busLevel(speed: number): number {
-	return 0.35 + 0.35 * smoothstep(0.2, 2, speed);
+	return 0.26 + 0.3 * smoothstep(0.2, 2, speed);
 }
 
 /** A car's engine pitch at its speed, from a standing start to its fastest. */
@@ -128,8 +131,8 @@ export function createIslandSound(ctx: SketchContext, camera: Camera): IslandSou
 		file: seaFile,
 		count: shore.length,
 		voices: 3,
-		near: 70,
-		far: 1600,
+		near: 18,
+		far: 140,
 	});
 	for (const [k, [x, z]] of shore.entries()) seaShore.setPosition(k, x, SEA_LEVEL, z);
 	const seaOpen: SoundLoop = sound.loop({ file: seaFile, positional: false, level: 0 });
@@ -139,8 +142,8 @@ export function createIslandSound(ctx: SketchContext, camera: Camera): IslandSou
 		file: sampleUrl('sources/sound/loops/surf/surf.mp3'),
 		count: beach.length,
 		voices: 3,
-		near: 25,
-		far: 700,
+		near: 10,
+		far: 70,
 	});
 	beach.forEach((point, k) => {
 		surf.setPosition(k, point.x, SEA_LEVEL + 1, point.z);
@@ -190,7 +193,7 @@ export function createIslandSound(ctx: SketchContext, camera: Camera): IslandSou
 			cars?.destroy();
 			bus?.destroy();
 			bus = undefined;
-			cars = sound.group({ file: carFile, count: next.counts.cars, voices: 4, near: 4, far: 160 });
+			cars = sound.group({ file: carFile, count: next.counts.cars, voices: 4, near: 4, far: 55 });
 			carShown.length = 0;
 			carPitch.length = 0;
 			for (let k = 0; k < next.counts.cars; k++) {
@@ -199,7 +202,7 @@ export function createIslandSound(ctx: SketchContext, camera: Camera): IslandSou
 			}
 			busShown = 0;
 			busPitch = 1;
-			if (next.counts.buses > 0) bus = sound.loop({ file: busFile, near: 5, far: 220, level: 0 });
+			if (next.counts.buses > 0) bus = sound.loop({ file: busFile, near: 5, far: 70, level: 0 });
 		},
 		update(dt = 0) {
 			camera.getWorldPosition(eye);
@@ -209,7 +212,7 @@ export function createIslandSound(ctx: SketchContext, camera: Camera): IslandSou
 			const out = -inland(x, z);
 
 			// Far out at sea the water surrounds the camera; near the shore it comes from the shore's points.
-			seaOpen.setLevel(0.7 * smoothstep(40, 400, out) * (1 - 0.5 * smoothstep(80, 700, height)));
+			seaOpen.setLevel(SEA_OPEN * smoothstep(60, 400, out) * (1 - smoothstep(5, 60, height)));
 
 			let speed = STEADY_WIND;
 			if (field) {
@@ -223,7 +226,7 @@ export function createIslandSound(ctx: SketchContext, camera: Camera): IslandSou
 			const exposure =
 				(0.35 + 0.5 * smoothstep(2, 160, height) + 0.15 * smoothstep(0, 250, out)) *
 				(1 - 0.5 * canopy * nearTrees);
-			wind.setLevel(0.85 * strength * exposure);
+			wind.setLevel(0.45 * strength * strength * strength * exposure);
 			wind.setTone(0.35 + 0.65 * strength * (0.6 + 0.4 * smoothstep(0, 150, height)));
 
 			leaves.setLevel(canopy * nearTrees * Math.min(1, 0.25 + strength));

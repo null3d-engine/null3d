@@ -76,7 +76,7 @@ describe("the vehicles' engine curves", () => {
 		// A car held at a stop is silent, and the curve passes through zero rather than jumping to it.
 		expect(carLevel(0)).toBe(0);
 		expect(carLevel(0.05)).toBeLessThan(0.02);
-		expect(carLevel(0.6)).toBeGreaterThan(0.3);
+		expect(carLevel(0.6)).toBeGreaterThan(0.25);
 		let previous = 0;
 		for (let speed = 0; speed <= 16; speed += 0.01) {
 			const level = carLevel(speed);
@@ -88,8 +88,8 @@ describe("the vehicles' engine curves", () => {
 	});
 
 	it('keep a bus audible at its stop and swell it smoothly as it pulls away', () => {
-		expect(busLevel(0)).toBeCloseTo(0.35, 5);
-		expect(busLevel(3)).toBeCloseTo(0.7, 5);
+		expect(busLevel(0)).toBeCloseTo(0.26, 5);
+		expect(busLevel(3)).toBeCloseTo(0.56, 5);
 		let previous = busLevel(0);
 		for (let speed = 0; speed <= 6; speed += 0.02) {
 			const level = busLevel(speed);
