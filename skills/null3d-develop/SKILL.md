@@ -36,7 +36,7 @@ HTML, CSS, UI, audio   -->   input, onUpdate, scene changes -->  GPU uploads and
 creates the engine           shared typed arrays                 never runs your code
 ```
 
-- `page.ts` owns the DOM, HTML UI and the browser's audio. `sketch.ts` has no `document` and no `window`. For sound that follows the scene, the sketch makes and moves the sounds with `createSound` from `@null3d/sound`, and the page plays them with `connectSound` from `@null3d/sound/page` (0.3, `api/sound`, `guides/audio`). `createEngine({ sketchThread: 'main' })` runs the sketch on the main thread, where it can reach the DOM. Use it only for DOM-heavy apps and debugging: its frames share the page thread. The two sides talk with `engine.postToSketch` and `page.onMessage`, and with `page.post` and `engine.onSketchMessage`. (`concepts/architecture`, `api/page`)
+- `page.ts` owns the DOM, HTML UI and Web Audio. `sketch.ts` has no `document` and no `window`. `createEngine({ sketchThread: 'main' })` runs the sketch on the main thread, where it can reach the DOM. Use it only for DOM-heavy apps and debugging: its frames share the page thread. The two sides talk with `engine.postToSketch` and `page.onMessage`, and with `page.post` and `engine.onSketchMessage`. (`concepts/architecture`, `api/page`)
 - Scene objects are small wrappers around 30-bit integer handles. Change them with setters such as `setPosition`; never assign properties like `mesh.position.x = 1`. (`concepts/handles`, `api/objects`)
 - For many objects, write typed arrays directly: instance batches and dynamic objects, where null3D gets its speed. (`concepts/instances`)
 - Objects are static by default: they cost nothing per frame until a setter changes them. Objects with `dynamic: true` are recomputed every frame and may be written through arrays. (`concepts/static-dynamic`)
@@ -83,7 +83,7 @@ export default defineSketch(({ scene, geometry, materials }) => {
 
 1. Pin down the target when the request leaves it open: devices, frame rate and the WebGL2 path. Assume phones matter unless told otherwise.
 2. Read the doc pages for the features involved (section 1).
-3. Make the change in small steps. Scene logic, and the places and levels of the scene's sounds, go in `sketch.ts`; DOM, HTML UI and the start of the audio go in `page.ts`.
+3. Make the change in small steps. Scene logic and the scene's sounds go in `sketch.ts`; DOM, HTML UI and the audio's start go in `page.ts`.
 4. Look at the result. `bunx vite` serves the project, and the null3D Vite plugin adds the right headers. `bunx @null3d/cli shot --out shot.png` renders one frame headless. Open the image: code that compiles can still draw nothing. Read `references/testing-and-debugging.md` before trusting a picture.
 5. Check the cost of a production build with `bunx @null3d/cli bench`, or `await engine.measure(5)` on it. Compare the frame phases with the preset's budget (`references/performance.md`).
 6. Add or update a test. Anything visual gets a hold-mode image test in `null3d.json` (`references/testing-and-debugging.md`). Run `bunx @null3d/cli test`, and open each failed image.
@@ -143,7 +143,7 @@ Check this table before you write a generator, control, effect or loader. Each f
 | An open sea whose waves come from GPU-transformed spectra | `@null3d/water` | `api/water` | built |
 | Trees that sway in the wind | a glTF or code-made mesh, with a material that reads `@null3d/wind`'s field | `api/wind` | built (recipe 24) |
 | Wind that plants, flags and smoke read, with travelling gusts and pushes | `@null3d/wind` | `api/wind` | built |
-| Sound that follows the scene: beds such as sea and wind, sources at places, groups of many sources such as cars, and one-shots | `@null3d/sound` | `api/sound`, `guides/audio` | built |
+| Sound placed in the scene, from a sea bed to a street of cars | `@null3d/sound` | `api/sound` | built |
 | three.js look modes for a port: Reinhard and Cineon tone curves, and a soft outline with a glow and a pulse | `@null3d/three-compat` | `api/three-compat` | built |
 
 Drawing:
@@ -256,7 +256,7 @@ Read these when the task needs them:
 
 - The code uses only APIs whose status is `stable` or `experimental`, and no part marked not built yet.
 - Per-frame callbacks allocate nothing.
-- DOM and HTML UI code is in `page.ts`. The scene's sounds are made in the sketch with `@null3d/sound`, and the page starts them in answer to the user.
+- DOM, audio and HTML UI code is in `page.ts`.
 - You looked at a rendered image from `bunx @null3d/cli shot` or the dev server, not only at build output.
 - `bunx @null3d/cli test` passes, including a new or updated image test for visual changes.
 - For rendering changes, the WebGL2 path renders too.
