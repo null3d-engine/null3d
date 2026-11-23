@@ -149,7 +149,17 @@ export function createIslandSound(ctx: SketchContext, camera: Camera): IslandSou
 			field = next;
 		},
 		setTraffic(next) {
+			// The models' traffic takes the placeholders' place with the same vehicles, so its sounds stay
+			// and read the new arrays; a traffic of other counts gets sounds of its own size.
+			const same =
+				traffic !== undefined &&
+				traffic.counts.cars === next.counts.cars &&
+				traffic.counts.buses === next.counts.buses;
 			traffic = next;
+			if (same) return;
+			cars?.destroy();
+			bus?.destroy();
+			bus = undefined;
 			cars = sound.group({ file: carFile, count: next.counts.cars, voices: 4, near: 4, far: 160 });
 			if (next.counts.buses > 0) bus = sound.loop({ file: busFile, near: 5, far: 220, level: 0 });
 		},
