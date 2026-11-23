@@ -4,7 +4,7 @@
 // Every mover is also held clear of the island's standing objects at a fine step of its timeline.
 import { describe, expect, it } from 'bun:test';
 import type { Material, MeshGeometry, SketchContext } from '@null3d/engine';
-import { SEA_LEVEL, sandAt, TOWN, townShare } from './island';
+import { QUAY_FROM, QUAY_TO, quayWallZ, SEA_LEVEL, sandAt, TOWN, townShare } from './island';
 import { HOUSE_KINDS } from './kit';
 import {
 	doorOf,
@@ -20,7 +20,7 @@ import {
 	TREE_SPOTS,
 } from './plan';
 import { LOUNGER_OFFSETS } from './props';
-import { LANE, PARKS } from './routes';
+import { LANE, PARKS, STREET } from './routes';
 import { parasolSpots } from './town';
 import {
 	BUS_HALF_LENGTH,
@@ -46,6 +46,45 @@ import {
 	vehicleAt,
 	vehicleFadeAt,
 } from './traffic';
+
+/** The quay street's middle line at a place along the harbour's head, by x. */
+function quayStreetZ(x: number): number {
+	const quay = ROADS.find((road) => road.half === STREET + 0.5);
+	if (!quay) return 0;
+	let [best, z] = [Infinity, 0];
+	for (const p of quay.points) {
+		const d = Math.abs(p.x - x);
+		if (d < best && p.z > 200) [best, z] = [d, p.z];
+	}
+	return z;
+}
+
+/** Whether a place lies on the harbour's built stone, whose flat drawn street and apron the ground grid does not hold. */
+function onQuayStone(x: number, z: number): boolean {
+	if (x < QUAY_FROM - 2 || x > QUAY_TO + 2) return false;
+	return z > quayStreetZ(x) - STREET - 2 && z < quayWallZ(x) + 2;
+}
+
+/** The side of the quay street that a place lies on: 1 over the water, -1 inland. */
+function waterSide(x: number, z: number): number {
+	const quay = ROADS.find((road) => road.half === STREET + 0.5);
+	if (!quay) return 0;
+	let [best, at] = [Infinity, 0];
+	for (let k = 0; k + 1 < quay.points.length; k++) {
+		const a = quay.points[k] as { x: number; z: number };
+		const b = quay.points[k + 1] as { x: number; z: number };
+		const [dx, dz] = [b.x - a.x, b.z - a.z];
+		const l2 = dx * dx + dz * dz || 1;
+		const t = Math.max(0, Math.min(1, ((x - a.x) * dx + (z - a.z) * dz) / l2));
+		const d = Math.hypot(x - (a.x + dx * t), z - (a.z + dz * t));
+		if (d < best) [best, at] = [d, k];
+	}
+	const a = quay.points[at] as { x: number; z: number };
+	const b = quay.points[at + 1] as { x: number; z: number };
+	const [tx, tz] = [b.x - a.x, b.z - a.z];
+	const side = (px: number, pz: number) => ((px - a.x) * tz - (pz - a.z) * tx >= 0 ? 1 : -1);
+	return side(x, z) === side(a.x, quayWallZ(a.x)) ? 1 : -1;
+}
 
 /** True when a walk leaves the roads for the sand, which takes its own surface. */
 function reachesSand(walk: Path): boolean {
@@ -357,9 +396,37 @@ describe('the people', () => {
 					expect(sandAt(POSE.x, POSE.z)).toBeGreaterThan(0.3);
 				}
 				expect(POSE.y).toBeGreaterThan(SEA_LEVEL + 0.5);
-				expect(slopeAt(POSE.x, POSE.z)).toBeLessThan(0.4);
+				// The quay's street and apron are drawn flat stone; the ground grid under them falls away.
+				if (!onQuayStone(POSE.x, POSE.z)) expect(slopeAt(POSE.x, POSE.z)).toBeLessThan(0.4);
 			}
 		}
+	});
+
+	it('keeps the harbour promenade on the water side of the quay street', () => {
+		let best = 0;
+		let landward = 0;
+		for (const person of PLAN.people) {
+			let run = 0;
+			let land = 0;
+			for (let at = 0; at <= person.walk.length; at += 2) {
+				pathAt(person.walk, at, POSE);
+				if (roadEdge(POSE.x, POSE.z) > 3.6) {
+					run = 0;
+					land = 0;
+					continue;
+				}
+				if (waterSide(POSE.x, POSE.z) > 0) {
+					run += 2;
+					best = Math.max(best, run);
+				} else {
+					land += 2;
+					landward = Math.max(landward, land);
+				}
+			}
+		}
+		// The promenade's long clear run lies over the water; the shorter house walks lie inland.
+		expect(best).toBeGreaterThan(60);
+		expect(best).toBeGreaterThan(landward);
 	});
 
 	it('lifts a pavement walk to the height of the pavement that the town draws', () => {
@@ -1023,6 +1090,45 @@ describe('the walkers', () => {
 });
 
 describe('the drawing', () => {
+	it('reports each moving vehicle and its speed, with the bus last', () => {
+		const { ctx } = fakeScene();
+		const traffic = createTraffic(ctx, createPlaceholderModels(ctx));
+		const moving = PLAN.vehicles;
+		expect(traffic.vehicles.length).toBe(moving.length * 3);
+		expect(traffic.speeds.length).toBe(moving.length);
+		expect(traffic.counts.cars + traffic.counts.buses).toBe(moving.length);
+		// The plan places every car first and the bus last.
+		expect(moving[moving.length - 1]?.kind).toBe('bus');
+		expect(moving.filter((vehicle) => vehicle.kind === 'bus').length).toBe(1);
+
+		const pose: Pose = { x: 0, y: 0, z: 0, yaw: 0 };
+		traffic.update(12.3);
+		moving.forEach((actor, k) => {
+			vehicleAt(actor, 12.3, pose);
+			// Each entry is the drawn place of the vehicle that the plan puts in that slot.
+			expect(traffic.vehicles[k * 3] as number).toBeCloseTo(pose.x, 3);
+			expect(traffic.vehicles[k * 3 + 1] as number).toBeCloseTo(pose.y, 3);
+			expect(traffic.vehicles[k * 3 + 2] as number).toBeCloseTo(pose.z, 3);
+			expect(traffic.speeds[k] as number).toBeGreaterThanOrEqual(0);
+			expect(traffic.speeds[k] as number).toBeLessThanOrEqual(actor.speed + 1e-6);
+		});
+
+		// Cars are out of sight at the very start: they report no speed and keep their last place.
+		traffic.update(5);
+		const places = Float32Array.from(traffic.vehicles);
+		traffic.update(0);
+		let faded = 0;
+		moving.forEach((actor, k) => {
+			if (vehicleFadeAt(actor, 0) > 0) return;
+			faded++;
+			expect(traffic.speeds[k] as number).toBe(0);
+			expect(traffic.vehicles[k * 3] as number).toBe(places[k * 3] as number);
+			expect(traffic.vehicles[k * 3 + 1] as number).toBe(places[k * 3 + 1] as number);
+			expect(traffic.vehicles[k * 3 + 2] as number).toBe(places[k * 3 + 2] as number);
+		});
+		expect(faded).toBeGreaterThan(0);
+	});
+
 	it('writes every mover into a fake scene, with no GPU', () => {
 		const batches: {
 			count: number;

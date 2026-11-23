@@ -66,6 +66,23 @@ export const KEEPS: readonly (readonly [number, number, number])[] = SUMMITS.map
 	([sx, sz, top, radius]) => [sx, sz, top - radius * 0.02],
 );
 
+/**
+ * A tower's court, as offsets from its keep's middle: its walls close the -z, -x and +x sides and
+ * leave the +z side open, and the door stands in the tower's +z face. The wall footprints are x0, z0,
+ * x1, z1.
+ */
+export const COURT_WALLS: readonly (readonly [number, number, number, number])[] = [
+	[-11, -11, 11, -9.2],
+	[-11, -11, -9.2, 11],
+	[9.2, -11, 11, 11],
+];
+/** The open front's half size, where a stair may pass into the court. */
+export const COURT_OPEN = 11;
+/** The door's face on the court's open side, as an offset from the keep's middle. */
+export const COURT_DOOR = { x: 0, z: 5.52 } as const;
+/** The half width of a drawn stone stair, in meters. */
+export const STAIR_HALF = 0.8;
+
 /** How near a road's edge a stair's bed may lie, in meters. */
 const STAIR_EDGE = 1.5;
 
@@ -80,10 +97,10 @@ export function stairTreads(
 	let k = 0;
 	for (let n = 0; n < steps; n++) {
 		const y = first.y + ((last.y - first.y) * n) / steps;
-		while (k + 2 < stair.length && (stair[k + 1] as { y: number }).y <= y) k++;
+		while (k + 2 < stair.length && (stair[k + 1] as { y: number }).y < y) k++;
 		const a = stair[k] as { x: number; y: number; z: number };
 		const b = stair[k + 1] as { x: number; y: number; z: number };
-		const t = (y - a.y) / (b.y - a.y);
+		const t = b.y === a.y ? 0 : (y - a.y) / (b.y - a.y);
 		treads.push({
 			x: a.x + (b.x - a.x) * t,
 			y,
@@ -92,11 +109,11 @@ export function stairTreads(
 			run: 0,
 		});
 	}
-	// A tread reaches to the one above it.
+	// A tread reaches to the one above it, along the line between their middles.
 	treads.forEach((tread, n) => {
 		const above = treads[n + 1] ?? last;
-		const [x, z] = [above.x, above.z];
-		tread.run = hypot(x - tread.x, z - tread.z);
+		tread.run = hypot(above.x - tread.x, above.z - tread.z);
+		tread.heading = Math.atan2(above.z - tread.z, above.x - tread.x);
 	});
 	return treads;
 }
@@ -532,7 +549,17 @@ export function bake(lots: readonly Lot[], stairs: readonly (readonly Tread[])[]
 	}
 	for (let k = 0; k < offset.length; k++) out[k] = (natural[k] as number) + (offset[k] as number);
 	// Each stair's ground, cut or filled, lies just under its steps, and a short bank blends it into the
-	// slope on each side. The first steps leave a street, whose ground stays as it is.
+	// slope on each side. The first steps leave a street, whose ground stays as it is. A court's floor
+	// stays level, so no stair bed cuts across the ground between a tower and its open front.
+	const court = new Uint8Array(SIDE * SIDE);
+	for (const [kx, kz] of KEEPS) {
+		const span = Math.ceil(COURT_OPEN / CELL) + 1;
+		const [ci, cj] = [toCell(kx), toCell(kz)];
+		for (let j = cj - span; j <= cj + span; j++)
+			for (let i = ci - span; i <= ci + span; i++)
+				if (Math.abs(fromCell(i) - kx) <= COURT_OPEN && Math.abs(fromCell(j) - kz) <= COURT_OPEN)
+					court[cellAt(i, j)] = 1;
+	}
 	for (const stair of stairs) {
 		const nearest = new Map<number, [number, number]>();
 		for (let k = 0; k + 1 < stair.length; k++) {
@@ -552,6 +579,7 @@ export function bake(lots: readonly Lot[], stairs: readonly (readonly Tread[])[]
 				}
 		}
 		for (const [at, [d, y]] of nearest) {
+			if (court[at] === 1) continue;
 			const edge = edgeGrid[at] as number;
 			if (edge < STAIR_EDGE || (d > STAIR_BED && (edge < SHOULDER || pinned[at] === 1))) continue;
 			// The bank's width follows the height that it must take up.

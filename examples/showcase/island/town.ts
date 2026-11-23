@@ -13,7 +13,7 @@ import {
 import { type Part, standPart } from '../../lib/blender-models';
 import { INTERIOR_LAYER } from '../../lib/layers';
 import { Noise, random } from '../../lib/procedural';
-import { WAY_HALF } from './ground';
+import { STAIR_HALF, WAY_HALF } from './ground';
 import { type HouseLot, loadHouses, standHouse, standsByKind } from './houses';
 import {
 	BAY,
@@ -69,6 +69,8 @@ import {
 	ROADS,
 	roadEdge,
 	SQUARE,
+	STAIR_APRONS,
+	STAIR_WALKS,
 	STAIRS,
 	slopeAt,
 	stairTreads,
@@ -934,8 +936,6 @@ const GREEN_REACH = 17;
 const SHORTEST_FAIRWAY = 12;
 /** The points of a fairway's line over which its end rounds off. */
 const FAIRWAY_ROUND = 5;
-/** The half width of a stone stair, in meters. */
-const STAIR_HALF = 0.8;
 /** How far a wall keeps from the middle of a house's way, in meters. */
 const WAY_CLEAR = 1.6;
 /** The side in meters of the grid that says whether a tree stands on a wall. */
@@ -950,33 +950,67 @@ function stairsMesh(): Build {
 	const riser: Color = [0.56, 0.52, 0.45];
 	for (const stair of STAIRS) {
 		const treads = stairTreads(stair);
+		const last = stair[stair.length - 1] as { x: number; y: number; z: number };
 		treads.forEach((t, k) => {
+			const next = treads[k + 1];
+			const end = next ?? last;
 			const [ux, uz] = [Math.cos(t.heading), Math.sin(t.heading)];
 			const [nx, nz] = [-uz * STAIR_HALF, ux * STAIR_HALF];
 			const half = t.run / 2 + 0.03;
-			const [bx, bz, fx, fz] = [t.x - ux * half, t.z - uz * half, t.x + ux * half, t.z + uz * half];
-			const top = treads[k + 1]?.y ?? t.y + 0.18;
+			// A tread reaches from its own point to the next one, so the flight tiles its whole line.
+			const [cx, cz] = [t.x + ux * (t.run / 2), t.z + uz * (t.run / 2)];
 			quad(
 				b,
-				[bx - nx, t.y, bz - nz],
-				[bx + nx, t.y, bz + nz],
-				[fx + nx, t.y, fz + nz],
-				[fx - nx, t.y, fz - nz],
+				[cx - ux * half - nx, t.y, cz - uz * half - nz],
+				[cx - ux * half + nx, t.y, cz - uz * half + nz],
+				[cx + ux * half + nx, t.y, cz + uz * half + nz],
+				[cx + ux * half - nx, t.y, cz + uz * half - nz],
 				stone,
 			);
-			// The riser stands at the tread's far edge, up to the next tread.
+			// The riser stands at the tread's far edge, up to the next tread or the door's threshold.
 			quad(
 				b,
-				[fx - nx, t.y - 0.3, fz - nz],
-				[fx + nx, t.y - 0.3, fz + nz],
-				[fx + nx, top, fz + nz],
-				[fx - nx, top, fz - nz],
+				[end.x - nx, t.y - 0.3, end.z - nz],
+				[end.x + nx, t.y - 0.3, end.z + nz],
+				[end.x + nx, end.y, end.z + nz],
+				[end.x - nx, end.y, end.z - nz],
 				riser,
 			);
 		});
 	}
+	// The apron from each flight's foot to its street, and the walk that carries it round its court to
+	// the door. The walk's outer edge stands above the bank, so a stone face holds it.
+	for (const apron of STAIR_APRONS)
+		if (apron.length > 1) strip(b, apron, COURT_WALK_HALF, stone, 0);
+	STAIR_WALKS.forEach((walk, k) => {
+		strip(b, walk, COURT_WALK_HALF, stone, 0);
+		const [kx, kz] = KEEPS[k] as readonly [number, number, number];
+		const edge = (m: number) => {
+			const p = walk[m] as { x: number; y: number; z: number };
+			const a = walk[Math.max(0, m - 1)] as { x: number; z: number };
+			const c = walk[Math.min(walk.length - 1, m + 1)] as { x: number; z: number };
+			const length = hypot(c.x - a.x, c.z - a.z) || 1;
+			const [nx, nz] = [-(c.z - a.z) / length, (c.x - a.x) / length];
+			const side = (p.x - kx) * nx + (p.z - kz) * nz >= 0 ? 1 : -1;
+			const [x, z] = [p.x + nx * side * COURT_WALK_HALF, p.z + nz * side * COURT_WALK_HALF];
+			return { x, y: p.y, z, side, ground: Math.min(p.y - 0.05, groundHeight(x, z) - 0.1) };
+		};
+		const face: Color = [0.6, 0.56, 0.48];
+		for (let n = 0; n + 1 < walk.length; n++) {
+			const [a, c] = [edge(n), edge(n + 1)];
+			if (a.y - Math.min(a.ground, c.ground) < 0.05) continue;
+			// The face turns outward, whichever way the walk runs round the court.
+			if (a.side > 0)
+				quad(b, [c.x, c.y, c.z], [a.x, a.y, a.z], [a.x, a.ground, a.z], [c.x, c.ground, c.z], face);
+			else
+				quad(b, [a.x, a.y, a.z], [c.x, c.y, c.z], [c.x, c.ground, c.z], [a.x, a.ground, a.z], face);
+		}
+	});
 	return b;
 }
+
+/** The half width of a court walk, in meters: its inner edge meets the court wall's face. */
+const COURT_WALK_HALF = 1.3;
 
 /** Writes one row of a batch: its place, its turn, and optionally its color and its size. */
 function row(
@@ -1606,6 +1640,51 @@ function quayStreetZ(x: number, road: Road): number {
 	return z;
 }
 
+/** The nearest point of a road's middle line to a place. */
+function nearestRoadPoint(road: Road, x: number, z: number): RoadPoint {
+	let best = road.points[0] as RoadPoint;
+	let least = Number.POSITIVE_INFINITY;
+	for (const p of road.points) {
+		const d = hypot(p.x - x, p.z - z);
+		if (d < least) [least, best] = [d, p];
+	}
+	return best;
+}
+
+/** The paved way from the square's north edge down the bank to the harbour street. */
+export const SQUARE_HARBOUR_PATH: readonly { x: number; y: number; z: number }[] = (() => {
+	const quay = ROADS.find((road) => road.half === STREET + 0.5) as Road;
+	const x = -94.2;
+	const from = SQUARE.z + SQUARE.hz;
+	const to = nearestRoadPoint(quay, x, from + 30);
+	const end = to.z - quay.half;
+	const steps = Math.max(2, Math.ceil((end - from) / 2));
+	const path: { x: number; y: number; z: number }[] = [];
+	for (let k = 0; k <= steps; k++) {
+		const t = k / steps;
+		const z = from + (end - from) * t;
+		// It leaves the flagstones and lies on the bank, then rises to the street's shoulder.
+		const y = k === 0 ? squarePavingHeight(x, from) : groundHeight(x, z) + 0.12;
+		path.push({ x, y, z });
+	}
+	(path[path.length - 1] as { y: number }).y = to.y + ROAD_LIFT;
+	return path;
+})();
+
+/** The stone flight from the harbour street's shoulder down to the quay apron, west of the harbour's head. */
+export const HARBOUR_STAIR: readonly { x: number; y: number; z: number }[] = (() => {
+	const quay = ROADS.find((road) => road.half === STREET + 0.5) as Road;
+	const top = nearestRoadPoint(quay, -216, 306);
+	const foot = { x: -203, y: 2.1, z: quayWallZ(-203) - 1.5 };
+	return [{ x: -216, y: top.y + ROAD_LIFT, z: top.z + quay.half }, foot];
+})();
+
+/** The stone causeway from the quay's west end to the breakwater's root. */
+export const BREAKWATER_CAUSEWAY = {
+	a: { x: -212, y: 2.1, z: 310.7 },
+	b: { x: -250, y: 1.9, z: 392 },
+} as const;
+
 /** The half beam and half length of the largest yacht's hull, in meters. */
 export const HULL_HALF = [2.3, 7] as const;
 /** The water that a hull keeps under it, in meters, and the steps of 2 m that a boat may stand off. */
@@ -1814,6 +1893,48 @@ function createHarbour(
 	};
 	mole(52, 334, 8, 372, 3.4);
 	mole(-92, 281, -92, 322, 2.6);
+	// The causeway out to the breakwater's root, and the stone flight down from the street to the
+	// apron at the quay's west end.
+	mole(
+		BREAKWATER_CAUSEWAY.a.x,
+		BREAKWATER_CAUSEWAY.a.z,
+		BREAKWATER_CAUSEWAY.b.x,
+		BREAKWATER_CAUSEWAY.b.z,
+		2.5,
+	);
+	const stair = HARBOUR_STAIR;
+	const [top, foot] = [
+		stair[0] as { x: number; y: number; z: number },
+		stair[1] as { x: number; y: number; z: number },
+	];
+	const run = hypot(foot.x - top.x, foot.z - top.z) || 1;
+	const [sx, sz] = [(foot.x - top.x) / run, (foot.z - top.z) / run];
+	const [nx, nz] = [-sz, sx];
+	const steps = Math.max(2, Math.ceil((top.y - foot.y) / 0.18));
+	for (let k = 0; k < steps; k++) {
+		const t = (k + 0.5) / steps;
+		const [x, z] = [top.x + (foot.x - top.x) * t, top.z + (foot.z - top.z) * t];
+		const y = top.y - (top.y - foot.y) * (k / steps);
+		const half = run / steps / 2 + 0.03;
+		quad(
+			b,
+			[x - sx * half - nx * 0.9, y, z - sz * half - nz * 0.9],
+			[x - sx * half + nx * 0.9, y, z - sz * half + nz * 0.9],
+			[x + sx * half + nx * 0.9, y, z + sz * half + nz * 0.9],
+			[x + sx * half - nx * 0.9, y, z + sz * half - nz * 0.9],
+			paving,
+		);
+		const below = top.y - (top.y - foot.y) * ((k + 1) / steps);
+		quad(
+			b,
+			[x + sx * half - nx * 0.9, below - 0.3, z + sz * half - nz * 0.9],
+			[x + sx * half + nx * 0.9, below - 0.3, z + sz * half + nz * 0.9],
+			[x + sx * half + nx * 0.9, below, z + sz * half + nz * 0.9],
+			[x + sx * half - nx * 0.9, below, z + sz * half - nz * 0.9],
+			edge,
+		);
+	}
+	strip(b, SQUARE_HARBOUR_PATH, 0.8, paving, 0);
 	const [tipX, tipZ] = [-82, 424];
 	const [startX, startZ] = [-250, 392];
 	// The breakwater's paved top, with a low wall along its sea side.
@@ -2285,6 +2406,7 @@ export interface ParkPlan {
 	shape: (a: number) => number;
 	walk: ParkPoint[];
 	branch: ParkPoint[];
+	spur: ParkPoint[];
 	gazebo: ParkPoint;
 	seats: ParkSeat[];
 	lamps: ParkPoint[];
@@ -2308,6 +2430,39 @@ function parkWalk(x: number, z: number, shape: (a: number) => number) {
 		walk.push({ x: px, y: groundHeight(px, pz), z: pz });
 	}
 	return walk;
+}
+
+/** The gravel spur from a park's walk to the nearest street, over the ground that it crosses. */
+function parkSpur(walk: readonly ParkPoint[]): ParkPoint[] {
+	// The walk point nearest a street.
+	let best: ParkPoint | undefined;
+	let edge = Number.POSITIVE_INFINITY;
+	for (let k = 2; k < walk.length - 2; k += 2) {
+		const p = walk[k] as ParkPoint;
+		const at = roadEdge(p.x, p.z);
+		if (at < edge) [edge, best] = [at, p];
+	}
+	if (!best || edge <= 0) return [];
+	// The nearest street point, and the spur's end at that street's edge.
+	let [target, gap, half] = [best, Number.POSITIVE_INFINITY, 0];
+	for (const road of ROADS)
+		for (const p of road.points) {
+			const d = hypot(p.x - best.x, p.z - best.z) - road.half;
+			if (d < gap) [target, gap, half] = [p, d, road.half];
+		}
+	if (!Number.isFinite(gap) || gap <= 0) return [];
+	const length = hypot(target.x - best.x, target.z - best.z) || 1;
+	const reach = Math.max(0, length - half);
+	const [ux, uz] = [(target.x - best.x) / length, (target.z - best.z) / length];
+	const spur: ParkPoint[] = [];
+	const steps = Math.max(2, Math.ceil(reach / 1.5));
+	for (let k = 0; k <= steps; k++) {
+		const t = k / steps;
+		const px = best.x + ux * reach * t;
+		const pz = best.z + uz * reach * t;
+		spur.push({ x: px, y: groundHeight(px, pz), z: pz });
+	}
+	return spur;
 }
 
 /** The branch of a park's walk that leads to its gazebo, over the ground that it crosses. */
@@ -2337,6 +2492,7 @@ const BRANCH_LIFT = 0.34;
 const APRON_REACH = 3;
 const WALK_STRIP = 1.5;
 const BRANCH_STRIP = 1.2;
+const SPUR_STRIP = 1.2;
 /** The radius of a gazebo's lowest step, and how far a bench reaches around its own middle, in meters. */
 const GAZEBO_STEP = 4.7;
 const BENCH_REACH = 1;
@@ -2374,6 +2530,8 @@ export function parkSurface(plan: ParkPlan, x: number, z: number): number {
 	if (gapToLine(plan.walk, x, z) <= WALK_STRIP) height = ground + PARK_BASE + WALK_LIFT;
 	if (gapToLine(plan.branch, x, z) <= BRANCH_STRIP)
 		height = Math.max(height, ground + PARK_BASE + BRANCH_LIFT);
+	if (gapToLine(plan.spur, x, z) <= SPUR_STRIP)
+		height = Math.max(height, ground + PARK_BASE + WALK_LIFT);
 	if (d <= edge) height = Math.max(height, ground + PARK_BASE + LAWN_LIFT);
 	else if (d <= edge + APRON_REACH) height = Math.max(height, ground + PARK_BASE + APRON_LIFT);
 	return height > Number.NEGATIVE_INFINITY ? height : ground;
@@ -2402,6 +2560,14 @@ export function parkPlans(): ParkPlan[] {
 		const shape = parkShape(x, z, r);
 		const walk = parkWalk(x, z, shape);
 		const branch = parkBranch(x, z, walk);
+		const spur = parkSpur(walk);
+		const gate =
+			spur.length > 1
+				? Math.atan2(
+						(spur[spur.length - 1] as ParkPoint).z - z,
+						(spur[spur.length - 1] as ParkPoint).x - x,
+					)
+				: NaN;
 		const [gx, gz] = [x + 3, z + 2];
 		const plan: ParkPlan = {
 			x,
@@ -2412,6 +2578,7 @@ export function parkPlans(): ParkPlan[] {
 			shape,
 			walk,
 			branch,
+			spur,
 			gazebo: { x: gx, y: groundHeight(gx, gz) + PARK_BASE + LAWN_LIFT, z: gz },
 			seats: [],
 			lamps: [],
@@ -2453,6 +2620,7 @@ export function parkPlans(): ParkPlan[] {
 		for (let k = 0; k < 54; k++) {
 			const a = (k / 54) * Math.PI * 2;
 			const rr = shape(a) + 1.5 + ((k * 7) % 5) * 0.5;
+			if (Math.abs(Math.atan2(Math.sin(a - gate), Math.cos(a - gate))) < 0.22) continue;
 			const [hx, hz] = [x + Math.cos(a) * rr, z + Math.sin(a) * rr];
 			plan.hedges.push({
 				x: hx,
@@ -2476,6 +2644,8 @@ export function parkPlans(): ParkPlan[] {
 			const [ra, rb] = [shape(a) + 5, shape(a + 0.08) + 5];
 			const [ax, az] = [x + Math.cos(a) * ra, z + Math.sin(a) * ra];
 			const [bx, bz] = [x + Math.cos(a + 0.08) * rb, z + Math.sin(a + 0.08) * rb];
+			// No wall crosses a street that passes the park.
+			if (Math.min(roadEdge(ax, az), roadEdge(bx, bz)) < 1) continue;
 			plan.wall.push({
 				a: { x: ax, y: groundHeight(ax, az), z: az },
 				b: { x: bx, y: groundHeight(bx, bz), z: bz },
@@ -2489,7 +2659,7 @@ export function parkPlans(): ParkPlan[] {
 export function parkLawns() {
 	return parkPlans().map((plan) => {
 		const { x, z, r, shape, walk } = plan;
-		const paths = [...walk, ...plan.branch];
+		const paths = [...walk, ...plan.branch, ...plan.spur];
 		return {
 			x,
 			z,
@@ -2538,7 +2708,7 @@ function createParks(ctx: SketchContext, surfaces: Surfaces): InstanceBatch {
 	const lawn: Color = [0.15, 0.26, 0.07];
 	const gravel: Color = [0.5, 0.45, 0.34];
 	for (const plan of parkPlans()) {
-		const { x, z, shape, walk, branch, gazebo } = plan;
+		const { x, z, shape, walk, branch, spur, gazebo } = plan;
 		// An uneven lawn, and a gravel walk that winds around it with a branch to the gazebo. Every
 		// layer follows the ground that it crosses, so the park meets the hillside at its rim. The lawn
 		// fades into its darker apron over its last half metre, so its outline does not read as a line.
@@ -2588,6 +2758,13 @@ function createParks(ctx: SketchContext, surfaces: Surfaces): InstanceBatch {
 			() => BRANCH_STRIP,
 			() => gravel,
 			PARK_BASE + BRANCH_LIFT,
+		);
+		ribbon(
+			b,
+			spur,
+			() => SPUR_STRIP,
+			() => gravel,
+			PARK_BASE + WALK_LIFT,
 		);
 		const hall = pavilion();
 		const place = [gazebo.x, gazebo.y, gazebo.z] as [number, number, number];

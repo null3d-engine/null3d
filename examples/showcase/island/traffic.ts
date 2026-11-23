@@ -218,7 +218,7 @@ export interface TrafficOptions {
 	 * walkers; the rest stand as far proxies. Left out, every person draws as a proxy.
 	 */
 	readonly watch?: readonly (readonly [number, number, number])[];
-	/** How many people walk as models near the watch places. The default is 6. */
+	/** How many people walk as models near the watch places. The default is 12. */
 	readonly walkers?: number;
 }
 
@@ -303,6 +303,13 @@ export interface Traffic {
 	readonly rows: number;
 	/** The number of instance batches, which is one draw call each. */
 	readonly batches: number;
+	/**
+	 * The moving vehicles' drawn places, three numbers a vehicle: x, y and z. The cars come first,
+	 * in the plan's order, and the bus is last when it runs. Parked cars are not included.
+	 */
+	readonly vehicles: Float32Array;
+	/** The speed of each moving vehicle, in meters a second, in the same order; 0 out of sight. */
+	readonly speeds: Float32Array;
 }
 
 /** The seed of the default plan. */
@@ -2513,7 +2520,9 @@ export function planTraffic(options: TrafficOptions = {}): TrafficPlan {
 	const promenadeA = arcNear(quayRoad, -77, 276);
 	const promenadeB = arcNear(quayRoad, 30, 298);
 	const quayCumulative = arcsOf(quayRoad);
-	const promenadeSide = sideToward(quayRoad, quayCumulative, promenadeA, -77, 240);
+	// The water side of the quay street: the houses stand on the inland side, so the walk is clear
+	// along the harbour's edge.
+	const promenadeSide = sideToward(quayRoad, quayCumulative, promenadeA, -77, 350);
 	const eastCumulative = arcsOf(eastStreet);
 	const churchSide = sideToward(eastStreet, eastCumulative, churchEast, CHURCH_AT.x, CHURCH_AT.z);
 	// The seconds that a walk's end stays out of sight, so the fade reads and the person is gone.
@@ -3196,6 +3205,12 @@ export function createTraffic(
 
 	const carSteers = models.car.some((part) => part.wheel?.front === true);
 	const busSteers = models.bus.some((part) => part.wheel?.front === true);
+	// The sound add-on reads the moving vehicles' places and speeds; these arrays never grow.
+	const moving = plan.vehicles;
+	const vehiclePlaces = new Float32Array(moving.length * 3);
+	const vehicleSpeeds = new Float32Array(moving.length);
+	const lastDistances = new Float64Array(moving.length);
+	let lastSeconds = Number.NaN;
 	const drive: Drive = { distance: 0, steer: 0 };
 	const vehiclePose: Pose = { x: 0, y: 0, z: 0, yaw: 0 };
 	const personState: PersonState = { x: 0, y: 0, z: 0, yaw: 0, hidden: false, fade: 0 };
@@ -3205,24 +3220,34 @@ export function createTraffic(
 		mover: BoundMover<VehicleActor>,
 		seconds: number,
 		steers: boolean,
+		index: number,
 	): void => {
+		const fade = vehicleFadeAt(mover.actor, seconds);
 		vehicleAt(mover.actor, seconds, vehiclePose);
 		drive.distance = vehicleDistanceAt(mover.actor, seconds);
 		drive.steer = steers ? steerAt(mover.actor, drive.distance) : 0;
-		writeRow(
-			mover.parts,
-			mover.row,
-			vehiclePose,
-			1,
-			drive,
-			undefined,
-			vehicleFadeAt(mover.actor, seconds),
-		);
+		// A vehicle out of sight keeps the place it last held, and it is not heard.
+		if (fade > 0) {
+			const dt = seconds - lastSeconds;
+			const moved = Math.abs(drive.distance - (lastDistances[index] as number));
+			vehicleSpeeds[index] =
+				dt > 1e-6 ? Math.min(mover.actor.speed, moved / dt) : mover.actor.speed;
+			vehiclePlaces[index * 3] = vehiclePose.x;
+			vehiclePlaces[index * 3 + 1] = vehiclePose.y;
+			vehiclePlaces[index * 3 + 2] = vehiclePose.z;
+		} else {
+			vehicleSpeeds[index] = 0;
+		}
+		lastDistances[index] = drive.distance;
+		writeRow(mover.parts, mover.row, vehiclePose, 1, drive, undefined, fade);
 	};
 
 	const update = (seconds: number): void => {
-		for (const mover of carMovers) driveVehicle(mover, seconds, carSteers);
-		for (const mover of busMovers) driveVehicle(mover, seconds, busSteers);
+		// The plan's order is the cars first, then the bus, and the binders keep that order.
+		let index = 0;
+		for (const mover of carMovers) driveVehicle(mover, seconds, carSteers, index++);
+		for (const mover of busMovers) driveVehicle(mover, seconds, busSteers, index++);
+		lastSeconds = seconds;
 		for (const mover of proxies) {
 			const state = personAt(mover.actor, seconds, personState);
 			const stride = state.hidden ? undefined : personStrideAt(mover.actor, seconds, personWalk);
@@ -3264,7 +3289,15 @@ export function createTraffic(
 		cars.length * carParts +
 		buses.length * busParts +
 		proxyRows;
-	return { update, destroy, counts: plan.counts, rows: rowCount, batches: batches.length };
+	return {
+		update,
+		destroy,
+		counts: plan.counts,
+		rows: rowCount,
+		batches: batches.length,
+		vehicles: vehiclePlaces,
+		speeds: vehicleSpeeds,
+	};
 }
 
 /**

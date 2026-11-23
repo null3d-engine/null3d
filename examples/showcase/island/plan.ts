@@ -7,6 +7,9 @@ import {
 	bake,
 	CELL,
 	CHURCH_AT,
+	COURT_DOOR,
+	COURT_OPEN,
+	COURT_WALLS,
 	cellAt,
 	clumps,
 	edgeGrid,
@@ -14,6 +17,7 @@ import {
 	groundHeight,
 	inCore,
 	inWorld,
+	KEEPS,
 	LOOKUP,
 	type Lot,
 	lookupKey,
@@ -24,6 +28,7 @@ import {
 	roadEdge,
 	SIDE,
 	SQUARE,
+	STAIR_HALF,
 	slopeAt,
 	TERRACE_RISE,
 	type Tread,
@@ -154,6 +159,8 @@ function decodeLayout(): {
 	roads: Road[];
 	lots: Lot[];
 	stairs: Tread[][];
+	walks: Tread[][];
+	aprons: Tread[][];
 } {
 	const toPoints = (flat: readonly number[]): RoadPoint[] => {
 		const points: RoadPoint[] = [];
@@ -195,33 +202,188 @@ function decodeLayout(): {
 			tone: (f[12] as number) / 1000,
 		};
 	});
-	for (const points of stairs) reachRoad(points, roads);
-	return { roads, lots, stairs };
+	// The foot of every flight gains an apron to its street, and its top gives way to a level court
+	// walk, which rounds the court's closed walls and enters at its open front, so every stair reaches
+	// the door.
+	const flights: Tread[][] = [];
+	const walks: Tread[][] = [];
+	const aprons: Tread[][] = [];
+	stairs.forEach((points, k) => {
+		aprons.push(footApron(points, roads));
+		const [, , ky] = KEEPS[k] as readonly [number, number, number];
+		const [kx, kz] = KEEPS[k] as readonly [number, number, number];
+		const flight = points.map((p) => ({ ...p }));
+		while (flight.length > 1 && nearCourtWall(flight[flight.length - 1] as Tread, kx, kz))
+			flight.pop();
+		flights.push(flight);
+		walks.push(courtWalk(flight[flight.length - 1] as Tread, kx, kz, ky));
+	});
+	return { roads, lots, stairs: flights, walks, aprons };
+}
+
+/** How near a court wall a tread's edge may stand, in meters. */
+const COURT_CLEAR = STAIR_HALF + 0.15;
+/** How far from a court's middle its walk runs, past the walls and the tread's width, in meters. */
+const COURT_LANE = COURT_OPEN + STAIR_HALF + 0.5;
+
+/** Whether a tread at a place would stand in, or against, one of a court's closed walls. */
+function nearCourtWall(point: { x: number; z: number }, kx: number, kz: number): boolean {
+	const [u, v] = [point.x - kx, point.z - kz];
+	return COURT_WALLS.some(
+		([x0, z0, x1, z1]) =>
+			u > x0 - COURT_CLEAR && u < x1 + COURT_CLEAR && v > z0 - COURT_CLEAR && v < z1 + COURT_CLEAR,
+	);
+}
+
+/** A place on the lane that runs round a court, at a distance along it from the court's open front. */
+function lanePlace(along: number): { x: number; z: number } {
+	const lane = COURT_LANE;
+	const side = 2 * lane;
+	let a = ((along % (4 * side)) + 4 * side) % (4 * side);
+	if (a <= lane) return { x: a, z: lane };
+	a -= lane;
+	if (a <= side) return { x: lane, z: lane - a };
+	a -= side;
+	if (a <= side) return { x: lane - a, z: -lane };
+	a -= side;
+	if (a <= side) return { x: -lane, z: -lane + a };
+	a -= side;
+	return { x: -lane + a, z: lane };
+}
+
+/** The walk from a flight's clear end, round the court's outside, in at its open front, to the door. */
+function courtWalk(end: Tread, kx: number, kz: number, y: number): Tread[] {
+	const lane = COURT_LANE;
+	let [u, v] = [end.x - kx, end.z - kz];
+	// Out to the lane that runs round the court, past the walls.
+	if (Math.abs(u) >= Math.abs(v)) u = Math.sign(u || 1) * lane;
+	else v = Math.sign(v || 1) * lane;
+	const start = { x: kx + u, z: kz + v };
+	// The walk's start on the lane, as a distance round from the court's open front.
+	const along =
+		Math.abs(u) >= Math.abs(v)
+			? u > 0
+				? lane + (lane - v)
+				: 5 * lane + (v + lane)
+			: v > 0
+				? u >= 0
+					? u
+					: 8 * lane + u
+				: 3 * lane + (lane - u);
+	const points: Tread[] = [
+		{ x: end.x, y, z: end.z },
+		{ x: start.x, y, z: start.z },
+	];
+	// The shorter way round the lane to the open front, then straight in to the door.
+	const way = along <= 4 * lane ? -1 : 1;
+	const span = way < 0 ? along : 8 * lane - along;
+	const steps = Math.max(1, Math.ceil(span / 2));
+	for (let n = 1; n <= steps; n++) {
+		const a = along + way * span * (n / steps);
+		const p = lanePlace(a);
+		points.push({ x: kx + p.x, y, z: kz + p.z });
+	}
+	const inner = Math.max(1, Math.ceil((lane - COURT_DOOR.z) / 2));
+	for (let n = 1; n <= inner; n++) {
+		const z = lane + (COURT_DOOR.z - lane) * (n / inner);
+		points.push({ x: kx + COURT_DOOR.x, y, z: kz + z });
+	}
+	// Where the flight's top stands below the court, the walk rises to the court over its first stretch.
+	const rise = y - (end.y as number);
+	if (rise > 0.05) {
+		let along = 0;
+		for (let n = 0; n < points.length; n++) {
+			const p = points[n] as Tread;
+			if (n > 0) {
+				const q = points[n - 1] as Tread;
+				along += hypot(p.x - q.x, p.z - q.z);
+			}
+			p.y = (end.y as number) + rise * Math.min(1, along / 4);
+		}
+	}
+	return points;
 }
 
 /** Lengthens a stair at its foot, in level steps of about this many meters, until it stands on its road. */
 const STAIR_FOOT_STEP = 1.5;
 
-/** Runs a stair's foot on to the edge of the nearest road, so no grass lies between them. */
-function reachRoad(points: { x: number; y: number; z: number }[], roads: readonly Road[]): void {
+/** How far a place lies outside the nearest road's edge, in meters; negative on the road. */
+function roadGap(x: number, z: number, roads: readonly Road[]): number {
+	let least = Number.POSITIVE_INFINITY;
+	for (const road of roads)
+		for (const p of road.points) least = Math.min(least, hypot(p.x - x, p.z - z) - road.half);
+	return least;
+}
+
+/**
+ * The apron that runs a stair's foot on to its road, along the line of the stair's first step, so the
+ * foot meets the road without a turn. Where that line misses the road, it runs to the nearest edge.
+ */
+function footApron(
+	points: readonly { x: number; y: number; z: number }[],
+	roads: readonly Road[],
+): Tread[] {
 	const foot = points[0] as { x: number; y: number; z: number };
-	let [nearest, reach, half] = [foot as { x: number; y: number; z: number }, Infinity, 0];
+	const next = points[1] as { x: number; y: number; z: number } | undefined;
+	if (roadGap(foot.x, foot.z, roads) <= 0.3) return [];
+	if (next) {
+		const length = hypot(foot.x - next.x, foot.z - next.z) || 1;
+		const [ux, uz] = [(foot.x - next.x) / length, (foot.z - next.z) / length];
+		for (let reach = STAIR_FOOT_STEP; reach <= 20; reach += STAIR_FOOT_STEP) {
+			const x = foot.x + ux * reach;
+			const z = foot.z + uz * reach;
+			if (roadGap(x, z, roads) > 0.3) continue;
+			let y = foot.y;
+			let least = Number.POSITIVE_INFINITY;
+			for (const road of roads)
+				for (const p of road.points) {
+					const d = hypot(p.x - x, p.z - z) - road.half;
+					if (d < least) [least, y] = [d, p.y];
+				}
+			const apron: Tread[] = [];
+			const steps = Math.max(1, Math.ceil(reach / STAIR_FOOT_STEP));
+			for (let k = steps; k >= 1; k--) {
+				const t = k / steps;
+				apron.unshift({
+					x: foot.x + ux * reach * t,
+					y: foot.y + (y - foot.y) * t,
+					z: foot.z + uz * reach * t,
+				});
+			}
+			apron.push(foot);
+			return apron;
+		}
+	}
+	let [nearest, reach, half] = [foot, Number.POSITIVE_INFINITY, 0];
 	for (const road of roads)
 		for (const p of road.points) {
 			const d = hypot(p.x - foot.x, p.z - foot.z) - road.half;
 			if (d < reach) [nearest, reach, half] = [p, d, road.half];
 		}
-	if (reach <= 0) return;
+	if (reach <= 0) return [];
 	const whole = reach + half;
+	const apron: Tread[] = [];
 	const steps = Math.ceil((reach + 0.3) / STAIR_FOOT_STEP);
 	for (let k = 1; k <= steps; k++) {
 		const t = (k / steps) * ((reach + 0.3) / whole);
-		points.unshift({
+		apron.unshift({
 			x: foot.x + (nearest.x - foot.x) * t,
 			y: foot.y + (nearest.y - foot.y) * t,
 			z: foot.z + (nearest.z - foot.z) * t,
 		});
 	}
+	// Its last stretch runs along the stair's first step, so the foot meets the tread without a turn.
+	// A stair of one point has no first step, so its stretch runs to the road point instead.
+	const ahead = next ?? nearest;
+	const sl = hypot(ahead.x - foot.x, ahead.z - foot.z) || 1;
+	const lead = Math.min(1.5, reach / 2) / sl;
+	apron.push({
+		x: foot.x - (ahead.x - foot.x) * lead,
+		y: foot.y,
+		z: foot.z - (ahead.z - foot.z) * lead,
+	});
+	apron.push(foot);
+	return apron;
 }
 
 /** The stored plan, decoded: a house names its road and gate. */
@@ -232,9 +394,13 @@ export const ROADS: readonly Road[] = decoded.roads;
 export const LOTS: readonly Lot[] = decoded.lots;
 /** The stone stair from each village up to its hill's tower's door: its points, with their heights. */
 export const STAIRS: readonly (readonly Tread[])[] = decoded.stairs;
+/** The level court walk from each flight's top, round the court's outside, to its door. */
+export const STAIR_WALKS: readonly (readonly Tread[])[] = decoded.walks;
+/** The apron from each flight's foot to the street below it. */
+export const STAIR_APRONS: readonly (readonly Tread[])[] = decoded.aprons;
 
 rasterAll(ROADS);
-bake(LOTS, STAIRS);
+bake(LOTS, [...STAIRS, ...STAIR_APRONS]);
 
 /** The plots near each cell of the lookup, which the trees read. */
 const taken = new Uint8Array(SIDE * SIDE);
@@ -966,7 +1132,7 @@ export const SHRUBS: readonly ShrubSpot[] = (() => {
 })();
 
 /** The fingerprint of the stored plan, which the plan tests and the browser test both hold it to. */
-export const PLAN_FINGERPRINT = 3785459049;
+export const PLAN_FINGERPRINT = 2559993068;
 
 /**
  * A number that changes with any road, house, tree, wall or sample of the ground, to the millimeter. A

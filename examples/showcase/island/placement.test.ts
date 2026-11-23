@@ -5,17 +5,21 @@
 // two parasol canvases may overlap, and every prop's ground contacts must lie over the surface that
 // carries it.
 import { describe, expect, it } from 'bun:test';
-import { hypot } from './island';
+import { hypot, quayWallZ } from './island';
 import { type Build, bareTable, bench, HOUSE_KINDS, pavilion, planter, streetLamp } from './kit';
-import { groundHeight, LOTS, ROADS } from './plan';
+import { groundHeight, LOTS, ROADS, roadEdge, SQUARE } from './plan';
 import { LOUNGER_OFFSETS, loungerStands } from './props';
+import { STREET } from './routes';
 import {
+	BREAKWATER_CAUSEWAY,
+	HARBOUR_STAIR,
 	HULL_HALF,
 	HULL_WATER,
 	hullDepth,
 	MOORINGS,
 	parasolClubs,
 	parkPlans,
+	SQUARE_HARBOUR_PATH,
 	squareFloor,
 	squarePavingHeight,
 	squarePropPlaces,
@@ -415,5 +419,87 @@ describe('the island props stand on their surfaces', () => {
 					offenders.push(`${i} and ${j}`);
 			}
 		expect(offenders).toEqual([]);
+	});
+
+	describe('the walks that the plan owes', () => {
+		it('runs a gravel spur from every park walk to a street', () => {
+			const bad: string[] = [];
+			for (const plan of parkPlans()) {
+				const spur = plan.spur;
+				if (spur.length < 2) {
+					bad.push(`park ${plan.x | 0},${plan.z | 0} has no spur`);
+					continue;
+				}
+				const end = spur[spur.length - 1] as { x: number; z: number };
+				if (roadEdge(end.x, end.z) > 0.6)
+					bad.push(
+						`park ${plan.x | 0},${plan.z | 0} spur stops ${roadEdge(end.x, end.z).toFixed(1)} m short`,
+					);
+				const start = spur[0] as { x: number; z: number };
+				const walk = plan.walk;
+				const near = walk.some((p) => hypot(p.x - start.x, p.z - start.z) < 0.01);
+				if (!near) bad.push(`park ${plan.x | 0},${plan.z | 0} spur leaves its walk`);
+			}
+			expect(bad).toEqual([]);
+		});
+
+		it('keeps every lookout wall off every street', () => {
+			const bad: string[] = [];
+			for (const plan of parkPlans())
+				for (const stretch of plan.wall) {
+					const [a, b] = [stretch.a, stretch.b];
+					const mid = { x: (a.x + b.x) / 2, z: (a.z + b.z) / 2 };
+					if (Math.min(roadEdge(a.x, a.z), roadEdge(b.x, b.z), roadEdge(mid.x, mid.z)) < 0.6)
+						bad.push(`wall at ${mid.x | 0},${mid.z | 0}`);
+				}
+			expect(bad).toEqual([]);
+		});
+
+		it('steps from the harbour street down to its apron, and from the square down to the harbour', () => {
+			const quay = ROADS.find((road) => road.half === STREET + 0.5);
+			expect(quay).toBeDefined();
+			const [top, foot] = [
+				HARBOUR_STAIR[0] as { x: number; y: number; z: number },
+				HARBOUR_STAIR[1] as { x: number; y: number; z: number },
+			];
+			expect(roadEdge(top.x, top.z), 'the stair footer on the street').toBeLessThan(0.6);
+			expect(Math.abs(foot.y - 2.1), 'the stair lands on the apron').toBeLessThan(0.15);
+			expect(foot.z, 'the stair lands on the apron').toBeLessThan(quayWallZ(foot.x));
+			expect(top.y - foot.y, 'the stair drops').toBeGreaterThan(1);
+			const path = SQUARE_HARBOUR_PATH;
+			const [start, end] = [
+				path[0] as { x: number; y: number; z: number },
+				path[path.length - 1] as { x: number; y: number; z: number },
+			];
+			expect(
+				Math.abs(start.y - squarePavingHeight(start.x, start.z)),
+				'the path starts on the flags',
+			).toBeLessThan(0.25);
+			expect(Math.abs(start.x - SQUARE.x), 'the path starts inside the square').toBeLessThan(
+				SQUARE.hx,
+			);
+			expect(end.z, 'the path leaves the square').toBeGreaterThan(SQUARE.z + SQUARE.hz);
+			expect(roadEdge(end.x, end.z), 'the path meets the harbour street').toBeLessThan(0.6);
+			for (const lot of LOTS) {
+				const { half } = HOUSE_KINDS[lot.kind] as (typeof HOUSE_KINDS)[number];
+				const [c, s] = [Math.cos(lot.yaw), Math.sin(lot.yaw)];
+				for (const p of path) {
+					const [dx, dz] = [p.x - lot.x, p.z - lot.z];
+					expect(
+						Math.abs(dx * c - dz * s) >= half[0] || Math.abs(dx * s + dz * c) >= half[1],
+						`path through a house at ${p.x | 0},${p.z | 0}`,
+					).toBe(true);
+				}
+			}
+		});
+
+		it('runs a causeway from the quay to the breakwater', () => {
+			const { a, b } = BREAKWATER_CAUSEWAY;
+			expect(a.z, 'the causeway starts on the quay apron').toBeLessThan(quayWallZ(a.x) + 1);
+			expect(Math.abs(a.y - 2.1), 'the causeway starts on the apron').toBeLessThan(0.2);
+			expect(hypot(b.x + 250, b.z - 392), 'the causeway reaches the breakwater root').toBeLessThan(
+				1,
+			);
+		});
 	});
 });
