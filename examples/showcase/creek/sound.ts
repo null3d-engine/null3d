@@ -25,6 +25,8 @@ const QUICK = 0.9;
 const CROWN = 4.5;
 /** The wind's speed, in meters a second, at which the wind and the leaves reach their full level. */
 const FULL_WIND = 11;
+/** The share of the gap that the wind's speed closes each frame, which settles it in about half a second. */
+const AIR_FOLLOWS = 0.06;
 
 /** The creek garden's sound, which the sketch updates once a frame after the camera moves. */
 export interface CreekSound {
@@ -50,9 +52,6 @@ export function createCreekSound(ctx: SketchContext, camera: Camera, wind: Wind)
 		const [along, across] = streamCurrent(x);
 		creek.setPosition(k, x, WATER + 0.1, streamZ(x));
 		creek.setLevel(k, 0.4 + 0.4 * Math.min(1, Math.hypot(along, across) / QUICK));
-		// Two copies of one recording at the same pitch comb into a metallic flutter, and the
-		// group swaps copies as the camera moves. A few per cent apart, they sound like one stream.
-		creek.setRate(k, 0.97 + 0.06 * ((k * 0.618033988749895) % 1));
 	});
 
 	// Each fall sounds from the middle of its drop, a little out from the rim.
@@ -65,8 +64,7 @@ export function createCreekSound(ctx: SketchContext, camera: Camera, wind: Wind)
 			far: 120,
 			position: [x + out, WATER - FALL.drop / 2, streamZ(x)],
 		});
-		// The two falls play one recording, so a few per cent apart keeps them from combing where
-		// both are heard.
+		// Two falls play one recording, so a few per cent apart they sound like two falls.
 		fall.setRate(n === 0 ? 0.97 : 1.03);
 	}
 
@@ -84,7 +82,6 @@ export function createCreekSound(ctx: SketchContext, camera: Camera, wind: Wind)
 	});
 	for (const [k, [x, z]] of crowns.entries()) {
 		leaves.setPosition(k, x, groundHeight(x, z) + CROWN, z);
-		leaves.setRate(k, 0.94 + 0.12 * ((k * 0.618033988749895) % 1));
 	}
 
 	const air = sound.loop({
@@ -95,16 +92,22 @@ export function createCreekSound(ctx: SketchContext, camera: Camera, wind: Wind)
 
 	const eye = new Float64Array(3);
 	const flow: [number, number, number] = [0, 0, 0];
+	// The air's speed at the camera jumps as the camera moves through the field's gusts, and a tone
+	// that followed it frame by frame made the whole mix brighten and darken with the walk. It now
+	// follows over about half a second.
+	let airSpeed = Number.NaN;
 	return {
 		update() {
 			camera.getWorldPosition(eye);
 			wind.sample(eye[0] as number, eye[1] as number, eye[2] as number, flow);
-			const strength = Math.min(1, Math.hypot(flow[0], flow[2]) / FULL_WIND);
+			const sampled = Math.hypot(flow[0], flow[2]);
+			airSpeed = Number.isNaN(airSpeed) ? sampled : airSpeed + (sampled - airSpeed) * AIR_FOLLOWS;
+			const strength = Math.min(1, airSpeed / FULL_WIND);
 			air.setLevel(0.02 + 0.18 * strength * strength);
-			air.setTone(0.5 + 0.4 * strength);
+			air.setTone(0.62 + 0.2 * strength);
 			// Every crown rustles with the air at the camera, which a gust raises as it passes.
 			leaves.levels.fill(Math.min(1, 0.15 + 0.7 * strength));
-			leaves.tones.fill(0.55 + 0.45 * strength);
+			leaves.tones.fill(0.68 + 0.2 * strength);
 			sound.update();
 		},
 	};

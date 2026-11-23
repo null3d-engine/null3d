@@ -140,14 +140,6 @@ fn rate_of(value: f32) -> f32 {
     }
 }
 
-/// How far a group member's playback rate sits from its neighbours': from 0.97 to 1.03, stepped by
-/// the golden ratio so neighbours differ most. Copies of one recording at one pitch comb into a
-/// metallic flutter; a few per cent apart, a group of like sources adds as a crowd.
-fn detune_of(emitter: usize) -> f32 {
-    let step = (emitter as f32 * 0.618_034) % 1.0;
-    0.97 + 0.06 * step
-}
-
 /// The filter's cutoff in hertz for a tone from 0 to 1.
 pub fn cutoff_of(tone: f32) -> f32 {
     LOW_CUTOFF * powf(HIGH_CUTOFF / LOW_CUTOFF, tone.clamp(0.0, 1.0))
@@ -732,9 +724,10 @@ impl Mixer {
             e = self.next[v];
             self.emitter[v] = e;
             self.next[v] = NONE;
-            // The pitch glides to the new member's, as the tone does: a voice that snapped both
-            // while it was silent still landed on a different timbre than its neighbours.
-            self.snap[v] = 0;
+            // The voice is silent, so the new member's pitch and tone go in whole. Easing them
+            // would bend the file's speed while the voice is heard again, which sounds as the
+            // water changing pitch under a moving camera.
+            self.snap[v] = SNAP_PITCH;
         }
         if before < SILENT && self.dying[v] {
             self.clear(v);
@@ -771,11 +764,6 @@ impl Mixer {
             let level = level_of(level);
             tone_target = tone_of(tone);
             rate_target = rate_of(rate);
-            // A group's members share one file, so each takes its own rate: at one pitch their
-            // copies comb as the nearest few swap around the listener.
-            if sound.kind == GROUP {
-                rate_target = (rate_target * detune_of(e)).clamp(1.0 / FASTEST, FASTEST);
-            }
             let mut share = 1.0;
             if sound.positional {
                 let found = if shot {
@@ -1038,22 +1026,38 @@ mod tests {
     const SETTLE: usize = 2 * 48_000 / FRAMES;
 
     #[test]
-    fn a_group_spreads_its_members_rates_so_their_copies_do_not_comb() {
-        // Neighbouring members differ most, every factor sits within three per cent of the file's
-        // own speed, and no two of the first sixteen share one, so the nearest few never play in
-        // lockstep.
-        let factors: Vec<f32> = (0..16).map(detune_of).collect();
-        for (k, factor) in factors.iter().enumerate() {
-            assert!((0.97..=1.03).contains(factor), "member {k} at {factor}");
-            if k > 0 {
-                assert!((factor - factors[k - 1]).abs() > 0.004);
+    fn a_voice_takes_its_new_members_pitch_and_tone_while_it_is_silent() {
+        // Two members of one group play at different speeds and tones. As the listener's nearest
+        // member changes, the voice moves between them; it must take the new member's values as it
+        // moves, not slide to them afterwards, which would be heard as the file bending in pitch.
+        let mut m = mixer_with_table();
+        add(&mut m, GROUP, 0, 2, &[0], 1.0);
+        m.ready[0] = true;
+        let rates = m.layout.rates;
+        m.table[rates + 1] = 0.9;
+        m.table[m.layout.tones + 1] = 0.3;
+        m.table[12 + 2] = -10.0;
+        m.table[12 + 3 + 2] = -40.0;
+        run(&mut m, SETTLE);
+        assert_eq!(m.emitter[0], 0);
+        assert!((m.values[3] - 1.0).abs() < 1e-4);
+        // The other member becomes the nearer one.
+        m.table[12 + 2] = -40.0;
+        m.table[12 + 3 + 2] = -10.0;
+        let mut moved = false;
+        for _ in 0..SETTLE {
+            let before = m.gain[0];
+            run(&mut m, 1);
+            if m.emitter[0] != 0 {
+                assert_eq!(m.emitter[0], 1);
+                assert!(before < SILENT, "the voice was heard as it moved");
+                assert!((m.values[3] - 0.9).abs() < 1e-4, "the rate slid");
+                assert!((m.values[4] - cutoff_of(0.3)).abs() < 1.0, "the tone slid");
+                moved = true;
+                break;
             }
         }
-        for a in 0..16 {
-            for b in (a + 1)..16 {
-                assert!((factors[a] - factors[b]).abs() > 1e-4);
-            }
-        }
+        assert!(moved, "the voice never moved to the nearer member");
     }
 
     #[test]

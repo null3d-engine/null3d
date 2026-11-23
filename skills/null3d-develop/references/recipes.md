@@ -986,6 +986,8 @@ Never write a level as a step. A car that stops keeps its voice until its speed 
 
 Count the voices of a group. Its voices add as power, so three points at full level sound about 5 dB louder than a loop's one file. Give a group's points a lower level than a loop's. Write massed ambience, such as a wood's leaves, a crowd or rain on roofs, as one loop. Its level follows the density around the camera, never one source for each object.
 
+Leave a group's members at one rate unless each source really differs. Each voice plays the file from its own point, so the copies never sound in step and do not comb. Spreading the rates buys nothing, and the group's pitch then changes as the nearest members change.
+
 Check the mix at fixed camera places, not by ear alone. The opening pose should be silent where nothing makes a sound, each place should lead with the sound its view shows, and no level should move faster between frames than a listener would expect. An app can read each voice's gain while it drives the scene, as the add-on's own tests do.
 
 Docs: `guides/audio`, `api/sound`.

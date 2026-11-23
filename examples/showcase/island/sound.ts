@@ -40,6 +40,8 @@ const FULL_WIND = 9;
 const SMOOTHING = 6;
 /** The wind's speed before the wind add-on runs: its steady wind. */
 const STEADY_WIND = 4;
+/** The share of the gap that the wind's speed closes each frame, which settles it in about half a second. */
+const AIR_FOLLOWS = 0.06;
 
 /** A smooth step from 0 at `low` to 1 at `high`. */
 function smoothstep(low: number, high: number, value: number): number {
@@ -139,9 +141,6 @@ export function createIslandSound(ctx: SketchContext, camera: Camera): IslandSou
 	for (const [k, [x, z]] of shore.entries()) {
 		seaShore.setPosition(k, x, SEA_LEVEL, z);
 		seaShore.setLevel(k, SEA_POINT_LEVEL);
-		// Copies of one recording at one pitch comb into a metallic flutter; a few per cent apart,
-		// the nearest few add as sea rather than as a chorus.
-		seaShore.setRate(k, 0.97 + 0.06 * ((k * 0.618033988749895) % 1));
 	}
 	const seaOpen: SoundLoop = sound.loop({ file: seaFile, positional: false, level: 0 });
 
@@ -156,7 +155,6 @@ export function createIslandSound(ctx: SketchContext, camera: Camera): IslandSou
 	beach.forEach((point, k) => {
 		surf.setPosition(k, point.x, SEA_LEVEL + 1, point.z);
 		surf.setLevel(k, point.beach);
-		surf.setRate(k, 0.96 + 0.08 * ((k * 0.618033988749895) % 1));
 	});
 
 	const wind = sound.loop({
@@ -196,6 +194,9 @@ export function createIslandSound(ctx: SketchContext, camera: Camera): IslandSou
 	let field: Wind | undefined;
 	const eye = new Float64Array(3);
 	const air: [number, number, number] = [0, 0, 0];
+	// The air's speed at the camera jumps as it moves through the field's gusts; the wind and the
+	// leaves follow over about half a second, so the mix does not brighten and darken with the walk.
+	let airSpeed = Number.NaN;
 	return {
 		setWind(next) {
 			field = next;
@@ -238,6 +239,8 @@ export function createIslandSound(ctx: SketchContext, camera: Camera): IslandSou
 				field.sample(x, y, z, air);
 				speed = Math.hypot(air[0], air[2]);
 			}
+			airSpeed = Number.isNaN(airSpeed) ? speed : airSpeed + (speed - airSpeed) * AIR_FOLLOWS;
+			speed = airSpeed;
 			const strength = Math.min(1, speed / FULL_WIND);
 			const canopy = canopyAt(x, z);
 			const nearTrees = 1 - smoothstep(12, 90, height);
@@ -246,10 +249,10 @@ export function createIslandSound(ctx: SketchContext, camera: Camera): IslandSou
 				(0.35 + 0.5 * smoothstep(2, 160, height) + 0.15 * smoothstep(0, 250, out)) *
 				(1 - 0.5 * canopy * nearTrees);
 			wind.setLevel(0.35 * strength * strength * exposure);
-			wind.setTone(0.35 + 0.65 * strength * (0.6 + 0.4 * smoothstep(0, 150, height)));
+			wind.setTone(0.55 + 0.35 * strength * (0.6 + 0.4 * smoothstep(0, 150, height)));
 
 			leaves.setLevel(0.5 * canopy * nearTrees * Math.min(1, 0.15 + 0.6 * strength));
-			leaves.setTone(0.55 + 0.45 * strength);
+			leaves.setTone(0.68 + 0.2 * strength);
 
 			if (traffic) {
 				// The levels and the pitches follow their curves through a smoothing step, so a car that
