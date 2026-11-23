@@ -978,32 +978,115 @@ function stairsMesh(): Build {
 			);
 		});
 	}
-	// The apron from each flight's foot to its street, and the walk that carries it round its court to
-	// the door. The walk's outer edge stands above the bank, so a stone face holds it.
+	// The apron from each flight's foot to its street.
 	for (const apron of STAIR_APRONS)
 		if (apron.length > 1) strip(b, apron, COURT_WALK_HALF, stone, 0);
+	return b;
+}
+
+/**
+ * The court walks that carry each flight round its court to the door: the mapped stone tops, the
+ * face that holds them above the bank, and the coping where the two meet.
+ */
+function courtWalkMesh(): Build {
+	const b = build();
+	b.mapped = true;
+	const top: Color = [0.86, 0.81, 0.71];
+	const face: Color = [0.78, 0.73, 0.63];
+	const coping: Color = [0.93, 0.9, 0.82];
 	STAIR_WALKS.forEach((walk, k) => {
-		strip(b, walk, COURT_WALK_HALF, stone, 0);
 		const [kx, kz] = KEEPS[k] as readonly [number, number, number];
-		const edge = (m: number) => {
+		/** A station's normal across the walk, its outer edge, and the ground below that edge. */
+		const station = (m: number) => {
 			const p = walk[m] as { x: number; y: number; z: number };
 			const a = walk[Math.max(0, m - 1)] as { x: number; z: number };
 			const c = walk[Math.min(walk.length - 1, m + 1)] as { x: number; z: number };
 			const length = hypot(c.x - a.x, c.z - a.z) || 1;
 			const [nx, nz] = [-(c.z - a.z) / length, (c.x - a.x) / length];
 			const side = (p.x - kx) * nx + (p.z - kz) * nz >= 0 ? 1 : -1;
-			const [x, z] = [p.x + nx * side * COURT_WALK_HALF, p.z + nz * side * COURT_WALK_HALF];
-			return { x, y: p.y, z, side, ground: Math.min(p.y - 0.05, groundHeight(x, z) - 0.1) };
+			const [ox, oz] = [p.x + nx * side * COURT_WALK_HALF, p.z + nz * side * COURT_WALK_HALF];
+			return {
+				x: p.x,
+				y: p.y,
+				z: p.z,
+				nx,
+				nz,
+				side,
+				ox,
+				oz,
+				ground: Math.min(p.y - 0.05, groundHeight(ox, oz) - 0.1),
+			};
 		};
-		const face: Color = [0.6, 0.56, 0.48];
 		for (let n = 0; n + 1 < walk.length; n++) {
-			const [a, c] = [edge(n), edge(n + 1)];
-			if (a.y - Math.min(a.ground, c.ground) < 0.05) continue;
-			// The face turns outward, whichever way the walk runs round the court.
-			if (a.side > 0)
-				quad(b, [c.x, c.y, c.z], [a.x, a.y, a.z], [a.x, a.ground, a.z], [c.x, c.ground, c.z], face);
+			const [p, q] = [station(n), station(n + 1)];
+			// The stone top, in quads that take the map.
+			quad(
+				b,
+				[p.x - p.nx * COURT_WALK_HALF, p.y, p.z - p.nz * COURT_WALK_HALF],
+				[p.x + p.nx * COURT_WALK_HALF, p.y, p.z + p.nz * COURT_WALK_HALF],
+				[q.x - q.nx * COURT_WALK_HALF, q.y, q.z - q.nz * COURT_WALK_HALF],
+				[q.x + q.nx * COURT_WALK_HALF, q.y, q.z + q.nz * COURT_WALK_HALF],
+				top,
+			);
+			if (p.y - Math.min(p.ground, q.ground) < 0.05) continue;
+			// The face that holds the walk above the bank.
+			if (p.side > 0)
+				quad(
+					b,
+					[q.ox, q.y, q.oz],
+					[p.ox, p.y, p.oz],
+					[p.ox, p.ground, p.oz],
+					[q.ox, q.ground, q.oz],
+					face,
+				);
 			else
-				quad(b, [a.x, a.y, a.z], [c.x, c.y, c.z], [c.x, c.ground, c.z], [a.x, a.ground, a.z], face);
+				quad(
+					b,
+					[p.ox, p.y, p.oz],
+					[q.ox, q.y, q.oz],
+					[q.ox, q.ground, q.oz],
+					[p.ox, p.ground, p.oz],
+					face,
+				);
+			// And the coping along the walk's outer edge.
+			const [ipx, ipz] = [p.ox - p.nx * p.side * 0.35, p.oz - p.nz * p.side * 0.35];
+			const [iqx, iqz] = [q.ox - q.nx * q.side * 0.35, q.oz - q.nz * q.side * 0.35];
+			if (p.side > 0)
+				quad(
+					b,
+					[ipx, p.y + 0.09, ipz],
+					[p.ox, p.y + 0.09, p.oz],
+					[q.ox, q.y + 0.09, q.oz],
+					[iqx, q.y + 0.09, iqz],
+					coping,
+				);
+			else
+				quad(
+					b,
+					[ipx, p.y + 0.09, ipz],
+					[iqx, q.y + 0.09, iqz],
+					[q.ox, q.y + 0.09, q.oz],
+					[p.ox, p.y + 0.09, p.oz],
+					coping,
+				);
+			if (p.side > 0)
+				quad(
+					b,
+					[p.ox, p.y - 0.02, p.oz],
+					[q.ox, q.y - 0.02, q.oz],
+					[q.ox, q.y + 0.09, q.oz],
+					[p.ox, p.y + 0.09, p.oz],
+					coping,
+				);
+			else
+				quad(
+					b,
+					[q.ox, q.y - 0.02, q.oz],
+					[p.ox, p.y - 0.02, p.oz],
+					[p.ox, p.y + 0.09, p.oz],
+					[q.ox, q.y + 0.09, q.oz],
+					coping,
+				);
 		}
 	});
 	return b;
@@ -2834,6 +2917,12 @@ function createKeeps(ctx: SketchContext, surfaces: Surfaces): Object3D[] {
 	scene.createMesh({
 		mesh: geometry.fromArrays(finish(stairsMesh())),
 		material: surfaces.rubble,
+		receiveShadows: true,
+	});
+	scene.createMesh({
+		mesh: geometry.fromArrays(finish(courtWalkMesh())),
+		material: surfaces.rubble,
+		castShadows: true,
 		receiveShadows: true,
 	});
 	return KEEPS.map(([x, z, y]) =>
