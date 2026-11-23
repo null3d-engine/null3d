@@ -245,6 +245,12 @@ export interface StageOptions {
 	 */
 	fogCurve?: 'exponential' | 'exp2';
 	/**
+	 * The studio's fog density, for a scene that reaches far enough that the studio's own thick haze
+	 * would hide it: an island seen from hundreds of meters stands inside a near-black fog, and its
+	 * frame holds nothing but the backdrop. The default is the studio's thick haze.
+	 */
+	studioFog?: number;
+	/**
 	 * A factor on the exposure of every outdoor mood, for a scene whose own lights carry it: a city
 	 * at night asks for more than a moonlit field. The default is 1, and the studio keeps its own.
 	 */
@@ -632,7 +638,7 @@ export function createMoods(
 		sun.setColor('#fff4e6');
 		sun.setIntensity(3);
 		if (shown.fog) {
-			look.fog.density = STUDIO_FOG_DENSITY;
+			look.fog.density = options.studioFog ?? STUDIO_FOG_DENSITY;
 			if (options.fogHeight) look.fog.heightFalloff = 0;
 			if (options.fogCurve) look.fog.curve = 'exponential';
 			look.fog.color[0] = STUDIO_FOG[0];

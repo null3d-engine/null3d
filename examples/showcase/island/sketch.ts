@@ -238,6 +238,8 @@ export default defineSketch(
 		const stage = createMoods(ctx, sun, sky, room, {
 			heading: HEADING,
 			fogDensity: 0.000018,
+			// The studio's own haze would hide the island from an opening view hundreds of meters out.
+			studioFog: 0.00006,
 			backgroundFog: Number(params.get('background-fog')) || 0,
 			exposureScale: 3,
 			environmentScale: 1,
