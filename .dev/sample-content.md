@@ -159,20 +159,20 @@ To publish them:
 
 | Sound | What it plays | Length | Channels | Size |
 | --- | --- | --- | --- | --- |
-| `wind` | Steady wind through grass on open ground | 40 s loop | Stereo | 645 KB |
-| `leaves` | Pine needles rustling in a steady wind, a few meters away | 30 s loop | Stereo | 480 KB |
+| `wind` | Steady wind through grass on open ground | 10 s loop | Stereo | 161 KB |
+| `leaves` | Leaves rustling in the wind, close enough that each gust shows | 10 s loop | Stereo | 182 KB |
 | `sea` | The open sea from a clifftop: a low swell and a distant wash | 45 s loop | Stereo | 642 KB |
 | `surf` | Waves breaking and washing up a beach, about seven wave cycles | 45 s loop | Stereo | 684 KB |
 | `car` | A compact car's petrol engine held at 2,000 rpm, from outside | 6 s loop | Mono | 59 KB |
 | `bus` | A coach's diesel engine at idle, from outside | 6 s loop | Mono | 62 KB |
-| `stream` | A small river gurgling over stones, close | 30 s loop | Stereo | 466 KB |
-| `waterfall` | A waterfall's steady roar | 30 s loop | Stereo | 428 KB |
+| `stream` | A small river gurgling over stones, close | 10 s loop | Stereo | 153 KB |
+| `waterfall` | A waterfall's steady roar | 10 s loop | Stereo | 144 KB |
 | `hover` | A designed hover engine's steady hum | 6 s loop | Mono | 48 KB |
 | `hover-pass` | A lighter take of the same hum for hover cars that pass at speed: the whine and air, without the low hum | 3 s loop | Mono | 27 KB |
-| `rain` | Light rain on a city street at night | 40 s loop | Stereo | 673 KB |
+| `rain` | Light rain on a city street at night | 10 s loop | Stereo | 170 KB |
 | `thunder-near` | A close clap of thunder and its roll, at -23.7 LUFS | 11.5 s one-shot | Stereo | 112 KB |
 | `thunder-far` | Distant thunder rolling, at -21.6 LUFS | 12 s one-shot | Stereo | 124 KB |
-| `city` | A quiet city evening: far traffic and the air of the streets | 45 s loop | Stereo | 672 KB |
+| `city` | A quiet city evening: far traffic and the air of the streets | 12 s loop | Stereo | 179 KB |
 
 The outputs take 5.2 MB, and the raw recordings 21.4 MB. The car and the bus are engines held at one speed: a car at 2,000 rpm and a coach at idle. A car that drives past a microphone changes in level and pitch, so its recording does not loop. The demos set an engine's speed with the playback rate.
 

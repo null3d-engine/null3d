@@ -7432,31 +7432,31 @@
 		},
 		{
 			"id": "sound/raw/leaves",
-			"title": "Wind_pine.wav",
-			"purpose": "The recording that the leaves loop is cut from: a strong wind in the branches of a pine tree",
+			"title": "Rustling Leaves.wav",
+			"purpose": "The recording that the leaves loop is cut from: leaves rustling in the wind, close enough that each gust shows",
 			"authors": [
 				{
-					"name": "sinewave1kHz"
+					"name": "FunWithSound"
 				}
 			],
 			"license": [
 				"CC0-1.0"
 			],
-			"source": "https://freesound.org/people/sinewave1kHz/sounds/202989/",
+			"source": "https://freesound.org/people/FunWithSound/sounds/406099/",
 			"fetched": "2026-11-23",
-			"changes": "None to the sound. The file is the high-quality Ogg Vorbis preview, about 190 kbps, that Freesound serves without an account: a lossy copy of the original WAV upload, saved as sinewave1khz-202989.ogg.",
+			"changes": "None to the sound. The file is the high-quality preview, about 190 kbps, that Freesound serves without an account: a lossy copy of the original WAV upload.",
 			"dir": "sources/sound/raw/leaves",
 			"origin": {
 				"kind": "files",
 				"files": {
-					"https://cdn.freesound.org/previews/202/202989_1667744-hq.ogg": "sinewave1khz-202989.ogg"
+					"https://cdn.freesound.org/previews/406/406099_6456158-hq.mp3": "funwithsound-406099.mp3"
 				}
 			},
 			"files": [
 				{
-					"path": "sources/sound/raw/leaves/sinewave1khz-202989.ogg",
-					"bytes": 2081518,
-					"sha256": "b23d29cf7f4561b7600b0bfcede0c0f2bea8b586f7f9b848a7f0301f539d8cd8"
+					"path": "sources/sound/raw/leaves/funwithsound-406099.mp3",
+					"bytes": 803373,
+					"sha256": "f471389c17c4dcb2a3f686c7a4fb9e5900a6b3e251697e1d5f48cef3c4235854"
 				}
 			]
 		},
@@ -7844,8 +7844,8 @@
 			"files": [
 				{
 					"path": "sources/sound/loops/wind/wind.mp3",
-					"bytes": 660860,
-					"sha256": "17fe1711246143262940e2a4673f7f28059413aa2cdd886ee143ee9405511ae6"
+					"bytes": 164924,
+					"sha256": "032de923fd254d60a43e03a01139d4b85426098a4ce953df735efb94682b77c4"
 				}
 			]
 		},
@@ -7873,8 +7873,8 @@
 			"files": [
 				{
 					"path": "sources/sound/loops/leaves/leaves.mp3",
-					"bytes": 491228,
-					"sha256": "51a7c4f1a049f98754e61717e3179c3740145b6f99cb1d502a77a9e535fc73bb"
+					"bytes": 186236,
+					"sha256": "6b82530afc1d587e4ada04c2a282e0e13ddf12b40bd3818a52f4f4336b94a012"
 				}
 			]
 		},
@@ -7902,8 +7902,8 @@
 			"files": [
 				{
 					"path": "sources/sound/loops/sea/sea.mp3",
-					"bytes": 657884,
-					"sha256": "6c8e40711f3b044b8bc1a0fc5c06d16f7688cce972faf34133b4f58675784a0c"
+					"bytes": 658412,
+					"sha256": "23fe29429cf3ea21262e33280f344699c103d04e6fa668d20cfc5d6e9bf8718c"
 				}
 			]
 		},
@@ -7931,8 +7931,8 @@
 			"files": [
 				{
 					"path": "sources/sound/loops/surf/surf.mp3",
-					"bytes": 700508,
-					"sha256": "7b3a85dab05f83c93c00c59af89b2d3fb9ede11081d68de0756ceb3d8c778322"
+					"bytes": 704156,
+					"sha256": "0faa2b28f605bea55655de053f2ccc86e46173e1045f67c840df4002c88f12c4"
 				}
 			]
 		},
@@ -8018,8 +8018,8 @@
 			"files": [
 				{
 					"path": "sources/sound/loops/stream/stream.mp3",
-					"bytes": 477068,
-					"sha256": "215fe17e200c4779b5e7f0ea71acdc54501a01b01d9de4f8e549bc8ebb0d30c1"
+					"bytes": 156860,
+					"sha256": "7dc82477ad0345d0593aca35329d272ebb413a8a3763be6842aa9b85deca5c2e"
 				}
 			]
 		},
@@ -8047,8 +8047,8 @@
 			"files": [
 				{
 					"path": "sources/sound/loops/waterfall/waterfall.mp3",
-					"bytes": 438476,
-					"sha256": "a09c131055c2cd5bd7fcc87cdd7d52493a015926509f83c376ba8ef1d9dc7d53"
+					"bytes": 147500,
+					"sha256": "28419a7483bc2221b55519bf0e4d2ab0464f0ffd28f0e5e5441dce4e49a6a40f"
 				}
 			]
 		},
@@ -8134,8 +8134,8 @@
 			"files": [
 				{
 					"path": "sources/sound/loops/rain/rain.mp3",
-					"bytes": 688700,
-					"sha256": "adfacedaad8e4e8500517b10658ca3effd15b45067464d47818c07e0412cf795"
+					"bytes": 174236,
+					"sha256": "d55b89c715f89c00461e95c48835a6be61d5891e5ad4df34621a9d7dc5650237"
 				}
 			]
 		},
@@ -8221,8 +8221,8 @@
 			"files": [
 				{
 					"path": "sources/sound/loops/city/city.mp3",
-					"bytes": 687932,
-					"sha256": "0d38f65a88556dc6c68a083d83496b718ced68278d54c3014cc41328baf56ff8"
+					"bytes": 183644,
+					"sha256": "d0d765291f251518263ef37d5e5bbbe9e066f4321d0200265b39337b78b8b9c4"
 				}
 			]
 		}

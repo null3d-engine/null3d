@@ -90,6 +90,12 @@ const STEREO_QUALITY = 5;
 const MONO_QUALITY = 4;
 /** A bed's crossfade, long enough to hide a change of texture across its seam. */
 const BED_FADE = 2;
+/**
+ * A slow levelling pass for a bed whose recording swells and falls: gusts, waves, traffic and rain
+ * push the level about by several decibels, and a bed that swells reads to a listener as the
+ * scene's own volume changing. The ratio only halves the swing, so the texture stays.
+ */
+const LEVEL = 'acompressor=threshold=-26dB:ratio=2:attack=15:release=600';
 /** An engine's crossfade, short enough that its firing rhythm does not blur. */
 const ENGINE_FADE = 0.4;
 
@@ -101,22 +107,22 @@ export const SOUNDS: readonly Sound[] = [
 		name: 'wind',
 		raw: 'wind/kyles-454362.ogg',
 		start: 46,
-		length: 40,
+		length: 10,
 		channels: 2,
-		filters: ['highpass=f=150:poles=2'],
+		filters: ['highpass=f=150:poles=2', LEVEL],
 		fade: BED_FADE,
 		loop: true,
 		loudness: BED,
 		quality: STEREO_QUALITY,
 	},
 	{
-		// Pine needles in a steady wind, a few metres from the tree, after a twig's snap.
+		// Leaves rustling in the wind, close enough that each gust shows in the rustle.
 		name: 'leaves',
-		raw: 'leaves/sinewave1khz-202989.ogg',
-		start: 26,
-		length: 30,
+		raw: 'leaves/funwithsound-406099.mp3',
+		start: 18,
+		length: 10,
 		channels: 2,
-		filters: ['highpass=f=80:poles=2'],
+		filters: ['highpass=f=120:poles=2', LEVEL],
 		fade: BED_FADE,
 		loop: true,
 		loudness: BED,
@@ -129,7 +135,7 @@ export const SOUNDS: readonly Sound[] = [
 		start: 12,
 		length: 45,
 		channels: 2,
-		filters: ['highpass=f=30:poles=2'],
+		filters: ['highpass=f=30:poles=2', LEVEL],
 		fade: BED_FADE,
 		loop: true,
 		loudness: BED,
@@ -142,7 +148,7 @@ export const SOUNDS: readonly Sound[] = [
 		start: 30,
 		length: 45,
 		channels: 2,
-		filters: ['highpass=f=40:poles=2'],
+		filters: ['highpass=f=40:poles=2', LEVEL],
 		fade: BED_FADE,
 		loop: true,
 		loudness: BED,
@@ -182,9 +188,9 @@ export const SOUNDS: readonly Sound[] = [
 		name: 'stream',
 		raw: 'stream/nicoproson-642776.ogg',
 		start: 10,
-		length: 30,
+		length: 10,
 		channels: 2,
-		filters: ['highpass=f=60:poles=2'],
+		filters: ['highpass=f=60:poles=2', LEVEL],
 		fade: BED_FADE,
 		loop: true,
 		loudness: BED,
@@ -195,7 +201,7 @@ export const SOUNDS: readonly Sound[] = [
 		name: 'waterfall',
 		raw: 'waterfall/dikolson-130231.ogg',
 		start: 20,
-		length: 30,
+		length: 10,
 		channels: 2,
 		filters: ['highpass=f=40:poles=2'],
 		fade: BED_FADE,
@@ -239,9 +245,9 @@ export const SOUNDS: readonly Sound[] = [
 		name: 'rain',
 		raw: 'rain/bonnyorbit-380651.ogg',
 		start: 4,
-		length: 40,
+		length: 10,
 		channels: 2,
-		filters: ['highpass=f=120:poles=2', 'highpass=f=120:poles=2'],
+		filters: ['highpass=f=120:poles=2', LEVEL],
 		fade: BED_FADE,
 		loop: true,
 		loudness: BED,
@@ -277,9 +283,9 @@ export const SOUNDS: readonly Sound[] = [
 		name: 'city',
 		raw: 'city/mirkaelina-444660.ogg',
 		start: 10,
-		length: 45,
+		length: 12,
 		channels: 2,
-		filters: ['highpass=f=30:poles=2'],
+		filters: ['highpass=f=30:poles=2', LEVEL],
 		fade: BED_FADE,
 		loop: true,
 		loudness: BED,
