@@ -381,6 +381,7 @@ export default defineSketch(
 						const grown = createTraffic(ctx, models, trafficOptions);
 						const previous = traffic;
 						traffic = grown;
+						sound.setTraffic(traffic);
 						previous.destroy();
 					} catch (error) {
 						console.warn(
@@ -401,6 +402,7 @@ export default defineSketch(
 		if (!grownFirst) createCypressSpires(ctx);
 		// The sea, the surf, the wind, the leaves and the traffic, which the page's speaker button starts.
 		const sound = createIslandSound(ctx, camera);
+		sound.setTraffic(traffic);
 		let trees: { update(): void; wind: Wind } | undefined;
 		let growing = false;
 		const grow = (): void => {

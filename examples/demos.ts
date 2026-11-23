@@ -180,7 +180,7 @@ export const DEMOS: readonly Demo[] = [
 		summary:
 			'A hilly island alone in the sea on a summer morning, with forests of cypress, umbrella pine, olive and holm oak, oleanders along its lanes, a long beach, a golf course on its headland and a harbour town. Turn around the whole island, or zoom down to any place on it.',
 		assets:
-			'Shows how thousands of trees load from optimized glTF models built by script in Blender, with levels of detail and far cards, and how recorded loops of the sea, the surf, the wind and the leaves load once the speaker button starts the sound.',
+			'Shows how thousands of trees load from optimized glTF models built by script in Blender, with levels of detail and far cards, and how recorded loops of the sea, the surf, the wind, the leaves, the cars and the bus load once the speaker button starts the sound.',
 		momentTransparency: true,
 		controls: SHOWCASE_CONTROLS,
 		sound: true,

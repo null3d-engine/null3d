@@ -1,5 +1,5 @@
-// The island's sound: the sea all round it, the surf on the bay's beach, the wind, and the leaves of
-// the woods. The page's speaker button starts it (examples/lib/sound-button.ts).
+// The island's sound: the sea all round it, the surf on the bay's beach, the wind, the leaves of the
+// woods, and the traffic on the roads. The page's speaker button starts it (examples/lib/sound-button.ts).
 //
 // The sea and the surf come from places. Each is a group of points along the water, of which the
 // add-on's mixer plays the nearest few, so the sound comes from the nearest stretch of sea or beach
@@ -14,7 +14,7 @@
 // trees around the camera and the wind that moves them, and fade as the camera climbs above the
 // woods, past the reach where the trees sway.
 import type { Camera, SketchContext } from '@null3d/engine';
-import { createSound, type Sound, type SoundLoop } from '@null3d/sound';
+import { createSound, type Sound, type SoundGroup, type SoundLoop } from '@null3d/sound';
 import type { Wind } from '@null3d/wind';
 import { sampleUrl } from '../../lib/samples';
 import { groundHeight } from './ground';
@@ -79,6 +79,12 @@ function surfPoints(): { x: number; z: number; beach: number }[] {
 export interface IslandSound {
 	/** Gives the sound the wind add-on's field, once the trees have made it. */
 	setWind(wind: Wind): void;
+	/** Gives the sound the island's moving vehicles, which the traffic writes in each frame. */
+	setTraffic(traffic: {
+		readonly vehicles: Float32Array;
+		readonly speeds: Float32Array;
+		readonly counts: { readonly cars: number; readonly buses: number };
+	}): void;
 	/** Writes the listener and every level. Call it once a frame in `onLateUpdate`. */
 	update(): void;
 }
@@ -127,12 +133,25 @@ export function createIslandSound(ctx: SketchContext, camera: Camera): IslandSou
 		level: 0,
 	});
 
+	// The cars and the bus come from the road under them. A car keeps quiet while it stands, or while
+	// the traffic holds it out of sight, and grows louder and higher as it runs.
+	const carFile = sampleUrl('sources/sound/loops/car/car.mp3');
+	const busFile = sampleUrl('sources/sound/loops/bus/bus.mp3');
+	let cars: SoundGroup | undefined;
+	let bus: SoundLoop | undefined;
+	let traffic: Parameters<IslandSound['setTraffic']>[0] | undefined;
+
 	let field: Wind | undefined;
 	const eye = new Float64Array(3);
 	const air: [number, number, number] = [0, 0, 0];
 	return {
 		setWind(next) {
 			field = next;
+		},
+		setTraffic(next) {
+			traffic = next;
+			cars = sound.group({ file: carFile, count: next.counts.cars, voices: 4, near: 4, far: 160 });
+			if (next.counts.buses > 0) bus = sound.loop({ file: busFile, near: 5, far: 220, level: 0 });
 		},
 		update() {
 			camera.getWorldPosition(eye);
@@ -161,6 +180,31 @@ export function createIslandSound(ctx: SketchContext, camera: Camera): IslandSou
 
 			leaves.setLevel(canopy * nearTrees * Math.min(1, 0.25 + strength));
 			leaves.setTone(0.55 + 0.45 * strength);
+
+			if (traffic) {
+				const n = traffic.counts.cars;
+				if (cars) {
+					cars.positions.set(traffic.vehicles.subarray(0, n * 3));
+					for (let k = 0; k < n; k++) {
+						const speed = traffic.speeds[k] as number;
+						// A car out of sight reports 0 and keeps quiet; a moving one grows louder.
+						cars.setLevel(k, speed > 0.2 ? 0.55 + 0.45 * Math.min(1, speed / 14) : 0);
+						cars.setRate(k, 0.85 + Math.min(1, speed / 14) * 0.35);
+					}
+				}
+				if (bus) {
+					const b = n;
+					const speed = traffic.speeds[b] as number;
+					bus.setPosition(
+						traffic.vehicles[b * 3] as number,
+						(traffic.vehicles[b * 3 + 1] as number) + 1,
+						traffic.vehicles[b * 3 + 2] as number,
+					);
+					// A bus at a stop idles rather than falls silent.
+					bus.setLevel(speed > 0.2 ? 0.7 : 0.35);
+					bus.setRate(0.9 + Math.min(1, speed / 12) * 0.25);
+				}
+			}
 			sound.update();
 		},
 	};
