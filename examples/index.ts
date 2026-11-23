@@ -234,7 +234,6 @@ function gestureHelp(demo: Demo): HTMLElement {
 	row('Two fingers', 'Pan the camera in Manual mode');
 	row('HUD', 'Open it at the bottom of the screen. The Auto / Manual switch is inside.');
 	row('Double-tap', 'Focus the camera on an object');
-	if (demo.gustKey !== undefined) row('Gust', 'Send a gust across the scene');
 	return panel;
 }
 

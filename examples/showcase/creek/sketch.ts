@@ -163,10 +163,9 @@ const RENDER_SCALE = Number(params.get('render-scale')) || undefined;
  */
 const EFFECTS = params.get('effects') === 'on';
 /**
- * The strength of a gust that the address sends, and the sketch time when it sends it. The demo's
- * own gust answers the G key, and a held frame presses no key, so a picture test names the send in
- * its address. The place is the camera's, as the key's is, and the route is a function of the
- * sketch time, so both hold still.
+ * The strength of a gust that the address sends, and the sketch time when it sends it. A held frame
+ * runs no update, so a picture test names the send in its address. The place is the camera's, and
+ * the route is a function of the sketch time, so both hold still.
  */
 const GUST_STRENGTH = Number(params.get('gust')) || 0;
 const GUST_SEND_AT = Number(params.get('gust-at')) || 0;
@@ -361,8 +360,7 @@ export default defineSketch(async (ctx) => {
 		target: WIDE_LOOK,
 	});
 	scene.setActiveCamera(camera);
-	// The garden's one wind field. The falling leaves and the water read it, and G sends a gust that
-	// a person can watch cross the creek.
+	// The garden's one wind field. The falling leaves and the water read it.
 	const wind = createWind(ctx, { camera, box: 128 });
 	const target: [number, number, number] = [TARGET[0], TARGET[1], TARGET[2]];
 	/** A scratch place for the camera, which the gust control reads. */
@@ -561,17 +559,6 @@ export default defineSketch(async (ctx) => {
 		shots: WATER_CLOSE ? [CLOSE_SHOT] : SHOTS,
 		target,
 		groups: controls.groups,
-		keys: [
-			{
-				code: 'KeyG',
-				does: 'send a gust across the garden',
-				// From where the camera stands, so a person can watch the air travel across the creek.
-				press() {
-					camera.getPosition(here);
-					wind.gust([here[0] as number, here[2] as number], 10);
-				},
-			},
-		],
 		bounds: { ...BOUNDS, ground: cameraFloor },
 	});
 	// The camera stands at the route's opening pose now, so the shadows reach as far as it needs.

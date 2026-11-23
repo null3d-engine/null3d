@@ -78,7 +78,6 @@ export interface Demo {
 	 * gust. The page's touch controls show its button on a coarse pointer, and the control sends the
 	 * same key that the keyboard sends.
 	 */
-	gustKey?: string;
 	/** The sketch time, in seconds, that the demo's image test holds at. */
 	hold: number;
 	/**
@@ -166,8 +165,7 @@ export const DEMOS: readonly Demo[] = [
 			'A clear creek crosses the top of a round cliff from rim to rim, fed by a spring pool, over a cobbled bed that shows through the water, and leaves over both rims in white falls. Mossy stones line its banks. Stone steps climb from the creek through a roofed gate between stone lanterns to a bronze Buddha on a terrace, above raked gravel and moss islands. Dark walls of pillars and ledges run down into the cloud, which billows and drifts in the light of the time of day.',
 		assets:
 			'Shows how a statue, a gate with its roof dragons, lanterns, boulders, cloud-pruned pines, ferns and hostas load from optimized glTF models, made from generated meshes and finished by script in Blender, each with levels of detail, and how recorded loops of the creek, the falls, the wind and the leaves load once the speaker button starts the sound.',
-		controls: [...SHOWCASE_CONTROLS, { keys: ['G'], does: 'Send a gust down the valley' }],
-		gustKey: 'KeyG',
+		controls: SHOWCASE_CONTROLS,
 		sound: true,
 		hold: 0.5,
 		cinematic: true,
