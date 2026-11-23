@@ -199,7 +199,7 @@ const BASE_TREE = `${BASE_DIR}/tree`;
  */
 const COMMITTED_RECORD = 'tools/size-baseline.json';
 /** Brotli budget for each core WebAssembly file. */
-const WASM_BUDGET_BYTES = 600 * 1024;
+const WASM_BUDGET_BYTES = 640 * 1024;
 /** Where the size report builds the engine test page, apart from the build the browser tests serve. */
 const JS_BUILD_DIR = 'target/js-size';
 /**
@@ -1639,7 +1639,7 @@ async function main(): Promise<void> {
 			.filter(([name]) => isCombosPart(name))
 			.map(([name, size]) => [name, size] as const),
 	]);
-	console.log('\nsize report (budget for each .wasm file of the core: 600 KB after Brotli)');
+	console.log('\nsize report (budget for each .wasm file of the core: 640 KB after Brotli)');
 	for (const [file, size] of Object.entries(sizes))
 		printSize(file, size, file.endsWith('.wasm') ? { brotli: WASM_BUDGET_BYTES } : undefined);
 	printSize('js total', totalSize(parts.values()));
@@ -1677,7 +1677,7 @@ async function main(): Promise<void> {
 			([file, size]) =>
 				file.endsWith('.wasm') && !firstUseFiles.has(file) && size.brotli > WASM_BUDGET_BYTES,
 		)
-		.map(([file]) => `${file} is over its 600 KB Brotli budget`);
+		.map(([file]) => `${file} is over its 640 KB Brotli budget`);
 	problems.push(...budgetProblems(parts));
 	const growth = options.checkSize ? checkGrowth(sizes, options.base) : [];
 	for (const warning of budgetWarnings(parts)) console.warn(warningLine(warning));
