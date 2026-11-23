@@ -72,7 +72,9 @@ export function createCreekStage(
 	sun: DirectionalLight,
 	sky: Environment | Promise<Environment>,
 	room: Environment | Promise<Environment>,
+	/** How much of the fog the sky and the background take, from 0 to 1. */
+	backgroundFog = 0,
 ): Stage {
 	ctx.post.set({ toneMapping: TONE_CURVE });
-	return createMoods(ctx, sun, sky, room, STAGE);
+	return createMoods(ctx, sun, sky, room, { ...STAGE, backgroundFog });
 }

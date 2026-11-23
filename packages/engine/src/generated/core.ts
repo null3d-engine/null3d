@@ -414,7 +414,7 @@ export const POST_VALUE_SSR_MAX_ROUGHNESS = 62;
 export const POST_VALUE_SHARPEN = 63;
 export const POST_VALUE_COUNT = 64;
 
-export const CALL_VALUE_COUNT = 10;
+export const CALL_VALUE_COUNT = 11;
 
 export const ENVIRONMENT_VALUE_INTENSITY = 0;
 export const ENVIRONMENT_VALUE_ROTATION = 1;

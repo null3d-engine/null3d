@@ -2060,6 +2060,35 @@ export const FUNCTIONS: readonly LibraryFunction[] = [
 					: normalize(scale(xyz(i.f(0)), -1)),
 			),
 	},
+	// null3d::fog's background fog: the fog that a surface at the camera's far plane takes along a
+	// direction, at the share that a scene sets, and the clear light left for a pass that adds its
+	// own light over the sky.
+	{
+		name: 'fog::background_share',
+		cases: (random) => backgroundCases(random),
+		expected: (i) => scalar(backgroundShare(i)),
+	},
+	{
+		name: 'fog::background_clear',
+		cases: (random) => backgroundCases(random),
+		expected: (i) => scalar(1 - backgroundShare(i)),
+	},
+	{
+		name: 'fog::fogged_background',
+		cases: (random) =>
+			[0, 0.5, 1].flatMap((share) =>
+				samples((r) =>
+					sceneFog(r, FOG_CURVE_EXPONENTIAL, 0)
+						.setF(1, values(r, 3, 0, 1))
+						.setF(3, [between(r, 0, 2), between(r, 1, 32), share, 0])
+						.setF(4, unit(r))
+						.setF(5, [between(r, 10, 500)])
+						.setF(6, unit(r))
+						.setF(7, values(r, 3, 0, 4)),
+				)(random),
+			),
+		expected: (i) => floats(foggedBackground(i)),
+	},
 ];
 
 /** three.js's sky: its Rayleigh coefficients per metre, and its Mie constant. */
@@ -2109,23 +2138,57 @@ function heightRatio(x: number): number {
 }
 
 /** The path through fog at its base density that hides as much as the scene fog's inputs do. */
-function fogPath(i: Inputs): number {
-	const relative = xyz(i.f(4));
+function fogPathAt(relative: V3, i: Inputs): number {
 	const [, , falloff, share] = i.f(2);
 	const distance = length(relative);
 	return distance * share * heightRatio(falloff * relative[1]);
 }
 
-/** The scene fog's factor for its inputs. */
-function fogFactor(i: Inputs): number {
+/** The scene fog's factor at a point relative to the camera, for the case's fog inputs. */
+function fogFactorAt(i: Inputs, relative: V3): number {
 	const curve = i.u(1)[0];
 	const density = i.f(0)[3];
 	const [near, far] = i.f(2);
-	const path = fogPath(i);
+	const path = fogPathAt(relative, i);
 	if (curve === FOG_CURVE_LINEAR) return smooth(near, far, path);
 	if (curve === FOG_CURVE_EXP2) return 1 - Math.exp(-density * density * path * path);
 	if (curve === FOG_CURVE_EXPONENTIAL) return 1 - Math.exp(-density * path);
 	return 0;
+}
+
+/** The scene fog's factor at the case's point. */
+const fogFactor = (i: Inputs): number => fogFactorAt(i, xyz(i.f(4)));
+
+/** The point at the camera's far plane along the case's direction. */
+const backgroundPoint = (i: Inputs): V3 => scale(normalize(xyz(i.f(4))), i.f(5)[0]);
+
+/** The share of the fog that the background takes along the case's direction. */
+function backgroundShare(i: Inputs): number {
+	const [, , share] = i.f(3);
+	return share * fogFactorAt(i, backgroundPoint(i));
+}
+
+/** The background's own light after the fog, by the case's fog, direction, far and light. */
+function foggedBackground(i: Inputs): V3 {
+	const relative = backgroundPoint(i);
+	const [glow, exponent] = i.f(3);
+	const toward = Math.max(dot(normalize(relative), scale(xyz(i.f(6)), -1)), 0);
+	const fogged = add(xyz(i.f(0)), scale(xyz(i.f(7)), glow * toward ** exponent));
+	return mix3(xyz(i.f(1)), fogged, backgroundShare(i));
+}
+
+/** Cases of the background fog: each curve, shares from none to all, a direction and a far plane. */
+function backgroundCases(random: () => number): Inputs[] {
+	return [FOG_CURVE_LINEAR, FOG_CURVE_EXPONENTIAL].flatMap((curve) =>
+		[0, 0.35, 1].flatMap((share) =>
+			samples((r) =>
+				sceneFog(r, curve, 0)
+					.setF(3, [0, 1, share, 0])
+					.setF(4, unit(r))
+					.setF(5, [between(r, 10, 500)]),
+			)(random),
+		),
+	);
 }
 
 function box(p: V3, half: V3): number {

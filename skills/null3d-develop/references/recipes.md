@@ -809,7 +809,7 @@ The quadtree splits a block by the screen error of its cells. The camera's posit
 
 ## 23. Outdoor land with an edge the camera never sees
 
-The background takes no fog. So past the edge of the land, the camera sees the plain background below the horizon, and fog cannot hide it. Hide the edge with geometry, and keep the camera inside it:
+Past the edge of the land, the camera sees the plain background below the horizon. Set the fog's `background` share to 1 to give the sky and the background the fog of a surface at the camera's far plane. The fog then blends that edge. At `background: 0` (the default) the background takes no fog, so hide the edge with geometry, and keep the camera inside it:
 
 ```ts
 import { createOrbitControls } from '@null3d/controls';

@@ -6,6 +6,7 @@
 // fragment shader writes the texture's linear color as the mesh shaders write theirs: into the HDR
 // scene color, or tone mapped and encoded on the 8-bit path (the TONE_MAP builds), times the
 // background's intensity. Cube map and sky backgrounds draw with background_cube.wgsl and sky.wgsl.
+#import null3d::fog
 #import null3d::globals::Frame
 #import null3d::tonemap
 #import null3d::backdrop::{Backdrop}
@@ -43,8 +44,18 @@ fn vs(@builtin(vertex_index) vertex: u32) -> VertexOut {
 fn fs(in: VertexOut) -> @location(0) vec4f {
     let texel = textureSample(layers, layer_sampler, in.uv, in.layer);
     let light = backdrop.params.x * frame.output.exposure;
-    return null3d::tonemap::finish(
+    // A texture is a screen picture at the far plane, with no world direction of its own, so it
+    // takes the fog of a surface at that distance along the horizon, where the land meets it.
+    let fogged = null3d::fog::fogged_background(
+        frame.fog,
         texel.rgb * light,
+        vec3f(0.0, 0.0, -1.0),
+        frame.camera_range.y,
+        frame.sun_direction.xyz,
+        frame.sun_color.xyz,
+    );
+    return null3d::tonemap::finish(
+        fogged,
         in.clip.xy,
         frame.occlusion.y,
         frame.output,

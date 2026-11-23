@@ -22,6 +22,7 @@
 // The scene's color is exposed color, so the fragment scales the layer's light by the exposure and
 // by the background's intensity, as the sky around it does: one sky then shows one color where it is
 // drawn and where a map of it is reflected.
+#import null3d::fog
 #import null3d::globals::Frame
 #import null3d::sky_layer::{SkyLayer, SkyLayerInput, SkyLayerValues}
 #import null3d::tonemap
@@ -51,8 +52,11 @@ fn fs(in: LayerOut) -> @location(0) vec4f {
     if coverage <= 0.0 {
         discard;
     }
+    // The layer lies at the far plane as the sky does, so its own light dims by the share of the
+    // background's light that the fog leaves.
+    let left = null3d::fog::background_clear(frame.fog, in.direction, frame.camera_range.y);
     let finished = null3d::tonemap::finish(
-        drawn.color * layer.view.w * frame.output.exposure,
+        drawn.color * (layer.view.w * frame.output.exposure * left),
         in.clip.xy,
         frame.occlusion.y,
         frame.output,

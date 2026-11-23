@@ -150,6 +150,7 @@ export default defineSketch(async (ctx) => {
 	const stage = createMoods(ctx, sun, skyLight, room, {
 		heading: HEADING,
 		fogDensity: FOG_DENSITY,
+		backgroundFog: Number(new URL(import.meta.url).searchParams.get('background-fog')) || 0,
 		cloudCoverage: 0.45,
 		backdrop: [0.01, 0.012, 0.02],
 		volumetric: FOG_LIT,

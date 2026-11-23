@@ -431,7 +431,7 @@ export default defineSketch(async (ctx) => {
 
 	// The mood and the lens: from the address at the start, then from the HUD. The physical sky
 	// draws the real sun by day and the moon at night; Auto moves them across the sky.
-	const stage = createCreekStage(ctx, sun, sky, room);
+	const stage = createCreekStage(ctx, sun, sky, room, Number(params.get('background-fog')) || 0);
 	const golden = timeOfDay('goldenHour', { heading: HEADING });
 	/**
 	 * The look the scene shows: two moods and the share of the second. An hour's look blends between

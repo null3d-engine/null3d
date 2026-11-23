@@ -184,6 +184,12 @@ export interface StageOptions {
 	heading: number;
 	/** The density of the outdoor fog. */
 	fogDensity: number;
+	/**
+	 * How much of the fog the sky and the background take, from 0 to 1: 1 gives them the fog of a
+	 * surface at the camera's far plane, so the haze over the land continues over the sky it meets.
+	 * The default is 0, the engine's own default.
+	 */
+	backgroundFog?: number;
 	/** The share of the sky that clouds cover, from 0 to 1. */
 	cloudCoverage: number;
 	/** A factor of the fog's density in some moods, such as a haze at golden hour. */
@@ -327,6 +333,7 @@ export function createMoods(
 		cloudCoverage,
 		backdrop,
 		haze = {},
+		backgroundFog = 0,
 		fogGrey = 0,
 		exposureScale = 1,
 		environmentScale = 1,
@@ -403,6 +410,7 @@ export function createMoods(
 			color: [0, 0, 0] as Vec3,
 			density: fogDensity,
 			sunGlow: 0,
+			background: Math.min(1, Math.max(0, backgroundFog)),
 			...(options.volumetric === undefined ? {} : { volumetric: options.volumetric }),
 			...(options.fogHeight === undefined
 				? {}

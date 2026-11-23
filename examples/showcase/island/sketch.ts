@@ -221,6 +221,7 @@ export default defineSketch(
 		const stage = createMoods(ctx, sun, sky, room, {
 			heading: HEADING,
 			fogDensity: 0.000018,
+			backgroundFog: Number(params.get('background-fog')) || 0,
 			exposureScale: 3,
 			environmentScale: 1,
 			cloudCoverage: 0,

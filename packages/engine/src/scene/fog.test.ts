@@ -55,9 +55,9 @@ describe('setFog', () => {
 		setSceneFog(core, { curve: 'exp2', color: '#808890', density: 0.03, sunGlowExponent: 32 });
 		setSceneFog(core, null);
 		expect(calls.slice(0, 3)).toEqual([
-			[FOG_CURVE_EXPONENTIAL, ...GREY, 0.02, 1, 1000, 4, 0.5, 0, 8],
-			[FOG_CURVE_LINEAR, ...GREY, 0.01, 10, 80, 0, 0, 0.3, 8],
-			[FOG_CURVE_EXP2, ...GREY, 0.03, 1, 1000, 0, 0, 0, 32],
+			[FOG_CURVE_EXPONENTIAL, ...GREY, 0.02, 1, 1000, 4, 0.5, 0, 8, 0],
+			[FOG_CURVE_LINEAR, ...GREY, 0.01, 10, 80, 0, 0, 0.3, 8, 0],
+			[FOG_CURVE_EXP2, ...GREY, 0.03, 1, 1000, 0, 0, 0, 32, 0],
 		]);
 		// No fog reads no numbers.
 		expect(calls[3]?.[0]).toBe(FOG_CURVE_NONE);
@@ -66,7 +66,13 @@ describe('setFog', () => {
 	test('takes exponential fog of the same thickness at every height, with no glow, by default', () => {
 		const { calls, core } = fakeCore();
 		setSceneFog(core, { color: 0x808890 });
-		expect(calls).toEqual([[FOG_CURVE_EXPONENTIAL, ...GREY, 0.01, 1, 1000, 0, 0, 0, 8]]);
+		expect(calls).toEqual([[FOG_CURVE_EXPONENTIAL, ...GREY, 0.01, 1, 1000, 0, 0, 0, 8, 0]]);
+	});
+
+	test("gives the core the background's share of the fog", () => {
+		const { calls, core } = fakeCore();
+		setSceneFog(core, { color: 0x808890, background: 0.4 });
+		expect(calls[0]?.at(-1)).toBe(0.4);
 	});
 
 	test('throws for values that give no fog, and changes nothing', () => {
@@ -84,6 +90,11 @@ describe('setFog', () => {
 			[{ color: 0, height: Number.NaN }, 'E1203', 'setFog() got NaN for height'],
 			[{ color: 0, sunGlow: -0.5 }, 'E1108', 'setFog() got the sun glow -0.5'],
 			[{ color: 0, sunGlowExponent: 0 }, 'E1108', 'setFog() got the sun glow exponent 0'],
+			[
+				{ color: 0, background: 2 },
+				'E1108',
+				'setFog() got the background share 2; it takes a number from 0 to 1.',
+			],
 			[
 				{ curve: 'fog', color: 0 } as unknown as FogOptions,
 				'E1108',

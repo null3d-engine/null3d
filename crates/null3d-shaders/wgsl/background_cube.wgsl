@@ -11,6 +11,7 @@
 #import null3d::tonemap
 #import null3d::ibl::{roughness_level}
 #import null3d::backdrop::{Backdrop, box_corner}
+#import null3d::fog
 
 @group(0) @binding(0) var<uniform> frame: Frame;
 @group(1) @binding(0) var<uniform> backdrop: Backdrop;
@@ -32,13 +33,23 @@ fn vs(@builtin(vertex_index) vertex: u32) -> CubeOut {
 }
 
 /// The cube map's light in the fragment's direction, turned by the background's rotation, at the
-/// level that holds the blur's roughness, times the intensity and the exposure. A plain color
-/// draws as it is, exposed already.
+/// level that holds the blur's roughness, times the intensity and the exposure. A plain color is
+/// exposed already. Either light takes the fog that a surface at the camera's far plane takes in
+/// its direction, so the sky behind the land continues the land's haze.
 @fragment
 fn fs(in: CubeOut) -> @location(0) vec4f {
+    let d = in.direction;
     if backdrop.color.w > 0.0 {
-        return null3d::tonemap::finish(
+        let plain = null3d::fog::fogged_background(
+            frame.fog,
             backdrop.color.rgb,
+            d,
+            frame.camera_range.y,
+            frame.sun_direction.xyz,
+            frame.sun_color.xyz,
+        );
+        return null3d::tonemap::finish(
+            plain,
             in.clip.xy,
             frame.occlusion.y,
             frame.output,
@@ -46,7 +57,6 @@ fn fs(in: CubeOut) -> @location(0) vec4f {
             frame.vignette,
         );
     }
-    let d = in.direction;
     let turned = vec3f(
         dot(backdrop.rotation[0].xyz, d),
         dot(backdrop.rotation[1].xyz, d),
@@ -55,8 +65,18 @@ fn fs(in: CubeOut) -> @location(0) vec4f {
     let level = roughness_level(backdrop.params.y, backdrop.params.z);
     let light = textureSampleLevel(cube_map, cube_sampler, turned, level).rgb;
     let scale = backdrop.params.x * frame.output.exposure;
+    // The background takes the same fog as a surface at the camera's far plane.
+    let exposed = light * scale;
+    let fogged = null3d::fog::fogged_background(
+        frame.fog,
+        exposed,
+        d,
+        frame.camera_range.y,
+        frame.sun_direction.xyz,
+        frame.sun_color.xyz,
+    );
     return null3d::tonemap::finish(
-        light * scale,
+        fogged,
         in.clip.xy,
         frame.occlusion.y,
         frame.output,
