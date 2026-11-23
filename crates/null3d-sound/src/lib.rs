@@ -61,11 +61,12 @@ pub const MOVING: u32 = 2;
 /// A voice or a slot that holds no emitter, or a voice that no sound owns.
 const NONE: i32 = -1;
 /// How fast a voice's gain follows its target, as a time constant in seconds.
-const GAIN_TIME: f32 = 0.05;
+const GAIN_TIME: f32 = 0.08;
 /// How fast a voice fades in once its file plays.
 const FADE_IN_TIME: f32 = 0.25;
-/// How fast a voice fades out before it moves to another emitter, or as its sound stops.
-const SWITCH_TIME: f32 = 0.02;
+/// How fast a voice fades out before it moves to another emitter, or as its sound stops. A short
+/// fade leaves a dip that the ear hears as a flutter as a group's nearest members change.
+const SWITCH_TIME: f32 = 0.12;
 /// How fast a voice's tone and rate follow their targets.
 const TONE_TIME: f32 = 0.08;
 /// How fast every sound fades when the sketch stops or starts again.
@@ -83,7 +84,9 @@ const SILENT: f32 = 1e-4;
 const LOW_CUTOFF: f32 = 120.0;
 const HIGH_CUTOFF: f32 = 20_000.0;
 /// The share of its tone that a muffled sound loses at its far distance.
-const MUFFLE: f32 = 0.45;
+/// The share of its tone that a sound loses at its far distance. A voice that moves between a
+/// group's members takes a gentler share, so the mix's brightness does not jump with the swap.
+const MUFFLE: f32 = 0.22;
 /// Where a sound with a far distance starts to fade, as a share of that distance.
 const FAR_FADE: f32 = 0.6;
 /// The largest level that the mixer takes from the table.
@@ -135,6 +138,14 @@ fn rate_of(value: f32) -> f32 {
     } else {
         value.clamp(1.0 / FASTEST, FASTEST)
     }
+}
+
+/// How far a group member's playback rate sits from its neighbours': from 0.97 to 1.03, stepped by
+/// the golden ratio so neighbours differ most. Copies of one recording at one pitch comb into a
+/// metallic flutter; a few per cent apart, a group of like sources adds as a crowd.
+fn detune_of(emitter: usize) -> f32 {
+    let step = (emitter as f32 * 0.618_034) % 1.0;
+    0.97 + 0.06 * step
 }
 
 /// The filter's cutoff in hertz for a tone from 0 to 1.
@@ -721,7 +732,9 @@ impl Mixer {
             e = self.next[v];
             self.emitter[v] = e;
             self.next[v] = NONE;
-            self.snap[v] = SNAP_PITCH;
+            // The pitch glides to the new member's, as the tone does: a voice that snapped both
+            // while it was silent still landed on a different timbre than its neighbours.
+            self.snap[v] = 0;
         }
         if before < SILENT && self.dying[v] {
             self.clear(v);
@@ -758,6 +771,11 @@ impl Mixer {
             let level = level_of(level);
             tone_target = tone_of(tone);
             rate_target = rate_of(rate);
+            // A group's members share one file, so each takes its own rate: at one pitch their
+            // copies comb as the nearest few swap around the listener.
+            if sound.kind == GROUP {
+                rate_target = (rate_target * detune_of(e)).clamp(1.0 / FASTEST, FASTEST);
+            }
             let mut share = 1.0;
             if sound.positional {
                 let found = if shot {
@@ -1018,6 +1036,25 @@ mod tests {
     }
 
     const SETTLE: usize = 2 * 48_000 / FRAMES;
+
+    #[test]
+    fn a_group_spreads_its_members_rates_so_their_copies_do_not_comb() {
+        // Neighbouring members differ most, every factor sits within three per cent of the file's
+        // own speed, and no two of the first sixteen share one, so the nearest few never play in
+        // lockstep.
+        let factors: Vec<f32> = (0..16).map(detune_of).collect();
+        for (k, factor) in factors.iter().enumerate() {
+            assert!((0.97..=1.03).contains(factor), "member {k} at {factor}");
+            if k > 0 {
+                assert!((factor - factors[k - 1]).abs() > 0.004);
+            }
+        }
+        for a in 0..16 {
+            for b in (a + 1)..16 {
+                assert!((factors[a] - factors[b]).abs() > 1e-4);
+            }
+        }
+    }
 
     #[test]
     fn a_loop_fades_in_to_its_level_at_its_distance() {

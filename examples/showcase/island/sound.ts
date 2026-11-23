@@ -139,6 +139,9 @@ export function createIslandSound(ctx: SketchContext, camera: Camera): IslandSou
 	for (const [k, [x, z]] of shore.entries()) {
 		seaShore.setPosition(k, x, SEA_LEVEL, z);
 		seaShore.setLevel(k, SEA_POINT_LEVEL);
+		// Copies of one recording at one pitch comb into a metallic flutter; a few per cent apart,
+		// the nearest few add as sea rather than as a chorus.
+		seaShore.setRate(k, 0.97 + 0.06 * ((k * 0.618033988749895) % 1));
 	}
 	const seaOpen: SoundLoop = sound.loop({ file: seaFile, positional: false, level: 0 });
 
@@ -153,6 +156,7 @@ export function createIslandSound(ctx: SketchContext, camera: Camera): IslandSou
 	beach.forEach((point, k) => {
 		surf.setPosition(k, point.x, SEA_LEVEL + 1, point.z);
 		surf.setLevel(k, point.beach);
+		surf.setRate(k, 0.96 + 0.08 * ((k * 0.618033988749895) % 1));
 	});
 
 	const wind = sound.loop({

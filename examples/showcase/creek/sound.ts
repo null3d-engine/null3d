@@ -50,18 +50,24 @@ export function createCreekSound(ctx: SketchContext, camera: Camera, wind: Wind)
 		const [along, across] = streamCurrent(x);
 		creek.setPosition(k, x, WATER + 0.1, streamZ(x));
 		creek.setLevel(k, 0.4 + 0.4 * Math.min(1, Math.hypot(along, across) / QUICK));
+		// Two copies of one recording at the same pitch comb into a metallic flutter, and the
+		// group swaps copies as the camera moves. A few per cent apart, they sound like one stream.
+		creek.setRate(k, 0.97 + 0.06 * ((k * 0.618033988749895) % 1));
 	});
 
 	// Each fall sounds from the middle of its drop, a little out from the rim.
 	const fallFile = sampleUrl('sources/sound/loops/waterfall/waterfall.mp3');
-	for (const x of [LIPS.west, LIPS.east]) {
+	for (const [n, x] of [LIPS.west, LIPS.east].entries()) {
 		const out = Math.sign(x) * 1.5;
-		sound.loop({
+		const fall = sound.loop({
 			file: fallFile,
 			near: 6,
 			far: 120,
 			position: [x + out, WATER - FALL.drop / 2, streamZ(x)],
 		});
+		// The two falls play one recording, so a few per cent apart keeps them from combing where
+		// both are heard.
+		fall.setRate(n === 0 ? 0.97 : 1.03);
 	}
 
 	// The crowns that rustle: every pine, and every maple that still has its leaves.
@@ -73,11 +79,13 @@ export function createCreekSound(ctx: SketchContext, camera: Camera, wind: Wind)
 		file: sampleUrl('sources/sound/loops/leaves/leaves.mp3'),
 		count: crowns.length,
 		voices: 4,
-		near: 3,
+		near: 8,
 		far: 45,
 	});
-	for (const [k, [x, z]] of crowns.entries())
+	for (const [k, [x, z]] of crowns.entries()) {
 		leaves.setPosition(k, x, groundHeight(x, z) + CROWN, z);
+		leaves.setRate(k, 0.94 + 0.12 * ((k * 0.618033988749895) % 1));
+	}
 
 	const air = sound.loop({
 		file: sampleUrl('sources/sound/loops/wind/wind.mp3'),
@@ -92,8 +100,8 @@ export function createCreekSound(ctx: SketchContext, camera: Camera, wind: Wind)
 			camera.getWorldPosition(eye);
 			wind.sample(eye[0] as number, eye[1] as number, eye[2] as number, flow);
 			const strength = Math.min(1, Math.hypot(flow[0], flow[2]) / FULL_WIND);
-			air.setLevel(0.08 + 0.45 * strength * strength);
-			air.setTone(0.4 + 0.6 * strength);
+			air.setLevel(0.02 + 0.18 * strength * strength);
+			air.setTone(0.5 + 0.4 * strength);
 			// Every crown rustles with the air at the camera, which a gust raises as it passes.
 			leaves.levels.fill(Math.min(1, 0.15 + 0.7 * strength));
 			leaves.tones.fill(0.55 + 0.45 * strength);
