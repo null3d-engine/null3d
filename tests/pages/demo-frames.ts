@@ -112,6 +112,7 @@ run('demo-frames', async () => {
 		'governor',
 		'render-scale',
 		'without',
+		'walkers',
 	])
 		if (params.has(id)) sketch.searchParams.set(id, params.get(id) ?? '');
 	const runDemo = { ...demo, sketch };
@@ -206,6 +207,8 @@ run('demo-frames', async () => {
 		// The render scale at the end of the measure, after the governor's steps.
 		renderScale,
 		cpuMs: metrics.cpuMs,
+		// Each thread's own busy time, so a cost run can read the sketch thread apart from the rest.
+		threads: metrics.threads,
 		drawCalls: metrics.drawCalls,
 		// The engine's own stages of the start, so a slow first frame names its one-time cost.
 		load: metrics.load,
