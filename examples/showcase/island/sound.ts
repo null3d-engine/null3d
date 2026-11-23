@@ -30,6 +30,8 @@ const SEA_OFFSHORE = 60;
 const SURF_POINTS = 28;
 /** How far past the waterline the surf's points stand, where the breakers run, in meters. */
 const SURF_OFFSHORE = 18;
+/** The level of each of the sea's points, so three voices do not stack as loud as one loop. */
+const SEA_POINT_LEVEL = 0.4;
 /** How far the open-water sea rises, and the distance from shore and height over which it fades in. */
 const SEA_OPEN = 0.55;
 /** The wind's speed, in meters a second, at which the wind and the leaves reach their full level. */
@@ -131,10 +133,13 @@ export function createIslandSound(ctx: SketchContext, camera: Camera): IslandSou
 		file: seaFile,
 		count: shore.length,
 		voices: 3,
-		near: 18,
-		far: 140,
+		near: 30,
+		far: 110,
 	});
-	for (const [k, [x, z]] of shore.entries()) seaShore.setPosition(k, x, SEA_LEVEL, z);
+	for (const [k, [x, z]] of shore.entries()) {
+		seaShore.setPosition(k, x, SEA_LEVEL, z);
+		seaShore.setLevel(k, SEA_POINT_LEVEL);
+	}
 	const seaOpen: SoundLoop = sound.loop({ file: seaFile, positional: false, level: 0 });
 
 	const beach = surfPoints();
@@ -142,8 +147,8 @@ export function createIslandSound(ctx: SketchContext, camera: Camera): IslandSou
 		file: sampleUrl('sources/sound/loops/surf/surf.mp3'),
 		count: beach.length,
 		voices: 3,
-		near: 10,
-		far: 70,
+		near: 12,
+		far: 50,
 	});
 	beach.forEach((point, k) => {
 		surf.setPosition(k, point.x, SEA_LEVEL + 1, point.z);
@@ -229,7 +234,7 @@ export function createIslandSound(ctx: SketchContext, camera: Camera): IslandSou
 			wind.setLevel(0.45 * strength * strength * strength * exposure);
 			wind.setTone(0.35 + 0.65 * strength * (0.6 + 0.4 * smoothstep(0, 150, height)));
 
-			leaves.setLevel(canopy * nearTrees * Math.min(1, 0.25 + strength));
+			leaves.setLevel(0.5 * canopy * nearTrees * Math.min(1, 0.15 + 0.6 * strength));
 			leaves.setTone(0.55 + 0.45 * strength);
 
 			if (traffic) {
