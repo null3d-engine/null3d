@@ -383,6 +383,8 @@ export default defineSketch(async (ctx) => {
 		target: TARGET,
 		groups: controls.groups,
 		bounds: { ...BOUNDS, ground: () => 0 },
+		// The camera belongs to the hover car, so a double press focuses nothing.
+		focus: false,
 		keys: [
 			{
 				code: 'KeyV',

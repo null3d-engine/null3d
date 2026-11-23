@@ -209,8 +209,8 @@ function keyHelp(demo: Demo): HTMLElement | undefined {
 		panel.append(caps, element('dd', control.does));
 	}
 	// A demo with the showcases' cinematic camera takes a double-click to a picked object, and the
-	// list names it once for those demos alone.
-	if (demo.cinematic) {
+	// list names it once for those demos alone, unless the camera belongs to a vehicle.
+	if (demo.cinematic && demo.focus !== false) {
 		const focus = element('dt');
 		focus.append(element('kbd', 'Double-click'));
 		panel.append(focus, element('dd', 'Focus on an object'));

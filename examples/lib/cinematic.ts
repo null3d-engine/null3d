@@ -295,6 +295,11 @@ export interface CinematicOptions {
 	 * place, the orbit controls stay off, and it moves the camera itself.
 	 */
 	driver?: Driver;
+	/**
+	 * Whether a double press on the canvas focuses the camera on what it hit. A scene that the user
+	 * drives may leave it off, since the camera belongs to the vehicle. The default is on.
+	 */
+	focus?: boolean;
 }
 
 /** What a scene that the user drives gives the cinematic camera. */
@@ -1002,7 +1007,7 @@ export function createCinematic(
 			if (input.wasPressed(KEY.mode)) toggleMode();
 			for (const key of keys) if (input.wasPressed(key.code)) key.press();
 			// A double press on the canvas focuses the camera on what it hit.
-			if (input.wasPressed('Mouse0')) {
+			if (options.focus !== false && input.wasPressed('Mouse0')) {
 				const { x, y } = input.pointer;
 				const quick =
 					time.now - lastClick.at < DOUBLE_CLICK_SECONDS &&

@@ -82,9 +82,14 @@ export interface Demo {
 	hold: number;
 	/**
 	 * True for a demo whose camera is the showcases' cinematic one: its route, its Auto and Manual
-	 * modes, and its double-click that takes the camera to a picked object.
+	 * modes, and, unless `focus` is off, its double-click that takes the camera to a picked object.
 	 */
 	cinematic?: boolean;
+	/**
+	 * Whether a double press focuses the camera on a picked object. A scene whose user drives a
+	 * vehicle leaves it off, since the camera belongs to the vehicle. The default is on.
+	 */
+	focus?: boolean;
 	/** True for a demo that starts the engine in large-world mode. */
 	largeWorld?: boolean;
 	/**
@@ -210,6 +215,7 @@ export const DEMOS: readonly Demo[] = [
 		sound: true,
 		hold: 1,
 		cinematic: true,
+		focus: false,
 		timeoutSeconds: 300,
 	},
 	{
