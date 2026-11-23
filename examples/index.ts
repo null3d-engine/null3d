@@ -279,6 +279,8 @@ interface Sheet {
 	close(): void;
 	/** Shows a start's failure in the sheet. */
 	showError(message: string): void;
+	/** Fills the sheet's Controls tab, or hides the tab when there is nothing to show. */
+	setControls(panel: HTMLElement | undefined): void;
 	readonly isOpen: boolean;
 }
 
@@ -306,8 +308,39 @@ function createSheet(demo: Demo): Sheet {
 	const body = element('div');
 	body.className = 'sheet__body';
 	const about = aboutBody(demo);
-	body.append(about);
-	dialog.append(head, body);
+	const aboutPanel = element('section');
+	aboutPanel.className = 'sheet__panel';
+	aboutPanel.setAttribute('role', 'tabpanel');
+	aboutPanel.append(about);
+	const controlsPanel = element('section');
+	controlsPanel.className = 'sheet__panel';
+	controlsPanel.setAttribute('role', 'tabpanel');
+	controlsPanel.hidden = true;
+	body.append(aboutPanel, controlsPanel);
+	// The tabs sit between the title and the body: the demo's story, and what it does under the hand.
+	const tabs = element('div');
+	tabs.className = 'sheet__tabs';
+	tabs.setAttribute('role', 'tablist');
+	const tab = (label: string, panel: HTMLElement): HTMLButtonElement => {
+		const button = element('button', label);
+		button.type = 'button';
+		button.className = 'sheet__tab';
+		button.setAttribute('role', 'tab');
+		button.addEventListener('click', () => select(panel));
+		return button;
+	};
+	const aboutTab = tab('About', aboutPanel);
+	const controlsTab = tab('Controls', controlsPanel);
+	tabs.append(aboutTab, controlsTab);
+	const select = (panel: HTMLElement): void => {
+		const controls = panel === controlsPanel;
+		if (controls && controlsTab.hidden) return;
+		aboutPanel.hidden = controls;
+		controlsPanel.hidden = !controls;
+		aboutTab.setAttribute('aria-selected', String(!controls));
+		controlsTab.setAttribute('aria-selected', String(controls));
+	};
+	dialog.append(head, tabs, body);
 	root.append(backdrop, dialog);
 
 	let opener: HTMLElement | undefined;
@@ -346,10 +379,17 @@ function createSheet(demo: Demo): Sheet {
 			first.focus();
 		}
 	});
+	select(aboutPanel);
 	const sheet: Sheet = {
 		element: root,
 		open,
 		close: closeSheet,
+		setControls(panel) {
+			const shown = panel !== undefined;
+			controlsTab.hidden = !shown;
+			controlsPanel.replaceChildren(...(panel ? [panel] : []));
+			if (!shown && !controlsPanel.hidden) select(aboutPanel);
+		},
 		showError(message) {
 			const error = element('p', message);
 			error.className = 'error';
@@ -407,13 +447,14 @@ async function runDemo(demo: Demo): Promise<void> {
 	const query = matchMedia(COARSE_INPUT);
 	const stopWatching = watchInputKind(query, (kind) => {
 		document.body.dataset.input = kind;
-		const drawn = demo.controls?.length
-			? kind === 'coarse'
-				? gestureHelp(demo)
-				: keyHelp(demo)
-			: undefined;
-		help.replaceChildren(...(drawn ? [drawn] : []));
-		help.hidden = drawn === undefined;
+		const coarse = kind === 'coarse';
+		// A finger reads the gestures in the sheet's Controls tab, where they never sit over the
+		// scene; a mouse keeps its keys under the chip, out of the way of the picture.
+		const gestures = demo.controls?.length && coarse ? gestureHelp(demo) : undefined;
+		const keys = demo.controls?.length && !coarse ? keyHelp(demo) : undefined;
+		sheet.setControls(gestures);
+		help.replaceChildren(...(keys ? [keys] : []));
+		help.hidden = keys === undefined;
 	});
 	// A sketch reads its switches from its own address, such as Skyway's `mood` and `storm`, so the
 	// page's switches go on to it.
