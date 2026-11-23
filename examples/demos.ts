@@ -81,6 +81,11 @@ export interface Demo {
 	gustKey?: string;
 	/** The sketch time, in seconds, that the demo's image test holds at. */
 	hold: number;
+	/**
+	 * True for a demo whose camera is the showcases' cinematic one: its route, its Auto and Manual
+	 * modes, and its double-click that takes the camera to a picked object.
+	 */
+	cinematic?: boolean;
 	/** True for a demo that starts the engine in large-world mode. */
 	largeWorld?: boolean;
 	/**
@@ -165,6 +170,7 @@ export const DEMOS: readonly Demo[] = [
 		gustKey: 'KeyG',
 		sound: true,
 		hold: 0.5,
+		cinematic: true,
 		// A software GPU draws the scene with its bloom, its water and its models, which takes it
 		// well past a minute on a loaded runner, past three on an emulated Firefox GPU, and past five
 		// while the machine runs other work.
@@ -185,6 +191,7 @@ export const DEMOS: readonly Demo[] = [
 		controls: SHOWCASE_CONTROLS,
 		sound: true,
 		hold: 0.5,
+		cinematic: true,
 		// A software GPU builds the pipelines of the town, the trees and the water, and draws the
 		// island's first frame slowly while the heavy shards share a runner. The figure leaves room
 		// for that load.
@@ -204,6 +211,7 @@ export const DEMOS: readonly Demo[] = [
 		controls: SKYWAY_CONTROLS,
 		sound: true,
 		hold: 1,
+		cinematic: true,
 		timeoutSeconds: 300,
 	},
 	{
@@ -217,6 +225,7 @@ export const DEMOS: readonly Demo[] = [
 			'A new car under softbox area lights on a mirror floor in a dark studio, with a tablet beside it. A tap on the tablet changes the paint, the wheels, the trim or the lights, and the car takes the change at once. The car turns on the spot, then drives out through the opening into a short wet street, where the lamps and the neon signs streak down the asphalt and the lit fog catches their light.',
 		controls: [{ keys: ['Click'], does: 'change the car on the tablet' }],
 		hold: 1,
+		cinematic: true,
 		timeoutSeconds: 300,
 	},
 	{
