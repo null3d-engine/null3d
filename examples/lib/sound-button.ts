@@ -1,6 +1,6 @@
 // The speaker button of a demo whose sketch plays sound with `@null3d/sound`. It sits over the
-// canvas's top right corner, beside the engine's frame rate, and connects the page's half of the
-// sound. The sound is on by default: the page starts it as the demo loads. A browser that holds a
+// canvas's bottom left corner, above a driving scene's thumb stick, and connects the page's half of
+// the sound. The sound is on by default: the page starts it as the demo loads. A browser that holds a
 // page's audio until the user acts plays it from the visitor's first click, tap or key. A press of
 // the button turns the sound off or on, and local storage keeps that choice for every demo, so a
 // visitor who turned it off finds it off in the next demo and on the next visit. While the browser
