@@ -3911,6 +3911,11 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		size: CREEK_WATER_SIZE,
 		hold: 0.5,
 		swiftShaderSwitches: ['preset=low'],
+		// Linux Firefox rounds the softened mirror of the close-up another way, past the tolerance
+		// the other devices take against the Mac's picture, so it keeps its own reference. The
+		// device's first run after the mirror change failed in CI's Firefox shard 12 while every
+		// page in that shard reported and passed, which is the shape of a device-side comparison.
+		devices: ['linux'],
 		timeoutSeconds: 600,
 	},
 	// The hero demo at both tile sizes. The car stands in the same place and its shadow falls the
