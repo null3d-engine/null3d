@@ -625,13 +625,13 @@ export default defineSketch(async (ctx) => {
 			if (lens) post.set(lens);
 			water?.update();
 		},
-		onLateUpdate() {
+		onLateUpdate(dt) {
 			// The particles start where the frame's objects stand, after the wind's field has stepped.
 			flora.update();
 			air.update();
 			clouds.step();
 			for (const fall of falls) fall.update();
-			sound.update();
+			sound.update(dt);
 		},
 	};
 });

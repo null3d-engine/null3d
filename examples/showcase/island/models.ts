@@ -83,8 +83,9 @@ const CARD_FIGURES: Record<'trees' | 'shrubs', string> = {
 };
 
 /**
- * Each plant's two card atlases, as string literals for the same reason. A species whose bake is
- * missing simply has no entry in the figures file, so the scene leaves its far cards out.
+ * Each plant's two card atlases, as string literals for the same reason. A bake that leaves a
+ * species out of the figures file leaves that plant without far cards: an optional plant is left
+ * out of the scene, and one that the scene requires stops the load with an error.
  */
 const CARD_ATLASES: Record<PlantKind, { color: string; surface: string }> = {
 	cypress: {
@@ -127,8 +128,8 @@ async function cardOf(
 	kind: PlantKind,
 ): Promise<PlantCard | undefined> {
 	const at = figures.species[kind];
-	if (!at) return undefined;
 	const files = CARD_ATLASES[kind];
+	if (!at || !files) return undefined;
 	const [color, surface] = await Promise.all([
 		assets.loadTexture(files.color, {
 			colorSpace: 'srgb',

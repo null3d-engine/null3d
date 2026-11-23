@@ -40,8 +40,8 @@ const FULL_WIND = 9;
 const SMOOTHING = 6;
 /** The wind's speed before the wind add-on runs: its steady wind. */
 const STEADY_WIND = 4;
-/** The share of the gap that the wind's speed closes each frame, which settles it in about half a second. */
-const AIR_FOLLOWS = 0.06;
+/** How long the wind's speed takes to follow the camera's, as a time constant in seconds. */
+const AIR_TIME = 0.28;
 
 /** A smooth step from 0 at `low` to 1 at `high`. */
 function smoothstep(low: number, high: number, value: number): number {
@@ -239,7 +239,10 @@ export function createIslandSound(ctx: SketchContext, camera: Camera): IslandSou
 				field.sample(x, y, z, air);
 				speed = Math.hypot(air[0], air[2]);
 			}
-			airSpeed = Number.isNaN(airSpeed) ? speed : airSpeed + (speed - airSpeed) * AIR_FOLLOWS;
+			// The step is the share of the gap that a time constant crosses in this frame, so a fast
+			// display settles the wind as slowly as a slow one.
+			const follow = 1 - Math.exp(-Math.max(0, dt) / AIR_TIME);
+			airSpeed = Number.isNaN(airSpeed) ? speed : airSpeed + (speed - airSpeed) * follow;
 			speed = airSpeed;
 			const strength = Math.min(1, speed / FULL_WIND);
 			const canopy = canopyAt(x, z);

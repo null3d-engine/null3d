@@ -130,8 +130,8 @@ describe.skipIf(!built)('distance', () => {
 		const muffled = gainAt({ near: 1, far: 50, muffle: true }, 49).last(MIXER_OUTPUTS.cutoff, 0);
 		const open = gainAt({ near: 1, far: 50, muffle: false }, 49).last(MIXER_OUTPUTS.cutoff, 0);
 		expect(open).toBeCloseTo(20_000, -2);
-		// The sound stands a meter inside its far distance, where the muffle has not quite reached
-		// its whole share.
+		// The sound stands a meter inside its far distance, where the muffle has reached its whole
+		// share to within a fraction of a per cent.
 		expect(muffled).toBeCloseTo(120 * (20_000 / 120) ** TONE_AT_FAR, -2);
 	});
 

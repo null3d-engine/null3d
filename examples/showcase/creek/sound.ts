@@ -25,13 +25,13 @@ const QUICK = 0.9;
 const CROWN = 4.5;
 /** The wind's speed, in meters a second, at which the wind and the leaves reach their full level. */
 const FULL_WIND = 11;
-/** The share of the gap that the wind's speed closes each frame, which settles it in about half a second. */
-const AIR_FOLLOWS = 0.06;
+/** How long the wind's speed takes to follow the camera's, as a time constant in seconds. */
+const AIR_TIME = 0.28;
 
 /** The creek garden's sound, which the sketch updates once a frame after the camera moves. */
 export interface CreekSound {
-	/** Writes the listener and every level. Call it once a frame in `onLateUpdate`. */
-	update(): void;
+	/** Writes the listener and every level. Call it once a frame in `onLateUpdate`, with its step. */
+	update(dt: number): void;
 }
 
 /** Makes the creek garden's sound for the camera that hears it, from the garden's wind. */
@@ -97,11 +97,14 @@ export function createCreekSound(ctx: SketchContext, camera: Camera, wind: Wind)
 	// follows over about half a second.
 	let airSpeed = Number.NaN;
 	return {
-		update() {
+		update(dt) {
 			camera.getWorldPosition(eye);
 			wind.sample(eye[0] as number, eye[1] as number, eye[2] as number, flow);
 			const sampled = Math.hypot(flow[0], flow[2]);
-			airSpeed = Number.isNaN(airSpeed) ? sampled : airSpeed + (sampled - airSpeed) * AIR_FOLLOWS;
+			// The step is the share of the gap that a time constant crosses in this frame, so a fast
+			// display settles the wind as slowly as a slow one.
+			const follow = 1 - Math.exp(-Math.max(0, dt) / AIR_TIME);
+			airSpeed = Number.isNaN(airSpeed) ? sampled : airSpeed + (sampled - airSpeed) * follow;
 			const strength = Math.min(1, airSpeed / FULL_WIND);
 			air.setLevel(0.02 + 0.18 * strength * strength);
 			air.setTone(0.62 + 0.2 * strength);
