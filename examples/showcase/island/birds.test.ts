@@ -1,10 +1,15 @@
-// The island's crows: their perches stand apart and clear of the plan's trees, one bird holds each
-// perch by a claim, a flight lands on the perch it aimed at, the flock roosts while the town's lamps
-// are lit, and only the nearest perched birds scatter when the camera comes inside the startle range.
+// The island's crows: their perches stand apart and clear of the plan's trees, the keeps' perches
+// stand on the drawn stone, the form stands on its feet with smooth normals, one bird holds each
+// perch by a claim, a flight lands on the perch it aimed at and leaves its perch outward, the flock
+// roosts while the town's lamps are lit, and only the nearest perched birds scatter when the camera
+// comes inside the startle range.
 import { describe, expect, it } from 'bun:test';
+import type { MeshArrays } from '@null3d/engine';
 import {
 	BIRD_COUNT,
 	createFlock,
+	crowBody,
+	crowWing,
 	type Flock,
 	islandPerches,
 	PERCH_GAP,
@@ -15,10 +20,14 @@ import {
 	STARTLE_RANGE,
 } from './birds';
 import { TOWN, VILLAGES } from './island';
-import { FILL_SPOTS, TREE_SPOTS } from './plan';
+import { FILL_SPOTS, KEEPS, TREE_SPOTS } from './plan';
 
 /** Long enough for every bird to have flown and landed at least once, in seconds. */
 const SETTLE = 200;
+
+/** The highest drawn stone of a keep's merlons and of the walk inside them, from the landmark model. */
+const KEEP_MERLON_TOP = 23;
+const KEEP_WALK_TOP = 21.9;
 
 /** Runs the flock for some seconds, and answers the fewest and most meters apart two birds came. */
 function run(
@@ -30,6 +39,19 @@ function run(
 	const step = 1 / 60;
 	for (let t = 0; t < seconds; t += step) flock.step(step, { night, camera });
 	return flock;
+}
+
+/** The vertices of a form that the builders make, as plain numbers. */
+function vertices(values: MeshArrays['positions']): readonly number[] {
+	return values as readonly number[];
+}
+
+/** The lowest height of a form's vertices. */
+function lowest(values: MeshArrays['positions']): number {
+	const positions = vertices(values);
+	let low = Number.POSITIVE_INFINITY;
+	for (let k = 1; k < positions.length; k += 3) low = Math.min(low, positions[k] as number);
+	return low;
 }
 
 describe('the perches', () => {
@@ -58,6 +80,69 @@ describe('the perches', () => {
 
 	it('hold more places than the default flock needs, so every bird stands on its own', () => {
 		expect(perches.length).toBeGreaterThanOrEqual(BIRD_COUNT);
+	});
+
+	it('stand on the keeps’ drawn stone, in the middle of the corner merlons', () => {
+		for (const [kx, kz, ky] of KEEPS) {
+			for (const [ox, oz] of [
+				[4, 5],
+				[-4, 5],
+				[4, -5],
+				[-4, -5],
+			] as const) {
+				const perch = perches.find(
+					(p) =>
+						Math.abs(p.x - (kx + ox)) < 1e-9 &&
+						Math.abs(p.z - (kz + oz)) < 1e-9 &&
+						Math.abs(p.y - (ky + KEEP_MERLON_TOP)) < 1e-9,
+				);
+				expect(perch).toBeDefined();
+				// The bird looks out over the wall, not into the tower.
+				expect(Math.sin(perch?.yaw ?? 0) * ox + Math.cos(perch?.yaw ?? 0) * oz).toBeGreaterThan(0);
+			}
+			expect(
+				perches.some(
+					(p) =>
+						Math.abs(p.x - kx) < 1e-9 &&
+						Math.abs(p.z - kz) < 1e-9 &&
+						Math.abs(p.y - (ky + KEEP_WALK_TOP)) < 1e-9,
+				),
+			).toBe(true);
+		}
+	});
+});
+
+describe('the form', () => {
+	it('stands on its feet, so no part of it sinks into the stone under it', () => {
+		const body = crowBody();
+		expect(lowest(body.positions)).toBeGreaterThanOrEqual(0);
+		expect(lowest(body.positions)).toBeLessThan(0.05);
+		// A wing turns at a shoulder above the feet, and its thinnest edge stays above them too.
+		const wing = crowWing(1);
+		expect(lowest(wing.positions)).toBeGreaterThan(-0.02);
+	});
+
+	it('shares the trunk’s vertices, so its normals shade it as one shape', () => {
+		const body = crowBody();
+		expect(body.computeNormals).toBe(true);
+		expect(vertices(body.positions).length / 3).toBeLessThan((body.indices?.length ?? 0) / 3);
+		const wing = crowWing(1);
+		expect(wing.computeNormals).toBe(true);
+		expect(vertices(wing.positions).length / 3).toBeLessThan((wing.indices?.length ?? 0) / 3);
+	});
+
+	it('tapers each wing to a single tip', () => {
+		for (const side of [1, -1] as const) {
+			const wing = crowWing(side);
+			const points = vertices(wing.positions);
+			let farthest = 0;
+			let atTip = 0;
+			for (let k = 0; k < points.length; k += 3)
+				farthest = Math.max(farthest, Math.abs(points[k] as number));
+			for (let k = 0; k < points.length; k += 3)
+				if (Math.abs(Math.abs(points[k] as number) - farthest) < 1e-9) atTip++;
+			expect(atTip).toBe(1);
+		}
 	});
 });
 
@@ -143,6 +228,33 @@ describe('the flock', () => {
 			const close = near.some(({ k }) => flock.birds[k] === bird);
 			expect(bird.perched).toBe(!close);
 		}
+	});
+
+	it('leaves a battlements perch outward, away from the keep’s stone', () => {
+		// A crow on a corner merlon, with one spare perch far off for it to fly to. The camera stands
+		// on the merlon, so its startle takes the one bird, after its fuse.
+		const merlon: Perch = { x: 4, y: KEEP_MERLON_TOP, z: 5, yaw: Math.atan2(4, 5) };
+		const spare: Perch = { x: 400, y: 10, z: 400, yaw: 0 };
+		let flock = createFlock([merlon, spare], 1, 1);
+		for (let seed = 1; seed < 80 && flock.birds[0]?.x !== merlon.x; seed++)
+			flock = createFlock([merlon, spare], 1, seed);
+		const bird = flock.birds[0];
+		if (!bird) throw new Error('the flock has no birds');
+		expect(bird.perched).toBe(true);
+		expect(bird.x).toBe(merlon.x);
+		const camera: readonly [number, number, number] = [merlon.x, merlon.y, merlon.z];
+		const fromCentre = Math.hypot(merlon.x, merlon.z);
+		let outward = fromCentre;
+		let rose = 0;
+		for (let t = 0; t < 1; t += 1 / 60) {
+			flock.step(1 / 60, { night: false, camera });
+			if (bird.perched) continue;
+			outward = Math.max(outward, Math.hypot(bird.x, bird.z));
+			rose = Math.max(rose, bird.y - merlon.y);
+		}
+		expect(bird.perched).toBe(false);
+		expect(outward).toBeGreaterThan(fromCentre + 0.25);
+		expect(rose).toBeGreaterThan(0.5);
 	});
 
 	it('leaves the flock alone when the camera stays outside the range', () => {

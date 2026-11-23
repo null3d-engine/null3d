@@ -8,10 +8,12 @@
 // that range the nearest perched birds launch after a short fuse, and the rest stay put. The
 // cinematic route keeps its distance, so the flock flies only its own errands for the whole route.
 //
-// The birds draw as one code-made form of about forty triangles: a body, head, beak and tail in one
-// mesh, and each wing its own mesh so it turns at the shoulder. Three dynamic batches, so the wings
-// beat in bursts and glide between, and the bodies bank into their turns. The birds cast no shadows.
-import { type Camera, type MeshArrays, quat, type SketchContext } from '@null3d/engine';
+// The birds draw as one code-made form with a smooth silhouette: a lofted body that tapers to a tail
+// fan, a head with a beak, and two wings of three tapered segments in meshes of their own so they
+// turn at the shoulder. The form stands with its feet at the origin, so a bird rests on its perch at
+// any size. Three dynamic batches, so the wings beat in bursts, glide between and fold at rest, while
+// the bodies bank into their turns. The birds cast no shadows.
+import { type Camera, type MeshArrays, quat, type SketchContext, vec3 } from '@null3d/engine';
 import { random } from '../../lib/procedural';
 import { TOWN, townShare, VILLAGES } from './island';
 import { HOUSE_KINDS } from './kit';
@@ -52,6 +54,18 @@ const PERCH_SECONDS = [6, 40] as const;
 const FLIGHT_SECONDS = [3, 10] as const;
 /** The height above the higher perch that a flight crosses the island at, at least and at most. */
 const CRUISE_HEIGHT = [5, 25] as const;
+/**
+ * The highest drawn stone of a keep's corner merlons, and of the walk inside them, above the keep's
+ * ground. The landmark model's blocks are a meter square with their tops at the battlements' height,
+ * and the walk that they ring lies below it.
+ */
+const KEEP_MERLON_TOP = 23;
+const KEEP_WALK_TOP = 21.9;
+/** Where a wing turns from the body's origin, and how far the wings fold at rest. */
+const SHOULDER = { x: 0.045, y: 0.16, z: 0.02 } as const;
+const FOLD_ANGLE = 1;
+/** How quickly the wings fold and spread, as the share of the gap that one frame closes. */
+const FOLD_RATE = 6;
 
 /** A place where a crow may stand: its point in the world and the way it faces, in radians about +y. */
 export interface Perch {
@@ -82,6 +96,8 @@ export interface Crow {
 	roll: number;
 	/** The wings' angle, from a glide's small lift to a beat's full rise. */
 	wing: number;
+	/** How far the wings fold against the body, from 0 spread to 1 folded at rest. */
+	fold: number;
 	/** The seconds until this perched bird launches, or the flight's share, from 0 to 1, in the air. */
 	timer: number;
 }
@@ -211,16 +227,17 @@ export function islandPerches(): Perch[] {
 		}
 		if (!any) break;
 	}
-	// The keeps: the battlements' corner merlons and the tower's top floor, from the keep's own form.
+	// The keeps: a crow stands at the middle of each corner merlon, which is a one-meter block, and
+	// looks out over the wall; the middle of the tower's walk holds one as well.
 	for (const [kx, kz, ky] of KEEPS)
 		for (const [ox, oz] of [
-			[4, 5.1],
-			[-4, 5.1],
-			[4, -5.1],
-			[-4, -5.1],
+			[4, 5],
+			[-4, 5],
+			[4, -5],
+			[-4, -5],
 		] as const)
-			add({ x: kx + ox, y: ky + 23.1, z: kz + oz, yaw: Math.atan2(-ox, -oz) });
-	for (const [kx, kz, ky] of KEEPS) add({ x: kx, y: ky + 22.1, z: kz, yaw: 0 });
+			add({ x: kx + ox, y: ky + KEEP_MERLON_TOP, z: kz + oz, yaw: Math.atan2(ox, oz) });
+	for (const [kx, kz, ky] of KEEPS) add({ x: kx, y: ky + KEEP_WALK_TOP, z: kz, yaw: 0 });
 	// The parks: each gazebo's finial, a few places on its lookout wall, and its lamp heads.
 	for (const plan of parkPlans()) {
 		add({ x: plan.gazebo.x, y: plan.gazebo.y + 7.3, z: plan.gazebo.z, yaw: 0.4 });
@@ -367,6 +384,7 @@ export function createFlock(perches: readonly Perch[], count = BIRD_COUNT, seed 
 			pitch: 0,
 			roll: 0,
 			wing: 0.1,
+			fold: 1,
 			timer: seconds(PERCH_SECONDS),
 		});
 	}
@@ -391,19 +409,24 @@ export function createFlock(perches: readonly Perch[], count = BIRD_COUNT, seed 
 		// The cubic's middle sits at the cruise height when both inner points share it.
 		const inner = (8 * cruise - from.y - to.y) / 6;
 		const [px, pz] = [-dz / span, dx / span];
+		// The bird climbs away along the way its perch faces, so it rises clear of the stone under
+		// it, and it settles onto the next perch from beyond that perch's edge. The bow shapes the
+		// middle of the flight, between the two.
+		const out = 2.5 + next() * 2.5;
+		const along = 2.5 + next() * 2.5;
 		flights.set(index, {
 			path: [
 				from.x,
-				from.y + 0.05,
+				from.y + 0.02,
 				from.z,
-				from.x + px * bow * 0.4,
+				from.x + Math.sin(from.yaw) * out,
 				inner,
-				from.z + pz * bow * 0.4,
-				to.x + px * bow * 0.7,
+				from.z + Math.cos(from.yaw) * out,
+				to.x + Math.sin(to.yaw) * along + px * bow * 0.6,
 				inner,
-				to.z + pz * bow * 0.7,
+				to.z + Math.cos(to.yaw) * along + pz * bow * 0.6,
 				to.x,
-				to.y + 0.05,
+				to.y + 0.02,
 				to.z,
 			],
 			seconds: seconds(FLIGHT_SECONDS),
@@ -430,6 +453,7 @@ export function createFlock(perches: readonly Perch[], count = BIRD_COUNT, seed 
 			}
 		}
 		for (const [k, bird] of birds.entries()) {
+			bird.fold += ((bird.perched ? 1 : 0) - bird.fold) * Math.min(1, dt * FOLD_RATE);
 			if (bird.perched) {
 				// A negative timer counts the startle's fuse down; at night no clock runs at all.
 				if (bird.timer < 0) {
@@ -483,118 +507,160 @@ export function createFlock(perches: readonly Perch[], count = BIRD_COUNT, seed 
 	return { birds, perches, step };
 }
 
-/** One face of the crow's form, with its color and its four corners. */
-function face(
-	positions: number[],
-	colors: number[],
-	indices: number[],
-	corners: readonly (readonly [number, number, number])[],
-	tone: number,
-): void {
-	const base = positions.length / 3;
-	for (const [x, y, z] of corners) {
-		positions.push(x, y, z);
-		colors.push(tone, tone, tone * 1.1);
-	}
-	indices.push(base, base + 1, base + 2, base, base + 2, base + 3);
-}
-
-/** The crow's body, head, beak and tail: about twenty triangles in one form. */
-function crowBody(): MeshArrays {
+/**
+ * The crow's body, its head, beak and tail fan, as one form that stands with its feet at the origin:
+ * a lofted trunk whose rings grow from the tail to the breast and narrow again at the neck, a head
+ * with a cone of a beak, and a fan of five feathers behind. Rings share their vertices, so the
+ * form's normals shade it as one smooth shape.
+ */
+export function crowBody(): MeshArrays {
 	const positions: number[] = [];
 	const colors: number[] = [];
 	const indices: number[] = [];
-	const box = (
-		[x0, y0, z0]: readonly [number, number, number],
-		[x1, y1, z1]: readonly [number, number, number],
-		tone: number,
-	) => {
-		const p = (x: number, y: number, z: number) => [x, y, z] as const;
-		const [a, b, c, d, e, f, g, h] = [
-			p(x0, y0, z0),
-			p(x1, y0, z0),
-			p(x1, y1, z0),
-			p(x0, y1, z0),
-			p(x0, y0, z1),
-			p(x1, y0, z1),
-			p(x1, y1, z1),
-			p(x0, y1, z1),
-		];
-		face(positions, colors, indices, [e, f, g, h], tone);
-		face(positions, colors, indices, [b, a, d, c], tone);
-		face(positions, colors, indices, [a, e, h, d], tone);
-		face(positions, colors, indices, [f, b, c, g], tone);
-		face(positions, colors, indices, [d, h, g, c], tone);
-		face(positions, colors, indices, [a, b, f, e], tone);
+	const SIDES = 8;
+	const tone = (shade: number): void => {
+		colors.push(shade, shade, shade * 1.12);
 	};
-	// The body tapers toward the tail, and the head sits over its front, with a stub of a beak.
-	box([-0.055, -0.05, -0.2], [0.055, 0.05, 0.14], 0.03);
-	box([-0.035, 0.02, 0.12], [0.035, 0.09, 0.2], 0.028);
-	face(
-		positions,
-		colors,
-		indices,
-		[
-			[-0.012, 0.045, 0.2],
-			[0.012, 0.045, 0.2],
-			[0.012, 0.06, 0.27],
-			[-0.012, 0.06, 0.27],
-		],
-		0.05,
-	);
-	// The tail is a flat plate that widens behind the body.
-	face(
-		positions,
-		colors,
-		indices,
-		[
-			[-0.045, 0.005, -0.2],
-			[0.045, 0.005, -0.2],
-			[0.1, 0.02, -0.38],
-			[-0.1, 0.02, -0.38],
-		],
-		0.04,
-	);
+	/** A ring of the trunk at `z`, its half-widths and the height of its middle, and its first index. */
+	const ring = (z: number, rx: number, ry: number, cy: number, shade: number): number => {
+		const base = positions.length / 3;
+		for (let k = 0; k < SIDES; k++) {
+			const a = (k / SIDES) * Math.PI * 2;
+			positions.push(Math.cos(a) * rx, cy + Math.sin(a) * ry, z);
+			tone(shade);
+		}
+		return base;
+	};
+	/** Joins two rings with faces that point outward. */
+	const stitch = (a: number, b: number): void => {
+		for (let k = 0; k < SIDES; k++) {
+			const [a0, a1, b0, b1] = [a + k, a + ((k + 1) % SIDES), b + k, b + ((k + 1) % SIDES)];
+			indices.push(a0, a1, b1, a0, b1, b0);
+		}
+	};
+	const tail = ring(-0.22, 0.024, 0.026, 0.115, 0.035);
+	const waist = ring(-0.12, 0.048, 0.055, 0.118, 0.033);
+	const breast = ring(0, 0.06, 0.072, 0.122, 0.031);
+	const chest = ring(0.09, 0.044, 0.055, 0.132, 0.03);
+	const neck = ring(0.155, 0.031, 0.036, 0.158, 0.029);
+	const head = ring(0.215, 0.04, 0.04, 0.185, 0.029);
+	const face = ring(0.26, 0.024, 0.026, 0.19, 0.03);
+	stitch(tail, waist);
+	stitch(waist, breast);
+	stitch(breast, chest);
+	stitch(chest, neck);
+	stitch(neck, head);
+	stitch(head, face);
+	const tailTip = positions.length / 3;
+	positions.push(0, 0.108, -0.242);
+	tone(0.04);
+	for (let k = 0; k < SIDES; k++) indices.push(tail + ((k + 1) % SIDES), tail + k, tailTip);
+	const nose = positions.length / 3;
+	positions.push(0, 0.188, 0.292);
+	tone(0.03);
+	for (let k = 0; k < SIDES; k++) indices.push(face + k, face + ((k + 1) % SIDES), nose);
+	// The beak: a short cone ahead of the head, a little lighter than the feathers.
+	const BEAK = 6;
+	const beakBase = positions.length / 3;
+	for (let k = 0; k < BEAK; k++) {
+		const a = (k / BEAK) * Math.PI * 2;
+		positions.push(Math.cos(a) * 0.016, 0.186 + Math.sin(a) * 0.015, 0.268);
+		tone(0.1);
+	}
+	const beakTip = positions.length / 3;
+	positions.push(0, 0.176, 0.345);
+	tone(0.09);
+	for (let k = 0; k < BEAK; k++) indices.push(beakBase + k, beakBase + ((k + 1) % BEAK), beakTip);
+	// The tail: five feathers spread from the trunk's root, their far edge scalloped.
+	const rootLeft = positions.length / 3;
+	positions.push(-0.04, 0.113, -0.2);
+	tone(0.04);
+	const rootMiddle = positions.length / 3;
+	positions.push(0, 0.125, -0.195);
+	tone(0.038);
+	const rootRight = positions.length / 3;
+	positions.push(0.04, 0.113, -0.2);
+	tone(0.04);
+	const feathers: number[] = [];
+	for (let k = 0; k <= 5; k++) {
+		const x = -0.115 + k * (0.23 / 5);
+		positions.push(x, 0.095 - Math.abs(x) * 0.1, -0.42 - (k % 2) * 0.022);
+		tone(0.042);
+		feathers.push(positions.length / 3 - 1);
+	}
+	indices.push(rootMiddle, feathers[0] as number, rootLeft);
+	for (let k = 0; k < 5; k++)
+		indices.push(rootMiddle, feathers[k + 1] as number, feathers[k] as number);
+	indices.push(rootMiddle, rootRight, feathers[5] as number);
+	// The legs: two thin posts from the belly down to the feet, which stand at the origin.
+	const LEG = 3;
+	for (const side of [-1, 1] as const) {
+		const top = positions.length / 3;
+		for (let k = 0; k < LEG; k++) {
+			const a = (k / LEG) * Math.PI * 2;
+			positions.push(side * 0.022 + Math.cos(a) * 0.006, 0.052, 0.012 + Math.sin(a) * 0.006);
+			tone(0.05);
+		}
+		const foot = positions.length / 3;
+		for (let k = 0; k < LEG; k++) {
+			positions.push(side * 0.023, 0, 0.018);
+			tone(0.05);
+		}
+		for (let k = 0; k < LEG; k++) {
+			const [a0, a1, b0, b1] = [top + k, top + ((k + 1) % LEG), foot + k, foot + ((k + 1) % LEG)];
+			indices.push(a0, a1, b1, a0, b1, b0);
+		}
+	}
 	return { positions, colors, indices, computeNormals: true, levels: false };
 }
 
-/** One wing's form, from its shoulder at the origin out to its tip, on the side `side`. */
-function crowWing(side: 1 | -1): MeshArrays {
+/**
+ * One wing, built from its shoulder at the origin: three segments whose chord narrows and whose
+ * leading edge sweeps back, out to a tapered tip. The stations share their vertices, so the wing
+ * shades smoothly along its span.
+ */
+export function crowWing(side: 1 | -1): MeshArrays {
 	const positions: number[] = [];
 	const colors: number[] = [];
 	const indices: number[] = [];
-	const [root, mid] = [
-		[0, 0.09],
-		[0.2, 0.075],
+	/** Each station's distance from the shoulder, its chord's middle and span, and its half thickness. */
+	const STATIONS = [
+		[0, 0.015, 0.2, 0.011],
+		[0.13, -0.02, 0.165, 0.009],
+		[0.25, -0.07, 0.115, 0.007],
 	] as const;
-	const at = (x: number, back: number, front: number, tone: number) =>
-		face(
-			positions,
-			colors,
-			indices,
-			[
-				[side * x, 0.01, -back],
-				[side * x, 0.01, front],
-				[side * x, 0.02, front],
-				[side * x, 0.02, -back],
-			],
-			tone,
-		);
-	at(root[0], root[1], 0.07, 0.032);
-	at(mid[0], mid[1], 0.04, 0.03);
-	// The tip is a short point beyond the middle panel.
-	face(
-		positions,
-		colors,
-		indices,
-		[
-			[side * 0.2, 0.02, -0.075],
-			[side * 0.2, 0.02, 0.075],
-			[side * 0.36, 0.03, 0.05],
-			[side * 0.36, 0.03, -0.02],
-		],
-		0.036,
-	);
+	const TONES = [0.034, 0.032, 0.031] as const;
+	const rings = STATIONS.map(([x, middle, chord, half], k) => {
+		const base = positions.length / 3;
+		for (const [dz, dy] of [
+			[chord / 2, 0],
+			[0, -half],
+			[-chord / 2, 0],
+			[0, half],
+		] as const) {
+			positions.push(side * x, 0.004 + dy, middle + dz);
+			const shade = TONES[k] as number;
+			colors.push(shade, shade, shade * 1.12);
+		}
+		return base;
+	});
+	for (let k = 0; k < rings.length - 1; k++)
+		for (let p = 0; p < 4; p++) {
+			const [a0, a1] = [(rings[k] as number) + p, (rings[k] as number) + ((p + 1) % 4)];
+			const [b0, b1] = [(rings[k + 1] as number) + p, (rings[k + 1] as number) + ((p + 1) % 4)];
+			indices.push(a0, a1, b1, a0, b1, b0);
+		}
+	const tip = positions.length / 3;
+	positions.push(side * 0.37, 0.013, -0.115);
+	colors.push(0.03, 0.03, 0.0336);
+	for (let p = 0; p < 4; p++)
+		indices.push((rings[2] as number) + p, (rings[2] as number) + ((p + 1) % 4), tip);
+	if (side < 0)
+		for (let k = 0; k < indices.length; k += 3) {
+			const middle = indices[k + 1] as number;
+			indices[k + 1] = indices[k + 2] as number;
+			indices[k + 2] = middle;
+		}
 	return { positions, colors, indices, computeNormals: true, levels: false };
 }
 
@@ -660,6 +726,8 @@ export function createBirds(ctx: SketchContext, camera: Camera, options: BirdOpt
 	const bodyTurn = quat.create();
 	const wingTurn = quat.create();
 	const flapTurn = quat.create();
+	const foldTurn = quat.create();
+	const shoulder = vec3.create();
 	const eye: [number, number, number] = [0, 0, 0];
 	/** The camera's place, which the startle measures against and the drawn size follows. */
 	const cameraAt = (): [number, number, number] => {
@@ -677,14 +745,18 @@ export function createBirds(ctx: SketchContext, camera: Camera, options: BirdOpt
 		quat.fromEuler(bodyTurn, crow.pitch, crow.yaw, crow.roll, 'YXZ');
 		let [x, y, z] = [crow.x, crow.y, crow.z];
 		if (side !== 0) {
-			// The wing turns at its shoulder: the offset rides the body, and the flap rides the wing.
-			const [ox, oy, oz] = [side * 0.05, 0.02, 0.02];
-			const [c, s] = [Math.cos(crow.yaw), Math.sin(crow.yaw)];
-			x += ox * c + oz * s;
-			z += -ox * s + oz * c;
-			y += oy;
+			// The shoulder rides the body's turn at the bird's size, and the flap and the fold turn
+			// about it.
+			vec3.set(shoulder, side * SHOULDER.x * size, SHOULDER.y * size, SHOULDER.z * size);
+			vec3.transformQuat(shoulder, shoulder, bodyTurn);
+			x += shoulder[0] as number;
+			y += shoulder[1] as number;
+			z += shoulder[2] as number;
 			quat.set(flapTurn, 0, 0, Math.sin((side * crow.wing) / 2), Math.cos((side * crow.wing) / 2));
+			const fold = side * crow.fold * FOLD_ANGLE;
+			quat.set(foldTurn, 0, Math.sin(fold / 2), 0, Math.cos(fold / 2));
 			quat.multiply(wingTurn, bodyTurn, flapTurn);
+			quat.multiply(wingTurn, wingTurn, foldTurn);
 			batch.rotations.set(wingTurn, row * 4);
 		} else batch.rotations.set(bodyTurn, row * 4);
 		batch.positions.set([x, y, z], row * 3);
