@@ -44,7 +44,7 @@ export function createCreekSound(ctx: SketchContext, camera: Camera, wind: Wind)
 		count: xs.length,
 		voices: 3,
 		near: 2.5,
-		far: 70,
+		far: 60,
 	});
 	xs.forEach((x, k) => {
 		const [along, across] = streamCurrent(x);
@@ -59,7 +59,7 @@ export function createCreekSound(ctx: SketchContext, camera: Camera, wind: Wind)
 		sound.loop({
 			file: fallFile,
 			near: 5,
-			far: 260,
+			far: 400,
 			position: [x + out, WATER - FALL.drop / 2, streamZ(x)],
 		});
 	}

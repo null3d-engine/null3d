@@ -133,8 +133,8 @@ export function createIslandSound(ctx: SketchContext, camera: Camera): IslandSou
 		file: seaFile,
 		count: shore.length,
 		voices: 3,
-		near: 30,
-		far: 110,
+		near: 40,
+		far: 300,
 	});
 	for (const [k, [x, z]] of shore.entries()) {
 		seaShore.setPosition(k, x, SEA_LEVEL, z);
@@ -147,8 +147,8 @@ export function createIslandSound(ctx: SketchContext, camera: Camera): IslandSou
 		file: sampleUrl('sources/sound/loops/surf/surf.mp3'),
 		count: beach.length,
 		voices: 3,
-		near: 12,
-		far: 50,
+		near: 30,
+		far: 400,
 	});
 	beach.forEach((point, k) => {
 		surf.setPosition(k, point.x, SEA_LEVEL + 1, point.z);
@@ -170,8 +170,8 @@ export function createIslandSound(ctx: SketchContext, camera: Camera): IslandSou
 	// it only from close by, so the square sounds like its fountain rather than like silence.
 	const fountain = sound.loop({
 		file: sampleUrl('sources/sound/loops/stream/stream.mp3'),
-		near: 6,
-		far: 40,
+		near: 3,
+		far: 50,
 		level: 0.5,
 	});
 	fountain.setPosition(FOUNTAIN_WATER.x, FOUNTAIN_WATER.basinAbove + 1, FOUNTAIN_WATER.z);
@@ -208,7 +208,7 @@ export function createIslandSound(ctx: SketchContext, camera: Camera): IslandSou
 			cars?.destroy();
 			bus?.destroy();
 			bus = undefined;
-			cars = sound.group({ file: carFile, count: next.counts.cars, voices: 4, near: 4, far: 55 });
+			cars = sound.group({ file: carFile, count: next.counts.cars, voices: 4, near: 5, far: 120 });
 			carShown.length = 0;
 			carPitch.length = 0;
 			for (let k = 0; k < next.counts.cars; k++) {
@@ -217,7 +217,7 @@ export function createIslandSound(ctx: SketchContext, camera: Camera): IslandSou
 			}
 			busShown = 0;
 			busPitch = 1;
-			if (next.counts.buses > 0) bus = sound.loop({ file: busFile, near: 5, far: 70, level: 0 });
+			if (next.counts.buses > 0) bus = sound.loop({ file: busFile, near: 8, far: 200, level: 0 });
 		},
 		update(dt = 0) {
 			camera.getWorldPosition(eye);

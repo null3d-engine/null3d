@@ -74,6 +74,22 @@ A bed that comes from one side can still have a place. The sea is louder toward 
 
 A source at a place falls off with distance by itself. Give it `near`, the distance within which it plays at its full level, and `far`, where it has faded out. A waterfall heard across a valley might take `near: 6` and `far: 200`. With `far`, the sound also loses its highs with distance, as real sounds do.
 
+Choose `far` as the distance at which a listener would stop hearing the thing, and `near` as the distance at which it is as loud as it gets. The ranges differ by kind:
+
+| The source | `near` | `far` |
+| --- | --- | --- |
+| A stream, a fountain or water over stones | 3 | 50 |
+| A bird or a voice nearby | 2 | 60 |
+| A car or a van beside its road | 5 | 120 |
+| A bus or a lorry | 8 | 200 |
+| A crowd or a street of people | 5 | 150 |
+| A waterfall, which is loud and carries | 5 | 400 |
+| The breakers along a beach | 30 | 400 |
+| The open sea heard from shore | 40 | 300 |
+| Thunder, heard across a city | 100 | 4000 |
+
+A source whose `far` reaches a kilometre is heard from the whole map, and a scene's opening view roars when nothing stands near it.
+
 ```ts
 const fall = sound.loop({ file: '/sounds/waterfall.mp3', near: 6, far: 200 });
 fall.setPosition(lip[0], lip[1] - drop, lip[2]);
