@@ -73,10 +73,46 @@ interface CardFigures {
 	>;
 }
 
+/**
+ * The card figures that the build writes beside each model file, as string literals so that the
+ * sample pin check can find every file that a demo names.
+ */
+const CARD_FIGURES: Record<'trees' | 'shrubs', string> = {
+	trees: sampleUrl('sources/showcase/island/trees-cards.json'),
+	shrubs: sampleUrl('sources/showcase/island/shrubs-cards.json'),
+};
+
+/**
+ * Each plant's two card atlases, as string literals for the same reason. A species whose bake is
+ * missing simply has no entry in the figures file, so the scene leaves its far cards out.
+ */
+const CARD_ATLASES: Record<PlantKind, { color: string; surface: string }> = {
+	cypress: {
+		color: sampleUrl('sources/showcase/island/cypress-card-color.png'),
+		surface: sampleUrl('sources/showcase/island/cypress-card-surface.png'),
+	},
+	'holm-oak': {
+		color: sampleUrl('sources/showcase/island/holm-oak-card-color.png'),
+		surface: sampleUrl('sources/showcase/island/holm-oak-card-surface.png'),
+	},
+	olive: {
+		color: sampleUrl('sources/showcase/island/olive-card-color.png'),
+		surface: sampleUrl('sources/showcase/island/olive-card-surface.png'),
+	},
+	'stone-pine': {
+		color: sampleUrl('sources/showcase/island/stone-pine-card-color.png'),
+		surface: sampleUrl('sources/showcase/island/stone-pine-card-surface.png'),
+	},
+	oleander: {
+		color: sampleUrl('sources/showcase/island/oleander-card-color.png'),
+		surface: sampleUrl('sources/showcase/island/oleander-card-surface.png'),
+	},
+};
+
 /** A model's card figures, or undefined when the build wrote none. */
 async function cardFigures(model: 'trees' | 'shrubs'): Promise<CardFigures | undefined> {
 	try {
-		const response = await fetch(sampleUrl(`sources/showcase/island/${model}-cards.json`));
+		const response = await fetch(CARD_FIGURES[model]);
 		if (!response.ok) return undefined;
 		return (await response.json()) as CardFigures;
 	} catch {
@@ -88,19 +124,19 @@ async function cardFigures(model: 'trees' | 'shrubs'): Promise<CardFigures | und
 async function cardOf(
 	{ assets }: SketchContext,
 	figures: CardFigures,
-	kind: string,
+	kind: PlantKind,
 ): Promise<PlantCard | undefined> {
 	const at = figures.species[kind];
 	if (!at) return undefined;
-	const folder = `sources/showcase/island`;
+	const files = CARD_ATLASES[kind];
 	const [color, surface] = await Promise.all([
-		assets.loadTexture(sampleUrl(`${folder}/${kind}-card-color.png`), {
+		assets.loadTexture(files.color, {
 			colorSpace: 'srgb',
 			wrap: 'clamp',
 			mipmaps: false,
 			flipY: false,
 		}),
-		assets.loadTexture(sampleUrl(`${folder}/${kind}-card-surface.png`), {
+		assets.loadTexture(files.surface, {
 			colorSpace: 'linear',
 			wrap: 'clamp',
 			mipmaps: false,
@@ -114,7 +150,7 @@ async function cardOf(
 export async function loadPlantCard(
 	ctx: SketchContext,
 	model: 'trees' | 'shrubs',
-	kind: string,
+	kind: PlantKind,
 ): Promise<PlantCard | undefined> {
 	const figures = await cardFigures(model);
 	return figures ? cardOf(ctx, figures, kind) : undefined;
@@ -124,7 +160,7 @@ export async function loadPlantCard(
 async function optionalPlant(
 	ctx: SketchContext,
 	part: (name: string) => Part,
-	name: string,
+	name: PlantKind,
 	figures: CardFigures | undefined,
 ): Promise<Plant | undefined> {
 	const find = (id: string): Part | undefined => {
