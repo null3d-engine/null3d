@@ -35,6 +35,18 @@ const BIRD_ROOFS = 120;
 export const STARTLE_RANGE = 6;
 export const STARTLE_FUSE = 0.2;
 export const STARTLE_BIRDS = 3;
+/**
+ * The distance at which a bird draws at its own size, and the most that distance grows it. A crow is
+ * about half a meter long and a meter across the wings, which two hundred meters away is three
+ * pixels: it would read as a speck, so the drawn bird grows with the distance and holds about
+ * fifteen pixels at any range the route shows the island from, while a bird close up keeps its own
+ * size.
+ */
+const BIRD_SIZE_FROM = 35;
+const BIRD_SIZE_MOST = 6;
+/** The drawn size of a bird seen from `distance` meters. */
+const birdSize = (distance: number): number =>
+	Math.min(BIRD_SIZE_MOST, Math.max(1, distance / BIRD_SIZE_FROM));
 /** The seconds that a perch visit lasts, at least and at most, and the same for a flight. */
 const PERCH_SECONDS = [6, 40] as const;
 const FLIGHT_SECONDS = [3, 10] as const;
@@ -649,12 +661,19 @@ export function createBirds(ctx: SketchContext, camera: Camera, options: BirdOpt
 	const wingTurn = quat.create();
 	const flapTurn = quat.create();
 	const eye: [number, number, number] = [0, 0, 0];
-	const startle = (): [number, number, number] | undefined => {
+	/** The camera's place, which the startle measures against and the drawn size follows. */
+	const cameraAt = (): [number, number, number] => {
 		camera.getPosition(eye);
 		return [eye[0], eye[1], eye[2]];
 	};
-	/** One row's turn, from the bird's own angles and the wing's beat, written into the batch. */
-	const write = (batch: typeof bodies, row: number, crow: Crow, side: -1 | 0 | 1): void => {
+	/** One row's turn and size, from the bird's angles, the wing's beat and its distance. */
+	const write = (
+		batch: typeof bodies,
+		row: number,
+		crow: Crow,
+		side: -1 | 0 | 1,
+		size: number,
+	): void => {
 		quat.fromEuler(bodyTurn, crow.pitch, crow.yaw, crow.roll, 'YXZ');
 		let [x, y, z] = [crow.x, crow.y, crow.z];
 		if (side !== 0) {
@@ -669,16 +688,20 @@ export function createBirds(ctx: SketchContext, camera: Camera, options: BirdOpt
 			batch.rotations.set(wingTurn, row * 4);
 		} else batch.rotations.set(bodyTurn, row * 4);
 		batch.positions.set([x, y, z], row * 3);
+		batch.scales.set([size, size, size], row * 3);
 	};
 	return {
 		empty: false,
 		update() {
 			const night = options.night?.() ?? false;
-			flock.step(ctx.time.dt, { night, camera: startle() });
+			const at = cameraAt();
+			flock.step(ctx.time.dt, { night, camera: at });
+			const [cx, cy, cz] = at;
 			for (const [row, crow] of flock.birds.entries()) {
-				write(bodies, row, crow, 0);
-				write(left, row, crow, -1);
-				write(right, row, crow, 1);
+				const size = birdSize(Math.hypot(crow.x - cx, crow.y - cy, crow.z - cz));
+				write(bodies, row, crow, 0, size);
+				write(left, row, crow, -1, size);
+				write(right, row, crow, 1, size);
 			}
 			bodies.markDirty();
 			left.markDirty();
