@@ -33,6 +33,8 @@ checkAddonVersion('@null3d/sound', VERSION);
 
 /** The mixer's module, which the page loads into the audio thread. */
 const MIXER_URL = new URL('./mixer-worklet.ts', import.meta.url);
+/** The mixer's WebAssembly module, built from `crates/null3d-sound`, whose bytes the page hands it. */
+const MIXER_WASM_URL = new URL('../dist/sound.wasm', import.meta.url);
 /** The name that the mixer registers. The mixer's module holds the same name. */
 const MIXER_NAME = 'null3d-sound-mixer';
 /** How often the page asks the sketch for its link until the sketch answers, in milliseconds. */
@@ -512,11 +514,14 @@ class SoundPage implements PageSound {
 		context.onstatechange = () => this.followContext();
 		void context.resume().catch(() => {});
 		this.setState('starting');
-		return context.audioWorklet
-			.addModule(MIXER_URL)
-			.then(() => {
+		const wasm = fetch(MIXER_WASM_URL).then((response) => {
+			if (!response.ok) throw new Error(`the mixer's module answered ${response.status}`);
+			return response.arrayBuffer();
+		});
+		return Promise.all([context.audioWorklet.addModule(MIXER_URL), wasm])
+			.then(([, bytes]) => {
 				if (this.state === 'stopped') return;
-				this.makeMixer(context);
+				this.makeMixer(context, bytes);
 				for (const sound of this.sounds.values()) {
 					this.toMixer({ type: 'add', sound });
 					this.build(sound);
@@ -529,8 +534,8 @@ class SoundPage implements PageSound {
 			});
 	}
 
-	private makeMixer(context: AudioContext): void {
-		const setup: MixerSetup = { outputs: MIXER_OUTPUTS, voices: MAX_VOICES };
+	private makeMixer(context: AudioContext, wasm: ArrayBuffer): void {
+		const setup: MixerSetup = { outputs: MIXER_OUTPUTS, voices: MAX_VOICES, wasm };
 		const mixer = new AudioWorkletNode(context, MIXER_NAME, {
 			numberOfInputs: 0,
 			numberOfOutputs: OUTPUT_COUNT,

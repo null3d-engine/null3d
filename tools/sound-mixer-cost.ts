@@ -1,9 +1,11 @@
 // Times the sound add-on's mixer on this machine, as the record of its design states it (D-384): four
 // loops and a group of 200 emitters with 28 voices, 32 voices in all, with every emitter moving every
-// sixth quantum. It renders ten seconds of audio at 48 kHz five times, after a warm-up second, and
-// prints the work for each second of audio. The browser runs the mixer on its audio thread, in its
-// own JavaScript engine, so the figure gives the scale of the cost rather than a browser's own.
+// sixth quantum. It runs the mixer's WebAssembly through the worklet's own wrapper, with the copies
+// into the outputs, and renders ten seconds of audio at 48 kHz five times, after a warm-up second. It
+// prints the work for each second of audio. The browser runs the same module on its audio thread, so
+// the figure gives the scale of the cost rather than a browser's own. Run `bun run build` first.
 //   bun --conditions=null3d-source tools/sound-mixer-cost.ts
+import { readFileSync } from 'node:fs';
 import {
 	MAX_VOICES,
 	MIXER_OUTPUTS,
@@ -34,7 +36,15 @@ for (let e = 0; e < CAPACITY; e++) {
 	floats[layout.rates + e] = 1;
 	floats[layout.tones + e] = 1;
 }
-const mixer = new Mixer(RATE, { outputs: MIXER_OUTPUTS, voices: MAX_VOICES }, () => {});
+const module = new WebAssembly.Module(
+	readFileSync(new URL('../packages/sound/dist/sound.wasm', import.meta.url)),
+);
+const mixer = new Mixer(
+	RATE,
+	{ outputs: MIXER_OUTPUTS, voices: MAX_VOICES, wasm: new ArrayBuffer(0) },
+	() => {},
+	module,
+);
 mixer.receive({ type: 'table', layout, buffer });
 const base = { file: 'cost', positional: true, near: 2, far: 200, muffle: true } as const;
 for (let i = 0; i < LOOPS; i++) {

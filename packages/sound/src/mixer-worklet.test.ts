@@ -1,7 +1,44 @@
 import { describe, expect, test } from 'bun:test';
-import { MAX_VOICES, MIXER_OUTPUTS, OUTPUT_COUNT, tableLayout } from './layout';
-import { cutoffOf, distanceGain, distanceTone, MIXER_NAME, Mixer } from './mixer-worklet';
-import type { MixerReply, SoundSpec } from './protocol';
+import { existsSync, readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { MAX_CAPACITY, MAX_VOICES, MIXER_OUTPUTS, OUTPUT_COUNT, tableLayout } from './layout';
+import { MIXER_NAME, Mixer } from './mixer-worklet';
+import type { MixerReply, MixerSetup, SoundSpec } from './protocol';
+
+/**
+ * The mixer's WebAssembly module, which `bun run build` builds from `crates/null3d-sound`. Each
+ * mixer takes an instance of its own, so the tests share no state.
+ */
+const WASM = fileURLToPath(new URL('../dist/sound.wasm', import.meta.url));
+const built = existsSync(WASM);
+const inCI = Boolean(process.env.CI);
+const missing = `the built sound mixer is missing at ${WASM}; run \`bun run build\` to run these tests`;
+const MODULE = built ? new WebAssembly.Module(readFileSync(WASM)) : null;
+
+if (!built && !inCI) console.warn(`${missing}.`);
+
+// CI's build job uploads the module with the page's other WebAssembly, so a missing file there is
+// a broken upload rather than a checkout that has not built yet.
+test.skipIf(!inCI)('CI hands the unit tests the sound mixer', () => {
+	if (!built)
+		throw new Error(`${missing}. CI's build job uploads it with the page's other WebAssembly.`);
+});
+
+test('the page and the mixer name the mixer alike', async () => {
+	const page = await Bun.file(new URL('./page.ts', import.meta.url)).text();
+	expect(page).toContain(`const MIXER_NAME = '${MIXER_NAME}';`);
+});
+const SETUP: MixerSetup = {
+	outputs: MIXER_OUTPUTS,
+	voices: MAX_VOICES,
+	wasm: new ArrayBuffer(0),
+};
+
+/** A mixer over the module, whose replies go to `replies`. */
+function mixerFor(replies: MixerReply[]): Mixer {
+	if (!MODULE) throw new Error(missing);
+	return new Mixer(RATE, SETUP, (reply) => replies.push(reply), MODULE);
+}
 
 const RATE = 48_000;
 const FRAMES = 128;
@@ -33,9 +70,7 @@ function rig() {
 	floats[layout.volume] = 1;
 	floats[layout.listenerTurn + 3] = 1;
 	const replies: MixerReply[] = [];
-	const mixer = new Mixer(RATE, { outputs: MIXER_OUTPUTS, voices: MAX_VOICES }, (reply) =>
-		replies.push(reply),
-	);
+	const mixer = mixerFor(replies);
 	mixer.receive({ type: 'table', layout, buffer });
 	const outputs = Array.from({ length: OUTPUT_COUNT }, () =>
 		Array.from({ length: MAX_VOICES }, () => new Float32Array(FRAMES)),
@@ -68,34 +103,59 @@ function rig() {
 /** Enough quanta for every fade to settle: two seconds. */
 const SETTLE = Math.ceil((2 * RATE) / FRAMES);
 
-describe('distance', () => {
+describe.skipIf(!built)('distance', () => {
+	/** The settled gain of a loop at `distance` in front of the listener. */
+	const gainAt = (sound: Partial<SoundSpec>, distance: number) => {
+		const r = rig();
+		r.mixer.receive({ type: 'add', sound: spec(sound) });
+		r.mixer.receive({ type: 'ready', voice: 0 });
+		r.at(0, 0, 0, -distance);
+		r.run(SETTLE);
+		return r;
+	};
+
 	test('a sound keeps its level within near and halves at twice near', () => {
-		const sound = spec({ near: 2 });
-		expect(distanceGain(sound, 1)).toBe(1);
-		expect(distanceGain(sound, 4)).toBeCloseTo(0.5, 6);
+		expect(gainAt({ near: 2 }, 1).last(MIXER_OUTPUTS.gain, 0)).toBeCloseTo(1, 3);
+		expect(gainAt({ near: 2 }, 4).last(MIXER_OUTPUTS.gain, 0)).toBeCloseTo(0.5, 3);
 	});
 
-	test('a sound fades out by its far distance', () => {
-		const sound = spec({ near: 1, far: 50 });
-		expect(distanceGain(sound, 50)).toBe(0);
-		expect(distanceGain(sound, 20)).toBeCloseTo(1 / 20, 6);
-		expect(distanceTone({ ...sound, muffle: true }, 50)).toBeCloseTo(0.55, 6);
-		expect(distanceTone({ ...sound, muffle: false }, 50)).toBe(1);
+	test('a sound fades out by its far distance, and muffles on the way when asked', () => {
+		expect(gainAt({ near: 1, far: 50 }, 50).last(MIXER_OUTPUTS.gain, 0)).toBe(0);
+		expect(gainAt({ near: 1, far: 50 }, 20).last(MIXER_OUTPUTS.gain, 0)).toBeCloseTo(1 / 20, 3);
+		const muffled = gainAt({ near: 1, far: 50, muffle: true }, 49).last(MIXER_OUTPUTS.cutoff, 0);
+		const open = gainAt({ near: 1, far: 50, muffle: false }, 49).last(MIXER_OUTPUTS.cutoff, 0);
+		expect(open).toBeCloseTo(20_000, -2);
+		expect(muffled).toBeLessThan(open / 4);
 	});
 
-	test('a tone runs the cutoff from the low end to the high end', () => {
-		expect(cutoffOf(0)).toBeCloseTo(120, 3);
-		expect(cutoffOf(1)).toBeCloseTo(20_000, 0);
-		expect(cutoffOf(2)).toBeCloseTo(20_000, 0);
-	});
-
-	test('the page and the mixer name the mixer alike', async () => {
-		const page = await Bun.file(new URL('./page.ts', import.meta.url)).text();
-		expect(page).toContain(`const MIXER_NAME = '${MIXER_NAME}';`);
+	test('a table of the most emitters fits the module, and its last emitter sounds', () => {
+		const layout = tableLayout(MAX_CAPACITY);
+		const buffer = new SharedArrayBuffer(layout.length * 4);
+		const floats = new Float32Array(buffer);
+		const ints = new Int32Array(buffer);
+		floats[layout.volume] = 1;
+		floats[layout.listenerTurn + 3] = 1;
+		const last = MAX_CAPACITY - 1;
+		floats[layout.places + 3 * last + 2] = -1;
+		floats[layout.levels + last] = 1;
+		floats[layout.rates + last] = 1;
+		floats[layout.tones + last] = 1;
+		const mixer = mixerFor([]);
+		mixer.receive({ type: 'table', layout, buffer });
+		mixer.receive({ type: 'add', sound: spec({ first: last, near: 1 }) });
+		mixer.receive({ type: 'ready', voice: 0 });
+		const outputs = Array.from({ length: OUTPUT_COUNT }, () =>
+			Array.from({ length: MAX_VOICES }, () => new Float32Array(FRAMES)),
+		);
+		for (let q = 0; q < SETTLE; q++) {
+			ints[layout.frame] = (ints[layout.frame] as number) + 1;
+			mixer.render(outputs);
+		}
+		expect(outputs[MIXER_OUTPUTS.gain]?.[0]?.[FRAMES - 1]).toBeCloseTo(1, 3);
 	});
 });
 
-describe('a loop', () => {
+describe.skipIf(!built)('a loop', () => {
 	test('stays silent until its file plays, then fades in to its level at its distance', () => {
 		const r = rig();
 		r.mixer.receive({ type: 'add', sound: spec({ near: 2 }) });
@@ -147,7 +207,7 @@ describe('a loop', () => {
 		r.floats[r.layout.rates] = 1.5;
 		r.run(SETTLE);
 		expect(r.last(MIXER_OUTPUTS.rate, 0)).toBeCloseTo(1.5, 3);
-		expect(r.last(MIXER_OUTPUTS.cutoff, 0)).toBeCloseTo(cutoffOf(0.55), -1);
+		expect(r.last(MIXER_OUTPUTS.cutoff, 0)).toBeCloseTo(120 * (20_000 / 120) ** 0.55, -1);
 		expect(r.last(MIXER_OUTPUTS.gain, 0)).toBeCloseTo(0, 5);
 	});
 
@@ -174,7 +234,7 @@ describe('a loop', () => {
 	});
 });
 
-describe('the sketch stopping', () => {
+describe.skipIf(!built)('the sketch stopping', () => {
 	test('fades every voice out and tells the page, then wakes with the frames', () => {
 		const r = rig();
 		r.mixer.receive({ type: 'add', sound: spec({}) });
@@ -191,7 +251,7 @@ describe('the sketch stopping', () => {
 	});
 });
 
-describe('a group', () => {
+describe.skipIf(!built)('a group', () => {
 	/** A group of six emitters with two voices, all ready, standing in a row down -Z. */
 	function group() {
 		const r = rig();
@@ -256,7 +316,7 @@ describe('a group', () => {
 	});
 });
 
-describe('a group, ranked by loudness', () => {
+describe.skipIf(!built)('a group, ranked by loudness', () => {
 	test('gives a voice to a loud far member before a silent near one', () => {
 		const r = rig();
 		r.mixer.receive({
@@ -298,7 +358,7 @@ describe('a group, ranked by loudness', () => {
 	});
 });
 
-describe('a shot', () => {
+describe.skipIf(!built)('a shot', () => {
 	test("starts at its own level, place and pitch, not its slot's last play", () => {
 		const r = rig();
 		r.mixer.receive({
@@ -328,7 +388,7 @@ describe('a shot', () => {
 	});
 });
 
-describe('values that are not numbers', () => {
+describe.skipIf(!built)('values that are not numbers', () => {
 	test('silence a voice for as long as they last, and no longer', () => {
 		const r = rig();
 		r.mixer.receive({ type: 'add', sound: spec({ near: 1, far: 50 }) });
@@ -366,7 +426,7 @@ describe('values that are not numbers', () => {
 	});
 });
 
-describe('a sketch that was paused before the sound started', () => {
+describe.skipIf(!built)('a sketch that was paused before the sound started', () => {
 	test('is reported as stopped, so the page can suspend the audio', () => {
 		const r = rig();
 		r.mixer.receive({ type: 'add', sound: spec({}) });
@@ -376,7 +436,7 @@ describe('a sketch that was paused before the sound started', () => {
 	});
 });
 
-describe('rates and levels at their limits', () => {
+describe.skipIf(!built)('rates and levels at their limits', () => {
 	test('holds a rate past the widest at the widest, and plays one that is not a number at 1', () => {
 		const r = rig();
 		r.mixer.receive({ type: 'add', sound: spec({ positional: false }) });
@@ -419,7 +479,7 @@ describe('rates and levels at their limits', () => {
 	});
 });
 
-describe('a sketch whose frames have not moved yet', () => {
+describe.skipIf(!built)('a sketch whose frames have not moved yet', () => {
 	test('swells no voice before its frame count moves, whatever the count reads', () => {
 		const r = rig();
 		r.ints[r.layout.frame] = 5000;
@@ -434,13 +494,11 @@ describe('a sketch whose frames have not moved yet', () => {
 	});
 });
 
-describe('a table the page copies', () => {
+describe.skipIf(!built)('a table the page copies', () => {
 	test('reads each copy and hands the buffer back', () => {
 		const layout = tableLayout(4);
 		const replies: MixerReply[] = [];
-		const mixer = new Mixer(RATE, { outputs: MIXER_OUTPUTS, voices: MAX_VOICES }, (reply) =>
-			replies.push(reply),
-		);
+		const mixer = mixerFor(replies);
 		mixer.receive({ type: 'table', layout, buffer: null });
 		mixer.receive({ type: 'add', sound: spec({ positional: false }) });
 		mixer.receive({ type: 'ready', voice: 0 });

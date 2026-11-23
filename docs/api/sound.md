@@ -21,7 +21,7 @@ flowchart LR
 
 `@null3d/sound` plays sound that follows the scene. A sketch makes its sounds and moves them as it moves its objects. The page plays them with the browser's audio, through the add-on's page half. A sound can come from a place, such as a waterfall or a car. It can also play in both ears alike, such as wind or rain.
 
-The browser offers its audio only on the page's main thread, and the sketch runs in a worker. The add-on bridges the two. The sketch writes each sound's place, level, playback rate and tone into a table that the page shares. A mixer on the browser's audio thread reads that table and drives every voice. Where the page shares its memory with its workers, no frame sends a message, and the page's thread does no work while the sounds play. Only a shot sends one, once for each play.
+The browser offers its audio only on the page's main thread, and the sketch runs in a worker. The add-on bridges the two. The sketch writes each sound's place, level, playback rate and tone into a table that the page shares. A mixer on the browser's audio thread, compiled from Rust to WebAssembly, reads that table and drives every voice. Where the page shares its memory with its workers, no frame sends a message, and the page's thread does no work while the sounds play. Only a shot sends one, once for each play.
 
 ```sh
 bun add @null3d/sound
@@ -127,7 +127,7 @@ The page plays 32 voices at most. A loop takes one voice, a group takes its `voi
 | `onState(handler)` | Calls the handler at each change of the state, such as to label a sound button. Returns a function that removes the handler. |
 | `stop()` | Stops the audio for good. The engine's stop does the same. |
 
-The page loads nothing until `start` runs: no file and no audio. Each file loads once, however many sounds play it. A file that fails to load leaves its sounds silent, and the console names the file.
+The page loads nothing until `start` runs: no file, no audio and no mixer. The mixer's module is about 18 KB. Each file loads once, however many sounds play it. A file that fails to load leaves its sounds silent, and the console names the file.
 
 ## Pauses and hidden pages
 
@@ -151,7 +151,7 @@ A relative address resolves against the page's address, as the engine's loaders 
 
 ## Costs and limits
 
-- The mixer runs on the audio thread. Its work grows with the voices and with the members of each group, which it ranks every fourth render quantum. With 32 voices and a group of 200 moving members, it takes about 2.4 ms of work per second of audio. That figure comes from Bun's JavaScript engine on a desktop computer.
+- The mixer runs on the audio thread. Its work grows with the voices and with the members of each group, which it ranks every fourth render quantum. With 32 voices and a group of 200 moving members, it takes about 3 ms of work per second of audio. That figure comes from the mixer's module in Bun on a desktop computer.
 - Each voice is a source, a filter, a gain and a panner. The panner's HRTF model costs the most of them, which is why the lighter presets drop it.
 - A limiter on the page's output holds the mix under full scale, so sounds that sum, or a stereo sound panned to one side, never clip. It adds about 2 dB to quiet passages.
 - The table holds 12 numbers for the listener and 6 for each emitter: 6 KB at the default capacity.

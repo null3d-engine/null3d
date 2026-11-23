@@ -80,6 +80,8 @@ export interface MixerSetup {
 	readonly outputs: MixerOutputs;
 	/** The voices that each output carries, one channel each. */
 	readonly voices: number;
+	/** The bytes of the mixer's WebAssembly module, which the worklet compiles. */
+	readonly wasm: ArrayBuffer;
 }
 
 /** What the page sends the mixer. */
