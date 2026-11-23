@@ -30,7 +30,7 @@ On the owner's Mac, the first fetch of 540 files (183 MB) took 8.7 seconds. A fe
 | The island's stone pines, olives, holm oaks and oleanders (`sources/showcase/island/`), built by script in Blender | The island showcase scene |
 | Dok11's drone scan of Bolton Priory (`sources/splats/bolton-priory/`): 1,710,551 Gaussian splats, as the SOG file that SuperSplat publishes | The source of the splat stream below |
 | The same scan as a splat stream (`sources/splats/bolton-priory-stream/`): an index and 84 SPZ chunk files, 27.6 MB, made by script | The Gaussian splats demo, and a real scan for the splats add-on's devices |
-| 13 field recordings from Freesound (`sources/sound/raw/`), and the loops and one-shots cut from them by script (`sources/sound/loops/`) | The sound add-on and the positional sound of the island, the Creek garden and Skyway |
+| 14 field recordings from Freesound (`sources/sound/raw/`), and the loops and one-shots cut from them by script (`sources/sound/loops/`) | The sound add-on and the positional sound of the island, the Creek garden and Skyway |
 
 No Khronos model under an accepted licence uses `EXT_meshopt_compression`. So `tests/lib/meshopt-fixtures.ts` compresses SimpleInstancing (CC0) with gltfpack 1.3, `-cc -ce ext`, into `tests/pages/assets/models/simple-instancing-meshopt.glb`. `bun tests/lib/meshopt-fixtures.ts` writes it again. A unit test checks that the committed file matches what gltfpack builds. [D-34](decisions/D-34-meshopt-decoding.md) records why. The sample content's one Draco model, RiggedSimple, has no texture coordinates. So `tests/lib/draco-fixtures.ts` compresses TextureCoordinateTest (CC0) with Draco's own encoder through glTF-Transform, into `tests/pages/assets/models/texture-coordinates-draco.glb`. A unit test checks that file the same way ([D-112](decisions/D-112-draco-decoding.md)). Small fixtures, such as one glTF file per extension and malformed files, stay in this repository beside their tests. So do the image test references. Khronos's AnisotropyStrengthTest is one: its `glTF-Binary` file is 94,444 bytes and under CC0 by Ed Mackey, so the image tests keep it at `tests/pages/assets/models/sources/khronos/AnisotropyStrengthTest/`, beside the two animation-pointer samples that are kept the same way.  The same holds for Khronos's TextureLinearInterpolationTest: 13,468 bytes under CC0, at `tests/pages/assets/models/sources/khronos/TextureLinearInterpolationTest/`. Its scene checks that a texture samples linearly after its texels decode, a fault that no synthetic scene caught. Khronos's DispersionTest is another: its `glTF-Binary` file is 2,310,944 bytes, SHA-256 `bbac38386632b5a7a27289737963314c2f92095074dfdf0e8c0c1c25270b3e37`, and under CC BY 4.0 by AGI, so the image tests keep it at `tests/pages/assets/models/sources/khronos/DispersionTest/`. Each is the Khronos original, byte for byte.
 
@@ -164,12 +164,13 @@ To publish them:
 | `stream` | A small river gurgling over stones, close | 30 s loop | Stereo | 466 KB |
 | `waterfall` | A waterfall's steady roar | 30 s loop | Stereo | 428 KB |
 | `hover` | A designed hover engine's steady hum | 6 s loop | Mono | 48 KB |
+| `hover-pass` | A lighter take of the same hum for hover cars that pass at speed: the whine and air, without the low hum | 3 s loop | Mono | 27 KB |
 | `rain` | Light rain on a city street at night | 40 s loop | Stereo | 673 KB |
 | `thunder-near` | A close clap of thunder and its roll | 11.5 s one-shot | Stereo | 145 KB |
 | `thunder-far` | Distant thunder rolling | 12 s one-shot | Stereo | 155 KB |
 | `city` | A quiet city evening: far traffic and the air of the streets | 45 s loop | Stereo | 672 KB |
 
-The outputs take 5.3 MB, and the raw recordings 20.7 MB. The car and the bus are engines held at one speed: a car at 2,000 rpm and a coach at idle. A car that drives past a microphone changes in level and pitch, so its recording does not loop. The demos set an engine's speed with the playback rate.
+The outputs take 5.3 MB, and the raw recordings 21.4 MB. The car and the bus are engines held at one speed: a car at 2,000 rpm and a coach at idle. A car that drives past a microphone changes in level and pitch, so its recording does not loop. The demos set an engine's speed with the playback rate.
 
 ## The sample check
 

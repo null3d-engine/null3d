@@ -213,6 +213,21 @@ export const SOUNDS: readonly Sound[] = [
 		quality: MONO_QUALITY,
 	},
 	{
+		// A lighter hover hum for hover cars that pass at speed: a second take of the same designed
+		// engine, with the low hum cut away so the whine and the vacuum cleaner's air remain.
+		name: 'hover-pass',
+		raw: 'hover-pass/peridactyloptrix-213528.ogg',
+		start: 25,
+		length: 3,
+		channels: 1,
+		mono: 'mix',
+		filters: ['highpass=f=300:poles=2', 'highpass=f=300:poles=2'],
+		fade: 0.3,
+		loop: true,
+		loudness: BED,
+		quality: MONO_QUALITY,
+	},
+	{
 		// Light rain on a street at night, from an open window. The high-pass takes out the far
 		// traffic's rumble under it.
 		name: 'rain',

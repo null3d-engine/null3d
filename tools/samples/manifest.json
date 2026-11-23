@@ -7369,6 +7369,36 @@
 			]
 		},
 		{
+			"id": "sound/raw/hover-pass",
+			"title": "Hover engine 2",
+			"purpose": "The recording that the hover-pass loop is cut from: a second take of the same designed hover engine, made from recordings of a spinning hard drive, a vacuum cleaner and a fridge",
+			"authors": [
+				{
+					"name": "peridactyloptrix"
+				}
+			],
+			"license": [
+				"CC0-1.0"
+			],
+			"source": "https://freesound.org/people/peridactyloptrix/sounds/213528/",
+			"fetched": "2026-11-23",
+			"changes": "None to the sound. The file is the high-quality Ogg Vorbis preview, about 190 kbps, that Freesound serves without an account: a lossy copy of the original WAV upload, saved as peridactyloptrix-213528.ogg.",
+			"dir": "sources/sound/raw/hover-pass",
+			"origin": {
+				"kind": "files",
+				"files": {
+					"https://cdn.freesound.org/previews/213/213528_2737063-hq.ogg": "peridactyloptrix-213528.ogg"
+				}
+			},
+			"files": [
+				{
+					"path": "sources/sound/raw/hover-pass/peridactyloptrix-213528.ogg",
+					"bytes": 709657,
+					"sha256": "71387117dc4a31d754d85a687a8bed51872c8422181d5bc79df094213ab261ab"
+				}
+			]
+		},
+		{
 			"id": "sound/raw/rain",
 			"title": "Light rain on street.wav",
 			"purpose": "The recording that the rain loop is cut from: light rain on a city street at night, from an open window",
@@ -7746,6 +7776,35 @@
 					"path": "sources/sound/loops/hover/hover.mp3",
 					"bytes": 49316,
 					"sha256": "d24557bcc0a0be7a4159a3fd0b353992f0d0b62b59152a5c80614e5fa7fa0e4d"
+				}
+			]
+		},
+		{
+			"id": "sound/loops/hover-pass",
+			"title": "Hover pass loop",
+			"purpose": "A short seamless mono loop of a lighter hover engine hum, the whine and air without the low hum, for hover cars that pass at speed",
+			"authors": [
+				{
+					"name": "peridactyloptrix"
+				}
+			],
+			"license": [
+				"CC0-1.0"
+			],
+			"source": "https://freesound.org/people/peridactyloptrix/sounds/213528/",
+			"fetched": "2026-11-23",
+			"changes": "Cut from sound/raw/hover-pass by tools/samples/sound/loops.ts in the engine repository: 3 s from 0:25; mixed to mono; a steep 300 Hz high-pass; resampled to 48 kHz; its tail crossfaded into its head over 0.3 s with equal power, so it loops without a seam; brought to -20 LUFS integrated; encoded as VBR MP3 by libmp3lame at quality 4.",
+			"dir": "sources/sound/loops/hover-pass",
+			"origin": {
+				"kind": "converted",
+				"script": "https://github.com/null3d-engine/null3d/blob/main/tools/samples/sound/loops.ts",
+				"from": "sound/raw/hover-pass"
+			},
+			"files": [
+				{
+					"path": "sources/sound/loops/hover-pass/hover-pass.mp3",
+					"bytes": 27884,
+					"sha256": "8501dbe1bea145200a647f8fe34df54925fcc3512e4342c9d0f4f33c32e1786a"
 				}
 			]
 		},
