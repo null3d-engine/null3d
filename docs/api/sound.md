@@ -114,20 +114,24 @@ A sound with neither distance keeps the level that the sketch gives it wherever 
 
 A browser mixes a few dozen voices well, and a scene may have hundreds of sources of one kind. A group gives its members a few voices. The mixer ranks the members by their loudness where the listener stands, from their level and distance. It gives each voice to one of the loudest. A voice keeps its member while that member stays close to the cut. So a voice does not flap between two members at the same distance. A voice that moves to another member fades out first, so its sound never jumps across the scene. It takes the new member's pitch before it fades in.
 
-The page plays 32 voices at most. A loop takes one voice, a group takes its `voices`, and a shot takes its `voices`, wherever free voices sit. A sketch that asks for more than 32 at once gets error 2501, which names the count. While other voices are free, a destroyed sound's voices rest for a third of a second before another sound takes them, so its fade ends first.
+The page plays 32 voices at most. A loop takes one voice, a group takes its `voices`, and a shot takes its `voices`, wherever free voices sit. A sketch that asks for more than 32 at once gets error 2501, which names the count. While other voices are free, a destroyed sound's voices rest for a third of a second before another sound takes them. So their fade ends first.
 
 ## The page's calls
 
 | Call | What it does |
 | --- | --- |
 | `connectSound(engine, options)` | Connects the page to the sketch's sounds. Call it once on a page, after `createEngine` resolves. `startOnInput` starts the audio on the user's first click, tap or key other than Escape, which are the inputs that let a browser start a page's audio. `muted` starts muted. |
-| `start()` | Starts the audio. Call it in the handler of a click, a tap or a key. It resolves once the audio runs, and each sound fades in as its file arrives. |
+| `start()` | Starts the audio. Call it in the handler of a click, a tap or a key. It resolves once the audio runs, and each sound fades in as its file arrives. Called outside an input, as a page that plays its sound by default does, it loads the files, and the browser holds the audio until the user's first click, tap or key. The sounds then start at once. |
 | `setMuted(muted)` | Mutes or unmutes every sound. |
 | `state` | `off` before `start`, then `starting` until the audio runs, `on`, `paused` while the engine is paused or the page is hidden, `interrupted` while the browser holds the audio until the user's next input, and `stopped` after the engine stops. |
 | `onState(handler)` | Calls the handler at each change of the state, such as to label a sound button. Returns a function that removes the handler. |
 | `stop()` | Stops the audio for good. The engine's stop does the same. |
 
 The page loads nothing until `start` runs: no file, no audio and no mixer. The mixer's module is about 18 KB. Each file loads once, however many sounds play it. A file that fails to load leaves its sounds silent, and the console names the file.
+
+While the browser holds the audio, the page starts no file. So the browser warns once, as the page makes the audio, and not for each voice. A shot that plays in that time is dropped. It would otherwise sound late, after the user's first input, long after the event that played it.
+
+The [sound demo](https://github.com/null3d-engine/null3d/tree/main/examples/sound) shows a storm. Each strike's thunder plays from where the bolt struck, once sound could have reached the camera. A brook in it is a group of points.
 
 ## Pauses and hidden pages
 
@@ -153,7 +157,7 @@ A relative address resolves against the page's address, as the engine's loaders 
 
 - The mixer runs on the audio thread. Its work grows with the voices and with the members of each group, which it ranks every fourth render quantum. With 32 voices and a group of 200 moving members, it takes about 3 ms of work per second of audio. That figure comes from the mixer's module in Bun on a desktop computer.
 - Each voice is a source, a filter, a gain and a panner. The panner's HRTF model costs the most of them, which is why the lighter presets drop it.
-- A limiter on the page's output holds the mix under full scale, so sounds that sum, or a stereo sound panned to one side, never clip. It adds about 2 dB to quiet passages.
+- A limiter on the page's output holds the mix under full scale. So sounds that sum, or a stereo sound panned to one side, never clip. It adds about 2 dB to quiet passages.
 - The table holds 12 numbers for the listener and 6 for each emitter: 6 KB at the default capacity.
 - The page plays 32 voices at once and the table holds 4,096 emitters at most.
 

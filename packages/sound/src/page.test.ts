@@ -275,6 +275,50 @@ describe('startOnInput', () => {
 	});
 });
 
+describe('a start before the user acts', () => {
+	test('loads the files but starts none until the audio runs, then starts the loops', async () => {
+		const { connectSound } = await import('./page');
+		const { engine, ctx, listener } = engineAndSketch();
+		const sound = createSound(ctx, { listener });
+		sound.loop({ file: '/rain.mp3', positional: false });
+		const page = connectSound(engine);
+		void page.start();
+		await settle();
+		// A file started on audio that the browser holds makes the browser warn, once a voice.
+		expect(page.state).toBe('starting');
+		expect(FakeSource.all).toHaveLength(0);
+		FakeContext.activated = true;
+		input('click');
+		await settle();
+		expect(page.state).toBe('on');
+		expect(FakeSource.all.filter((source) => source.options.loop)).toHaveLength(1);
+		page.stop();
+		sound.destroy();
+	});
+
+	test('drops a shot played while the browser holds the audio, and plays the next', async () => {
+		const { connectSound } = await import('./page');
+		const { engine, ctx, listener } = engineAndSketch();
+		const sound = createSound(ctx, { listener });
+		const thunder = sound.shot({ file: '/thunder.mp3', voices: 1 });
+		const page = connectSound(engine);
+		void page.start();
+		await settle();
+		// A play held until the audio runs would sound late, long after its flash.
+		thunder.play(0, 0, -100);
+		await settle();
+		expect(FakeSource.all).toHaveLength(0);
+		FakeContext.activated = true;
+		input('click');
+		await settle();
+		thunder.play(0, 0, -100);
+		await settle();
+		expect(FakeSource.all).toHaveLength(1);
+		page.stop();
+		sound.destroy();
+	});
+});
+
 describe('the audio that the browser takes', () => {
 	test('is interrupted, and resumes at the next input', async () => {
 		const { connectSound } = await import('./page');

@@ -478,6 +478,9 @@ class SoundPage implements PageSound {
 		if (context.state === 'running') {
 			this.listen(false);
 			this.setState('on');
+			// Loops whose files arrived while the browser held the audio start now.
+			for (const sound of this.sounds.values())
+				if (sound.kind !== 'shot') this.playWhenLoaded(sound);
 			// The sketch stopped while the audio was not running: suspend it now.
 			if (this.sketchIdle) this.suspendForIdle();
 			return;
@@ -606,27 +609,45 @@ class SoundPage implements PageSound {
 			} else gain.connect(master);
 			this.voices[v] = { sound, filter, gain, panner, play: null, waiting: undefined };
 		}
+		if (sound.kind !== 'shot') this.playWhenLoaded(sound);
+		else void this.load(sound.file);
+	}
+
+	/** Loads a loop's or a group's file, and starts its voices' files once it and the audio are ready. */
+	private playWhenLoaded(sound: SoundSpec): void {
 		void this.load(sound.file).then((loaded) => {
-			if (!loaded || sound.kind === 'shot') return;
-			const span = loaded.end - loaded.start;
-			for (let k = 0; k < sound.voices.length; k++) {
-				const v = sound.voices[k] as number;
-				const voice = this.voices[v];
-				if (voice?.sound !== sound || voice.play) continue;
-				// Each voice starts at its own point of the loop, so two voices of one file never sound
-				// in step.
-				const offset = loaded.start + span * ((k * 0.618034 + v * 0.1) % 1);
-				voice.play = this.source(loaded, v, true, offset, 0, false);
-				this.toMixer({ type: 'ready', voice: v });
-			}
+			if (loaded) this.playLoops(sound, loaded);
 		});
 	}
 
-	/** Starts one play of a shot's file on the voice of its slot. */
+	/**
+	 * Starts the file of each voice of a loop or a group that has none yet. Audio that the browser
+	 * still holds starts none, since a file started there makes the browser warn: its voices start
+	 * once the audio runs.
+	 */
+	private playLoops(sound: SoundSpec, loaded: Loaded): void {
+		if (this.context?.state !== 'running') return;
+		const span = loaded.end - loaded.start;
+		for (let k = 0; k < sound.voices.length; k++) {
+			const v = sound.voices[k] as number;
+			const voice = this.voices[v];
+			if (voice?.sound !== sound || voice.play) continue;
+			// Each voice starts at its own point of the loop, so two voices of one file never sound
+			// in step.
+			const offset = loaded.start + span * ((k * 0.618034 + v * 0.1) % 1);
+			voice.play = this.source(loaded, v, true, offset, 0, false);
+			this.toMixer({ type: 'ready', voice: v });
+		}
+	}
+
+	/**
+	 * Starts one play of a shot's file on the voice of its slot. A play while the browser holds the
+	 * audio is dropped: it would start late, once the audio runs, and make the browser warn.
+	 */
 	private play(id: number, slot: number): void {
 		const sound = this.sounds.get(id);
 		const v = sound?.voices[slot];
-		if (!sound || v === undefined || !this.context || !this.mixer) return;
+		if (!sound || v === undefined || this.context?.state !== 'running' || !this.mixer) return;
 		void this.load(sound.file).then((loaded) => {
 			const context = this.context;
 			const voice = this.voices[v];
