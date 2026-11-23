@@ -140,6 +140,7 @@ the bed at a point, and the current there.
 | `material` | The standard material values | None | The surface's material, such as its volume's tint. The surface works its own thickness and transmission out, so it takes no value for those |
 | `camera` | A `Camera` | None | The camera that the reflection follows. While it moves or turns, the reflection draws in every frame, so a moving view shows no mirror of an older one; a still camera keeps the cadence above. Without one, the cadence holds whatever the view does |
 | `wind` | A wind field's `texture`, `size` and `air` | None | The wind that lifts the surface's short waves and carries their crests. The surface reads it once for each vertex |
+| `windRipple` | A number from 0 | 0 | The slope that the wind raises in short crests of its own, at a feature of a few tenths of a meter. At 0 the surface's waves run with their clocks alone |
 | `rain` | A number from 0 to 1 | 0 | How hard rain falls on the surface. Each drop rings the surface where it lands. 0 draws no rings and costs nothing |
 
 ## The foam around what breaks the water
@@ -182,6 +183,17 @@ return {
 `createWater` takes a plain texture and its box, so the water package does not import the wind add-on. A page can connect any field that gives a texture with the same layout. A surface that names no field still declares the field's textures, which it never reads.
 
 `waveAmplitude` scales the lift that the wind gives the surface, along with the long waves. A slow stream can therefore keep a nearly flat surface, with fine ripples. Its wind field still moves the plants and the leaves around it.
+
+A field's lift rides on a long swell, which suits a lake or a river. A pool, a basin or a fountain is small beside that swell, so the lift reads there as one flat tilt of the whole surface. Give such a body a `windRipple` and the surface takes the air in short crests of its own, a few tenths of a meter apart, so its reflection moves with the gusts that sway the trees. It is 0 by default, which leaves every other surface as it was. The crests cost one read of the field for each pixel, so a wide lake keeps the default and lets its swell answer the wind.
+
+```ts
+const pool = createWater(ctx, {
+  shapes,
+  wind: wind.field,
+  windRipple: 1,
+  ripple: 0,
+});
+```
 
 ## Rain on the surface
 

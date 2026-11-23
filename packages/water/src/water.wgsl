@@ -35,6 +35,8 @@ struct Uniforms {
     windStrength: f32,
     // The layer of the field's texture that holds the newest state.
     windLayer: f32,
+    // The slope that a gust raises in a short ripple of its own, or 0 for water that shows none.
+    windRipple: f32,
     // How hard rain falls on the surface, from 0 for none to 1 for a downpour.
     rain: f32,
 }
@@ -446,6 +448,25 @@ fn shared_waves(p: vec2f, t: f32, current: vec3f, share: f32, fine: bool, footpr
     return mix(waves(p, t, vec3f(0.0), fine, footprint), moving, share);
 }
 
+/// The air at a world place, from the field's own reading and box. The vertex stage lifts a long
+/// wave by it, and a surface that asks for a wind ripple turns its short crests by it.
+fn air_here(world: vec3f) -> vec4f {
+    let reading = wind_reading(
+        textureLoad(airSettings, vec2i(0, 0), 0),
+        textureLoad(airSettings, vec2i(1, 0), 0),
+        textureLoad(airSettings, vec2i(2, 0), 0),
+        textureLoad(airSettings, vec2i(3, 0), 0),
+        frame.time,
+    );
+    return wind_sample(
+        world,
+        camera.position.xz - vec2f(material.windBox * 0.5),
+        material.windBox,
+        i32(material.windLayer),
+        reading,
+    );
+}
+
 fn vertexOffset(input: VertexInput) -> vec3f {
     let current = current_of(input.uv, input.uv1);
     // Where the bodies meet, the surface lies flat, so both meshes lie in one plane there. The river's
@@ -455,23 +476,10 @@ fn vertexOffset(input: VertexInput) -> vec3f {
     // geometry rather than a pixel, so the fine ripples keep their full detail here.
     var lift = waves(input.position.xz, frame.time, current, false, 0.0).x * (1.0 - flatness);
     if (material.windStrength > 0.0) {
-        // The air over the surface: its speed lifts a short wave, and its direction sets where the
+        // The air over the surface: its speed lifts a long wave, and its direction sets where the
         // crest stands. The field's box follows the camera, as it does for every reader of the field.
         let place = (object.worldMatrix * vec4f(input.position, 1.0)).xyz + camera.position;
-        let reading = wind_reading(
-            textureLoad(airSettings, vec2i(0, 0), 0),
-            textureLoad(airSettings, vec2i(1, 0), 0),
-            textureLoad(airSettings, vec2i(2, 0), 0),
-            textureLoad(airSettings, vec2i(3, 0), 0),
-            frame.time,
-        );
-        let air = wind_sample(
-            place,
-            camera.position.xz - vec2f(material.windBox * 0.5),
-            material.windBox,
-            i32(material.windLayer),
-            reading,
-        );
+        let air = air_here(place);
         let along = dot(air.xz, vec2f(0.919, 0.394));
         lift += material.waveAmplitude * 0.035 * air.a * sin(dot(input.position.xz, vec2f(0.7, 0.3)) * 0.5 + frame.time * 2.0 + along);
     }
@@ -506,6 +514,18 @@ fn surface(input: SurfaceInput) -> Surface {
     var slope = w.yz;
     if material.rain > 0.0 {
         slope += rain_rings(p, frame.time, current.xy * current.z, material.rain, footprint);
+    }
+    // A gust raises short crests of its own, so a surface that asks shows the air that the trees and
+    // the lawns read. The waves run with the air and take its speed, at a feature a small basin can
+    // show, so a pool's reflection moves with the wind rather than only with the clock.
+    if (material.windRipple > 0.0 && material.windStrength > 0.0) {
+        let air = air_here(input.worldPosition);
+        let gust = clamp(air.a / 6.0, 0.0, 1.0);
+        let heading = normalize(air.xz + vec2f(1e-4, 0.0));
+        let across = vec2f(-heading.y, heading.x);
+        let along = dot(p, heading) * 14.0 - frame.time * (4.0 + 3.0 * gust);
+        let cross = dot(p, across) * 21.0 + frame.time * 5.0;
+        slope += (heading * cos(along) + across * 0.6 * cos(cross)) * (material.windRipple * 0.07 * gust);
     }
     s.normal = normalize(vec3f(-slope.x, 1.0, -slope.y));
     let clip = camera.viewProjection * vec4f(input.relativePosition, 1.0);

@@ -15,7 +15,7 @@ import {
 } from '@null3d/engine';
 import { createGrass } from '@null3d/grass';
 import { handOverCards, handOverMeshes, handOverSwitches } from '@null3d/impostors';
-import { createWind } from '@null3d/wind';
+import { createWind, type Wind } from '@null3d/wind';
 import {
 	type Part,
 	type Stand,
@@ -537,21 +537,29 @@ function placeCypresses(
 }
 
 /**
+ * The island's one wind field, which the trees, the lawns and the pools' water all read. A page
+ * shares it so that a gust moves every reader with the same air.
+ */
+export function createIslandWind(ctx: SketchContext, camera: Camera): Wind {
+	return createWind(ctx, { camera, box: WIND_BOX, grid: WIND_GRID });
+}
+
+/**
  * Grows the island's trees for the preset, and returns the call that moves them in the wind. A
  * scene that placed the code spires before its first frame passes `spires: false`, so they are not
- * placed twice; the cypress model replaces them as soon as it loads.
+ * placed twice; the cypress model replaces them as soon as it loads. A page that passes its own
+ * wind field steps it itself, once for every reader.
  */
 export async function createTrees(
 	ctx: SketchContext,
 	camera: Camera,
-	{ spires = true }: { spires?: boolean } = {},
+	{ spires = true, wind: shared }: { spires?: boolean; wind?: Wind } = {},
 ): Promise<{ update(): void }> {
 	const preset = ctx.quality.preset;
 	const { kept, fills } = treeStands(ctx);
-	const wind = createWind(ctx, { camera, box: WIND_BOX, grid: WIND_GRID });
+	const wind = shared ?? createIslandWind(ctx, camera);
+	const ownWind = shared === undefined;
 	const sway = createSway(ctx, { wind });
-	/** Each plant's card material, made once and reused by every copy. */
-	const cardMaterials = new Map<Part, Material>();
 	// A distance band that fades discards pixels in a screen-door pattern, and past a thinning
 	// crown those holes show the card, which is flat where the mesh's leaves are not, so the holes
 	// read as dots. The hand-over already stands each card at full coverage before its mesh goes,
@@ -563,6 +571,8 @@ export async function createTrees(
 	noBandFade();
 	ctx.quality.onChange(noBandFade);
 	const { species, cypress: cypressModel } = await loadPlants(ctx);
+	/** Each plant's card material, made once and reused by every copy. */
+	const cardMaterials = new Map<Part, Material>();
 	/**
 	 * Stands one plant: its wood and leaves as near meshes that sway, and its card for every copy
 	 * past the hand-over distance.
@@ -679,8 +689,9 @@ export async function createTrees(
 	});
 	return {
 		update() {
-			// The field's box follows the camera, and a gust fades, so it steps every frame.
-			wind.update();
+			// The field's box follows the camera, and a gust fades, so it steps every frame. A page
+			// that shares the field steps it for every reader.
+			if (ownWind) wind.update();
 			sway.update();
 			for (const lawn of lawns) lawn.setWindLayer(wind.field);
 		},

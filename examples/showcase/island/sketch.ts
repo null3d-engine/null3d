@@ -22,11 +22,12 @@ import { SEA_LEVEL } from './island';
 import { createLand } from './land';
 import { loadLifeModels } from './models';
 import { groundHeight } from './plan';
+import { createPoolWater } from './poolwater';
 import { createSea } from './sea';
 import { SHADOW_DISTANCE, SHADOW_REACH } from './shadow';
 import { createTown, type TownNight } from './town';
 import { createPlaceholderModels, createTraffic, type TrafficOptions } from './traffic';
-import { CASTER_LAYER, createCypressSpires, createTrees } from './trees';
+import { CASTER_LAYER, createCypressSpires, createIslandWind, createTrees } from './trees';
 
 /** The camera's vertical field of view in degrees, and the DSLR lens's focal length in millimetres. */
 const FOV = 45;
@@ -315,6 +316,8 @@ export default defineSketch(
 		// The camera stands at the route's opening pose now, so the shadows reach as far as it needs.
 		controls.fitShadows();
 
+		// The island's one wind field: the trees, the lawns and the pools' water read the same air.
+		const wind = createIslandWind(ctx, camera);
 		const land = createLand(ctx);
 		const sea = createSea(ctx, camera);
 		let night: TownNight | undefined;
@@ -326,6 +329,11 @@ export default defineSketch(
 		}).then((made) => {
 			night = made;
 		});
+		// `?poolwater=off` is a documented cost switch, like `?walkers`: the pools within reach of the
+		// camera draw with the water add-on, and the switch leaves them as the gardens' flat quads for
+		// a cost run. Every far pool keeps its quad either way.
+		const poolAsked = params.get('poolwater');
+		const poolwater = poolAsked === 'off' ? undefined : createPoolWater(ctx, camera, wind.field);
 		page.post('loading', 'Growing the trees');
 		// The species and the lawns take seconds to grow. A live page draws the island without them and
 		// lets them appear as they land; a held picture, a page that asks with `?grown`, or the WebGL2
@@ -394,7 +402,7 @@ export default defineSketch(
 		const grow = (): void => {
 			if (growing) return;
 			growing = true;
-			void createTrees(ctx, camera, { spires: false }).then(
+			void createTrees(ctx, camera, { spires: false, wind }).then(
 				(grown) => {
 					trees = grown;
 				},
@@ -402,7 +410,7 @@ export default defineSketch(
 			);
 		};
 		if (grownFirst) {
-			trees = await createTrees(ctx, camera);
+			trees = await createTrees(ctx, camera, { wind });
 			// A held frame waits for the town's models too, so it never catches the code-built
 			// landmarks beside the model ones.
 			await town;
@@ -431,6 +439,9 @@ export default defineSketch(
 				const lens = controls.lens();
 				if (lens) post.set(lens);
 				camera.getPosition(eye);
+				// The shared field follows the camera and its gusts fade, so it steps before every reader:
+				// the trees sway with it and the pools' ripples and surface take it next.
+				wind.update();
 				night?.update(eye, stage.lamps, stage.hours);
 				// Open ground and open water darken with the hour, so neither outshines the town.
 				nightAlbedo(stage.lamps, tint);
@@ -440,6 +451,7 @@ export default defineSketch(
 				traffic.update(time.now);
 				birds.update();
 				trees?.update();
+				poolwater?.update();
 			},
 		};
 	},

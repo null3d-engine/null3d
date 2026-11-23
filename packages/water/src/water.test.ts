@@ -270,6 +270,22 @@ describe('the water’s wind', () => {
 	});
 });
 
+describe('the water’s wind ripple', () => {
+	it('stays off unless a surface asks for it', () => {
+		// The default is none, so a surface that names no ripple keeps the waves that it had.
+		expect(read('water.ts')).toContain('windRipple: options.windRipple ?? 0');
+		expect(read('water.wgsl')).toContain('windRipple: f32');
+	});
+
+	it('turns the surface’s slope with the air when a surface asks for it', () => {
+		const surface = wgslFunction(read('water.wgsl'), 'surface');
+		// The crests join the waves' slope, so the reflection and the shading follow them.
+		expect(surface).toContain('material.windRipple > 0.0');
+		expect(surface).toContain('material.windStrength > 0.0');
+		expect(surface).toContain('slope += (heading * cos(along)');
+	});
+});
+
 describe('the water’s color along a low view', () => {
 	it('mixes the depth with the view’s whole path by the material’s share', () => {
 		const thickness =
