@@ -18,6 +18,7 @@ import type { Camera, SketchContext } from '@null3d/engine';
 import { createSound, type Sound, type SoundGroup, type SoundLoop } from '@null3d/sound';
 import type { Wind } from '@null3d/wind';
 import { sampleUrl } from '../../lib/samples';
+import { SOUND_GAIN } from '../../lib/sound-gain';
 import { FOUNTAIN_WATER, groundHeight } from './ground';
 import { BAY, beachShare, inland, SEA_LEVEL } from './island';
 import { canopyAt } from './plan';
@@ -125,7 +126,7 @@ export function busRate(speed: number): number {
 export function createIslandSound(ctx: SketchContext, camera: Camera): IslandSound {
 	const sound: Sound = createSound(ctx, { listener: camera });
 
-	const seaFile = sampleUrl('sources/sound/loops/sea/sea.mp3');
+	const seaFile = sampleUrl('sources/sound/sea/sea.mp3');
 	const shore: [number, number][] = [];
 	for (let k = 0; k < SEA_POINTS; k++) {
 		const point = offshoreAlong((k / SEA_POINTS) * Math.PI * 2, SEA_OFFSHORE);
@@ -140,13 +141,13 @@ export function createIslandSound(ctx: SketchContext, camera: Camera): IslandSou
 	});
 	for (const [k, [x, z]] of shore.entries()) {
 		seaShore.setPosition(k, x, SEA_LEVEL, z);
-		seaShore.setLevel(k, SEA_POINT_LEVEL);
+		seaShore.setLevel(k, SEA_POINT_LEVEL * SOUND_GAIN.sea);
 	}
 	const seaOpen: SoundLoop = sound.loop({ file: seaFile, positional: false, level: 0 });
 
 	const beach = surfPoints();
 	const surf = sound.group({
-		file: sampleUrl('sources/sound/loops/surf/surf.mp3'),
+		file: sampleUrl('sources/sound/surf/surf.mp3'),
 		count: beach.length,
 		voices: 3,
 		near: 30,
@@ -154,16 +155,16 @@ export function createIslandSound(ctx: SketchContext, camera: Camera): IslandSou
 	});
 	beach.forEach((point, k) => {
 		surf.setPosition(k, point.x, SEA_LEVEL + 1, point.z);
-		surf.setLevel(k, point.beach);
+		surf.setLevel(k, point.beach * SOUND_GAIN.surf);
 	});
 
 	const wind = sound.loop({
-		file: sampleUrl('sources/sound/loops/wind/wind.mp3'),
+		file: sampleUrl('sources/sound/wind/wind.mp3'),
 		positional: false,
 		level: 0,
 	});
 	const leaves = sound.loop({
-		file: sampleUrl('sources/sound/loops/leaves/leaves.mp3'),
+		file: sampleUrl('sources/sound/leaves/leaves.mp3'),
 		positional: false,
 		level: 0,
 	});
@@ -171,17 +172,17 @@ export function createIslandSound(ctx: SketchContext, camera: Camera): IslandSou
 	// The square's fountain runs at the town's middle. It is the only sound there, and the listener hears
 	// it only from close by, so the square sounds like its fountain rather than like silence.
 	const fountain = sound.loop({
-		file: sampleUrl('sources/sound/loops/stream/stream.mp3'),
+		file: sampleUrl('sources/sound/stream/stream.mp3'),
 		near: 3,
 		far: 50,
-		level: 0.5,
+		level: 0.5 * SOUND_GAIN.stream,
 	});
 	fountain.setPosition(FOUNTAIN_WATER.x, FOUNTAIN_WATER.basinAbove + 1, FOUNTAIN_WATER.z);
 
 	// The cars and the bus come from the road under them. A car keeps quiet while it stands, or while
 	// the traffic holds it out of sight, and grows louder and higher as it runs.
-	const carFile = sampleUrl('sources/sound/loops/car/car.mp3');
-	const busFile = sampleUrl('sources/sound/loops/bus/bus.mp3');
+	const carFile = sampleUrl('sources/sound/car/car.mp3');
+	const busFile = sampleUrl('sources/sound/bus/bus.mp3');
 	let cars: SoundGroup | undefined;
 	let bus: SoundLoop | undefined;
 	let traffic: Parameters<IslandSound['setTraffic']>[0] | undefined;
@@ -232,7 +233,9 @@ export function createIslandSound(ctx: SketchContext, camera: Camera): IslandSou
 			const out = -inland(x, z);
 
 			// Far out at sea the water surrounds the camera; near the shore it comes from the shore's points.
-			seaOpen.setLevel(SEA_OPEN * smoothstep(60, 400, out) * (1 - smoothstep(5, 60, height)));
+			seaOpen.setLevel(
+				SEA_OPEN * smoothstep(60, 400, out) * (1 - smoothstep(5, 60, height)) * SOUND_GAIN.sea,
+			);
 
 			let speed = STEADY_WIND;
 			if (field) {
@@ -251,10 +254,12 @@ export function createIslandSound(ctx: SketchContext, camera: Camera): IslandSou
 			const exposure =
 				(0.35 + 0.5 * smoothstep(2, 160, height) + 0.15 * smoothstep(0, 250, out)) *
 				(1 - 0.5 * canopy * nearTrees);
-			wind.setLevel(0.35 * strength * strength * exposure);
+			wind.setLevel(0.35 * strength * strength * exposure * SOUND_GAIN.wind);
 			wind.setTone(0.55 + 0.35 * strength * (0.6 + 0.4 * smoothstep(0, 150, height)));
 
-			leaves.setLevel(0.5 * canopy * nearTrees * Math.min(1, 0.15 + 0.6 * strength));
+			leaves.setLevel(
+				0.5 * canopy * nearTrees * Math.min(1, 0.15 + 0.6 * strength) * SOUND_GAIN.leaves,
+			);
 			leaves.setTone(0.68 + 0.2 * strength);
 
 			if (traffic) {
@@ -270,7 +275,7 @@ export function createIslandSound(ctx: SketchContext, camera: Camera): IslandSou
 						const rate = carRate(speed);
 						carShown[k] = (carShown[k] as number) + (level - (carShown[k] as number)) * ease;
 						carPitch[k] = (carPitch[k] as number) + (rate - (carPitch[k] as number)) * ease;
-						cars.setLevel(k, carShown[k] as number);
+						cars.setLevel(k, (carShown[k] as number) * SOUND_GAIN.car);
 						cars.setRate(k, carPitch[k] as number);
 					}
 				}
@@ -284,7 +289,7 @@ export function createIslandSound(ctx: SketchContext, camera: Camera): IslandSou
 					);
 					busShown = busShown + (busLevel(speed) - busShown) * ease;
 					busPitch = busPitch + (busRate(speed) - busPitch) * ease;
-					bus.setLevel(busShown);
+					bus.setLevel(busShown * SOUND_GAIN.bus);
 					bus.setRate(busPitch);
 				}
 			}

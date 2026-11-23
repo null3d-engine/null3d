@@ -565,10 +565,19 @@ export default defineSketch(async (ctx) => {
 	controls.fitShadows();
 	/** True once the address's gust has been sent, so one send reaches the field. */
 	let gustSent = false;
+	/** The sketch time of the next gust that the air brings over the garden. */
+	let nextGust = 0;
 
 	return {
 		onUpdate(dt) {
 			const t = time.now;
+			// The air comes in waves: a gust rolls over the garden every several seconds, so the
+			// trees, the grass and the water's ripples move in swells rather than in a steady push.
+			if (t >= nextGust) {
+				camera.getPosition(here);
+				wind.gust([here[0] as number, here[2] as number], 5 + 4 * Math.sin(t * 1.7) ** 2);
+				nextGust = t + 7 + 4 * Math.sin(t * 0.9) ** 2;
+			}
 			// The address's gust goes in before the field steps, so the frame that draws carries it
 			// and the readers see its settings at once.
 			if (GUST_STRENGTH > 0 && !gustSent && t >= GUST_SEND_AT) {
@@ -618,7 +627,9 @@ export default defineSketch(async (ctx) => {
 			air.update();
 			clouds.step();
 			for (const fall of falls) fall.update();
-			sound.update(dt);
+			// Under the surface, only the creek is heard, so the sound needs to know where the eye is.
+			camera.getPosition(here);
+			sound.update(dt, (here[1] as number) < WATER + 0.05);
 		},
 	};
 });

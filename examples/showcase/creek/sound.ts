@@ -15,6 +15,7 @@ import type { Camera, SketchContext } from '@null3d/engine';
 import { createSound } from '@null3d/sound';
 import type { Wind } from '@null3d/wind';
 import { sampleUrl } from '../../lib/samples';
+import { SOUND_GAIN } from '../../lib/sound-gain';
 import { FALL, groundHeight, LIPS, streamCurrent, streamZ, WATER } from './land';
 import { MAPLE_SPOTS, TREES } from './valley';
 
@@ -37,8 +38,11 @@ const AIR_TIME = 0.28;
 
 /** The creek garden's sound, which the sketch updates once a frame after the camera moves. */
 export interface CreekSound {
-	/** Writes the listener and every level. Call it once a frame in `onLateUpdate`, with its step. */
-	update(dt: number): void;
+	/**
+	 * Writes the listener and every level. Call it once a frame in `onLateUpdate`, with its step and
+	 * whether the camera is under the water, where only the creek is heard.
+	 */
+	update(dt: number, underwater: boolean): void;
 }
 
 /** A smooth step from 0 at `low` to 1 at `high`. */
@@ -57,7 +61,7 @@ export function createCreekSound(ctx: SketchContext, camera: Camera, wind: Wind)
 	const xs: number[] = [];
 	for (let x = LIPS.west + 1; x <= LIPS.east - 1; x += CREEK_STEP) xs.push(x);
 	const creek = sound.group({
-		file: sampleUrl('sources/sound/loops/stream/stream.mp3'),
+		file: sampleUrl('sources/sound/stream/stream.mp3'),
 		count: xs.length,
 		voices: 4,
 		near: 4,
@@ -66,21 +70,27 @@ export function createCreekSound(ctx: SketchContext, camera: Camera, wind: Wind)
 	xs.forEach((x, k) => {
 		const [along, across] = streamCurrent(x);
 		creek.setPosition(k, x, WATER + 0.1, streamZ(x));
-		creek.setLevel(k, 0.4 + 0.4 * Math.min(1, Math.hypot(along, across) / QUICK));
+		creek.setLevel(
+			k,
+			(0.4 + 0.4 * Math.min(1, Math.hypot(along, across) / QUICK)) * SOUND_GAIN.stream,
+		);
 	});
 
 	// Each fall sounds from the middle of its drop, a little out from the rim.
-	const fallFile = sampleUrl('sources/sound/loops/waterfall/waterfall.mp3');
+	const fallFile = sampleUrl('sources/sound/waterfall/waterfall.mp3');
+	const falls: ReturnType<typeof sound.loop>[] = [];
 	for (const [n, x] of [LIPS.west, LIPS.east].entries()) {
 		const out = Math.sign(x) * 1.5;
 		const fall = sound.loop({
 			file: fallFile,
-			near: 6,
-			far: 120,
+			near: 1.5,
+			far: 12,
 			position: [x + out, WATER - FALL.drop / 2, streamZ(x)],
+			level: SOUND_GAIN.waterfall,
 		});
 		// Two falls play one recording, so a few per cent apart they sound like two falls.
 		fall.setRate(n === 0 ? 0.97 : 1.03);
+		falls.push(fall);
 	}
 
 	// The crowns whose leaves rustle: every pine, and every maple that still has its leaves. They
@@ -92,13 +102,13 @@ export function createCreekSound(ctx: SketchContext, camera: Camera, wind: Wind)
 		),
 	];
 	const leaves = sound.loop({
-		file: sampleUrl('sources/sound/loops/leaves/leaves.mp3'),
+		file: sampleUrl('sources/sound/leaves/leaves.mp3'),
 		positional: false,
 		level: 0,
 	});
 
 	const air = sound.loop({
-		file: sampleUrl('sources/sound/loops/wind/wind.mp3'),
+		file: sampleUrl('sources/sound/wind/wind.mp3'),
 		positional: false,
 		level: 0,
 	});
@@ -110,7 +120,7 @@ export function createCreekSound(ctx: SketchContext, camera: Camera, wind: Wind)
 	// follows over about half a second.
 	let airSpeed = Number.NaN;
 	return {
-		update(dt) {
+		update(dt, underwater) {
 			camera.getWorldPosition(eye);
 			wind.sample(eye[0] as number, eye[1] as number, eye[2] as number, flow);
 			const sampled = Math.hypot(flow[0], flow[2]);
@@ -119,8 +129,12 @@ export function createCreekSound(ctx: SketchContext, camera: Camera, wind: Wind)
 			const follow = 1 - Math.exp(-Math.max(0, dt) / AIR_TIME);
 			airSpeed = Number.isNaN(airSpeed) ? sampled : airSpeed + (sampled - airSpeed) * follow;
 			const strength = Math.min(1, airSpeed / FULL_WIND);
-			air.setLevel(0.02 + 0.18 * strength * strength);
+			// Under the surface the creek's own water fills the ears, and the air, the rustle and the
+			// falls have nothing to carry them.
+			const above = underwater ? 0 : 1;
+			air.setLevel(above * (0.008 + 0.07 * strength * strength) * SOUND_GAIN.wind);
 			air.setTone(0.62 + 0.2 * strength);
+			for (const fall of falls) fall.setLevel(above * SOUND_GAIN.waterfall);
 			// The bed's level follows the nearest crown, so the wood rustles as the camera nears it,
 			// and it swells with the air at the camera, which a gust raises as it passes.
 			let nearest = Number.POSITIVE_INFINITY;
@@ -129,7 +143,9 @@ export function createCreekSound(ctx: SketchContext, camera: Camera, wind: Wind)
 				if (gap < nearest) nearest = gap;
 			}
 			const rustle = 1 - smoothstep(RUSTLE_NEAR, RUSTLE_FAR, Math.max(0, nearest));
-			leaves.setLevel(0.5 * rustle * Math.min(1, 0.15 + 0.6 * strength));
+			leaves.setLevel(
+				0.5 * rustle * Math.min(1, 0.15 + 0.6 * strength) * SOUND_GAIN.leaves * above,
+			);
 			leaves.setTone(0.68 + 0.2 * strength);
 			sound.update();
 		},

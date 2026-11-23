@@ -133,48 +133,47 @@ The Creek's trees file takes 4,198 KB, its plants file 486 KB, its cave file 784
 
 An island plant's card is two upright quads crossed through its trunk and a level quad at two thirds of its crown's height. Cycles renders the plant from the side and from above onto a transparent film, with each surface's own color and no light, so the engine lights the card once. The views fill the card's atlas, the side on the left and the top on the right. Each quad carries its own back face, so the card's material draws one side. A two-sided material would turn the back's normals inward, and half of every card would light dark. The scene hands each plant over from its meshes to its card past a distance that its preset sets.
 
-## Sound loops cut by script
+## The sounds
 
-The sound add-on's demos play beds of wind, water, rain and a city, short engine loops for sources that move, and two thunder one-shots. Each comes from a field recording on Freesound under CC0 or CC BY. A script in this repository cuts each recording into a loop or a one-shot. The sample-assets repository keeps both the recording and the result.
+The sound add-on's demos play beds of wind, water and rain, engines for sources that move, and two thunder one-shots. Eleven of them are made with ElevenLabs Sound Effects and are played exactly as generated. Each is 48 kHz stereo MP3 at 192 kbps, a loop that joins without a gap or a one-shot, and none is cut, faded or normalised here. They carry CC BY-NC 4.0, like the generated models, and each names its generator in the sample manifest. The two hover engines are the exception: a script cuts and normalises them from CC0 field recordings on Freesound.
 
-Freesound serves an original upload only to a signed-in account. It serves a high-quality preview to anyone: Ogg Vorbis at about 190 kbps. Each raw recording in `sources/sound/raw/<sound>/` is that preview, with the origin kind `files`, so the import script can download it again. Each output in `sources/sound/loops/<sound>/<sound>.mp3` has the origin kind `converted`, which names the script and the recording it reads.
+| Sound | What it plays | Length | Size | Loudness |
+| --- | --- | --- | --- | --- |
+| `wind` | Wind through foliage | 20 s loop | 470 KB | -40.8 LUFS |
+| `leaves` | Leaves rustling in the wind | 8 s loop | 189 KB | -44.0 LUFS |
+| `sea` | The open sea | 25 s loop | 587 KB | -21.8 LUFS |
+| `surf` | Waves on a shore | 25 s loop | 587 KB | -23.8 LUFS |
+| `stream` | A stream over stones | 25 s loop | 587 KB | -38.0 LUFS |
+| `waterfall` | A waterfall's roar | 25 s loop | 587 KB | -15.5 LUFS |
+| `rain` | Rain | 20 s loop | 470 KB | -20.0 LUFS |
+| `car` | A car's engine | 5 s loop | 119 KB | -37.1 LUFS |
+| `bus` | A bus's engine | 5 s loop | 119 KB | -12.9 LUFS |
+| `thunder-near` | A close clap of thunder | 5 s one-shot | 119 KB | -29.0 LUFS |
+| `thunder-far` | Distant thunder rolling | 15 s one-shot | 353 KB | -29.9 LUFS |
+| `hover` | A designed hover engine's steady hum | 6 s loop | 48 KB | -20 LUFS |
+| `hover-pass` | A lighter take of the same hum for hover cars that pass at speed | 3 s loop | 27 KB | -20 LUFS |
 
-| Script | Builds |
-| --- | --- |
-| `tools/samples/sound/loops.ts` | Every loop and one-shot from its raw recording. The cut, the filters, the fade and the loudness of each sound are data in the script. A change to a sound is a reviewed change to code |
+The generated files were left at whatever level the generator gave them, which spans more than thirty decibels: the bus is loud and the leaves are quiet by more than twenty. So each scene multiplies the level it writes for a sound by that sound's gain in `examples/lib/sound-gain.ts`, which brings it to the -20 LUFS that the mixes are tuned at. A scene changes a mix by changing these gains, not by rewriting its curves.
 
-Build them with `bun tools/samples/sound/loops.ts <folder>`. It needs ffmpeg with libmp3lame, on the path or where `FFMPEG` names it, and takes about a minute. It reads the raw recordings from the pinned sample content, or from the folder that `--raw <folder>` names. That may be the `sources/sound/raw` folder of a sample-assets checkout whose commit is not pinned yet. The option `--only <a,b>` builds only those sounds. The option `--spectra <folder>` also writes a spectrum picture of each output there. For each sound, the script:
+Two faults in the generated files are known and are not fixed here: the wind's loop point clicks, since the jump from its last sample to its first is about 2.6 times the largest jump inside it, and the waterfall's peak passes full scale, so it clips. The sample check reports neither, and both are the generator's.
 
-1. Cuts its stretch of the recording, filters it, resamples it to 48 kHz, and mixes a point source to mono. A gentle high-pass takes out rumble where the recording has it.
-2. Joins a loop's end to its start. The cut runs one fade longer than the loop, and that tail fades out over the head with equal power. So the loop's last sample runs on into its first. A bed's fade takes 2 s and an engine's 0.4 s. A one-shot fades out at its end instead.
-3. Sets a gain that brings a loop to -20 LUFS integrated. A lookahead limiter holds a loop's true peak at -1 dBTP or under where the peaks need it. A loop goes through the limiter as three copies and keeps the middle one, so the limiter runs on across the seam. A one-shot's gain sets its true peak at -1 dBTP, with no limiter, so a thunder's crack stays whole. Its loudness is whatever that gives, and a demo sets its level.
-4. Encodes VBR MP3 with libmp3lame, at about 130 kbps in stereo and 65 to 85 kbps in mono. The encoder writes a file, not a pipe, so it can fill in the LAME header. That header records the encoder's delay and padding.
-5. Decodes the MP3 again and checks it. The length must match, and the loudness and true peak must meet their targets. The sound add-on trims quiet samples at each end as codec padding. So no loop may start or end below that level, and no one-shot may start below it. At a loop's seam, the step between neighbouring samples must stay under half the largest step inside it. The build stops on a failure, and prints each sound's figures.
+## Cutting the hover engines
 
-To publish them:
+The two hover engines are cut by script, `tools/samples/sound/loops.ts`, from CC0 recordings on Freesound. Freesound serves an original upload only to a signed-in account and a high-quality preview to anyone; each raw recording in `sources/sound/raw/<sound>/` is that preview, with origin kind `files`, so the import script can download it again. Each output in `sources/sound/loops/<sound>/<sound>.mp3` has origin kind `converted`, which names the script and the recording it reads.
+
+Build them with `bun tools/samples/sound/loops.ts <folder>`. It needs ffmpeg with libmp3lame, on the path or where `FFMPEG` names it. It reads the raw recordings from the pinned sample content, or from the folder that `--raw <folder>` names, which may be a sample-assets checkout whose commit is not pinned yet. `--only <a,b>` builds only those sounds, and `--spectra <folder>` also writes a spectrum picture of each output. For each sound, the script:
+
+1. Cuts its stretch of the recording, filters it, resamples it to 48 kHz, and mixes a point source to mono.
+2. Joins a loop's end to its start: the cut runs one fade longer than the loop, and that tail fades out over the head with equal power, so the loop's last sample runs on into its first.
+3. Sets a gain that brings the loop to -20 LUFS integrated, with a lookahead limiter under -1 dBTP where the peaks need it. The loop goes through the limiter as three copies and keeps the middle one, so the limiter runs on across the seam.
+4. Encodes VBR MP3 with libmp3lame. The encoder writes a file, not a pipe, so it can fill in the LAME header, which records its delay and padding.
+5. Decodes the MP3 again and checks it: the length, the loudness, the true peak, and the step at the seam against the largest step inside the loop. The build stops on a failure and prints each sound's figures.
+
+To publish one:
 
 1. In the sample-assets repository, add the raw recording's entry and run `bun scripts/import.ts sound/raw/<sound>`.
-2. Build the outputs into that checkout's `sources/sound/loops` folder, with `--raw` naming its `sources/sound/raw` folder. Run `bun scripts/manifest.ts --write` there.
+2. Build the output into that checkout's `sources/sound/loops` folder, with `--raw` naming its `sources/sound/raw` folder. Run `bun scripts/manifest.ts --write` there.
 3. Commit, push, and pin the commit here, as "Add or change an asset" says.
-
-| Sound | What it plays | Length | Channels | Size |
-| --- | --- | --- | --- | --- |
-| `wind` | Steady wind through grass on open ground | 10 s loop | Stereo | 161 KB |
-| `leaves` | Leaves rustling in the wind, close enough that each gust shows | 10 s loop | Stereo | 182 KB |
-| `sea` | The open sea from a clifftop: a low swell and a distant wash | 45 s loop | Stereo | 642 KB |
-| `surf` | Waves breaking and washing up a beach, about seven wave cycles | 45 s loop | Stereo | 684 KB |
-| `car` | A compact car's petrol engine held at 2,000 rpm, from outside | 6 s loop | Mono | 59 KB |
-| `bus` | A coach's diesel engine at idle, from outside | 6 s loop | Mono | 62 KB |
-| `stream` | A small river gurgling over stones, close | 10 s loop | Stereo | 153 KB |
-| `waterfall` | A waterfall's steady roar | 10 s loop | Stereo | 144 KB |
-| `hover` | A designed hover engine's steady hum | 6 s loop | Mono | 48 KB |
-| `hover-pass` | A lighter take of the same hum for hover cars that pass at speed: the whine and air, without the low hum | 3 s loop | Mono | 27 KB |
-| `rain` | Light rain on a city street at night | 10 s loop | Stereo | 170 KB |
-| `thunder-near` | A close clap of thunder and its roll, at -23.7 LUFS | 11.5 s one-shot | Stereo | 112 KB |
-| `thunder-far` | Distant thunder rolling, at -21.6 LUFS | 12 s one-shot | Stereo | 124 KB |
-| `city` | A quiet city evening: far traffic and the air of the streets | 12 s loop | Stereo | 179 KB |
-
-The outputs take 5.2 MB, and the raw recordings 21.4 MB. The car and the bus are engines held at one speed: a car at 2,000 rpm and a coach at idle. A car that drives past a microphone changes in level and pitch, so its recording does not loop. The demos set an engine's speed with the playback rate.
 
 ## The sample check
 
