@@ -21,6 +21,7 @@ import { createLand } from './land';
 import { groundHeight } from './plan';
 import { createSea } from './sea';
 import { SHADOW_DISTANCE, SHADOW_REACH } from './shadow';
+import { createIslandSound } from './sound';
 import { createTown } from './town';
 import { CASTER_LAYER, createCypressSpires, createTrees } from './trees';
 
@@ -210,6 +211,8 @@ export default defineSketch(async (ctx) => {
 	// The cypresses need no species assets, so a page that grows the rest later places them before
 	// the first frame.
 	if (!grownFirst) createCypressSpires(ctx);
+	// The sea, the surf, the wind and the leaves, which the page's speaker button starts.
+	const sound = createIslandSound(ctx, camera);
 	let trees: { update(): void } | undefined;
 	let growing = false;
 	const grow = (): void => {
@@ -218,12 +221,15 @@ export default defineSketch(async (ctx) => {
 		void createTrees(ctx, camera, { spires: false }).then(
 			(grown) => {
 				trees = grown;
+				sound.setWind(grown.wind);
 			},
 			(error: unknown) => console.error(error),
 		);
 	};
 	if (grownFirst) {
-		trees = await createTrees(ctx, camera);
+		const grown = await createTrees(ctx, camera);
+		trees = grown;
+		sound.setWind(grown.wind);
 		// The stage writes the light its maps give before the first frame draws.
 		await Promise.all([sky, room]);
 	}
@@ -244,6 +250,9 @@ export default defineSketch(async (ctx) => {
 			land.update(eye);
 			sea.update();
 			trees?.update();
+		},
+		onLateUpdate() {
+			sound.update();
 		},
 	};
 });

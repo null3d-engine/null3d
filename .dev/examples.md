@@ -1166,6 +1166,16 @@ The demos' groups are the owner's ruling. In the sidebar's order, they are Showc
 - The folder names do not follow the titles, because the image tests, the code links and the device plans use them.
 - The demos that load files (creek, environment, gltf-model, character and look-at) carry a "loads files" tag, from their `assets` field. The gltf-model demo sits with light and materials, since its look is what it shows.
 
+## Sound in the showcase scenes
+
+The three showcase scenes play sound with `@null3d/sound` ([D-384](decisions/D-384-sound-add-on.md)). Each scene's `sound.ts` makes its sounds and sets their levels from the scene, and its sketch calls their `update` in `onLateUpdate`.
+
+- The island plays the sea from points offshore all round it and the surf from points along the bay's beach. The mixer plays the nearest few of each. It also plays the wind and the leaves in both ears. The wind follows the air's speed at the camera, from the trees' wind field, and rises with height and over open water. The leaves follow the canopy around the camera and the wind.
+- The creek plays the creek from points along its middle, louder where its current runs quick, and each fall from the middle of its drop. Its wind and the leaves of its crowns follow the garden's wind field, so the G key's gust rustles every crown as it crosses.
+- Skyway plays the hero car's engine, whose pitch follows its speed, and the roamers and the lane cars as groups. The roamers' places are their batch's rows, and the lanes give the places of the cars that hold their real lights. The rain follows the rain and storm switches, a storm rolls thunder now and then, and the city hums. From the seat, the glass dulls the rain and the city.
+- The entry's `sound` flag makes `startDemo` add a speaker button beside the controls' chevron (`examples/lib/sound-button.ts`). Its first press starts the audio, which a browser allows only in answer to the user, and later presses mute it. A held frame shows no controls, so it plays no sound and draws as before. A page of the website's own layout styles the button by its `hud__sound` class, as the examples page does in `examples/index.html`.
+- The sounds are recorded loops in the sample content, which load only once the button starts the sound ([Sample content](sample-content.md)).
+
 ## The deterministic simulation demo
 
 The demo shows how a game whose server replays its simulation uses null3D: the maths entry, `createMath` and `input: false` together. It sits in Motion and interaction, beside the input and the math demos that it builds on. Testing and tools holds the engine's own test tools, such as hold mode, and this replay is the game's, not the engine's.

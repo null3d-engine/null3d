@@ -20,7 +20,15 @@ import {
 	type SketchContext,
 	type Vec3Like,
 } from '@null3d/engine';
-import { LIGHT_RANGE, type LightPool, laneGroups, moveLights } from './lights';
+import {
+	carPlace,
+	keyRow,
+	keySearch,
+	LIGHT_RANGE,
+	type LightPool,
+	laneGroups,
+	moveLights,
+} from './lights';
 import vehicleShader from './vehicle.wgsl';
 
 /** The size of a vehicle that `createVehicleHull` builds. */
@@ -490,6 +498,12 @@ export interface TrafficLanes {
 	 */
 	update(eye: Vec3Like, time: number): void;
 	/**
+	 * Writes the places at `time` of the vehicles that hold the real lights, the nearest to the
+	 * camera at the last search, three numbers each into `out`, and returns how many it wrote. A
+	 * scene's sound plays their engines from there.
+	 */
+	nearest(out: Float32Array, time: number): number;
+	/**
 	 * Removes the batches, their materials and the real lights, so a scene can build the lanes
 	 * again around another hull. Destroy the hull the scene gave after this call.
 	 */
@@ -689,6 +703,28 @@ export function createTrafficLanes(ctx: SketchContext, options: TrafficLaneOptio
 				entry.material.destroy();
 			}
 			for (const light of lights) light.destroy();
+		},
+		nearest(out, time) {
+			let count = 0;
+			for (let slot = 0; slot < realLights && count * 3 + 3 <= out.length; slot++) {
+				const key = bestKey[slot] as number;
+				if (key < 0) continue;
+				const search = batches[keySearch(key)];
+				const values = search?.batch.values;
+				if (!search || !values) continue;
+				carPlace(
+					search.batch.positions,
+					values,
+					keyRow(key),
+					time,
+					Math.sin(search.yaw),
+					Math.cos(search.yaw),
+					out,
+					count * 3,
+				);
+				count++;
+			}
+			return count;
 		},
 		update(eye, time) {
 			if (realLights === 0) return;

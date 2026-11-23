@@ -280,6 +280,13 @@ export interface Roamers {
 	update(dt: number): void;
 	/** Flies the preset's count of roamers. */
 	fit(preset: QualityPreset): void;
+	/**
+	 * The batch's places, three numbers a roamer, of which the first `active` fly. It is a view of
+	 * the engine's memory, so read it again in each frame rather than keep it.
+	 */
+	readonly places: Float32Array;
+	/** The roamers that fly now. */
+	readonly active: number;
 }
 
 /**
@@ -401,6 +408,12 @@ export function createRoamers(ctx: SketchContext, look: RoamerLook): Roamers {
 			active = ROAMERS[preset];
 			batch.setActiveCount(active);
 			write();
+		},
+		get places() {
+			return batch.positions;
+		},
+		get active() {
+			return active;
 		},
 	};
 }

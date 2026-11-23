@@ -136,6 +136,8 @@ export interface Hero {
 	readonly group: Group;
 	/** Where the camera sits now. */
 	readonly view: View;
+	/** How fast the car flies across the ground, in meters a second, which its engine's pitch follows. */
+	readonly speed: number;
 	/** Puts the camera behind the car or in its seat. */
 	setView(view: View): void;
 	/**
@@ -544,6 +546,9 @@ export function createHero(
 
 	return {
 		group,
+		get speed() {
+			return speed;
+		},
 		get view() {
 			return view;
 		},

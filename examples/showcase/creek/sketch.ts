@@ -60,6 +60,7 @@ import { createCreekStage, HEADING } from './look';
 import { createPlants, loadPlants } from './plants';
 import { SHOTS, WIDE, WIDE_LOOK } from './route';
 import { createShafts } from './shafts';
+import { createCreekSound } from './sound';
 import { createSteps } from './steps';
 import { createStones, type Obstacle } from './stones';
 import { placeValley } from './valley';
@@ -423,6 +424,8 @@ export default defineSketch(async (ctx) => {
 	// The bare garden has no crowns yet, so no leaves fall; the mist and the motes still drift.
 	const air = await createAir(ctx, [], wind.field);
 	const shafts = createShafts(ctx, camera);
+	// The creek, the falls, the wind and the leaves, which the page's speaker button starts.
+	const sound = createCreekSound(ctx, camera, wind);
 	const fit = () => {
 		stones.fit(quality.preset);
 		clouds.fit(quality.preset);
@@ -645,6 +648,7 @@ export default defineSketch(async (ctx) => {
 			clouds.step();
 			for (const fall of falls) fall.update();
 			shafts.update();
+			sound.update();
 		},
 	};
 });
