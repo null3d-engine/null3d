@@ -1473,6 +1473,10 @@ the plugin skips the address without reading the file.
 The set's own size lowers every copy at once, so the savings in the sections above also lower this
 peak.
 
+## A water's mirror that a pixel cannot resolve
+
+The water's surface fades a wave's slope as the wave grows finer than a pixel's footprint, so a slope that no pixel can resolve never turns into noise that changes every frame. The fade kept that slope out of the mirror's lookup as well, so water at a low view, where a pixel covers a meter or more of the surface, drew a single texel of a full-size mirror: the reflected bank's silhouette met the sheet on a cut edge, and the sheet itself had no structure. The slope that the fade removes still tilts the light that reaches the pixel, so the surface gathers the mirror over a cone whose radius follows that lost slope's spread, with the surface's own roughness beside it. Water close to the camera resolves every wave, its cone is nothing, and its mirror stays glassy. The sea's shader in the same package samples its own mirror in one texel as before.
+
 ## One core and one checkout
 
 - A page stops with E1402 when its engine core was built from other Rust sources than the checkout holds. The generated shader modules and the cores have separate caches. After a commit that changes Rust, run `bun run build` before any page test. The error names the missing function or the stamp.

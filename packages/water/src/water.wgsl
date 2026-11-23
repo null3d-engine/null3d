@@ -393,8 +393,9 @@ fn junction(p: vec2f, body: f32) -> vec2f {
 /// travel with the water, in two copies that take turns, as `carried` gives them. Still water keeps
 /// the authored directions and each wave's own speed. A wave's slope fades as the wave grows finer
 /// than `footprint`, the meters that one pixel covers, so a slope that a pixel cannot resolve never
-/// turns into noise that changes each frame.
-fn waves(p: vec2f, t: f32, current: vec3f, fine: bool, footprint: f32) -> vec3f {
+/// turns into noise that changes each frame. That lost slope still tilts the mirror, so `w` gives
+/// its spread: the root of the summed squares of the slopes that the fade removes.
+fn waves(p: vec2f, t: f32, current: vec3f, fine: bool, footprint: f32) -> vec4f {
     // Each wave: its direction, its wave number, and the speed it runs at in still water.
     let list = array<vec4f, 6>(
         vec4f(1.0, 0.15, 2.3, 0.9),
@@ -406,6 +407,9 @@ fn waves(p: vec2f, t: f32, current: vec3f, fine: bool, footprint: f32) -> vec3f 
     );
     var h = 0.0;
     var slope = vec2f(0.0);
+    // The squares of the slopes that the footprint drops, which add across the waves since their
+    // crests meet at every angle.
+    var lost = 0.0;
     let moving = current.z > 1e-5;
     let copies = carried(t);
     let count = select(3u, 6u, fine);
@@ -428,19 +432,24 @@ fn waves(p: vec2f, t: f32, current: vec3f, fine: bool, footprint: f32) -> vec3f 
             let second = base - run * copies.y + cycle_seed(t, 0.5) * turn;
             h += amplitude * (copies.z * sin(first) + copies.w * sin(second));
             slope += dir * (amplitude * w.z * (copies.z * cos(first) + copies.w * cos(second)) * resolved);
+            // Each copy's cosine averages a half of its square, and the two copies' phases differ.
+            let faded = amplitude * w.z * (1.0 - resolved);
+            lost += faded * faded * (copies.z * copies.z + copies.w * copies.w) * 0.5;
         } else {
             // Still: each wave runs at its own speed.
             let still = w.z * dot(own, p) - w.w * t;
             h += amplitude * sin(still);
             slope += dir * (amplitude * w.z * cos(still) * resolved);
+            let faded = amplitude * w.z * (1.0 - resolved);
+            lost += faded * faded * 0.5;
         }
     }
-    return vec3f(h, slope);
+    return vec4f(h, slope.x, slope.y, sqrt(lost));
 }
 
 /// The waves at a point with a share of the river's waves over still water's. Two meshes that meet
 /// carry one current there and read one share, so they give the same surface.
-fn shared_waves(p: vec2f, t: f32, current: vec3f, share: f32, fine: bool, footprint: f32) -> vec3f {
+fn shared_waves(p: vec2f, t: f32, current: vec3f, share: f32, fine: bool, footprint: f32) -> vec4f {
     let moving = waves(p, t, current, fine, footprint);
     if share >= 1.0 {
         return moving;
@@ -486,6 +495,35 @@ fn vertexOffset(input: VertexInput) -> vec3f {
     return vec3f(0.0, lift, 0.0);
 }
 
+/// The reflection texture coordinates that one unit of surface slope moves the mirrored image by, as
+/// the water's ripples are tuned to bend it.
+const MIRROR_SLOPE: f32 = 0.08;
+
+/// The reflection texture coordinates that one unit of slope spread widens the mirror by: a tilt turns
+/// the reflected view by twice its angle, which at a 45 degree view moves the mirror by about 2.4 of
+/// the target per unit slope, and the gather's radius takes half of that. Every slope that a pixel
+/// resolves moves the sample itself, so a ripple bends the image. The slopes that the pixel's
+/// footprint drops cannot bend it, but they still tilt the light that reaches the pixel, so the
+/// mirrored image arrives over a cone of directions rather than one. A wider gather softens the edge
+/// of a reflected bank and gives the sheet the surface's structure; too wide a one smears a
+/// reflected branch into ghosts.
+const MIRROR_CONE: f32 = 1.2;
+
+/// The color of the mirror at `uv`, gathered over a cone of `radius` in texture coordinates. The five
+/// taps sit on the center and two diagonals, and the center weighs twice, so the gather keeps a flat
+/// image flat. At a radius of nothing every tap reads the center, so water that resolves every wave
+/// keeps a glassy, sharp mirror.
+fn mirror_at(uv: vec2f, radius: f32) -> vec3f {
+    let a = vec2f(0.70710678, 0.70710678) * radius;
+    let b = vec2f(0.70710678, -0.70710678) * radius;
+    var sum = textureSampleLevel(mirror, mirrorSampler, uv, 0.0).rgb * 2.0;
+    sum += textureSampleLevel(mirror, mirrorSampler, uv + a, 0.0).rgb;
+    sum += textureSampleLevel(mirror, mirrorSampler, uv - a, 0.0).rgb;
+    sum += textureSampleLevel(mirror, mirrorSampler, uv + b, 0.0).rgb;
+    sum += textureSampleLevel(mirror, mirrorSampler, uv - b, 0.0).rgb;
+    return sum / 6.0;
+}
+
 /// The distance in front of the camera of a depth value, as sceneDistance converts the copy's.
 fn distance_of(depth: f32) -> f32 {
     let near = engine_frame.camera_range.x;
@@ -529,8 +567,13 @@ fn surface(input: SurfaceInput) -> Surface {
     }
     s.normal = normalize(vec3f(-slope.x, 1.0, -slope.y));
     let clip = camera.viewProjection * vec4f(input.relativePosition, 1.0);
-    let mirrorUv = reflection_uv(clip, slope * 0.08);
-    s.reflection = vec4f(textureSampleLevel(mirror, mirrorSampler, mirrorUv, 0.0).rgb, 1.0);
+    let mirrorUv = reflection_uv(clip, slope * MIRROR_SLOPE);
+    // The pixel's mirror reads the slope that it resolves as a bend of the image. The waves' slope
+    // that it cannot resolve still scatters the light, and the surface's roughness spreads it
+    // further: their spread widens the gather, so a reflected bank seen through ripples meets the
+    // sheet on a soft edge rather than on a cut one.
+    let cone = (w.w + s.roughness * s.roughness) * MIRROR_CONE;
+    s.reflection = vec4f(mirror_at(mirrorUv, cone), 1.0);
     // The water's depth: the gap between the sheet and the geometry behind the pixel along the view
     // ray, from the copy of the opaque scene's depth. The depth below the surface is that gap
     // measured against the view's slope.

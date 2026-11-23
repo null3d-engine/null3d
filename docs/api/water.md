@@ -31,7 +31,7 @@ flowchart LR
     spray --> fall
 ```
 
-`@null3d/water` draws the water in a scene. A river follows a line, and a lake fills an outline, and both come from one description. The surface has long waves that the current carries downstream, and finer ripples in its normal. It draws caustics on the bed, foam around what breaks the surface, and a shore that fades where the bed rises to meet it. A reflection pass mirrors the banks and the sky, and redraws as often as the quality preset affords. The same surface draws from below, and `createUnderwater` gives the view from under the water its color, its bend and its caustics.
+`@null3d/water` draws the water in a scene. A river follows a line, and a lake fills an outline, and both come from one description. The surface has long waves that the current carries downstream, and finer ripples in its normal. It draws caustics on the bed, foam around what breaks the surface, and a shore that fades where the bed rises to meet it. A reflection pass mirrors the banks and the sky, and redraws as often as the quality preset affords. The mirror softens where the waves lie finer than a pixel covers, since their tilt still scatters the light. A bank seen through ripples meets the surface on a soft edge, while water close to the camera stays glassy. The same surface draws from below, and `createUnderwater` gives the view from under the water its color, its bend and its caustics.
 
 `createWaterfall` draws a fall from a river's lip, with spray at the lip, mist down the fall and a plume of mist at its foot.
 
