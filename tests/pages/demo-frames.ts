@@ -113,6 +113,7 @@ run('demo-frames', async () => {
 		'render-scale',
 		'without',
 		'walkers',
+		'shafts',
 	])
 		if (params.has(id)) sketch.searchParams.set(id, params.get(id) ?? '');
 	const runDemo = { ...demo, sketch };

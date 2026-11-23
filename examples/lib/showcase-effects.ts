@@ -16,6 +16,7 @@ import type {
 import type { Cinematic } from './cinematic';
 import {
 	ATMOSPHERE,
+	fogSlicesReason,
 	type HudGroup,
 	type HudOption,
 	LIGHTING,
@@ -131,6 +132,9 @@ export function createShowcaseEffects(
 			stage.show(part, false);
 			apply(part, false);
 		}
+	// The fog's lit part follows the scene's start too: the stage starts it on with the scene's
+	// volumetric settings, so a scene whose shafts start off says so here.
+	if (start.shafts === false) stage.setShafts(false);
 	const settings = lensSettings(focus);
 
 	/** The time of the last controls post that Auto asked for. */
@@ -151,6 +155,16 @@ export function createShowcaseEffects(
 			return;
 		}
 		switch (id) {
+			case 'shafts':
+				// The shafts light the fog, so a press that turns them on brings the fog back with
+				// them, at the hour's own values. Turning them off leaves the fog as the visitor set it.
+				if (lit && on.fog === false) {
+					on.fog = true;
+					stage.show('fog', true);
+					apply('fog', true);
+				}
+				stage.setShafts(lit);
+				break;
 			case 'sky':
 			case 'fog':
 			case 'environment':
@@ -223,7 +237,10 @@ export function createShowcaseEffects(
 			const highest = quality.highest;
 			// A feature that needs a heavier preset, and a preset above the device's cap, are both
 			// shown disabled with a plain reason rather than hidden or silently ignored.
-			const feature = (option: HudOption) => presetFeatureReason(option, current, highest);
+			const feature = (option: HudOption) =>
+				option.id === 'shafts'
+					? fogSlicesReason(quality.settings.fogSlices, current, highest)
+					: presetFeatureReason(option, current, highest);
 			const preset = (option: HudOption) => presetCapReason(option.id as QualityPreset, highest);
 			return [
 				{

@@ -299,6 +299,11 @@ export interface Stage {
 	update(dt: number): void;
 	/** Turns a part of the look on or off; every part starts on. It stays so in every later mood. */
 	show(part: StagePart, on: boolean): void;
+	/**
+	 * Turns the fog's lit part on or off: the sun and the lamps show through the haze. The rest of
+	 * the fog stays as the hour sets it, and a scene without lit fog keeps no shafts.
+	 */
+	setShafts(on: boolean): void;
 }
 
 /** True for a mood name. */
@@ -384,6 +389,8 @@ export function createMoods(
 	let targetHours = Number.NaN;
 	/** The parts of the look that are on. A part that is off is written once, when it turns off. */
 	const shown: Record<StagePart, boolean> = { sky: true, fog: true, environment: true };
+	/** True while the fog's lit part draws; the scene's light-shaft switch sets it. */
+	let shafts = options.volumetric !== undefined;
 	/** True while the scene takes its environment light from the background. */
 	const lit = () => shown.sky && shown.environment;
 	/**
@@ -577,6 +584,7 @@ export function createMoods(
 			look.fog.sunGlow = current.glow;
 			if (options.fogHeight) look.fog.heightFalloff = options.fogHeight.falloff;
 			if (options.fogCurve) look.fog.curve = options.fogCurve;
+			writeShafts();
 			scene.setFog(look.fog);
 		}
 		look.post.exposure = current.exposure;
@@ -603,10 +611,17 @@ export function createMoods(
 			look.fog.color[0] = STUDIO_FOG[0];
 			look.fog.color[1] = STUDIO_FOG[1];
 			look.fog.color[2] = STUDIO_FOG[2];
+			writeShafts();
 			scene.setFog(look.fog);
 		}
 		look.post.exposure = 1;
 		post.set(look.post);
+	};
+
+	/** Puts the fog's lit part into the look that the frame writes, or takes it out. */
+	const writeShafts = (): void => {
+		if (shafts && options.volumetric) look.fog.volumetric = options.volumetric;
+		else delete look.fog.volumetric;
 	};
 
 	/** The hour that the look holds now, for a change that re-aims it. */
@@ -696,6 +711,14 @@ export function createMoods(
 			}
 			ease(dt);
 			apply();
+		},
+		setShafts(on) {
+			shafts = on && options.volumetric !== undefined;
+			// The frame writes the fog every time the look moves, so ask for it now.
+			needsLook = true;
+			still = false;
+			if (mood === 'Studio') toStudio();
+			else apply();
 		},
 		show(part, on) {
 			shown[part] = on;

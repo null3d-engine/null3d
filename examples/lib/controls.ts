@@ -180,8 +180,7 @@ export const ATMOSPHERE: readonly HudOption[] = [
 	{
 		id: 'shafts',
 		label: 'Light shafts',
-		tip: 'Visible shafts of light through the haze.',
-		minPreset: 'high',
+		tip: 'Visible shafts of light through the haze. Turning them on also turns the haze on.',
 	},
 	{ id: 'snow', label: 'Snow', tip: 'Snow that falls through the scene.' },
 	{ id: 'rain', label: 'Rain', tip: 'Rain that falls through the scene.' },
@@ -346,4 +345,19 @@ export function presetFeatureReason(
 	if (presetRank(highest) < presetRank(needed))
 		return `Needs ${names}. This device is held to ${presetLabel(highest)}.`;
 	return `Needs ${names}. Choose a higher quality preset.`;
+}
+
+/**
+ * Why the fog's lit part cannot run at this preset: a preset whose fog has no slices gives the
+ * light nothing to cross, so the shafts stay off there.
+ */
+export function fogSlicesReason(
+	slices: number,
+	current: QualityPreset,
+	highest: QualityPreset,
+): string | undefined {
+	if (slices > 0) return undefined;
+	if (presetRank(current) >= presetRank(highest))
+		return `Needs a preset with fog slices. This device is held to ${presetLabel(highest)}.`;
+	return 'Needs a preset with fog slices. Choose a higher quality preset.';
 }

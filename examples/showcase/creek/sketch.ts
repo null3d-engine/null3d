@@ -17,7 +17,6 @@ import {
 	math,
 	type QualityPreset,
 	type SketchContext,
-	timeOfDay,
 } from '@null3d/engine';
 import {
 	createUnderwater,
@@ -56,10 +55,9 @@ import {
 	WATER,
 } from './land';
 import { createMoodSkies, SPRAY, sprayLight as sprayLightOf } from './lights';
-import { createCreekStage, HEADING } from './look';
+import { createCreekStage } from './look';
 import { createPlants, loadPlants } from './plants';
 import { SHOTS, WIDE, WIDE_LOOK } from './route';
-import { createShafts } from './shafts';
 import { createSteps } from './steps';
 import { createStones, type Obstacle } from './stones';
 import { placeValley } from './valley';
@@ -96,8 +94,6 @@ const CAUSTICS: Record<Mood, [number, number, number]> = {
 	Night: [0, 0, 0],
 	Studio: [0.08, 0.08, 0.08],
 };
-/** The color of the shafts of light at golden hour. */
-const SHAFT_TINT = [1.0, 0.62, 0.3] as const;
 /** The least change of a look's share that Auto writes to the scene. */
 const LOOK_STEP = 0.005;
 /** The point that the camera looks at, over the garden's middle. */
@@ -127,6 +123,13 @@ export const BOUNDS: Omit<CameraBounds, 'ground'> = {
 
 const { smoothstep } = math;
 const params = new URL(import.meta.url).searchParams;
+
+/** The effects that the Creek's HUD offers, which its controls answer. */
+export const SUPPORTED = {
+	atmosphere: ['sky', 'fog', 'shafts', 'fireflies'],
+	lighting: ['shadows', 'ao', 'environment'],
+	post: ['bloom', 'dof', 'exposure', 'vignette'],
+} as const;
 /** True draws the water's reflection in every frame, for the bisect of the Apple WebGPU stall. */
 const ALWAYS_REFLECT = params.get('reflect') === 'always';
 /** The reflection target's share of the render size that the address names, for the same bisect. */
@@ -422,7 +425,6 @@ export default defineSketch(async (ctx) => {
 	const flora = await createFlora(ctx);
 	// The bare garden has no crowns yet, so no leaves fall; the mist and the motes still drift.
 	const air = await createAir(ctx, [], wind.field);
-	const shafts = createShafts(ctx, camera);
 	const fit = () => {
 		stones.fit(quality.preset);
 		clouds.fit(quality.preset);
@@ -432,7 +434,6 @@ export default defineSketch(async (ctx) => {
 	// The mood and the lens: from the address at the start, then from the HUD. The physical sky
 	// draws the real sun by day and the moon at night; Auto moves them across the sky.
 	const stage = createCreekStage(ctx, sun, sky, room, Number(params.get('background-fog')) || 0);
-	const golden = timeOfDay('goldenHour', { heading: HEADING });
 	/**
 	 * The look the scene shows: two moods and the share of the second. An hour's look blends between
 	 * the moods on either side, so the fireflies, the air and the caustics change with the light.
@@ -444,23 +445,12 @@ export default defineSketch(async (ctx) => {
 	const STUDIO: MoodMix = { from: 'Studio', to: 'Studio', share: 0 };
 	/** The light of the caustics on the stream's bed, blended between the look's moods. */
 	const caustics: [number, number, number] = [0, 0, 0];
-	// Shafts of light at golden hour, at High and above: below, their march costs too much. They
-	// fade with golden hour's share of the look.
-	const shaftTint: [number, number, number] = [0, 0, 0];
-	const light = () => {
-		const share = moodShare(look, 'Golden');
-		const on =
-			controls.on.shafts && share > 0 && (quality.preset === 'high' || quality.preset === 'ultra');
-		for (let c = 0; c < 3; c++) shaftTint[c] = (SHAFT_TINT[c] as number) * share;
-		shafts.set(on ? golden.light.direction : undefined, shaftTint);
-	};
 	quality.onChange(() => {
 		fit();
-		light();
 	});
 	// The moods' own sky lights, which only dusk, dawn and golden hour turn up.
 	const moodSkies = createMoodSkies(scene);
-	/** Gives the scene a look: its fireflies, its air, its water's caustics and its shafts. */
+	/** Gives the scene a look: its fireflies, its air and its water's caustics. */
 	const showLook = (mix: MoodMix): void => {
 		look.from = mix.from;
 		look.to = mix.to;
@@ -472,7 +462,6 @@ export default defineSketch(async (ctx) => {
 		const b = CAUSTICS[look.to];
 		for (let c = 0; c < 3; c++) caustics[c] = math.lerp(a[c] as number, b[c] as number, look.share);
 		water?.setCaustics(caustics);
-		light();
 	};
 	const choose = (mood: Mood) => {
 		stage.set(mood);
@@ -489,8 +478,10 @@ export default defineSketch(async (ctx) => {
 		stage,
 		start: {
 			sky: true,
-			fog: !WITHOUT.has('fog'),
-			shafts: false,
+			// Every showcase starts with the air clear, and the HUD's Fog switch adds the haze.
+			// `?fog=on` starts the haze on, as a cost run and a picture need it with the shafts.
+			fog: params.get('fog') === 'on',
+			shafts: params.get('shafts') === 'on',
 			fireflies: false,
 			shadows: tierCastShadows,
 			ao: true,
@@ -500,16 +491,9 @@ export default defineSketch(async (ctx) => {
 			exposure: false,
 			vignette: false,
 		},
-		supported: {
-			atmosphere: ['sky', 'fog', 'shafts', 'fireflies'],
-			lighting: ['shadows', 'ao', 'environment'],
-			post: ['bloom', 'dof', 'exposure', 'vignette'],
-		},
+		supported: SUPPORTED,
 		apply(id, on) {
 			switch (id) {
-				case 'shafts':
-					light();
-					break;
 				case 'fireflies':
 					air.setFireflies(on);
 					break;
@@ -644,7 +628,6 @@ export default defineSketch(async (ctx) => {
 			air.update();
 			clouds.step();
 			for (const fall of falls) fall.update();
-			shafts.update();
 		},
 	};
 });

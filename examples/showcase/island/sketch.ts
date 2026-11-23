@@ -100,6 +100,20 @@ export const SHOTS: readonly Shot[] = [
 const AMBIENT_DAY = { sky: '#b9a890', ground: '#c2965c', intensity: 0.8 } as const;
 const AMBIENT_NIGHT = { sky: '#2a3550', ground: '#14161c', intensity: 0.06 } as const;
 
+/**
+ * The island's lit fog: the dry haze over the sea and the town, with the low sun's shafts through
+ * it and the lamps' cones at night. The haze is very thin across the island's kilometres, so the
+ * lit part is strong and reaches far.
+ */
+const SHAFTS = { intensity: 12, anisotropy: 0.6, distance: 2200 } as const;
+
+/** The effects that the island's HUD offers, which its controls answer. */
+export const SUPPORTED = {
+	atmosphere: ['sky', 'fog', 'shafts'],
+	lighting: ['shadows', 'contact', 'ao', 'environment'],
+	post: ['bloom', 'dof', 'exposure', 'vignette'],
+} as const;
+
 /** The light between the day's and the night's, by the share of a town's lamps that are lit. */
 function ambientAt(night: number): {
 	sky: [number, number, number];
@@ -226,8 +240,11 @@ export default defineSketch(
 			environmentScale: 1,
 			cloudCoverage: 0,
 			haze: { Golden: 0.7 },
+			volumetric: SHAFTS,
 			backdrop: [0.02, 0.025, 0.04],
 		});
+		// `?shafts=on` starts the lit fog on, so a cost run or a picture can compare both states.
+		const shaftsOn = params.get('shafts') === 'on';
 		const start = params.get('mood');
 		if (isMood(start)) stage.set(start);
 		else stage.setHour(MORNING);
@@ -243,7 +260,10 @@ export default defineSketch(
 			start: {
 				lod: true,
 				sky: true,
-				fog: true,
+				// Every showcase starts with the air clear, and the HUD's Fog switch adds the haze.
+				// `?fog=on` starts the haze on, as a cost run and a picture need it with the shafts.
+				fog: params.get('fog') === 'on',
+				shafts: shaftsOn,
 				shadows: true,
 				contact: true,
 				ao: true,
@@ -253,11 +273,7 @@ export default defineSketch(
 				exposure: false,
 				vignette: false,
 			},
-			supported: {
-				atmosphere: ['sky', 'fog'],
-				lighting: ['shadows', 'contact', 'ao', 'environment'],
-				post: ['bloom', 'dof', 'exposure', 'vignette'],
-			},
+			supported: SUPPORTED,
 			apply(id, on) {
 				switch (id) {
 					case 'contact':

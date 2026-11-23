@@ -30,6 +30,7 @@ function staged(overrides: Partial<StageOptions> = {}) {
 			height?: number;
 			heightFalloff?: number;
 			curve?: string;
+			volumetric?: { intensity: number; anisotropy: number; distance: number };
 		} | null;
 		dir?: readonly number[];
 		exposure?: number;
@@ -136,6 +137,25 @@ test('leaving the studio takes the whole look back to the hour', () => {
 	expect(last.background).not.toBe(ROOM);
 	expect(last.environment).toBe(SKY);
 	expect(last.fog?.density).toBeCloseTo(middayDensity, 5);
+});
+
+test("a scene's lit fog turns off and on without moving the rest of the fog", () => {
+	const lit = { intensity: 12, anisotropy: 0.6, distance: 2200 } as const;
+	const { stage, last, frames } = staged({ volumetric: lit });
+	stage.set('Midday');
+	frames(240);
+	expect(last.fog?.volumetric).toEqual(lit);
+	const density = last.fog?.density as number;
+	// The shafts go, and the hour's fog stays as it was.
+	stage.setShafts(false);
+	expect(last.fog?.volumetric).toBeUndefined();
+	expect(last.fog?.density).toBeCloseTo(density, 6);
+	stage.setShafts(true);
+	expect(last.fog?.volumetric).toEqual(lit);
+	// A scene without lit fog keeps no shafts, whatever its switch asks.
+	const plain = staged();
+	plain.stage.setShafts(true);
+	expect(plain.last.fog?.volumetric).toBeUndefined();
 });
 
 test("a scene's fog curve holds through the hours, and the studio's fog stays exponential", () => {
