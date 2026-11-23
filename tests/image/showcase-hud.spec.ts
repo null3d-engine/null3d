@@ -235,6 +235,14 @@ function progress(stage: string): void {
  */
 async function openHud(page: Page, size?: { width: number; height: number }): Promise<string[]> {
 	const errors = watchPageProblems(page);
+	// A reload after the first frame is a fault of the run, not the scene: it detaches every control
+	// a pick is about to click. The test server is started with its live reload off for this reason,
+	// and this watch names the fault if a server that reloads serves the page anyway.
+	let watchReloads = false;
+	page.on('framenavigated', (frame) => {
+		if (watchReloads && frame === page.mainFrame())
+			errors.push('the page reloaded during the test');
+	});
 	opened = performance.now();
 	if (size) await page.setViewportSize(size);
 	// A fresh page, the light preset, so CI's software GPU draws it quickly. The demo builds its own
@@ -257,6 +265,7 @@ async function openHud(page: Page, size?: { width: number; height: number }): Pr
 	// ([D-185](../../.dev/decisions/D-185-software-gpu-loses-the-sky.md)).
 	await expect(page.locator('.loader')).toHaveCount(0, { timeout: FIRST_FRAME_MS });
 	progress('the first frame');
+	watchReloads = true;
 	// Open the panel, as a visitor does, with its chevron at the bottom of the scene. The scene's
 	// tabs reach the page's roles only while the panel is open.
 	await page.locator('.hud__chevron').click();

@@ -98,6 +98,11 @@ function devConfig(https: boolean): UserConfig {
 			// Both servers bind every interface, so a demo is reachable from outside this machine. A phone
 			// over USB reaches the loopback, which such a server answers too.
 			host: true,
+			// A test run's server pushes no reload: a run in this shared checkout can last twenty
+			// minutes, and another session's edit would reload the page under it, detaching every
+			// element a test is about to click and leaving the canvas at its default size. The pages
+			// still get the files as they are when they load, which is all a test compares.
+			...(process.env.NULL3D_HMR === '0' ? { hmr: false } : {}),
 			port: https ? HTTPS_PORT : HTTP_PORT,
 			strictPort: true,
 			fs: { strict: true, allow: [searchForWorkspaceRoot(import.meta.dirname)], deny: DENIED },
