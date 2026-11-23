@@ -2,34 +2,33 @@
 // the coast, low olives in groves and holm oaks in the forest, each where the town plan puts it, with
 // oleanders along the lanes. The pines, olives, oaks, oleanders and cypresses are models built by
 // script in Blender (`models.ts`): near copies draw as meshes whose levels thin with distance and
-// sway in the wind, and far ones hand over to the models' own cards, baked from the plant, so the
-// whole forest fits one view. A page that draws the island before the cypress model arrives keeps
-// its code-built spires in their place, and those spires return if the model cannot load.
+// sway in the wind, and far ones hand over to the engine's octahedral cards, baked from each plant
+// by the island's build, so the whole forest fits one view. A page that draws the island before the
+// cypress model arrives keeps its code-built spires in their place, and those spires return if the
+// model cannot load.
 import {
 	type Camera,
 	type InstanceBatch,
-	type Material,
 	type QualityPreset,
 	quat,
 	type SketchContext,
 } from '@null3d/engine';
 import { createGrass } from '@null3d/grass';
-import { handOverCards, handOverMeshes, handOverSwitches } from '@null3d/impostors';
-import { createWind, type Wind } from '@null3d/wind';
 import {
-	type Part,
-	type Stand,
-	type SwayLook,
-	standPart,
-	swayingPart,
-} from '../../lib/blender-models';
-import { createCardMaterial } from '../../lib/card-material';
+	createImpostors,
+	handOverCards,
+	handOverMeshes,
+	handOverSwitches,
+	type ImpostorBatch,
+} from '@null3d/impostors';
+import { createWind, type Wind } from '@null3d/wind';
+import { type Stand, type SwayLook, standPart, swayingPart } from '../../lib/blender-models';
 import { Noise, random } from '../../lib/procedural';
 import { createSway } from '../../lib/sway';
 import { edgeGrid, inCore, read } from './ground';
 import { beachShare, golfShare, inland, townShare } from './island';
 import { type Build, build, type Color, cypress, finish, quad, shrub } from './kit';
-import { loadPlants, type Plant, type PlantKind, type Species } from './models';
+import { loadPlants, type Plant, type PlantCard, type PlantKind, type Species } from './models';
 import {
 	CYPRESS,
 	canopyAt,
@@ -545,6 +544,41 @@ export function createIslandWind(ctx: SketchContext, camera: Camera): Wind {
 }
 
 /**
+ * The far cards of one plant: the engine's impostor batch, one card for each stand, at the plant's
+ * card size. The cards stand on their feet, turned and scaled as their stands say, and need no
+ * per-frame call: the material reads the eye and lights each card from the normals the bake stored.
+ */
+function standCards(ctx: SketchContext, card: PlantCard, stands: readonly Stand[]): ImpostorBatch {
+	const positions = new Float32Array(stands.length * 3);
+	const turns = new Float32Array(stands.length);
+	stands.forEach((stand, row) => {
+		positions[row * 3] = stand.x;
+		positions[row * 3 + 1] = stand.y;
+		positions[row * 3 + 2] = stand.z;
+		turns[row] = stand.yaw;
+	});
+	const cards = createImpostors(ctx, {
+		color: card.color,
+		surface: card.surface,
+		atlas: card.atlas,
+		positions,
+		turn: turns,
+		size: card.size,
+		room: card.room,
+		depth: card.depth,
+		castShadows: true,
+		receiveShadows: true,
+	});
+	stands.forEach((stand, row) => {
+		cards.batch.scales[row * 3] = card.size[0] * stand.size;
+		cards.batch.scales[row * 3 + 1] = card.size[1] * stand.size;
+		cards.batch.scales[row * 3 + 2] = 1;
+	});
+	cards.markDirty();
+	return cards;
+}
+
+/**
  * Grows the island's trees for the preset, and returns the call that moves them in the wind. A
  * scene that placed the code spires before its first frame passes `spires: false`, so they are not
  * placed twice; the cypress model replaces them as soon as it loads. A page that passes its own
@@ -571,8 +605,6 @@ export async function createTrees(
 	noBandFade();
 	ctx.quality.onChange(noBandFade);
 	const { species, cypress: cypressModel } = await loadPlants(ctx);
-	/** Each plant's card material, made once and reused by every copy. */
-	const cardMaterials = new Map<Part, Material>();
 	/**
 	 * Stands one plant: its wood and leaves as near meshes that sway, and its card for every copy
 	 * past the hand-over distance.
@@ -613,21 +645,14 @@ export async function createTrees(
 		// The cards stand behind every group, at full coverage before the earliest switch. Each
 		// group's own wood and leaves draw only to its own switch, so a frame takes one group's
 		// cards rather than every tree of the species at once.
-		// The card lights with a dome normal, so a far crown catches the sun as a rounded mass
-		// rather than as one flat face; the material is made once for each plant.
-		let cardMaterial = cardMaterials.get(card);
-		if (!cardMaterial) {
-			cardMaterial = createCardMaterial(ctx, { map: card.maps.map });
-			cardMaterials.set(card, cardMaterial);
-		}
-		const cards = standPart(ctx, card, stands, cardMaterial);
+		const cards = standCards(ctx, card, stands);
 		const groups = handOverGroups(stands, handOver);
 		for (const { stands: own, switchDistance } of groups) {
 			handOverMeshes(standPart(ctx, wood, own, woodMaterial), switchDistance);
 			handOverMeshes(standPart(ctx, leaves, own, leavesMaterial), switchDistance);
 		}
 		const earliest = groups[0]?.switchDistance;
-		if (earliest !== undefined) handOverCards(cards, earliest);
+		if (earliest !== undefined) handOverCards(cards.batch, earliest);
 	};
 	/** The plan's spots of one kind, as the stands of one model. */
 	const standsOf = (kind: number): Stand[] =>

@@ -1,13 +1,13 @@
 // A far card must draw the same tree as its mesh. The island's hand-baked cards once measured a
 // third to four fifths brighter than their meshes and a third to a half flatter, so the far crowns
-// read as another species. This draws one plant as its mesh and as its card, at one pose under one
-// sun, and compares the crown's value and shading spread. The limits are set from the island's fixed
-// cards: the dome-lit card measures 3 per cent under its mesh's value and the same spread, where
-// the pinned card measured 9 per cent over and 0.69 of it. A card that strays past them reads as
-// another tree.
+// read as another species. This draws one plant as its mesh and as its octahedral card, at one pose
+// under one sun, and compares the crown's value and shading spread. The limits are set from the
+// island's baked cards: the octahedral card measures 7 per cent under its mesh's value and 0.84 of
+// its spread, where the pinned two-picture card measured 9 per cent over and 0.69 of it. A card
+// that strays past them reads as another tree.
 import { expect, test } from '@playwright/test';
 
-/** The most that a card's crown value may exceed its mesh's, as a share. */
+/** The least share of its mesh's shading spread that a card's crown may keep. */
 const LEAST_SPREAD = 0.75;
 /** The most that a card's crown value may stray from its mesh's, as a share either way. */
 const MOST_VALUE = 0.1;

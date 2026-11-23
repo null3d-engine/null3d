@@ -11,9 +11,9 @@
 #   trees.glb   stone-pine, olive and holm-oak, each a wood node and a leaves node, with two lower
 #               levels of detail (MSFT_lod): fewer, larger leaf cards and fewer, plainer branches
 #   shrubs.glb  oleander, a wood node and a leaves node, with two lower levels the same way
-# Each plant also has a far card, `<plant>-card`, a node of its own with a material of its own: two
-# crossed upright quads and one level quad, textured from views of the full plant that Cycles
-# renders in this script, for the copies too far away to need the mesh.
+# The far cards are not in these files: `island.ts` bakes each plant's octahedral atlases from the
+# raw model with the engine's own baker, so the cards light from stored normals and blend the views
+# nearest the eye. The card parts themselves are the engine's quads.
 # A crown is a group of pads, each the foliage at the end of a branch. Its leaf cards lie on the
 # pads' outer surface and face out of it, so the crown's outline is the species' own: the stone
 # pine's flat umbrella, the olive's open, broken crown and the holm oak's dense dome. Each card
@@ -41,7 +41,7 @@ from mathutils import Vector
 sys.dont_write_bytecode = True
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from common import (  # noqa: E402
-    TEXTURE_DIR, Builder, Plant, arguments, branch_phase, cells, close_up, crown_cards, dilate, export, fbm,
+    Builder, Plant, arguments, branch_phase, cells, close_up, crown_cards, dilate, export, fbm,
     frame_of, half, image, leaf_part, material, needle_atlas, normal_map, occlusion_of, orm, over, paint_leaf,
     paint_line, plant_reach, plant_top, preview, smoothstep, sprig_atlas, tent, tube, value_noise,
 )
@@ -514,7 +514,7 @@ TREES = {
     'cypress': dict(
         grow=cypress, bark='cypress', cards=2400, card=0.85, lift=0.1, scatter=0.35, centered=0.45,
         cells=(0, 1, 2, 3), fold=0.16, bend=0.55, flare=0.2, sides=(7, 4, 3), tint=(1.0, 1.0, 1.0),
-        up=0.45, depth=0.55, tent=True, card_level=2, shade=0.55,
+        up=0.45, depth=0.55, tent=True, shade=0.55,
         levels=(
             dict(every=3, grow=1.5, branches=1, sides=2, thin=2, error=0.03),
             dict(every=8, grow=2.4, branches=1, sides=4, thin=3, error=0.07),
@@ -606,227 +606,6 @@ def bark_material(kind, rng, strength):
     )
 
 
-# ---------------------------------------------------------------------------------------------
-# Far cards
-# ---------------------------------------------------------------------------------------------
-
-# The texels of each view that a card's atlas holds, side by side: the side view, then the top.
-CARD_TEXELS = {'stone-pine': 512, 'olive': 512, 'holm-oak': 512, 'cypress': 512, 'oleander': 256}
-# The share of the crown's height, from its foot, where the top view's card lies.
-CARD_TOP_AT = 0.65
-# How far each face of a quad stands out from the quad's middle toward its own side, in meters, so
-# a ray tracer meets the face that looks at it first.
-CARD_GAP = 0.01
-
-
-def bounds(objects):
-    """The lowest and highest points of the objects, in their own frame."""
-    co = np.concatenate([np.array([v.co[:] for v in o.data.vertices]) for o in objects])
-    return co.min(axis=0), co.max(axis=0)
-
-
-def unlit(objects):
-    """
-    Turns each material of the objects into an emitter of its own base color, the texture times the
-    vertex colors, with its cutout, so a render shows the surfaces' colors and no light. It returns
-    the call that puts the materials back.
-    """
-    undo = []
-    for mat in {slot.material for o in objects for slot in o.material_slots if slot.material}:
-        nodes, links = mat.node_tree.nodes, mat.node_tree.links
-        output = nodes.get('Material Output')
-        bsdf = nodes.get('Principled BSDF')
-        surface = output.inputs['Surface'].links[0].from_socket
-        color = bsdf.inputs['Base Color'].links[0].from_socket
-        alpha = bsdf.inputs['Alpha'].links[0].from_socket if bsdf.inputs['Alpha'].links else None
-        glow = nodes.new('ShaderNodeEmission')
-        clear = nodes.new('ShaderNodeBsdfTransparent')
-        mix = nodes.new('ShaderNodeMixShader')
-        links.new(color, glow.inputs['Color'])
-        glow.inputs['Strength'].default_value = 1.0
-        if alpha is not None:
-            links.new(alpha, mix.inputs['Fac'])
-        else:
-            mix.inputs['Fac'].default_value = 1.0
-        links.new(clear.outputs['BSDF'], mix.inputs[1])
-        links.new(glow.outputs['Emission'], mix.inputs[2])
-        links.new(mix.outputs['Shader'], output.inputs['Surface'])
-        undo.append((mat, surface, (glow, clear, mix)))
-
-    def restore():
-        for mat, surface, added in undo:
-            mat.node_tree.links.new(surface, mat.node_tree.nodes.get('Material Output').inputs['Surface'])
-            for node in added:
-                mat.node_tree.nodes.remove(node)
-
-    return restore
-
-
-def render_view(objects, path, size, location, rotation, scale):
-    """
-    Renders the objects' own colors, unlit, with an orthographic camera into a transparent image,
-    and returns its texels as the PNG stores them, in sRGB.
-    """
-    scene = bpy.context.scene
-    for o in scene.collection.objects:
-        if o.type == 'MESH':
-            o.hide_render = o not in objects
-    cam = bpy.data.objects.get('bake-camera')
-    if cam is None:
-        cam = bpy.data.objects.new('bake-camera', bpy.data.cameras.new('bake-camera'))
-        scene.collection.objects.link(cam)
-    cam.data.type = 'ORTHO'
-    cam.data.ortho_scale = scale
-    cam.data.clip_end = 1000
-    cam.location = location
-    cam.rotation_euler = rotation
-    scene.camera = cam
-    world = scene.world or bpy.data.worlds.new('bake')
-    scene.world = world
-    world.use_nodes = True
-    world.node_tree.nodes['Background'].inputs['Strength'].default_value = 0.0
-    lights = [o for o in scene.collection.objects if o.type == 'LIGHT' and not o.hide_render]
-    for light in lights:
-        light.hide_render = True
-    restore = unlit(objects)
-    scene.render.engine = 'CYCLES'
-    scene.cycles.samples = 32
-    scene.cycles.device = 'CPU'
-    scene.cycles.use_denoising = False
-    scene.cycles.filter_width = 0.8
-    scene.render.film_transparent = True
-    # The plain view transform writes each color with sRGB's own curve and no tone curve, so the
-    # PNG holds the surfaces' colors as a texture stores them.
-    previous = scene.view_settings.view_transform
-    scene.view_settings.view_transform = 'Standard'
-    scene.render.resolution_x, scene.render.resolution_y = size, size
-    scene.render.resolution_percentage = 100
-    scene.render.image_settings.file_format = 'PNG'
-    scene.render.image_settings.color_mode = 'RGBA'
-    scene.render.filepath = path
-    bpy.ops.render.render(write_still=True)
-    rendered = bpy.data.images.load(path)
-    texels = np.array(rendered.pixels[:], np.float32).reshape(size, size, 4)
-    bpy.data.images.remove(rendered)
-    restore()
-    for light in lights:
-        light.hide_render = False
-    scene.render.film_transparent = False
-    scene.view_settings.view_transform = previous
-    return texels
-
-
-def card_atlas(name, objects, size, side, top):
-    """
-    The card's atlas: the plant from the side and from above, each rendered orthographically over
-    a square that `side` and `top` give in meters, in its own unlit colors, which carry the crown's
-    depth in their vertex colors. Its alpha is the render's, hardened so a cutoff at one half keeps
-    the outline, and its colors spread into the clear texels as `dilate` does.
-    """
-    low, high = bounds(objects)
-    folder = os.path.join(TEXTURE_DIR, 'cards')
-    os.makedirs(folder, exist_ok=True)
-    front = render_view(objects, os.path.join(folder, f'{name}-side.png'), size,
-                        (0, -500, low[2] + side / 2), (math.radians(90), 0, 0), side)
-    above = render_view(objects, os.path.join(folder, f'{name}-top.png'), size,
-                        (0, 0, high[2] + 100), (0, 0, 0), top)
-    atlas = np.concatenate([front, above], axis=1)
-    alpha = atlas[..., 3]
-    atlas[..., 3] = np.clip((alpha - 0.5) * 2.5 + 0.5, 0, 1)
-    return dilate(atlas)
-
-
-def build_card(name, objects):
-    """
-    A far card of the plant: two upright quads crossed through the trunk, which show its side view,
-    and one level quad through its crown, which shows the view from above. Each quad carries its
-    own back faces, with the same outward normals, so a card shades the same from either side: the
-    upright quads' normals lean out from the trunk and up, as the crown's do, and the level quad's
-    face the sky. The card stands still in the wind, so its sway is zero.
-    """
-    low, high = bounds(objects)
-    reach = float(max(abs(low[0]), abs(high[0]), abs(low[1]), abs(high[1])))
-    side = max(2 * reach, float(high[2] - low[2]))
-    top = 2 * reach
-    size = CARD_TEXELS[name]
-    leaves_low, _ = bounds([objects[1]])
-    level = float(leaves_low[2] + CARD_TOP_AT * (high[2] - leaves_low[2]))
-    texels = card_atlas(name, objects, size, side, top)
-    mat = material(f'{name}-card', image(f'{name}-card', texels), cutout=True, roughness=1.0)
-    b = Builder()
-    up = Vector((0, 0, 1))
-    for axis in (Vector((1, 0, 0)), Vector((0, 1, 0))):
-        facing = axis.cross(up)
-        for f in (facing, -facing):
-            # The vertices run left to right as a viewer on this side sees them.
-            right = (-f).cross(up)
-            ids = []
-            for row in (0, 1):
-                for col in (-1, 0, 1):
-                    p = right * col * side / 2 + Vector((0, 0, low[2] + row * side)) + f * CARD_GAP
-                    u = 0.25 + 0.25 * p.dot(axis) / (side / 2)
-                    n = (f * 0.35 + right * col * 0.55 + up * 0.45).normalized()
-                    ids.append(b.vertex(p, (u, row), (1, 1, 1), n))
-            a0, a1, a2, b0, b1, b2 = ids
-            b.face(a0, a1, b1, b0)
-            b.face(a1, a2, b2, b1)
-    for f in (up, -up):
-        right = Vector((1, 0, 0))
-        ahead = f.cross(right)
-        ids = []
-        for corner in ((-1, -1), (1, -1), (1, 1), (-1, 1)):
-            p = right * corner[0] * top / 2 + ahead * corner[1] * top / 2 + Vector((0, 0, level)) + f * CARD_GAP
-            ids.append(b.vertex(p, (0.5 + 0.25 * (1 + p.x / (top / 2)), 0.5 + 0.5 * p.y / (top / 2)), (1, 1, 1), up))
-        b.face(*ids)
-    return b.build(f'{name}-card', mat)
-
-
-def cull(mat):
-    """
-    Makes a material's back faces clear in Cycles, which culls none, so a card that carries its own
-    back faces previews as the engine draws it. It runs after the export, which reads the plain
-    material.
-    """
-    nodes, links = mat.node_tree.nodes, mat.node_tree.links
-    output = nodes.get('Material Output')
-    surface = output.inputs['Surface'].links[0].from_socket
-    facing = nodes.new('ShaderNodeNewGeometry')
-    clear = nodes.new('ShaderNodeBsdfTransparent')
-    mix = nodes.new('ShaderNodeMixShader')
-    links.new(facing.outputs['Backfacing'], mix.inputs['Fac'])
-    links.new(surface, mix.inputs[1])
-    links.new(clear.outputs['BSDF'], mix.inputs[2])
-    links.new(mix.outputs['Shader'], output.inputs['Surface'])
-
-
-def compare_card(name, path):
-    """Renders the card beside the plant's farthest level, from far above and from the ground, one over the other."""
-    card = bpy.data.objects[f'{name}-card']
-    cull(card.data.materials[0])
-    far = [bpy.data.objects[f'{name}-wood-2'], bpy.data.objects[f'{name}-leaves-2']]
-    low, high = bounds(far)
-    shift = float(max(high[0] - low[0], high[1] - low[1])) * 1.3
-    card.location.x = shift
-    bpy.context.view_layer.update()
-    rows = []
-    for k, view in enumerate(((0.3, -2.0, 1.6), (0.0, -2.4, 0.12))):
-        part = f'{path[:-4]}-{k}.png'
-        preview([*far, card], part, view, size=(480, 240))
-        shot = bpy.data.images.load(part)
-        rows.append(np.array(shot.pixels[:], np.float32).reshape(240, 480, 4))
-        bpy.data.images.remove(shot)
-        os.remove(part)
-    card.location.x = 0
-    bpy.context.view_layer.update()
-    both = np.concatenate(rows[::-1], axis=0)
-    img = bpy.data.images.new(f'{name}-compare', 480, 480, alpha=False)
-    img.pixels.foreach_set(both.ravel())
-    img.filepath_raw = path
-    img.file_format = 'PNG'
-    img.save()
-    bpy.data.images.remove(img)
-
-
 def stream(name, part):
     """The random stream of one part of one plant: its atlas, its bark or its shape."""
     return np.random.default_rng((SEED, part, sum(map(ord, name)), len(name)))
@@ -862,25 +641,14 @@ def main():
         trees += objects
         plants[name] = plant
     shrubs, plants['oleander'] = build_oleander(barks['stem'], leaf_mats['oleander'], stream('oleander', 2))
-    # Each plant's far card is baked from the level of detail that it replaces: the full level, or a
-    # species' own far level, whose larger cards stand wider than the full plant's.
-    cards = {}
-    for name in [*TREES, 'oleander']:
-        level = TREES.get(name, {}).get('card_level', 0)
-        suffix = '' if level == 0 else f'-{level}'
-        cards[name] = build_card(name, [bpy.data.objects[f'{name}-wood{suffix}'], bpy.data.objects[f'{name}-leaves{suffix}']])
-    trees += [cards[name] for name in TREES]
-    shrubs.append(cards['oleander'])
-
     report = {}
-    tree_cards = {f'{name}-card' for name in TREES}
     report.update(export(
-        os.path.join(out, 'trees.glb'), trees, {f'{name}-leaves' for name in TREES} | tree_cards,
-        [level['error'] for level in TREE_LEVELS], tree_cards,
+        os.path.join(out, 'trees.glb'), trees, {f'{name}-leaves' for name in TREES},
+        [level['error'] for level in TREE_LEVELS],
     ))
     report.update(export(
-        os.path.join(out, 'shrubs.glb'), shrubs, {'oleander-leaves', 'oleander-card'},
-        [level['error'] for level in SHRUB_LEVELS], {'oleander-card'},
+        os.path.join(out, 'shrubs.glb'), shrubs, {'oleander-leaves'},
+        [level['error'] for level in SHRUB_LEVELS],
     ))
     for name, triangles in sorted(report.items()):
         print(f'ISLAND {name}: {triangles} triangles')
@@ -907,8 +675,6 @@ def main():
                 bpy.ops.render.render(write_still=True)
         lineup(names, '', os.path.join(shots, 'lineup.png'))
         lineup(names, '-2', os.path.join(shots, 'lineup-far.png'), (480, 160))
-        for name in names:
-            compare_card(name, os.path.join(shots, f'{name}-card-compare.png'))
 
 
 def lineup(names, level, path, size=(1440, 480)):

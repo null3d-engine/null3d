@@ -188,6 +188,11 @@ export interface SceneModels {
 	 * a scene's inputs.
 	 */
 	readonly options?: Readonly<Record<string, string>>;
+	/**
+	 * Bakes far cards from a model's raw file, before the optimizer packs it, and writes the
+	 * atlases into the output folder. The raw file is still readable at this point in the build.
+	 */
+	readonly cards?: (raw: string, model: string, out: string) => Promise<unknown> | unknown;
 }
 
 /**
@@ -214,7 +219,7 @@ export function chosenModels(
  * those models, and a script that reads inputs names its own, such as `--raw`.
  */
 export async function buildScene(
-	{ script, models, blockers = [], swaying, floatPositions = [], options = {} }: SceneModels,
+	{ script, models, blockers = [], swaying, floatPositions = [], options = {}, cards }: SceneModels,
 	args: readonly string[] = process.argv.slice(2),
 ): Promise<void> {
 	const out = args[0];
@@ -256,9 +261,12 @@ export async function buildScene(
 		}
 		mkdirSync(resolve(out), { recursive: true });
 		for (const model of chosen) {
+			const raw = join(scratch, 'blender', `${model}.glb`);
+			// A card bake reads the arrays that the optimizer would compress away, so it runs first.
+			if (cards) await cards(raw, model, resolve(out));
 			const optimized = join(scratch, 'optimized', model);
 			const code = await optimize([
-				join(scratch, 'blender', `${model}.glb`),
+				raw,
 				optimized,
 				...(blockers.includes(model) ? [] : ['--no-blockers']),
 			]);

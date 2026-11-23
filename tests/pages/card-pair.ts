@@ -20,6 +20,7 @@ function crown(pixels: Uint8ClampedArray, width: number, height: number) {
 	let g = 0;
 	let b = 0;
 	let n = 0;
+	let [xMin, yMin, xMax, yMax] = [Infinity, Infinity, -Infinity, -Infinity];
 	const lums: number[] = [];
 	for (let y = y0; y < y1; y++)
 		for (let x = x0; x < x1; x++) {
@@ -31,6 +32,10 @@ function crown(pixels: Uint8ClampedArray, width: number, height: number) {
 			g += G;
 			b += B;
 			n++;
+			if (x < xMin) xMin = x;
+			if (x > xMax) xMax = x;
+			if (y < yMin) yMin = y;
+			if (y > yMax) yMax = y;
 			lums.push(0.2126 * R + 0.7152 * G + 0.0722 * B);
 		}
 	if (n === 0) return undefined;
@@ -38,6 +43,7 @@ function crown(pixels: Uint8ClampedArray, width: number, height: number) {
 	const spread = Math.sqrt(lums.reduce((s, v) => s + (v - mean) ** 2, 0) / n);
 	return {
 		pixels: n,
+		box: [xMax - xMin + 1, yMax - yMin + 1],
 		color: [r / n, g / n, b / n].map((v) => Math.round(v * 10) / 10),
 		value: Math.round(mean * 10) / 10,
 		spread: Math.round(spread * 10) / 10,

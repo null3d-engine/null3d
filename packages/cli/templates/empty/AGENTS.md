@@ -55,7 +55,7 @@ Settle its state before you design the scene.
 | --- | --- | --- |
 | Orbit, map, fly and first-person cameras, and drag, rotate or scale handles | `@null3d/controls` | built |
 | Torus knots, polyhedra, lathes, extrusions and tubes | `@null3d/geometry` | built |
-| Far objects as camera-facing cards, or one mesh per far grid cell | `@null3d/impostors` | built |
+| Far objects as camera-facing cards, or one mesh per far grid cell | `@null3d/impostors` | built; bake several views for any card bigger than a few pixels |
 | Fire, smoke, sparks, rain and other particle effects | `@null3d/particles` | built |
 | Gaussian splats from a scan or a training run | `@null3d/splats` | built |
 | Ground from a height field | `@null3d/terrain` | built |

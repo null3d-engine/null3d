@@ -5768,7 +5768,7 @@
 		{
 			"id": "showcase/island",
 			"title": "Island cypress, trees and oleander",
-			"purpose": "The plants of the engine's island showcase scene: a Mediterranean cypress, stone pine, an olive, a holm oak and a flowering oleander, each with lower levels of detail and a card for its far copies",
+			"purpose": "The plants of the engine's island showcase scene: a Mediterranean cypress, stone pine, an olive, a holm oak and a flowering oleander, each with lower levels of detail, and two octahedral impostor atlases that carry the plant from every direction for its far copies",
 			"authors": [
 				{
 					"name": "null3D contributors"
@@ -5778,8 +5778,8 @@
 				"CC0-1.0"
 			],
 			"source": "https://github.com/null3d-engine/null3d/blob/main/tools/samples/blender/island.py",
-			"fetched": "2026-11-22",
-			"changes": "Built in Blender 5.3 by tools/samples/blender/island.py in the engine repository, with every texture made by the script. Each plant carries its sway in its second texture coordinates: the bend weight from its root to its tips, and a phase for each branch. The cypress joined the trees file as a short trunk under a tall, dense dark-green spire, its foliage and bark painted by the script. Optimized by the engine's asset tool (meshopt, KTX2), with the textures packed into each file, by tools/samples/blender/island.ts.",
+			"fetched": "2026-11-23",
+			"changes": "Built in Blender 5.3 by tools/samples/blender/island.py in the engine repository, with every texture made by the script. Each plant carries its sway in its second texture coordinates: the bend weight from its root to its tips, and a phase for each branch. The cypress joined the trees file as a short trunk under a tall, dense dark-green spire, its foliage and bark painted by the script. Optimized by the engine's asset tool (meshopt, KTX2), with the textures packed into each file, by tools/samples/blender/island.ts. The far cards are no longer part of the models: island.ts bakes each plant's colour and surface atlases with the engine's own bakeImpostorAtlas, a five by five octahedral grid of 128-texel views, so the cards blend the views nearest the eye and light from stored normals. The figures that stand the cards are in <model>-cards.json.",
 			"dir": "sources/showcase/island",
 			"origin": {
 				"kind": "blender",
@@ -5787,14 +5787,74 @@
 			},
 			"files": [
 				{
+					"path": "sources/showcase/island/cypress-card-color.png",
+					"bytes": 312113,
+					"sha256": "00fd8d227ef2130ab3603f42792ab29465a48aa846ca81b63ea22a4d7e75e61f"
+				},
+				{
+					"path": "sources/showcase/island/cypress-card-surface.png",
+					"bytes": 458101,
+					"sha256": "fd5630253601182b5597c68e73a9a401e31e080a646e6b30a6f11b218ce98a67"
+				},
+				{
+					"path": "sources/showcase/island/holm-oak-card-color.png",
+					"bytes": 194067,
+					"sha256": "89bfe7ab0a7b0ee37e4342fe67f1ac4543bcc6b22ddccdf7b6de8d0ad5e20908"
+				},
+				{
+					"path": "sources/showcase/island/holm-oak-card-surface.png",
+					"bytes": 299626,
+					"sha256": "6bb332206e89285468ca9eddb9daee03f9e23258da48f02bceda8e30ab3d586c"
+				},
+				{
+					"path": "sources/showcase/island/oleander-card-color.png",
+					"bytes": 190493,
+					"sha256": "cfc0e7d834356b902321d41c2dbbb50a47aab8d34c6cc049721d92ac7b27149f"
+				},
+				{
+					"path": "sources/showcase/island/oleander-card-surface.png",
+					"bytes": 280599,
+					"sha256": "b3ac06f555ef60d82f3ef3e02328b4e1f313bd11d42891b241d6e73661b3493a"
+				},
+				{
+					"path": "sources/showcase/island/olive-card-color.png",
+					"bytes": 151701,
+					"sha256": "3ba4d29f03b0099bebbefa7fc55303abb009b9c4f62623a75e7a1e6de8f1641e"
+				},
+				{
+					"path": "sources/showcase/island/olive-card-surface.png",
+					"bytes": 201207,
+					"sha256": "3dbb81a4018e18211b166a6b999c5771ea9c9be2b8d91bb8791d044ac1b55416"
+				},
+				{
+					"path": "sources/showcase/island/shrubs-cards.json",
+					"bytes": 210,
+					"sha256": "c8091055c4af3a5f844c7b785f3a14bb2b64d0710d658eae9c4643ce834b095c"
+				},
+				{
 					"path": "sources/showcase/island/shrubs.glb",
-					"bytes": 261660,
-					"sha256": "1e4a00c832eddc57732e139ac1740d0b757f2a65e763f2a6c0d6fec2a8284a3e"
+					"bytes": 226160,
+					"sha256": "0caa7f22f5dc70dedbd90d63a623929e6204221911d9a21800f74df3e5bfb932"
+				},
+				{
+					"path": "sources/showcase/island/stone-pine-card-color.png",
+					"bytes": 135130,
+					"sha256": "467efc3997cb655074e93c57360e62eccccf34890904363ccc52dc98aabdfa52"
+				},
+				{
+					"path": "sources/showcase/island/stone-pine-card-surface.png",
+					"bytes": 180366,
+					"sha256": "105485fed150dc834712d15be61e3a649620c259120b8003c25bac56f80eb097"
+				},
+				{
+					"path": "sources/showcase/island/trees-cards.json",
+					"bytes": 654,
+					"sha256": "dc98516989103a83934f353866a44f1a8d9e7917a1647ee2f3ff307e1981ab20"
 				},
 				{
 					"path": "sources/showcase/island/trees.glb",
-					"bytes": 1795280,
-					"sha256": "e89fca56e548b3459d6f2fd1b4c94e6aacad8baebd6838ef7fe1d6f2c4ba1f90"
+					"bytes": 1506068,
+					"sha256": "2efa2a9d47fb7df649beb882b976a7a567b7f06d34d4d0b00f5f81e948b9d31c"
 				}
 			]
 		},
