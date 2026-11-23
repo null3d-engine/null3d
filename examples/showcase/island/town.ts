@@ -995,24 +995,54 @@ function courtWalkMesh(): Build {
 	const top: Color = [0.86, 0.81, 0.71];
 	const face: Color = [0.78, 0.73, 0.63];
 	const coping: Color = [0.93, 0.9, 0.82];
+	/** A face whose winding puts its front to a direction, whatever the walk's line does. */
+	const facing = (
+		p0: readonly number[],
+		p1: readonly number[],
+		p2: readonly number[],
+		p3: readonly number[],
+		front: readonly number[],
+		color: Color,
+	) => {
+		const [e1, e2] = [
+			[
+				(p1[0] as number) - (p0[0] as number),
+				(p1[1] as number) - (p0[1] as number),
+				(p1[2] as number) - (p0[2] as number),
+			],
+			[
+				(p2[0] as number) - (p0[0] as number),
+				(p2[1] as number) - (p0[1] as number),
+				(p2[2] as number) - (p0[2] as number),
+			],
+		];
+		const n = [
+			(e1[1] as number) * (e2[2] as number) - (e1[2] as number) * (e2[1] as number),
+			(e1[2] as number) * (e2[0] as number) - (e1[0] as number) * (e2[2] as number),
+			(e1[0] as number) * (e2[1] as number) - (e1[1] as number) * (e2[0] as number),
+		];
+		const dot =
+			(n[0] as number) * (front[0] as number) +
+			(n[1] as number) * (front[1] as number) +
+			(n[2] as number) * (front[2] as number);
+		if (dot >= 0) quad(b, p0, p1, p2, p3, color);
+		else quad(b, p0, p3, p2, p1, color);
+	};
 	STAIR_WALKS.forEach((walk, k) => {
 		const [kx, kz] = KEEPS[k] as readonly [number, number, number];
-		/** A station's normal across the walk, its outer edge, and the ground below that edge. */
+		/** A station's outward direction from the keep, its outer edge, and the ground below it. */
 		const station = (m: number) => {
 			const p = walk[m] as { x: number; y: number; z: number };
-			const a = walk[Math.max(0, m - 1)] as { x: number; z: number };
-			const c = walk[Math.min(walk.length - 1, m + 1)] as { x: number; z: number };
-			const length = hypot(c.x - a.x, c.z - a.z) || 1;
-			const [nx, nz] = [-(c.z - a.z) / length, (c.x - a.x) / length];
-			const side = (p.x - kx) * nx + (p.z - kz) * nz >= 0 ? 1 : -1;
-			const [ox, oz] = [p.x + nx * side * COURT_WALK_HALF, p.z + nz * side * COURT_WALK_HALF];
+			const [rx, rz] = [p.x - kx, p.z - kz];
+			const length = hypot(rx, rz) || 1;
+			const [ux, uz] = [rx / length, rz / length];
+			const [ox, oz] = [p.x + ux * COURT_WALK_HALF, p.z + uz * COURT_WALK_HALF];
 			return {
 				x: p.x,
 				y: p.y,
 				z: p.z,
-				nx,
-				nz,
-				side,
+				ux,
+				uz,
 				ox,
 				oz,
 				ground: Math.min(p.y - 0.05, groundHeight(ox, oz) - 0.1),
@@ -1021,73 +1051,50 @@ function courtWalkMesh(): Build {
 		for (let n = 0; n + 1 < walk.length; n++) {
 			const [p, q] = [station(n), station(n + 1)];
 			// The stone top, in quads that take the map.
-			quad(
-				b,
-				[p.x - p.nx * COURT_WALK_HALF, p.y, p.z - p.nz * COURT_WALK_HALF],
-				[p.x + p.nx * COURT_WALK_HALF, p.y, p.z + p.nz * COURT_WALK_HALF],
-				[q.x - q.nx * COURT_WALK_HALF, q.y, q.z - q.nz * COURT_WALK_HALF],
-				[q.x + q.nx * COURT_WALK_HALF, q.y, q.z + q.nz * COURT_WALK_HALF],
+			facing(
+				[p.x - p.ux * COURT_WALK_HALF, p.y, p.z - p.uz * COURT_WALK_HALF],
+				[p.x + p.ux * COURT_WALK_HALF, p.y, p.z + p.uz * COURT_WALK_HALF],
+				[q.x + q.ux * COURT_WALK_HALF, q.y, q.z + q.uz * COURT_WALK_HALF],
+				[q.x - q.ux * COURT_WALK_HALF, q.y, q.z - q.uz * COURT_WALK_HALF],
+				[0, 1, 0],
 				top,
 			);
-			if (p.y - Math.min(p.ground, q.ground) < 0.05) continue;
-			// The face that holds the walk above the bank.
-			if (p.side > 0)
-				quad(
-					b,
-					[q.ox, q.y, q.oz],
-					[p.ox, p.y, p.oz],
-					[p.ox, p.ground, p.oz],
-					[q.ox, q.ground, q.oz],
-					face,
-				);
-			else
-				quad(
-					b,
-					[p.ox, p.y, p.oz],
-					[q.ox, q.y, q.oz],
-					[q.ox, q.ground, q.oz],
-					[p.ox, p.ground, p.oz],
-					face,
-				);
-			// And the coping along the walk's outer edge.
-			const [ipx, ipz] = [p.ox - p.nx * p.side * 0.35, p.oz - p.nz * p.side * 0.35];
-			const [iqx, iqz] = [q.ox - q.nx * q.side * 0.35, q.oz - q.nz * q.side * 0.35];
-			if (p.side > 0)
-				quad(
-					b,
-					[ipx, p.y + 0.09, ipz],
-					[p.ox, p.y + 0.09, p.oz],
-					[q.ox, q.y + 0.09, q.oz],
-					[iqx, q.y + 0.09, iqz],
-					coping,
-				);
-			else
-				quad(
-					b,
-					[ipx, p.y + 0.09, ipz],
-					[iqx, q.y + 0.09, iqz],
-					[q.ox, q.y + 0.09, q.oz],
-					[p.ox, p.y + 0.09, p.oz],
-					coping,
-				);
-			if (p.side > 0)
-				quad(
-					b,
-					[p.ox, p.y - 0.02, p.oz],
-					[q.ox, q.y - 0.02, q.oz],
-					[q.ox, q.y + 0.09, q.oz],
-					[p.ox, p.y + 0.09, p.oz],
-					coping,
-				);
-			else
-				quad(
-					b,
-					[q.ox, q.y - 0.02, q.oz],
-					[p.ox, p.y - 0.02, p.oz],
-					[p.ox, p.y + 0.09, p.oz],
-					[q.ox, q.y + 0.09, q.oz],
-					coping,
-				);
+			// Outside the court, the face that holds the walk above the bank, with its coping. Where the
+			// walk meets the court's floor, both end into it.
+			if (p.y - Math.min(groundHeight(p.ox, p.oz), groundHeight(q.ox, q.oz)) < 0.12) continue;
+			const front = [p.ux, 0, p.uz] as const;
+			facing(
+				[p.ox, p.y, p.oz],
+				[q.ox, q.y, q.oz],
+				[q.ox, q.ground, q.oz],
+				[p.ox, p.ground, p.oz],
+				front,
+				face,
+			);
+			const [ipx, ipz] = [
+				p.x + p.ux * (COURT_WALK_HALF - 0.35),
+				p.z + p.uz * (COURT_WALK_HALF - 0.35),
+			];
+			const [iqx, iqz] = [
+				q.x + q.ux * (COURT_WALK_HALF - 0.35),
+				q.z + q.uz * (COURT_WALK_HALF - 0.35),
+			];
+			facing(
+				[ipx, p.y + 0.09, ipz],
+				[p.ox, p.y + 0.09, p.oz],
+				[q.ox, q.y + 0.09, q.oz],
+				[iqx, q.y + 0.09, iqz],
+				[0, 1, 0],
+				coping,
+			);
+			facing(
+				[p.ox, p.y - 0.02, p.oz],
+				[q.ox, q.y - 0.02, q.oz],
+				[q.ox, q.y + 0.09, q.oz],
+				[p.ox, p.y + 0.09, p.oz],
+				front,
+				coping,
+			);
 		}
 	});
 	return b;
