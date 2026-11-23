@@ -39,10 +39,11 @@ const panel = (page: Page, name: string) => page.locator(`#hud-panel-${name}`);
  * Each pays for its own page's first frame. The environment light's test also turns the fog on,
  * since every scene opens with clear air, so it carries two switches and is the longest; its
  * measured stages sum to about 25 minutes with the fog's switch at 535 s and the return's wait,
- * and the caps sum to about 28. The budget is 30 minutes, under the 35-minute job's limit, so a
- * page that truly stops drawing still fails by name rather than by the job's clock.
+ * and the caps sum to about 28, or 33 with the fog's longer return wait. The budget is 34 minutes,
+ * under the 35-minute job's limit, so a page that truly stops drawing still fails by name rather
+ * than by the job's clock.
  */
-test.describe.configure({ timeout: 1_800_000 });
+test.describe.configure({ timeout: 2_040_000 });
 
 /** Clicks a group's button and checks the toast that names the change. */
 async function press(page: Page, group: string, button: string, text: string): Promise<void> {
@@ -371,9 +372,10 @@ test('the showcase HUD keeps the fog off until it turns on', ALONE, async ({ pag
 	await holdForSwitches(page);
 
 	// Every scene starts with the fog off, so the switch turns it on before the part that checks it
-	// goes off and on again.
+	// goes off and on again. The fog's return fills the stages the same way the environment light's
+	// does, and on CI's software GPU it took longer than the plain wait, so it gets the longer one.
 	await turnOn(page, 'Atmosphere', 'atmosphere', 'Fog');
-	await switchPart(page, 'Fog', 'Atmosphere', 'atmosphere');
+	await switchPart(page, 'Fog', 'Atmosphere', 'atmosphere', RETURN_MS);
 
 	expect(errors).toEqual([]);
 });
