@@ -390,8 +390,10 @@ fn run(function: u32, u: array<vec4u, 8>, f: array<vec4f, 8>) -> Results {
             return scalar(null3d::fog::background_clear(test_fog(u, f), f[4].xyz, f[5].x));
         }
         case 124u: {
+            // The surface's color takes the far texel's spare values: texel 1 holds the fog's curve
+            // as whole numbers, whose bits would otherwise be the color's.
             return triple(null3d::fog::fogged_background(
-                test_fog(u, f), f[1].xyz, f[4].xyz, f[5].x, f[6].xyz, f[7].xyz));
+                test_fog(u, f), f[5].yzw, f[4].xyz, f[5].x, f[6].xyz, f[7].xyz));
         }
 #endif
         // Any other number gives back its first input texel. The page's probe draws such a row,

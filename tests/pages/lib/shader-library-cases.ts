@@ -2078,11 +2078,12 @@ export const FUNCTIONS: readonly LibraryFunction[] = [
 		cases: (random) =>
 			[0, 0.5, 1].flatMap((share) =>
 				samples((r) =>
+					// The surface's color shares the far texel's spare values: texel 1 holds the fog's
+					// curve as whole numbers, whose bits would be the color's.
 					sceneFog(r, FOG_CURVE_EXPONENTIAL, 0)
-						.setF(1, values(r, 3, 0, 1))
 						.setF(3, [between(r, 0, 2), between(r, 1, 32), share, 0])
 						.setF(4, unit(r))
-						.setF(5, [between(r, 10, 500)])
+						.setF(5, [between(r, 10, 500), ...values(r, 3, 0, 1)])
 						.setF(6, unit(r))
 						.setF(7, values(r, 3, 0, 4)),
 				)(random),
@@ -2172,9 +2173,10 @@ function backgroundShare(i: Inputs): number {
 function foggedBackground(i: Inputs): V3 {
 	const relative = backgroundPoint(i);
 	const [glow, exponent] = i.f(3);
+	const [, r, g, b] = i.f(5);
 	const toward = Math.max(dot(normalize(relative), scale(xyz(i.f(6)), -1)), 0);
 	const fogged = add(xyz(i.f(0)), scale(xyz(i.f(7)), glow * toward ** exponent));
-	return mix3(xyz(i.f(1)), fogged, backgroundShare(i));
+	return mix3([r, g, b], fogged, backgroundShare(i));
 }
 
 /** Cases of the background fog: each curve, shares from none to all, a direction and a far plane. */
