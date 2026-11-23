@@ -245,6 +245,10 @@
 				border-radius: 16px;
 				box-shadow: 0 30px 70px rgb(0 0 0 / 0.55), inset 0 1px 0 rgb(255 255 255 / 0.12);
 			}
+			/* A finger reads no keyboard shortcuts: the touch screen has no keyboard, so the key caps
+			   are left out of the panel and the chevron rather than shown greyed. */
+			body[data-input="coarse"] .hud__btn kbd,
+			body[data-input="coarse"] .hud__chevron .hud__key { display: none; }
 			body[data-input="coarse"] .sheet { align-items: flex-end; }
 			body[data-input="coarse"] .sheet__dialog {
 				width: 100%;

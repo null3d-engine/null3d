@@ -225,7 +225,7 @@ function gestureHelp(demo: Demo): HTMLElement {
 	row('Drag the scene', 'Turn the camera in Manual mode');
 	row('Pinch', 'Zoom in or out');
 	row('Two fingers', 'Pan the camera in Manual mode');
-	row('Auto / Manual', 'Switch between the camera route and your control');
+	row('HUD', 'Open it at the bottom of the screen. The Auto / Manual switch is inside.');
 	if (demo.gustKey !== undefined) row('Gust', 'Send a gust across the scene');
 	return panel;
 }
