@@ -181,7 +181,7 @@ The outputs take 5.2 MB, and the raw recordings 21.4 MB. The car and the bus are
 1. In the sample-assets repository, follow its README: add the asset's entry to `manifest.json`, run `bun scripts/import.ts <asset id>`, then `bun scripts/manifest.ts --write`, then `bun scripts/manifest.ts`.
 2. Accept CC0 and CC BY. Leave out an asset whose licence is non-commercial, no-derivatives or unclear, and add it to the list of assets left out below, with the reason. The sample-assets README lists only the assets it holds.
    The one exception is a model that a generative service made, such as Tripo3D, or a model finished from one. The service's terms bar some commercial uses of its outputs, so the model is under CC BY-NC 4.0. Its manifest entry names the service in `generator`. The check refuses CC BY-NC on an entry without one, here and in the sample-assets repository. So the licence never spreads to an asset that it was not meant for.
-3. Keep each file under 40 MB and each image within 2048 x 2048, which the asset tool's encoder takes. Keep the sources near 400 MB in all. They are 376 MB at the pinned commit.
+3. Keep each file under 40 MB and each image within 2048 x 2048, which the asset tool's encoder takes. Keep the sources near 400 MB in all. They are 390 MB at the pinned commit.
 4. Commit and push in the sample-assets repository, and wait for its check to pass.
 5. Here, run `bun run samples:fetch --pin main`, or give a commit. It copies that commit's manifest, records the commit in the lock, and fetches it. Commit `tools/samples/lock.json` and `tools/samples/manifest.json` together.
 
@@ -200,7 +200,7 @@ Well-known sample models that may not go into the sample-assets repository, and 
 
 ## Why a separate repository and a download script
 
-- Size. The sources are 376 MB, and the processed files will add 110 to 170 MB for each version of the encoders. In this repository, they would slow every clone for people, CI and agents.
+- Size. The sources are 390 MB, and the processed files will add 110 to 170 MB for each version of the encoders. In this repository, they would slow every clone for people, CI and agents.
 - Not Git LFS. GitHub's free plan gives 10 GiB of LFS downloads a month, and CI's downloads count. One CI fetch of about 150 MB uses 1.5% of that, so about 65 fetches would use it all. No file is near GitHub's block at 100 MiB, so plain git holds the files well.
 - Not a submodule. Each worktree would need its own checkout of the sources, and this team runs many worktrees at once. CI would need its own submodule step and cache. The download script keeps one checked copy per machine, keyed by commit, and works the same way in CI.
 - Not an npm package. Every version would stay in the registry for good, and the files would land in each worktree's `node_modules`.

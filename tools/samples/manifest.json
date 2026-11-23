@@ -5767,8 +5767,8 @@
 		},
 		{
 			"id": "showcase/island",
-			"title": "Island trees and oleander",
-			"purpose": "The plants of the engine's island showcase scene: a Mediterranean stone pine, an olive, a holm oak and a flowering oleander, each with lower levels of detail and a card for its far copies",
+			"title": "Island cypress, trees and oleander",
+			"purpose": "The plants of the engine's island showcase scene: a Mediterranean cypress, stone pine, an olive, a holm oak and a flowering oleander, each with lower levels of detail and a card for its far copies",
 			"authors": [
 				{
 					"name": "null3D contributors"
@@ -5778,8 +5778,8 @@
 				"CC0-1.0"
 			],
 			"source": "https://github.com/null3d-engine/null3d/blob/main/tools/samples/blender/island.py",
-			"fetched": "2026-11-18",
-			"changes": "Built in Blender 5.3 by tools/samples/blender/island.py in the engine repository, with every texture made by the script. Each plant carries its sway in its second texture coordinates: the bend weight from its root to its tips, and a phase for each branch. Optimized by the engine's asset tool (meshopt, KTX2), with the textures packed into each file, by tools/samples/blender/island.ts.",
+			"fetched": "2026-11-22",
+			"changes": "Built in Blender 5.3 by tools/samples/blender/island.py in the engine repository, with every texture made by the script. Each plant carries its sway in its second texture coordinates: the bend weight from its root to its tips, and a phase for each branch. The cypress joined the trees file as a short trunk under a tall, dense dark-green spire, its foliage and bark painted by the script. Optimized by the engine's asset tool (meshopt, KTX2), with the textures packed into each file, by tools/samples/blender/island.ts.",
 			"dir": "sources/showcase/island",
 			"origin": {
 				"kind": "blender",
@@ -5793,8 +5793,36 @@
 				},
 				{
 					"path": "sources/showcase/island/trees.glb",
-					"bytes": 1266944,
-					"sha256": "9a3e998d57fd6ac1011da80f469a36cc9c485e3bd3bd02a3c50dc05027693d4c"
+					"bytes": 1795280,
+					"sha256": "e89fca56e548b3459d6f2fd1b4c94e6aacad8baebd6838ef7fe1d6f2c4ba1f90"
+				}
+			]
+		},
+		{
+			"id": "showcase/island-town",
+			"title": "Island town landmarks",
+			"purpose": "The landmarks of the engine's island showcase scene: a whitewashed church with a blue ribbed dome, an arched front and a bell tower, a hilltop keep, a harbour lighthouse and three waterfront houses, each with its own levels of detail",
+			"authors": [
+				{
+					"name": "null3D contributors"
+				}
+			],
+			"license": [
+				"CC0-1.0"
+			],
+			"source": "https://github.com/null3d-engine/null3d/blob/main/tools/samples/blender/island-town.py",
+			"fetched": "2026-11-22",
+			"changes": "Built in Blender 5.3 by tools/samples/blender/island-town.py in the engine repository, with every texture painted by the script: whitewashed walls, ashlar stone, terracotta roofs, a blue dome, timber and glazing. Each part carries one or two lower levels of detail at a stated surface error. Optimized by the engine asset tool (meshopt, KTX2), with the textures packed into the file, by tools/samples/blender/island-town.ts.",
+			"dir": "sources/showcase/island-town",
+			"origin": {
+				"kind": "blender",
+				"script": "https://github.com/null3d-engine/null3d/blob/main/tools/samples/blender/island-town.ts"
+			},
+			"files": [
+				{
+					"path": "sources/showcase/island-town/town.glb",
+					"bytes": 484436,
+					"sha256": "cb69680180b366c443762cd3e43e4c620c041d370b2f44a7a22ef83ac6027ecc"
 				}
 			]
 		},
@@ -7095,6 +7123,220 @@
 					"path": "sources/splats/bolton-priory-stream/index.json",
 					"bytes": 16358,
 					"sha256": "8b3c6efa646174755186b2f1d1949d059676c4854873752356bde8660947880f"
+				}
+			]
+		},
+		{
+			"id": "showcase/island-houses",
+			"title": "Island Mediterranean houses",
+			"purpose": "The houses of the engine's island showcase scene: thirteen whitewashed and stone Mediterranean forms with terracotta roofs, shuttered dark windows, framed doors, chimneys and, where a form has one, a balcony, an arcade, a pergola, a veranda or a roof terrace, each with two lower levels of detail",
+			"authors": [
+				{
+					"name": "null3D contributors"
+				}
+			],
+			"license": [
+				"CC0-1.0"
+			],
+			"source": "https://github.com/null3d-engine/null3d/blob/main/tools/samples/blender/island-houses.py",
+			"fetched": "2026-11-22",
+			"changes": "Built in Blender 5.3 by tools/samples/blender/island-houses.py in the engine repository, with every texture painted by the script: lime whitewash, rubble stone, ashlar trim, terracotta roof tiles, painted timber, dark glazing and a cutout ivy card for the vines. Each house form carries two lower levels of detail with its measured surface error, 0.25 m and 0.80 m. Optimized by the engine's asset tool (meshopt, KTX2), with the textures packed into the file, by tools/samples/blender/island-houses.ts.",
+			"dir": "sources/showcase/island-houses",
+			"origin": {
+				"kind": "blender",
+				"script": "https://github.com/null3d-engine/null3d/blob/main/tools/samples/blender/island-houses.ts"
+			},
+			"files": [
+				{
+					"path": "sources/showcase/island-houses/houses.glb",
+					"bytes": 2036900,
+					"sha256": "68e5ccf3f2aa890c93b97d5233dfa7b341f0e9ea4348ea2eabdf85a740f14e6e"
+				}
+			]
+		},
+		{
+			"id": "showcase/island-props",
+			"title": "Island harbour and beach props",
+			"purpose": "The harbour and beach props of the engine's island showcase scene: a sailing yacht with a coachroof, mast, boom and furled sail, an open fishing boat with thwarts and an outboard, three irregular boulders, a canvas parasol, a timber sun lounger and a harbour bench, with painted gelcoat, teak, canvas, metal, glazing and stone textures",
+			"authors": [
+				{
+					"name": "null3D contributors"
+				}
+			],
+			"license": [
+				"CC0-1.0"
+			],
+			"source": "https://github.com/null3d-engine/null3d/blob/main/tools/samples/blender/island-props.py",
+			"fetched": "2026-11-22",
+			"changes": "Built in Blender 5.3 by tools/samples/blender/island-props.py in the engine repository, with every texture painted by the script: white gelcoat, golden teak planks, woven canvas, brushed metal, dark glazing and weathered stone. The yacht, the fishing boat and the three boulders carry two lower levels of detail with their measured surface error, 0.40 m and 0.80 m. Optimized by the engine's asset tool (meshopt, KTX2), with the textures packed into the file, by tools/samples/blender/island-props.ts.",
+			"dir": "sources/showcase/island-props",
+			"origin": {
+				"kind": "blender",
+				"script": "https://github.com/null3d-engine/null3d/blob/main/tools/samples/blender/island-props.ts"
+			},
+			"files": [
+				{
+					"path": "sources/showcase/island-props/props.glb",
+					"bytes": 331568,
+					"sha256": "a68084cc88bc8aaa732f7262a8e6457e8b730caabfefa18a6b3707c37bf35c6f"
+				}
+			]
+		},
+		{
+			"id": "showcase/island-life-raw",
+			"title": "Island villager and vehicles, raw",
+			"purpose": "The raw Tripo3D models of the island showcase's villager, hatchback and minibus, with the villager's in-place walk clip. The engine's island-life.py finishes them into the people and traffic models; the engine does not name these files and does not load them.",
+			"authors": [
+				{
+					"name": "null3D contributors"
+				}
+			],
+			"license": [
+				"CC-BY-NC-4.0"
+			],
+			"source": "https://developers.tripo3d.ai",
+			"fetched": "2026-11-22",
+			"changes": "Generated by Tripo3D image to model, model v3.1-20260211 and texture v3.5-20260815 at standard quality with a face limit of 8,000: the villager (7,598 triangles, task 33d0b431-b4c7-41d4-9735-c4b1d48b3415, 30 credits), the hatchback (7,256 triangles, task a31f3e57-1f42-4be9-8d9d-f8a6403d9e27, 30 credits), the minibus (7,009 triangles, task 28093e96-b897-4eed-86f3-2ba3a68f5a1a, 30 credits), the woman (task e159d895-a455-452a-a26c-8e4da5abf9a7, 30 credits) and the young man (task 36a8a355-ba3d-4bb9-a3b5-a058d926f9c9, 30 credits). The three people were each rigged with Tripo3D's biped, tasks 0ce39537-7dd3-4704-b79d-c72c1e10fa64, 36bdf43e-ec4b-43f2-8fef-155308fbb774 and 2e866ec2-5e7b-4295-881c-cc3c7631cfaf (25 credits each), and retargeted with an in-place preset:walk clip, with geometry, as tasks c05316a7-e62d-4b5b-ae74-6b9a913eaf71, 3dbee63f-6ab0-4759-addf-6e57b72ff6cb and 64cfc449-1127-4e23-a519-69f79dae6a9b (10 credits each). Only the walk outputs are copied: the base models and rigs were intermediates. The tasks behind the six copied files cost 120 credits, the pipeline cost 255, and the balance is 335. The inputs were the reference shots in the scene-references repository at 18e8e33 and 5ccaf23, under generated/island, made with google/nano-banana-2.1 on fal.ai; their prompts are in prompts/. Files as downloaded: model.glb for each; task.json with the account storage path replaced by a placeholder; preview.webp, Tripo3D's WebP preview; and RAW.md, which records each shot's path, SHA-256, fal request id, task ids and credits.",
+			"dir": "sources/showcase/island-life-raw",
+			"origin": {
+				"kind": "manual",
+				"url": "https://developers.tripo3d.ai"
+			},
+			"generator": "Tripo3D",
+			"files": [
+				{
+					"path": "sources/showcase/island-life-raw/RAW.md",
+					"bytes": 3845,
+					"sha256": "eb63ed48323c6b56a933b648ef208cdc49ac07a6ad2f13882f919abc8c88f853"
+				},
+				{
+					"path": "sources/showcase/island-life-raw/hatchback/model.glb",
+					"bytes": 1109160,
+					"sha256": "2968bff94ffd3820166903fd8ee5fe4af4ab446b7fe46f86bfd66c5e0f937ec4"
+				},
+				{
+					"path": "sources/showcase/island-life-raw/hatchback/preview.webp",
+					"bytes": 139950,
+					"sha256": "ef88a3c61477030d1f155c0558260a38d959e5a02022bfb860a94b209dfe5c76"
+				},
+				{
+					"path": "sources/showcase/island-life-raw/hatchback/task.json",
+					"bytes": 767,
+					"sha256": "30019e24cbe9b96ccb7dbb1591865feb8182f3ca9430930a72e165dc9932c6f9"
+				},
+				{
+					"path": "sources/showcase/island-life-raw/minibus/model.glb",
+					"bytes": 1090100,
+					"sha256": "81df03e556ec33fbea737e9b5464642b1dcfaf8eb41395306e9b70389c5463be"
+				},
+				{
+					"path": "sources/showcase/island-life-raw/minibus/preview.webp",
+					"bytes": 172216,
+					"sha256": "e9cb5c1a2df0b0106f20d1c53b4b491358f090b3927d75383c0f7fc84114aa75"
+				},
+				{
+					"path": "sources/showcase/island-life-raw/minibus/task.json",
+					"bytes": 767,
+					"sha256": "186a0d342215af81c35c8458d6992cc201f5dcfbc488bf68d131f86e0c6ebeeb"
+				},
+				{
+					"path": "sources/showcase/island-life-raw/prompts/hatchback-front.txt",
+					"bytes": 891,
+					"sha256": "7f69ba7e40490f034cb932ae07e587bce5523afd208b844644b2c3e84e6f83fc"
+				},
+				{
+					"path": "sources/showcase/island-life-raw/prompts/minibus-front.txt",
+					"bytes": 923,
+					"sha256": "25afaa4e58f64a6d5f2c67cefc1d56758e8ba2171591a87b1f965b694dc918db"
+				},
+				{
+					"path": "sources/showcase/island-life-raw/prompts/villager-front.txt",
+					"bytes": 1065,
+					"sha256": "558a39d2457f569969cc5c8b82403594a62eccef7a4dfd976c89efd7687a44d5"
+				},
+				{
+					"path": "sources/showcase/island-life-raw/prompts/woman-front.txt",
+					"bytes": 899,
+					"sha256": "5da2ac3c1532e119da66879e051b38095ac9b83301fe87198ec5637ff9b3b427"
+				},
+				{
+					"path": "sources/showcase/island-life-raw/prompts/youngman-front.txt",
+					"bytes": 879,
+					"sha256": "5e906d5eb45f0cc3967aad08cabd7f013f54232e34c5c2fdc6fb384c3ba229f5"
+				},
+				{
+					"path": "sources/showcase/island-life-raw/villager-walk/model.glb",
+					"bytes": 1136064,
+					"sha256": "eab971a7831ce759d49ea1fd2737bb5ac8744a54f11e803b2009788e82ae6591"
+				},
+				{
+					"path": "sources/showcase/island-life-raw/villager-walk/task.json",
+					"bytes": 510,
+					"sha256": "e33aa4d051bd2ab68c8a3c35a7418d88b30210d33a535c351007eb6e670ca6f2"
+				},
+				{
+					"path": "sources/showcase/island-life-raw/villager/model.glb",
+					"bytes": 975812,
+					"sha256": "66477dc89da1baecc482d895d45384c4f190daadc91f7723d59271e9fd4eb7a8"
+				},
+				{
+					"path": "sources/showcase/island-life-raw/villager/preview.webp",
+					"bytes": 74354,
+					"sha256": "d6011778106e90a2f9f5e6565ec013f984c80eef987523a932ba9e91ee41179a"
+				},
+				{
+					"path": "sources/showcase/island-life-raw/villager/task.json",
+					"bytes": 767,
+					"sha256": "ba8d2f5035bf8a5d2c6026419cc66df7b67e30696b7bc3bb59b1b83c4386b251"
+				},
+				{
+					"path": "sources/showcase/island-life-raw/woman/model.glb",
+					"bytes": 1033288,
+					"sha256": "e5e9f97708d0a3cca3b7ba9925f75962378b41dbc9607a9274557fa3d1762b64"
+				},
+				{
+					"path": "sources/showcase/island-life-raw/woman/task.json",
+					"bytes": 510,
+					"sha256": "3061490e84f9dab588e0c60eaf116bb1d1ec36042dae13cf9eb7a63a1e42a11c"
+				},
+				{
+					"path": "sources/showcase/island-life-raw/youngman/model.glb",
+					"bytes": 1046204,
+					"sha256": "e3f13ec5da8954150eadce086c17403341fce6eb3f76b0dab0485f3c8b7ffc56"
+				},
+				{
+					"path": "sources/showcase/island-life-raw/youngman/task.json",
+					"bytes": 510,
+					"sha256": "d55f2666ccb14de9c108d0d23a61b7bc6d5bfd51994ad07398df62cdf87dc064"
+				}
+			]
+		},
+		{
+			"id": "showcase/island-life",
+			"title": "Island villager and vehicles",
+			"purpose": "The people and traffic of the engine's island showcase scene: the villager, the woman in her dress and the young man in his T-shirt and shorts, each with a walk clip and split into body, hair, shirt, trousers and shoes; their standing parts with two lower levels of detail, for the copies that a scene draws far off; a hatchback split into hull, glass, trim and four wheels; and a minibus split into hull, band, glass, trim and four wheels. Each wheel's origin stands on its axle, so a scene turns it by the distance travelled over its radius, and each vehicle part carries two lower levels of detail. The clothing and the vehicle bodies carry a plain, light base colour, so one material takes each copy's own colour; the wheels, skin, hair, glass and trim keep the raw texture.",
+			"authors": [
+				{
+					"name": "null3D contributors"
+				}
+			],
+			"license": [
+				"CC-BY-NC-4.0"
+			],
+			"source": "https://github.com/null3d-engine/null3d/blob/main/tools/samples/blender/island-life.py",
+			"fetched": "2026-11-22",
+			"changes": "Built in Blender 5.3 by tools/samples/blender/island-life.py in the engine repository from the raw Tripo3D models in showcase/island-life-raw, whose SHA-256 the script checks. The script turns each raw model -90 degrees about the vertical axis to the engine's forward axis, sets the villager at 1.75 m, keeps the woman at 1.70 m and the young man at 1.80 m, and sets the hatchback at 3.7 m and the minibus at 4.9 m, standing each on its feet or tyres. It cuts each mesh into the parts a scene can tint, by the colour each face samples from its own texture atlas and its height, and smooths the cut across neighbouring faces. It finds each vehicle's four wheels from the tyre-coloured faces, gives every face inside a wheel's cylinder to that wheel so the tyre, rim and hub turn together, gives the other tyre-coloured faces to the trim, and prints each wheel's radius. The clothing and the vehicle bodies carry a plain, white base colour with no texture, which a scene multiplies by each copy's colour; skin, hair, glass, wheels and trim keep the raw texture. The three walking people keep their skeletons and clips, named for each person because the engine builds one skeleton for a file and refuses two clips of one name. A skinned mesh cannot take levels of detail, so each person's standing parts are the far copy's proxy, with two levels whose surface errors the script measures. Optimized by the engine's asset tool (meshopt, KTX2), with the textures packed into the file, by tools/samples/blender/island-life.ts.",
+			"dir": "sources/showcase/island-life",
+			"origin": {
+				"kind": "blender",
+				"script": "https://github.com/null3d-engine/null3d/blob/main/tools/samples/blender/island-life.ts"
+			},
+			"generator": "Tripo3D",
+			"files": [
+				{
+					"path": "sources/showcase/island-life/life.glb",
+					"bytes": 3749604,
+					"sha256": "391fd6bd3ededd91ccac3ca2e2fd9e0ac218d5a4d741f9572ff843484b8923f9"
 				}
 			]
 		},
