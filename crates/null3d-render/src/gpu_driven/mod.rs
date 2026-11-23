@@ -2997,7 +2997,7 @@ impl GpuDrivenRenderer {
         }
         let changed = motion_on.then_some(self.motion.changed_matrices());
         self.layout
-            .upload_matrices(list, input, parity, upload_everything, changed)?;
+            .upload_matrices(list, arena, input, parity, upload_everything, changed)?;
         self.layout
             .upload_row_values(list, input, parity, upload_everything || values_remade)?;
         self.layout.upload_object_ranges(list, arena)?;
