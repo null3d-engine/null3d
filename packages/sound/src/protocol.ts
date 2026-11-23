@@ -12,16 +12,17 @@ export interface SoundSpec {
 	/** The sound's number, unique for the sketch's life. */
 	readonly id: number;
 	readonly kind: SoundKind;
-	/** The file's absolute address. */
+	/** The file's address, which the page resolves against its own address. */
 	readonly file: string;
 	/** The first emitter that the sound owns in the table. */
 	readonly first: number;
 	/** The emitters that the sound owns. */
 	readonly count: number;
-	/** The first voice that the sound owns. */
-	readonly voice: number;
-	/** The voices that the sound owns. */
-	readonly voices: number;
+	/**
+	 * The voices that the sound owns, by their numbers on the page. They need not lie in a row, so
+	 * a freed voice serves the next sound wherever it sits.
+	 */
+	readonly voices: readonly number[];
 	/** True when the sound comes from a place; false when it plays in both ears alike. */
 	readonly positional: boolean;
 	/** The distance at which the sound is at its full level, or 0 for no fall with distance. */
@@ -57,7 +58,12 @@ export type SketchMessage =
 	| { readonly type: 'add'; readonly sound: SoundSpec }
 	| { readonly type: 'remove'; readonly id: number }
 	| { readonly type: 'play'; readonly id: number; readonly slot: number }
-	| { readonly type: 'panning'; readonly panning: Panning };
+	| { readonly type: 'panning'; readonly panning: Panning }
+	/**
+	 * The sketch closed the link: `destroyed` when its sound system ended, so the page asks again
+	 * for the next one, and `replaced` when another page half took the link, so this one stops.
+	 */
+	| { readonly type: 'closed'; readonly reason: 'destroyed' | 'replaced' };
 
 /** The order of the mixer's outputs, which the page and the mixer agree on as the mixer starts. */
 export interface MixerOutputs {
@@ -87,7 +93,14 @@ export type MixerMessage =
 	| { readonly type: 'copy'; readonly buffer: ArrayBuffer }
 	| { readonly type: 'add'; readonly sound: SoundSpec }
 	| { readonly type: 'remove'; readonly id: number }
-	| { readonly type: 'ready'; readonly voice: number };
+	| { readonly type: 'ready'; readonly voice: number }
+	/**
+	 * A shot starts on a voice: the mixer takes the voice's values at once, with no easing, so the
+	 * play's attack sounds at its own level, place and pitch.
+	 */
+	| { readonly type: 'shot'; readonly voice: number }
+	/** The sketch's sound system ended: the mixer drops every sound and the table. */
+	| { readonly type: 'reset' };
 
 /** What the mixer sends the page. */
 export type MixerReply =

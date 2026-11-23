@@ -2033,7 +2033,7 @@
       "status": "changed",
       "since": "0.3",
       "target": "@null3d/sound: createSound in the sketch, connectSound on the page",
-      "notes": "AudioListener is createSound's listener option, usually the camera. A PositionalAudio is a sound.loop at a place, with refDistance as near; maxDistance becomes far, where the sound has faded out. A non-positional Audio is a loop with positional: false. AudioLoader has no counterpart: name the file by its address, and the page loads it once the user starts the sound. An AudioAnalyser has no counterpart; analyse the page's own Web Audio.",
+      "notes": "AudioListener is createSound's listener option, usually the camera. A looping PositionalAudio is a sound.loop at a place, with refDistance as near; one that plays once per event is a sound.shot. three.js's maxDistance only stops the fall with distance, while far fades the sound out: give far where the sound should end. A non-positional Audio is a loop with positional: false. AudioLoader has no counterpart: name the file by its address, and the page loads it once the user starts the sound. An AudioAnalyser has no counterpart; analyse the page's own Web Audio.",
       "docs": "api/sound",
       "detect": "\\b(PositionalAudio|AudioListener|AudioLoader|AudioAnalyser)\\b"
     },

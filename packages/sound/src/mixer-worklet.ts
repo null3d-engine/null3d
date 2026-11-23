@@ -78,6 +78,34 @@ export function cutoffOf(tone: number): number {
 	return LOW_CUTOFF * (HIGH_CUTOFF / LOW_CUTOFF) ** t;
 }
 
+/** The largest level that the mixer takes from the table. */
+const LOUDEST = 16;
+/** The widest playback rate that the mixer takes from the table, each way from 1. */
+const FASTEST = 16;
+
+/** A level from the table: 0 up to the loudest, and 0 for a value that is not a finite number. */
+function levelOf(value: number): number {
+	if (!(value > 0) || value === Number.POSITIVE_INFINITY) return 0;
+	return value < LOUDEST ? value : LOUDEST;
+}
+
+/** A tone from the table: 0 to 1, and 1 for a value that is not a number. */
+function toneOf(value: number): number {
+	return value >= 0 ? (value < 1 ? value : 1) : value < 0 ? 0 : 1;
+}
+
+/** A playback rate from the table, within the widest rate, and 1 for one that is not. */
+function rateOf(value: number): number {
+	return value > 1 / FASTEST && value < FASTEST ? value : 1;
+}
+
+/** No voice moves its rate and tone at once. */
+const EASE = 0;
+/** The voice takes its emitter's rate and tone at once, as it moves to a new emitter. */
+const SNAP_PITCH = 1;
+/** The voice takes its gain, rate and tone at once, as a shot starts. */
+const SNAP_ALL = 2;
+
 /**
  * The mixer's work, apart from the browser's worklet class, so a test can run it. `send` gives the
  * page a reply, with the buffers that it moves rather than copies.
@@ -109,6 +137,8 @@ export class Mixer {
 	private readonly dying: Uint8Array;
 	/** 1 for a voice that a ranking left without an emitter. */
 	private readonly free: Uint8Array;
+	/** Which of a voice's values it takes at once in the next quantum, with no easing. */
+	private readonly snap: Uint8Array;
 	private readonly gain: Float32Array;
 	private readonly tone: Float32Array;
 	private readonly rate: Float32Array;
@@ -128,7 +158,12 @@ export class Mixer {
 	private lastFrame = 0;
 	private stillQuanta = 0;
 	private pause = 0;
-	private idle = true;
+	/**
+	 * True once the mixer has told the page that the sketch stopped. It starts false, so a sketch
+	 * that never moves its frame count, such as one whose engine was paused before the sound
+	 * started, is reported too.
+	 */
+	private idle = false;
 	private quantum = 0;
 
 	constructor(
@@ -145,6 +180,7 @@ export class Mixer {
 		this.wanted = new Uint8Array(voices);
 		this.dying = new Uint8Array(voices);
 		this.free = new Uint8Array(voices);
+		this.snap = new Uint8Array(voices);
 		this.gain = new Float32Array(voices);
 		this.tone = new Float32Array(voices).fill(1);
 		this.rate = new Float32Array(voices).fill(1);
@@ -178,37 +214,65 @@ export class Mixer {
 				this.remove(message.id);
 				return;
 			case 'ready':
-				if (message.voice >= 0 && message.voice < this.setup.voices) {
+				if (this.isVoice(message.voice)) {
 					this.ready[message.voice] = 1;
 					this.fresh[message.voice] = 1;
 				}
 				return;
+			case 'shot':
+				if (this.isVoice(message.voice)) this.snap[message.voice] = SNAP_ALL;
+				return;
+			case 'reset':
+				for (let v = 0; v < this.setup.voices; v++) this.clear(v);
+				this.groups = [];
+				this.layout = null;
+				this.floats = null;
+				this.ints = null;
+				this.own = null;
+				return;
 		}
+	}
+
+	private isVoice(v: number): boolean {
+		return Number.isInteger(v) && v >= 0 && v < this.setup.voices;
+	}
+
+	/** Frees voice `v` at once. */
+	private clear(v: number): void {
+		this.sound[v] = null;
+		this.emitter[v] = NONE;
+		this.next[v] = NONE;
+		this.ready[v] = 0;
+		this.fresh[v] = 0;
+		this.wanted[v] = 0;
+		this.dying[v] = 0;
+		this.snap[v] = EASE;
+		this.gain[v] = 0;
 	}
 
 	private add(sound: SoundSpec): void {
 		const shot = sound.kind === 'shot';
-		for (let v = sound.voice; v < sound.voice + sound.voices; v++) {
+		const group = sound.kind === 'group';
+		const voices = sound.voices;
+		for (let k = 0; k < voices.length; k++) {
+			const v = voices[k] as number;
+			if (!this.isVoice(v)) continue;
+			this.clear(v);
 			this.sound[v] = sound;
 			// A loop and a shot keep one emitter for each voice, and a group's voices wait for a ranking.
-			this.emitter[v] = sound.kind === 'group' ? NONE : sound.first + (v - sound.voice);
-			this.next[v] = NONE;
+			this.emitter[v] = group ? NONE : sound.first + k;
 			// A shot's voice is ready at once: its file starts on each play, with the attack the file has.
 			this.ready[v] = shot ? 1 : 0;
-			this.fresh[v] = 0;
-			this.wanted[v] = sound.kind === 'group' ? 0 : 1;
-			this.dying[v] = 0;
-			this.gain[v] = 0;
+			this.wanted[v] = group ? 0 : 1;
 			this.tone[v] = 1;
 			this.rate[v] = 1;
 		}
-		if (sound.kind === 'group') this.groups = [...this.groups, sound];
+		if (group) this.groups = [...this.groups, sound];
 	}
 
 	private remove(id: number): void {
 		for (let v = 0; v < this.setup.voices; v++) {
-			const sound = this.sound[v];
-			if (sound?.id !== id) continue;
+			if (this.sound[v]?.id !== id) continue;
 			this.wanted[v] = 0;
 			this.dying[v] = 1;
 		}
@@ -242,11 +306,16 @@ export class Mixer {
 	private rz = 0;
 	private distance = 0;
 
-	/** Works out emitter `e`'s place in the listener's frame and its distance. */
-	private place(floats: Float32Array, places: number, e: number): void {
+	/**
+	 * Works out emitter `e`'s place in the listener's frame and its distance. Returns false for a
+	 * place that is not a number, which leaves the emitter silent.
+	 */
+	private place(floats: Float32Array, places: number, e: number): boolean {
 		const px = (floats[places + 3 * e] as number) - this.lx;
 		const py = (floats[places + 3 * e + 1] as number) - this.ly;
 		const pz = (floats[places + 3 * e + 2] as number) - this.lz;
+		const distance = Math.sqrt(px * px + py * py + pz * pz);
+		if (!Number.isFinite(distance)) return false;
 		// The inverse of the listener's turn, which carries the world into the listener's frame.
 		const ux = -this.qx;
 		const uy = -this.qy;
@@ -258,23 +327,23 @@ export class Mixer {
 		this.rx = px + w * tx + (uy * tz - uz * ty);
 		this.ry = py + w * ty + (uz * tx - ux * tz);
 		this.rz = pz + w * tz + (ux * ty - uy * tx);
-		this.distance = Math.sqrt(px * px + py * py + pz * pz);
+		this.distance = distance;
+		return true;
 	}
 
 	/** Ranks a group's emitters and hands its voices to the loudest. */
 	private rank(sound: SoundSpec, floats: Float32Array, layout: TableLayout): void {
 		const { chosen, chosenLoudness, loudness } = this;
-		const wanted = sound.voices;
+		const voices = sound.voices;
+		const wanted = voices.length;
 		let count = 0;
 		for (let e = sound.first; e < sound.first + sound.count; e++) {
-			const level = floats[layout.levels + e] as number;
+			const level = levelOf(floats[layout.levels + e] as number);
 			let value = 0;
-			if (level > 0) {
-				this.place(floats, layout.places, e);
+			if (level > 0 && this.place(floats, layout.places, e))
 				value = level * distanceGain(sound, this.distance);
-			}
 			loudness[e] = value;
-			if (value <= SILENT) continue;
+			if (!(value > SILENT)) continue;
 			if (count === wanted && value <= (chosenLoudness[count - 1] as number)) continue;
 			// Insert the emitter in loudness order, dropping the quietest when the list is full.
 			let at = count < wanted ? count++ : count - 1;
@@ -287,9 +356,9 @@ export class Mixer {
 			chosenLoudness[at] = value;
 		}
 		const cut = count === wanted ? HOLD_SHARE * (chosenLoudness[count - 1] as number) : 0;
-		const last = sound.voice + sound.voices;
 		// A voice keeps its emitter while that emitter is chosen, or stays near the cut.
-		for (let v = sound.voice; v < last; v++) {
+		for (let j = 0; j < wanted; j++) {
+			const v = voices[j] as number;
 			const held = this.next[v] !== NONE ? (this.next[v] as number) : (this.emitter[v] as number);
 			const keep =
 				held !== NONE &&
@@ -303,7 +372,8 @@ export class Mixer {
 			const e = chosen[k] as number;
 			let heldBy = NONE;
 			let freeVoice = NONE;
-			for (let v = sound.voice; v < last; v++) {
+			for (let j = 0; j < wanted; j++) {
+				const v = voices[j] as number;
 				const held = this.next[v] !== NONE ? this.next[v] : this.emitter[v];
 				if (held === e && this.free[v] === 0) heldBy = v;
 				else if (freeVoice === NONE && this.free[v] === 1) freeVoice = v;
@@ -315,6 +385,7 @@ export class Mixer {
 			if (this.emitter[freeVoice] === NONE || (this.gain[freeVoice] as number) < SILENT) {
 				this.emitter[freeVoice] = e;
 				this.next[freeVoice] = NONE;
+				this.snap[freeVoice] = SNAP_PITCH;
 			} else this.next[freeVoice] = e;
 		}
 	}
@@ -339,7 +410,7 @@ export class Mixer {
 		const ints = this.ints;
 		const layout = this.layout;
 		if (!floats || !ints || !layout) {
-			for (const channel of gains) channel.fill(0);
+			for (let v = 0; v < gains.length; v++) gains[v]?.fill(0);
 			return;
 		}
 		const xs = outputs[out.x];
@@ -372,12 +443,17 @@ export class Mixer {
 		this.qy = floats[layout.listenerTurn + 1] as number;
 		this.qz = floats[layout.listenerTurn + 2] as number;
 		this.qw = floats[layout.listenerTurn + 3] as number;
+		// A listener that is not a number hears nothing until the sketch writes one that is.
+		const heard =
+			Number.isFinite(this.lx + this.ly + this.lz) &&
+			Number.isFinite(this.qx + this.qy + this.qz + this.qw);
 		const volumeValue = floats[layout.volume] as number;
-		const volume = volumeValue < 0 ? 0 : volumeValue > 1 ? 1 : volumeValue;
+		const volume = heard ? (volumeValue > 0 ? (volumeValue < 1 ? volumeValue : 1) : 0) : 0;
 
 		if (++this.quantum >= RANK_EVERY) {
 			this.quantum = 0;
-			for (const sound of this.groups) this.rank(sound, floats, layout);
+			const groups = this.groups;
+			for (let g = 0; g < groups.length; g++) this.rank(groups[g] as SoundSpec, floats, layout);
 		}
 
 		for (let v = 0; v < this.setup.voices; v++) {
@@ -395,10 +471,10 @@ export class Mixer {
 				e = this.next[v] as number;
 				this.emitter[v] = e;
 				this.next[v] = NONE;
+				this.snap[v] = SNAP_PITCH;
 			}
 			if (before < SILENT && this.dying[v] === 1) {
-				this.sound[v] = null;
-				this.dying[v] = 0;
+				this.clear(v);
 				gainChannel.fill(0);
 				continue;
 			}
@@ -406,17 +482,18 @@ export class Mixer {
 			let toneTarget = 1;
 			let rateTarget = this.rate[v] as number;
 			if (e !== NONE) {
-				const level = floats[layout.levels + e] as number;
-				toneTarget = floats[layout.tones + e] as number;
-				rateTarget = floats[layout.rates + e] as number;
+				const level = levelOf(floats[layout.levels + e] as number);
+				toneTarget = toneOf(floats[layout.tones + e] as number);
+				rateTarget = rateOf(floats[layout.rates + e] as number);
 				let share = 1;
 				if (sound.positional) {
-					this.place(floats, layout.places, e);
-					share = distanceGain(sound, this.distance);
-					toneTarget *= distanceTone(sound, this.distance);
-					xs?.[v]?.fill(this.rx);
-					ys?.[v]?.fill(this.ry);
-					zs?.[v]?.fill(this.rz);
+					if (this.place(floats, layout.places, e)) {
+						share = distanceGain(sound, this.distance);
+						toneTarget *= distanceTone(sound, this.distance);
+						xs?.[v]?.fill(this.rx);
+						ys?.[v]?.fill(this.ry);
+						zs?.[v]?.fill(this.rz);
+					} else share = 0;
 				}
 				const on =
 					this.ready[v] === 1 &&
@@ -425,13 +502,29 @@ export class Mixer {
 					this.next[v] === NONE;
 				target = on && level > 0 ? level * share * volume * this.pause : 0;
 			}
-			let step = this.gainStep;
-			if (target < before && (this.next[v] !== NONE || this.dying[v] === 1)) step = this.switchStep;
-			else if (this.fresh[v] === 1) {
-				step = this.fadeInStep;
-				if (before >= target * 0.9) this.fresh[v] = 0;
+			let after: number;
+			if (this.snap[v] === SNAP_ALL) {
+				// A shot starts at its own level, place and pitch, not at its slot's last play.
+				after = target;
+				this.tone[v] = toneTarget;
+				this.rate[v] = rateTarget;
+			} else {
+				if (this.snap[v] === SNAP_PITCH) {
+					// A voice that moves to a new emitter takes the new emitter's pitch and tone while silent.
+					this.tone[v] = toneTarget;
+					this.rate[v] = rateTarget;
+				}
+				let step = this.gainStep;
+				if (target < before && (this.next[v] !== NONE || this.dying[v] === 1))
+					step = this.switchStep;
+				else if (this.fresh[v] === 1 && target > 0) {
+					step = this.fadeInStep;
+					if (before >= target * 0.9) this.fresh[v] = 0;
+				}
+				after = before + (target - before) * step;
 			}
-			const after = before + (target - before) * step;
+			this.snap[v] = EASE;
+			if (!(after >= 0)) after = 0;
 			this.gain[v] = after;
 			// The gain eases across the quantum, so a change makes no step that clicks.
 			const delta = (after - before) / frames;

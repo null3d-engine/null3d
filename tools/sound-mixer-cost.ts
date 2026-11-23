@@ -44,8 +44,7 @@ for (let i = 0; i < LOOPS; i++) {
 		kind: 'loop',
 		first: i,
 		count: 1,
-		voice: i,
-		voices: 1,
+		voices: [i],
 	};
 	mixer.receive({ type: 'add', sound });
 }
@@ -57,8 +56,7 @@ mixer.receive({
 		kind: 'group',
 		first: LOOPS,
 		count: MEMBERS,
-		voice: LOOPS,
-		voices: MAX_VOICES - LOOPS,
+		voices: Array.from({ length: MAX_VOICES - LOOPS }, (_, k) => LOOPS + k),
 	},
 });
 for (let v = 0; v < MAX_VOICES; v++) mixer.receive({ type: 'ready', voice: v });

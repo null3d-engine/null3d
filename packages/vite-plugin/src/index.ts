@@ -567,8 +567,10 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin[] {
 				build: {
 					assetsInlineLimit: inlineLimit(config.build?.assetsInlineLimit),
 				},
-				// A prebundled copy of the engine would lose the addresses of its workers and core files.
-				optimizeDeps: { exclude: ['@null3d/engine'] },
+				// A prebundled copy of the engine would lose the addresses of its workers and core files,
+				// and one of the sound add-on's page half the address of the mixer it loads into the
+				// browser's audio thread.
+				optimizeDeps: { exclude: ['@null3d/engine', '@null3d/sound'] },
 			};
 		},
 		configResolved(config) {

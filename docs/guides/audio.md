@@ -44,7 +44,7 @@ export default defineSketch((ctx) => {
 ```
 
 ```ts
-// page.ts: the sound starts on the user's first press, click, tap or key.
+// page.ts: the sound starts on the user's first click, tap or key.
 import { connectSound } from '@null3d/sound/page';
 const sound = connectSound(engine, { startOnInput: true });
 ```
@@ -115,7 +115,7 @@ bounce.play(x, y, z, Math.min(1, impact / 8));
 
 ## How the sound reaches the speakers
 
-The browser offers its audio on the page's main thread only, and the sketch runs in a worker. The add-on bridges the two with a table that the page shares. The sketch writes each sound's values there, and a mixer on the browser's audio thread reads them and drives each voice. No message travels in a frame, and the page's thread does no work while the sound plays. When the engine pauses or the page is hidden, the sketch's frames stop, and the sound fades out with them.
+The browser offers its audio on the page's main thread only, and the sketch runs in a worker. The add-on bridges the two with a table that the page shares. The sketch writes each sound's values there, and a mixer on the browser's audio thread reads them and drives each voice. Where the page shares its memory with its workers, no message travels in a frame. The page's thread then does no work while the sounds play. When the engine pauses or the page is hidden, the sketch's frames stop, and the sound fades out with them.
 
 The page can still play its own sounds with Web Audio, such as music or the clicks of its buttons. Such sounds belong to the page, so they need no add-on.
 

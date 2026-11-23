@@ -8,7 +8,9 @@ import { createSound } from './sound';
 function sketch(preset = 'high') {
 	let handler: ((type: string, data: unknown) => void) | undefined;
 	let quality: ((q: { preset: string }) => void) | undefined;
+	const time = { now: 10 };
 	const ctx = {
+		time,
 		page: {
 			post() {},
 			onMessage(h: (type: string, data: unknown) => void) {
@@ -50,6 +52,7 @@ function sketch(preset = 'high') {
 	};
 	return {
 		ctx,
+		time,
 		listener,
 		connect,
 		changeQuality: (p: string) => quality?.({ preset: p }),
@@ -86,7 +89,7 @@ describe('createSound', () => {
 		expect(link.data.box.table).toBeInstanceOf(ArrayBuffer);
 		expect(add).toMatchObject({
 			type: 'add',
-			sound: { kind: 'loop', file: 'https://example.test/sea.mp3', positional: false, voices: 1 },
+			sound: { kind: 'loop', file: 'https://example.test/sea.mp3', positional: false, voices: [0] },
 		});
 		const { floats } = views(link.data, table.layout);
 		expect(floats[table.layout.levels]).toBe(0.5);
@@ -133,7 +136,7 @@ describe('createSound', () => {
 		await link.settled();
 		expect(link.messages[1]).toMatchObject({
 			type: 'add',
-			sound: { kind: 'group', count: 4, voices: 2, near: 3, far: 80, muffle: true },
+			sound: { kind: 'group', count: 4, voices: [0, 1], near: 3, far: 80, muffle: true },
 		});
 		link.close();
 	});
@@ -157,7 +160,9 @@ describe('createSound', () => {
 		const s = sketch();
 		const sound = createSound(s.ctx, { listener: s.listener, capacity: 64 });
 		sound.group({ file: 'https://example.test/a.mp3', count: 40, voices: MAX_VOICES });
-		expect(() => sound.loop({ file: 'https://example.test/b.mp3' })).toThrow('sound E2501');
+		expect(() => sound.loop({ file: 'https://example.test/b.mp3' })).toThrow(
+			"32 of the page's 32 are in use",
+		);
 	});
 
 	test('runs out of emitters with a message that names the capacity', () => {
@@ -181,6 +186,65 @@ describe('createSound', () => {
 		expect(link.messages.map((m) => m.type)).toEqual(['table', 'add', 'remove', 'add']);
 		expect(b.count).toBe(2);
 		link.close();
+	});
+
+	test('gives a sound any free voices, after a freed voice has rested', () => {
+		const s = sketch();
+		const sound = createSound(s.ctx, { listener: s.listener, capacity: 64 });
+		sound.loop({ file: 'https://example.test/a.mp3' });
+		const middle = sound.group({ file: 'https://example.test/b.mp3', count: 15, voices: 15 });
+		sound.loop({ file: 'https://example.test/c.mp3' });
+		middle.destroy();
+		// The freed voices rest a moment, so a sound made now takes others while the fade ends.
+		const link = s.connect();
+		const next = sound.group({ file: 'https://example.test/d.mp3', count: 30, voices: 30 });
+		void next;
+		return link.settled().then(() => {
+			const adds = link.messages.filter((m) => m.type === 'add');
+			const last = adds.at(-1);
+			if (last?.type !== 'add') throw new Error('no add');
+			expect(last.sound.voices).toHaveLength(30);
+			// Voices 0 and 16 hold the loops; the 15 freed voices come last, after the rested ones.
+			expect(last.sound.voices.slice(0, 15)).toEqual([
+				17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31,
+			]);
+			link.close();
+		});
+	});
+
+	test('refuses a second sound system while the first lives', () => {
+		const s = sketch();
+		const first = createSound(s.ctx, { listener: s.listener });
+		expect(() => createSound(s.ctx, { listener: s.listener })).toThrow('sound E2504');
+		first.destroy();
+		expect(() => createSound(s.ctx, { listener: s.listener }).destroy()).not.toThrow();
+	});
+
+	test("a destroyed handle's setters write nothing into the next sound", () => {
+		const s = sketch();
+		const sound = createSound(s.ctx, { listener: s.listener, capacity: 2 });
+		const old = sound.loop({ file: 'https://example.test/a.mp3' });
+		old.destroy();
+		const next = sound.group({ file: 'https://example.test/b.mp3', count: 2, voices: 1 });
+		old.setLevel(0.25);
+		old.setPosition(9, 9, 9);
+		expect(next.levels[0]).toBe(1);
+		expect([...next.positions.subarray(0, 3)]).toEqual([0, 0, 0]);
+	});
+
+	test('tells the page that its system ended, and a page that lost the link to another', async () => {
+		const s = sketch();
+		const sound = createSound(s.ctx, { listener: s.listener });
+		const first = s.connect();
+		await first.settled();
+		const second = s.connect();
+		await second.settled();
+		expect(first.messages.at(-1)).toEqual({ type: 'closed', reason: 'replaced' });
+		sound.destroy();
+		await second.settled();
+		expect(second.messages.at(-1)).toEqual({ type: 'closed', reason: 'destroyed' });
+		first.close();
+		second.close();
 	});
 
 	test('tells the page when the preset changes its panning', async () => {

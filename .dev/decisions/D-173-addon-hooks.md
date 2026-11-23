@@ -2,7 +2,7 @@
 
 Status: decided by the owner. Built: the import and layout checks, the packages of eleven foundations: controls, geometry, impostors, particles, splats, terrain, `three-compat`, vegetation, water, wind and sound, H1's compute pass (M3-E8), the preset and stats links (M3-E6) and sky layers (M3-E10). Pending: the physics and MSDF text packages, and the open hooks and tasks: H2 (M3-E9), H4, material lobes (M3-E7), H5, add-on tasks (M3-E2), H7, scene inputs (M3-E4 and M3-E4a), the texture-unit allocator (M3-D7), the listing check (M3-D9), the splats add-on (M3-F2), water (M3-F5), the FFT ocean (M3-F9) and the volumetric tier (M3-F11). Each hook and platform task is built in its own M3 task, with its first user. Task: M3-plan.
 
-Summary: Each feature lives in one place, the core or one add-on, never both. An add-on extends a core feature only through that feature's own settings. Flat and volumetric clouds are tiers of the core sky, and a water add-on owns all water. Every add-on and example reaches the engine only through its public entry points, which `bun run check` enforces. The engine's team builds thirteen foundation add-ons as npm packages, and M3's six content add-ons are example add-ons. Hooks H1 to H9, the plugin interface version and a listing check all come in M3, each hook with its first user.
+Summary: Each feature lives in one place, the core or one add-on, never both. An add-on extends a core feature only through that feature's own settings. Flat and volumetric clouds are tiers of the core sky, and a water add-on owns all water. Every add-on and example reaches the engine only through its public entry points, which `bun run check` enforces. The engine's team builds the foundation add-ons as npm packages, and M3's six content add-ons are example add-ons. Hooks H1 to H9, the plugin interface version and a listing check all come in M3, each hook with its first user.
 
 ## Question
 
@@ -410,6 +410,6 @@ from one package into another package's folder, and an import of a sub-path that
 does not export. `tools/lib/addon-imports.test.ts` covers both refusals, and a fixture that holds one
 import of each.
 
-## sound is the thirteenth foundation
+## sound is a foundation
 
 The owner made positional sound a foundation add-on, `@null3d/sound` ([D-384](D-384-sound-add-on.md)). It passes ruling 4's test: games, product pages and scenes of every kind play sound, and each would build the same bridge between the sketch and the page's audio. The core stays free of audio, so rule 11 holds. Rule 13 in AGENTS.md lists it.

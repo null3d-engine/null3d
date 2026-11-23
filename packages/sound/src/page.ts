@@ -9,7 +9,7 @@
 // the engine pauses, the mixer fades every voice out and this half suspends the audio, and it
 // resumes it when the sketch's frames move again. The engine's stop closes it for good.
 import { checkAddonVersion, type Engine } from '@null3d/engine';
-import { soundBounds } from './bounds';
+import { gaplessBounds, mp3Gapless, soundBounds } from './bounds';
 import {
 	CONNECT_MESSAGE,
 	type ConnectData,
@@ -37,8 +37,22 @@ const MIXER_URL = new URL('./mixer-worklet.ts', import.meta.url);
 const MIXER_NAME = 'null3d-sound-mixer';
 /** How often the page asks the sketch for its link until the sketch answers, in milliseconds. */
 const CONNECT_EVERY_MS = 500;
-/** How long the page keeps asking, in milliseconds, before it says the sketch makes no sound. */
+/**
+ * How long the page asks at that pace, in milliseconds. After it the page says that the sketch has
+ * not answered, and asks less often, for a sketch that makes its sound late.
+ */
 const CONNECT_FOR_MS = 60_000;
+/** How often the page asks once that time has passed, in milliseconds. */
+const CONNECT_SLOWLY_MS = 5000;
+/**
+ * How long after its play message a shot's file starts, in seconds, so the mixer has taken the
+ * play's level, place and pitch before the first sample sounds.
+ */
+const SHOT_DELAY = 0.02;
+/** How fast a shot that a newer play replaces fades out, as a time constant in seconds. */
+const SHOT_FADE = 0.01;
+/** The inputs after which a browser lets a page start its audio. */
+const ACTIVATIONS = ['pointerup', 'touchend', 'click', 'keydown'] as const;
 /** How often a suspended page looks for the sketch's frames, in milliseconds. */
 const WAKE_EVERY_MS = 250;
 /** How long a removed voice keeps its nodes, so its fade ends before they go, in milliseconds. */
@@ -47,8 +61,9 @@ const RELEASE_MS = 200;
 const FLAT_Q = -3.0103;
 
 /**
- * Where the page's sound stands: not started, starting, playing, suspended while the sketch is
- * paused, or stopped for good.
+ * Where the page's sound stands: not started, starting, playing, suspended, or stopped for good. The
+ * sound is suspended while the engine is paused or the page is hidden, and while the browser holds
+ * the audio, as an iPhone does during a call, until the page shows or the user's next input.
  *
  * @category api/sound
  */
@@ -61,9 +76,9 @@ export type SoundState = 'off' | 'starting' | 'on' | 'paused' | 'stopped';
  */
 export interface PageSoundOptions {
 	/**
-	 * Starts the sound on the user's first press, click, tap or key on the page. Browsers let a page
-	 * start its audio only in answer to such an input. The default is false: the page calls `start`
-	 * from its own control, such as a sound button.
+	 * Starts the sound on the user's first click, tap or key on the page, other than Escape. Browsers
+	 * let a page start its audio only in answer to such an input. The default is false: the page calls
+	 * `start` from its own control, such as a sound button.
 	 */
 	startOnInput?: boolean;
 	/** Starts muted. The default is false. */
@@ -102,13 +117,27 @@ interface Loaded {
 	readonly end: number;
 }
 
+/** A file's source, and for a shot the gain that fades it when a newer play replaces it. */
+interface Play {
+	readonly source: AudioBufferSourceNode;
+	readonly fade: GainNode | null;
+}
+
 /** The audio nodes of one voice. */
 interface VoiceNodes {
 	readonly sound: SoundSpec;
 	readonly filter: BiquadFilterNode;
 	readonly gain: GainNode;
 	readonly panner: PannerNode | null;
-	source: AudioBufferSourceNode | null;
+	/** The file that plays on the voice now: a loop's one source, or a shot's newest play. */
+	play: Play | null;
+}
+
+/** A copy of the table for the mixer, with the message and the transfer list that carry it. */
+interface Copy {
+	floats: Float32Array;
+	readonly message: { type: 'copy'; buffer: ArrayBuffer };
+	readonly transfer: ArrayBuffer[];
 }
 
 /** A value of the browser's audio session, which Safari has. */
@@ -131,13 +160,15 @@ class SoundPage implements PageSound {
 	private readonly handlers = new Set<(state: SoundState) => void>();
 	private link: MessagePort | null = null;
 	private box: ConnectData['box'] = { table: null };
-	private connectTimer: ReturnType<typeof setInterval> | undefined;
+	private connectTimer: ReturnType<typeof setTimeout> | undefined;
 	private connectStarted = 0;
+	private warnedLate = false;
 	private layout: TableLayout | null = null;
 	/** The table that the mixer reads: shared, or the sketch's own on the page's thread. */
 	private table: ArrayBuffer | SharedArrayBuffer | null = null;
 	private tableFloats: Float32Array | null = null;
 	private tableInts: Int32Array | null = null;
+	private shared = false;
 	private panning: Panning = 'equal-power';
 	private readonly sounds = new Map<number, SoundSpec>();
 
@@ -148,37 +179,60 @@ class SoundPage implements PageSound {
 	private readonly voices: (VoiceNodes | undefined)[] = new Array(MAX_VOICES);
 	private readonly files = new Map<string, Promise<Loaded | null>>();
 	/** The copies of the table that go to the mixer where the page shares no memory. */
-	private spares: { buffer: ArrayBuffer; floats: Float32Array }[] = [];
+	private spares: Copy[] = [];
 	private copyFrame = 0;
+	/** True once the user asked for the sound with `start`, or the first input started it. */
+	private wanted = false;
+	private readonly startOnInput: boolean;
+	/** True while the mixer reports that the sketch's frames have stopped. */
+	private sketchIdle = false;
+	/** True while this half suspended the audio because the sketch's frames stopped. */
+	private idleSuspend = false;
 	private wakeTimer: ReturnType<typeof setInterval> | undefined;
 	private wakeFrame = 0;
+	private listening = false;
 	private readonly stopEngine: () => void;
-	private stopInput: (() => void) | undefined;
+	private readonly onActivation = (event: Event): void => {
+		// Escape is not an input that lets a page start its audio.
+		if (event.type === 'keydown' && (event as KeyboardEvent).key === 'Escape') return;
+		if (!this.context) {
+			if (this.startOnInput) void this.start();
+			return;
+		}
+		this.resumeIfWanted();
+	};
+	private readonly onVisibility = (): void => {
+		if (document.visibilityState === 'visible') this.resumeIfWanted();
+	};
 
 	constructor(
 		private readonly engine: Engine,
 		options: PageSoundOptions,
 	) {
 		this.muted = options.muted ?? false;
+		this.startOnInput = options.startOnInput ?? false;
 		this.stopEngine = engine.onStop(() => this.stop());
-		this.connectStarted = Date.now();
-		this.askForLink();
-		this.connectTimer = setInterval(() => this.askForLink(), CONNECT_EVERY_MS);
-		if (options.startOnInput) this.listenForInput();
+		this.beginAsking();
+		if (this.startOnInput) this.listen(true);
+		document.addEventListener('visibilitychange', this.onVisibility);
 	}
 
-	/** Asks the sketch for a link, until the sketch answers or the page gives up. */
-	private askForLink(): void {
-		if (this.state === 'stopped' || this.layout) {
-			this.endAsking();
-			return;
-		}
-		if (Date.now() - this.connectStarted > CONNECT_FOR_MS) {
+	/** Asks the sketch for a link now, and again until the sketch answers. */
+	private beginAsking(): void {
+		this.endAsking();
+		this.connectStarted = Date.now();
+		this.ask();
+	}
+
+	/** Asks the sketch for a link, and plans the next ask until the sketch answers. */
+	private ask(): void {
+		if (this.state === 'stopped' || this.layout) return;
+		const waited = Date.now() - this.connectStarted;
+		if (waited > CONNECT_FOR_MS && !this.warnedLate) {
+			this.warnedLate = true;
 			console.warn(
-				'null3D sound: the sketch never answered connectSound. Call createSound in the sketch, and check that the sketch and the page use the same @null3d/sound.',
+				'null3D sound: the sketch has not answered connectSound. Call createSound in the sketch, and check that the sketch and the page use the same @null3d/sound. The page keeps asking.',
 			);
-			this.endAsking();
-			return;
 		}
 		this.link?.close();
 		const channel = new MessageChannel();
@@ -187,24 +241,25 @@ class SoundPage implements PageSound {
 		channel.port1.onmessage = (event: MessageEvent<SketchMessage>) => this.fromSketch(event.data);
 		const data: ConnectData = { port: channel.port2, box: this.box };
 		this.engine.postToSketch(CONNECT_MESSAGE, data, [channel.port2]);
+		this.connectTimer = setTimeout(
+			() => this.ask(),
+			waited > CONNECT_FOR_MS ? CONNECT_SLOWLY_MS : CONNECT_EVERY_MS,
+		);
 	}
 
 	private endAsking(): void {
-		if (this.connectTimer !== undefined) clearInterval(this.connectTimer);
+		if (this.connectTimer !== undefined) clearTimeout(this.connectTimer);
 		this.connectTimer = undefined;
 	}
 
-	private listenForInput(): void {
-		const events = ['pointerdown', 'keydown', 'touchend'] as const;
-		const begin = () => {
-			this.stopInput?.();
-			void this.start();
-		};
-		for (const name of events) window.addEventListener(name, begin, { capture: true });
-		this.stopInput = () => {
-			for (const name of events) window.removeEventListener(name, begin, { capture: true });
-			this.stopInput = undefined;
-		};
+	/** Listens for the inputs that let a page start its audio, or stops listening. */
+	private listen(on: boolean): void {
+		if (on === this.listening) return;
+		this.listening = on;
+		for (const name of ACTIVATIONS) {
+			if (on) window.addEventListener(name, this.onActivation, { capture: true });
+			else window.removeEventListener(name, this.onActivation, { capture: true });
+		}
 	}
 
 	private setState(state: SoundState): void {
@@ -221,6 +276,7 @@ class SoundPage implements PageSound {
 				this.layout = message.layout;
 				// Where the sketch runs on this thread, it put its own table in the box.
 				this.table = this.box.table ?? message.buffer;
+				this.shared = isShared(this.table);
 				this.tableFloats = new Float32Array(this.table, 0, message.layout.length);
 				this.tableInts = new Int32Array(this.table, 0, message.layout.length);
 				this.panning = message.panning;
@@ -247,7 +303,31 @@ class SoundPage implements PageSound {
 				for (const voice of this.voices)
 					if (voice?.panner) voice.panner.panningModel = this.pannerModel();
 				return;
+			case 'closed':
+				if (message.reason === 'replaced') {
+					console.warn(
+						"null3D sound: another connectSound took the sketch's sound, so this one stops. Call connectSound once on a page.",
+					);
+					this.stop();
+				} else this.reset();
+				return;
 		}
+	}
+
+	/** Drops the ended sound system's table and sounds, and asks for the sketch's next one. */
+	private reset(): void {
+		for (let v = 0; v < MAX_VOICES; v++) this.disconnect(v);
+		this.sounds.clear();
+		this.toMixer({ type: 'reset' });
+		this.stopCopies();
+		this.endWaking();
+		this.layout = null;
+		this.table = null;
+		this.tableFloats = null;
+		this.tableInts = null;
+		this.sketchIdle = false;
+		this.idleSuspend = false;
+		this.beginAsking();
 	}
 
 	private pannerModel(): PanningModelType {
@@ -262,9 +342,12 @@ class SoundPage implements PageSound {
 	private giveMixerTable(): void {
 		const { layout, table } = this;
 		if (!this.mixer || !layout || !table) return;
-		const shared = isShared(table);
-		this.toMixer({ type: 'table', layout, buffer: shared ? table : null });
-		if (!shared) this.startCopies(layout);
+		this.toMixer({
+			type: 'table',
+			layout,
+			buffer: this.shared ? (table as SharedArrayBuffer) : null,
+		});
+		if (!this.shared) this.startCopies(layout);
 	}
 
 	/** Sends the mixer a copy of the table in each display frame, where the page shares no memory. */
@@ -272,49 +355,82 @@ class SoundPage implements PageSound {
 		if (this.copyFrame !== 0) return;
 		this.spares = [0, 1].map(() => {
 			const buffer = new ArrayBuffer(layout.length * Float32Array.BYTES_PER_ELEMENT);
-			return { buffer, floats: new Float32Array(buffer) };
+			return {
+				floats: new Float32Array(buffer),
+				message: { type: 'copy', buffer },
+				transfer: [buffer],
+			};
 		});
 		const copy = () => {
 			this.copyFrame = requestAnimationFrame(copy);
-			if (this.state !== 'on') return;
-			const spare = this.spares.pop();
-			const floats = this.tableFloats;
-			if (!spare || !floats) return;
-			spare.floats.set(floats);
-			this.toMixer({ type: 'copy', buffer: spare.buffer }, [spare.buffer]);
+			if (this.state === 'on') this.copyNow();
 		};
 		this.copyFrame = requestAnimationFrame(copy);
 	}
 
+	/** Sends the mixer one copy of the table, if a spare buffer is back from it. */
+	private copyNow(): void {
+		const spare = this.spares.pop();
+		const floats = this.tableFloats;
+		if (!spare) return;
+		if (!floats) {
+			this.spares.push(spare);
+			return;
+		}
+		spare.floats.set(floats);
+		this.toMixer(spare.message, spare.transfer);
+		// The buffer now belongs to the mixer, which sends it back with its copy reply.
+		this.inFlight.push(spare);
+	}
+
+	/** The copies on their way to the mixer, oldest first, which its replies hand back in order. */
+	private inFlight: Copy[] = [];
+
+	private stopCopies(): void {
+		if (this.copyFrame !== 0) cancelAnimationFrame(this.copyFrame);
+		this.copyFrame = 0;
+		this.spares = [];
+		this.inFlight = [];
+	}
+
 	private fromMixer(reply: MixerReply): void {
 		switch (reply.type) {
-			case 'copy':
-				this.spares.push({ buffer: reply.buffer, floats: new Float32Array(reply.buffer) });
+			case 'copy': {
+				const copy = this.inFlight.shift();
+				if (!copy) return;
+				// The buffer comes back as a new object, which the copy's message and view now name.
+				copy.message.buffer = reply.buffer;
+				copy.transfer[0] = reply.buffer;
+				copy.floats = new Float32Array(reply.buffer);
+				this.spares.push(copy);
 				return;
+			}
 			case 'idle':
-				this.suspend();
+				this.sketchIdle = true;
+				this.suspendForIdle();
 				return;
 			case 'active':
+				this.sketchIdle = false;
 				return;
 		}
 	}
 
-	/** Suspends the audio while the sketch is paused, and wakes it when the frames move again. */
-	private suspend(): void {
+	/** Suspends the audio while the sketch's frames stand still, and wakes it when they move. */
+	private suspendForIdle(): void {
 		const context = this.context;
 		const ints = this.tableInts;
 		const layout = this.layout;
-		if (!context || !ints || !layout || this.state !== 'on') return;
-		this.setState('paused');
+		if (!context || !ints || !layout || context.state !== 'running') return;
+		this.idleSuspend = true;
 		void context.suspend();
+		this.endWaking();
 		this.wakeFrame = ints[layout.frame] as number;
 		this.wakeTimer = setInterval(() => {
 			if (ints[layout.frame] === this.wakeFrame) return;
 			this.endWaking();
-			if (this.state !== 'paused') return;
-			void context.resume().then(() => {
-				if (this.state === 'paused') this.setState('on');
-			});
+			this.sketchIdle = false;
+			this.idleSuspend = false;
+			this.resumeIfWanted();
 		}, WAKE_EVERY_MS);
 	}
 
@@ -323,14 +439,42 @@ class SoundPage implements PageSound {
 		this.wakeTimer = undefined;
 	}
 
+	/** Resumes the audio when the user wants it and the sketch's frames move. */
+	private resumeIfWanted(): void {
+		const context = this.context;
+		if (!context || !this.wanted || this.idleSuspend || this.state === 'stopped') return;
+		if (context.state !== 'running') void context.resume().catch(() => {});
+	}
+
+	/** Follows the browser's state of the audio, which the page, the browser and the system change. */
+	private followContext(): void {
+		const context = this.context;
+		if (!context || this.state === 'stopped') return;
+		if (context.state === 'running') {
+			this.listen(false);
+			this.setState('on');
+			// The sketch stopped while the audio was not running: suspend it now.
+			if (this.sketchIdle) this.suspendForIdle();
+			return;
+		}
+		if (context.state === 'closed') return;
+		if (this.state === 'starting' && !this.idleSuspend) {
+			// A context made outside the user's input waits for it: the next input resumes it.
+			this.listen(true);
+			return;
+		}
+		this.setState('paused');
+		// The browser or the system took the audio, as an iPhone does during a call: the next input,
+		// or the page showing again, gives it back.
+		if (!this.idleSuspend) this.listen(true);
+	}
+
 	start(): Promise<void> {
 		if (this.state === 'stopped') return Promise.resolve();
-		this.stopInput?.();
+		this.wanted = true;
 		if (this.context) {
-			const context = this.context;
-			return context.resume().then(() => {
-				if (this.state === 'paused' || this.state === 'off') this.setState('on');
-			});
+			this.resumeIfWanted();
+			return Promise.resolve();
 		}
 		// The context starts here, in the user's input, before anything waits.
 		const context = new AudioContext();
@@ -338,19 +482,19 @@ class SoundPage implements PageSound {
 		const session = (navigator as AudioSessionNavigator).audioSession;
 		// On an iPhone, the silent switch mutes a page's audio unless its session plays media.
 		if (session) session.type = 'playback';
-		const resumed = context.resume();
+		context.onstatechange = () => this.followContext();
+		void context.resume().catch(() => {});
 		this.setState('starting');
 		return context.audioWorklet
 			.addModule(MIXER_URL)
-			.then(async () => {
+			.then(() => {
 				if (this.state === 'stopped') return;
 				this.makeMixer(context);
 				for (const sound of this.sounds.values()) {
 					this.toMixer({ type: 'add', sound });
 					this.build(sound);
 				}
-				await resumed;
-				if (this.state === 'starting') this.setState('on');
+				this.followContext();
 			})
 			.catch((error: unknown) => {
 				console.warn(`null3D sound: the audio could not start: ${(error as Error).message}`);
@@ -380,19 +524,22 @@ class SoundPage implements PageSound {
 		this.giveMixerTable();
 	}
 
+	private split(output: number): ChannelSplitterNode {
+		return this.splitters[output] as ChannelSplitterNode;
+	}
+
 	/** Builds the nodes of each of a sound's voices, and starts loading its file. */
 	private build(sound: SoundSpec): void {
 		const context = this.context;
 		const master = this.master;
 		if (!context || !master || !this.mixer) return;
-		const split = (output: number) => this.splitters[output] as ChannelSplitterNode;
-		for (let v = sound.voice; v < sound.voice + sound.voices; v++) {
+		for (const v of sound.voices) {
 			this.disconnect(v);
 			const filter = new BiquadFilterNode(context, { type: 'lowpass', frequency: 0, Q: FLAT_Q });
 			quantumRate(filter.frequency);
-			split(MIXER_OUTPUTS.cutoff).connect(filter.frequency, v);
+			this.split(MIXER_OUTPUTS.cutoff).connect(filter.frequency, v);
 			const gain = new GainNode(context, { gain: 0 });
-			split(MIXER_OUTPUTS.gain).connect(gain.gain, v);
+			this.split(MIXER_OUTPUTS.gain).connect(gain.gain, v);
 			filter.connect(gain);
 			let panner: PannerNode | null = null;
 			if (sound.positional) {
@@ -409,24 +556,25 @@ class SoundPage implements PageSound {
 				quantumRate(panner.positionX);
 				quantumRate(panner.positionY);
 				quantumRate(panner.positionZ);
-				split(MIXER_OUTPUTS.x).connect(panner.positionX, v);
-				split(MIXER_OUTPUTS.y).connect(panner.positionY, v);
-				split(MIXER_OUTPUTS.z).connect(panner.positionZ, v);
+				this.split(MIXER_OUTPUTS.x).connect(panner.positionX, v);
+				this.split(MIXER_OUTPUTS.y).connect(panner.positionY, v);
+				this.split(MIXER_OUTPUTS.z).connect(panner.positionZ, v);
 				gain.connect(panner);
 				panner.connect(master);
 			} else gain.connect(master);
-			this.voices[v] = { sound, filter, gain, panner, source: null };
+			this.voices[v] = { sound, filter, gain, panner, play: null };
 		}
 		void this.load(sound.file).then((loaded) => {
 			if (!loaded || sound.kind === 'shot') return;
-			for (let v = sound.voice; v < sound.voice + sound.voices; v++) {
+			const span = loaded.end - loaded.start;
+			for (let k = 0; k < sound.voices.length; k++) {
+				const v = sound.voices[k] as number;
 				const voice = this.voices[v];
-				if (voice?.sound !== sound || voice.source) continue;
+				if (voice?.sound !== sound || voice.play) continue;
 				// Each voice starts at its own point of the loop, so two voices of one file never sound
 				// in step.
-				const span = loaded.end - loaded.start;
-				const offset = loaded.start + span * ((v * 0.618034) % 1);
-				voice.source = this.source(loaded, v, true, offset);
+				const offset = loaded.start + span * ((k * 0.618034 + v * 0.1) % 1);
+				voice.play = this.source(loaded, v, true, offset, 0, false);
 				this.toMixer({ type: 'ready', voice: v });
 			}
 		});
@@ -435,23 +583,44 @@ class SoundPage implements PageSound {
 	/** Starts one play of a shot's file on the voice of its slot. */
 	private play(id: number, slot: number): void {
 		const sound = this.sounds.get(id);
-		if (!sound || !this.context) return;
-		const v = sound.voice + slot;
+		const v = sound?.voices[slot];
+		if (!sound || v === undefined || !this.context || !this.mixer) return;
+		// The mixer must read the play's values before it takes them: a copied table goes first.
+		if (!this.shared) this.copyNow();
+		this.toMixer({ type: 'shot', voice: v });
 		void this.load(sound.file).then((loaded) => {
+			const context = this.context;
 			const voice = this.voices[v];
-			if (!loaded || voice?.sound !== sound) return;
-			voice.source?.stop();
-			voice.source = this.source(loaded, v, false, loaded.start);
+			if (!loaded || !context || voice?.sound !== sound) return;
+			const old = voice.play;
+			// A newer play replaces the slot's last one with a quick fade, so the old play never clicks.
+			if (old?.fade) {
+				old.fade.gain.setTargetAtTime(0, context.currentTime, SHOT_FADE);
+				old.source.stop(context.currentTime + SHOT_FADE * 6);
+			}
+			voice.play = this.source(
+				loaded,
+				v,
+				false,
+				loaded.start,
+				context.currentTime + SHOT_DELAY,
+				true,
+			);
 		});
 	}
 
-	/** A source of a loaded file, wired to voice `v`'s filter and to the mixer's rate. */
+	/**
+	 * A source of a loaded file, wired to voice `v`'s filter, through a fade of its own for a shot,
+	 * and to the mixer's rate. The source disconnects itself when it ends.
+	 */
 	private source(
 		loaded: Loaded,
 		v: number,
 		loop: boolean,
 		offset: number,
-	): AudioBufferSourceNode | null {
+		when: number,
+		fades: boolean,
+	): Play | null {
 		const context = this.context;
 		const voice = this.voices[v];
 		if (!context || !voice) return null;
@@ -462,10 +631,32 @@ class SoundPage implements PageSound {
 			loopEnd: loaded.end,
 			playbackRate: 0,
 		});
-		(this.splitters[MIXER_OUTPUTS.rate] as ChannelSplitterNode).connect(source.playbackRate, v);
-		source.connect(voice.filter);
-		source.start(0, offset);
-		return source;
+		const rate = this.split(MIXER_OUTPUTS.rate);
+		rate.connect(source.playbackRate, v);
+		const fade = fades ? new GainNode(context, { gain: 1 }) : null;
+		if (fade) {
+			source.connect(fade);
+			fade.connect(voice.filter);
+		} else source.connect(voice.filter);
+		const play: Play = { source, fade };
+		source.onended = () => {
+			if (voice.play === play) voice.play = null;
+			this.unplug(play, v);
+		};
+		if (loop) source.start(when, offset);
+		else source.start(when, offset, loaded.end - offset);
+		return play;
+	}
+
+	/** Disconnects a play's nodes and its rate input from the mixer. */
+	private unplug(play: Play, v: number): void {
+		play.source.disconnect();
+		play.fade?.disconnect();
+		try {
+			this.split(MIXER_OUTPUTS.rate).disconnect(play.source.playbackRate, v);
+		} catch {
+			// The connection is gone already.
+		}
 	}
 
 	/** Loads and decodes a file once, however many sounds play it. */
@@ -479,8 +670,12 @@ class SoundPage implements PageSound {
 					if (!response.ok) throw new Error(`the server answered ${response.status}`);
 					return response.arrayBuffer();
 				})
-				.then((bytes) => context.decodeAudioData(bytes))
-				.then((buffer) => {
+				.then(async (bytes) => {
+					// The header goes first: decoding takes the bytes away.
+					const header = mp3Gapless(bytes);
+					const buffer = await context.decodeAudioData(bytes);
+					const gapless = header && gaplessBounds(header, buffer.length, buffer.sampleRate);
+					if (gapless) return { buffer, ...gapless };
 					const channels: Float32Array[] = [];
 					for (let c = 0; c < buffer.numberOfChannels; c++) channels.push(buffer.getChannelData(c));
 					return { buffer, ...soundBounds(channels, buffer.sampleRate) };
@@ -497,8 +692,7 @@ class SoundPage implements PageSound {
 	/** Takes a removed sound's nodes away once its fade has ended. */
 	private release(sound: SoundSpec): void {
 		setTimeout(() => {
-			for (let v = sound.voice; v < sound.voice + sound.voices; v++)
-				if (this.voices[v]?.sound === sound) this.disconnect(v);
+			for (const v of sound.voices) if (this.voices[v]?.sound === sound) this.disconnect(v);
 		}, RELEASE_MS);
 	}
 
@@ -507,12 +701,17 @@ class SoundPage implements PageSound {
 		const voice = this.voices[v];
 		if (!voice) return;
 		this.voices[v] = undefined;
-		try {
-			voice.source?.stop();
-		} catch {
-			// A source that never started has nothing to stop.
+		const play = voice.play;
+		voice.play = null;
+		if (play) {
+			play.source.onended = null;
+			try {
+				play.source.stop();
+			} catch {
+				// A source that never started has nothing to stop.
+			}
+			this.unplug(play, v);
 		}
-		voice.source?.disconnect();
 		voice.filter.disconnect();
 		voice.gain.disconnect();
 		voice.panner?.disconnect();
@@ -526,7 +725,6 @@ class SoundPage implements PageSound {
 				[MIXER_OUTPUTS.y, voice.panner.positionY],
 				[MIXER_OUTPUTS.z, voice.panner.positionZ],
 			);
-		if (voice.source) params.push([MIXER_OUTPUTS.rate, voice.source.playbackRate]);
 		for (const [output, param] of params) {
 			try {
 				this.splitters[output]?.disconnect(param, v);
@@ -553,13 +751,14 @@ class SoundPage implements PageSound {
 		this.setState('stopped');
 		this.endAsking();
 		this.endWaking();
-		this.stopInput?.();
+		this.listen(false);
+		document.removeEventListener('visibilitychange', this.onVisibility);
 		this.stopEngine();
-		if (this.copyFrame !== 0) cancelAnimationFrame(this.copyFrame);
-		this.copyFrame = 0;
+		this.stopCopies();
 		for (let v = 0; v < MAX_VOICES; v++) this.disconnect(v);
 		this.mixer?.disconnect();
 		this.mixer = null;
+		if (this.context) this.context.onstatechange = null;
 		void this.context?.close();
 		this.context = null;
 		this.link?.close();

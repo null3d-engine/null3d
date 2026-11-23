@@ -15,8 +15,7 @@ function spec(over: Partial<SoundSpec>): SoundSpec {
 		file: 'https://example.test/a.mp3',
 		first: 0,
 		count: 1,
-		voice: 0,
-		voices: 1,
+		voices: [0],
 		positional: true,
 		near: 0,
 		far: 0,
@@ -121,6 +120,11 @@ describe('a loop', () => {
 		r.run(4);
 		expect(r.last(MIXER_OUTPUTS.x, 0)).toBeCloseTo(0, 4);
 		expect(r.last(MIXER_OUTPUTS.z, 0)).toBeCloseTo(-5, 4);
+		// World -Z then lies on the listener's right, its +X: a mirror would put it on the left.
+		r.at(0, 10, 0, -5);
+		r.run(4);
+		expect(r.last(MIXER_OUTPUTS.x, 0)).toBeCloseTo(5, 4);
+		expect(r.last(MIXER_OUTPUTS.z, 0)).toBeCloseTo(0, 4);
 	});
 
 	test('eases its gain across a quantum', () => {
@@ -175,7 +179,7 @@ describe('the sketch stopping', () => {
 		r.mixer.receive({ type: 'add', sound: spec({}) });
 		r.mixer.receive({ type: 'ready', voice: 0 });
 		r.run(SETTLE);
-		expect(r.replies).toEqual([{ type: 'active' }]);
+		expect(r.replies).toEqual([]);
 		r.run(SETTLE, true);
 		expect(r.last(MIXER_OUTPUTS.gain, 0)).toBeLessThan(1e-4);
 		expect(r.replies.at(-1)).toEqual({ type: 'idle' });
@@ -192,7 +196,7 @@ describe('a group', () => {
 		const r = rig();
 		r.mixer.receive({
 			type: 'add',
-			sound: spec({ kind: 'group', count: 6, voices: 2, near: 1, far: 100 }),
+			sound: spec({ kind: 'group', count: 6, voices: [0, 1], near: 1, far: 100 }),
 		});
 		r.mixer.receive({ type: 'ready', voice: 0 });
 		r.mixer.receive({ type: 'ready', voice: 1 });
@@ -223,8 +227,16 @@ describe('a group', () => {
 		const r = group();
 		r.run(SETTLE);
 		r.at(5, 0, 0, -2);
-		r.run(8);
-		// The voice that leaves fades first, so for a moment one voice is quieter than its place says.
+		// The voice that leaves fades out first, at its old member's place, before it moves.
+		let faded = false;
+		for (let q = 0; q < 64 && !faded; q++) {
+			r.run(1);
+			for (const v of [0, 1]) {
+				const atOld = Math.round(-r.last(MIXER_OUTPUTS.z, v)) === 20;
+				if (atOld && r.last(MIXER_OUTPUTS.gain, v) < 0.01) faded = true;
+			}
+		}
+		expect(faded).toBe(true);
 		r.run(SETTLE);
 		expect(heard(r)).toEqual([2, 10]);
 		const gains = [0, 1].map((v) => r.last(MIXER_OUTPUTS.gain, v)).sort((a, b) => b - a);
@@ -240,6 +252,130 @@ describe('a group', () => {
 		const gains = [0, 1].map((v) => r.last(MIXER_OUTPUTS.gain, v)).sort((a, b) => b - a);
 		expect(gains[0]).toBeCloseTo(0.1, 3);
 		expect(gains[1]).toBeLessThan(1e-4);
+	});
+});
+
+describe('a group, ranked by loudness', () => {
+	test('gives a voice to a loud far member before a silent near one', () => {
+		const r = rig();
+		r.mixer.receive({
+			type: 'add',
+			sound: spec({ kind: 'group', count: 3, voices: [4], near: 1, far: 200 }),
+		});
+		r.mixer.receive({ type: 'ready', voice: 4 });
+		r.at(0, 0, 0, -2);
+		r.at(1, 0, 0, -30);
+		r.at(2, 0, 0, -60);
+		r.level(0, 0);
+		r.run(SETTLE);
+		expect(Math.round(-r.last(MIXER_OUTPUTS.z, 4))).toBe(30);
+	});
+
+	test("takes the new member's pitch at once as a voice moves", () => {
+		const r = rig();
+		r.mixer.receive({
+			type: 'add',
+			sound: spec({ kind: 'group', count: 2, voices: [0], near: 1, far: 200 }),
+		});
+		r.mixer.receive({ type: 'ready', voice: 0 });
+		r.at(0, 0, 0, -2);
+		r.at(1, 0, 0, -50);
+		r.floats[r.layout.rates] = 0.5;
+		r.floats[r.layout.rates + 1] = 2;
+		r.run(SETTLE);
+		expect(r.last(MIXER_OUTPUTS.rate, 0)).toBeCloseTo(0.5, 3);
+		// The near member goes quiet, so the voice moves to the far one, which runs at rate 2.
+		r.level(0, 0);
+		for (let q = 0; q < SETTLE; q++) {
+			r.run(1);
+			if (Math.round(-r.last(MIXER_OUTPUTS.z, 0)) === 50 && r.last(MIXER_OUTPUTS.gain, 0) > 0.005) {
+				expect(r.last(MIXER_OUTPUTS.rate, 0)).toBeCloseTo(2, 2);
+				return;
+			}
+		}
+		throw new Error('the voice never moved to the far member');
+	});
+});
+
+describe('a shot', () => {
+	test("starts at its own level, place and pitch, not its slot's last play", () => {
+		const r = rig();
+		r.mixer.receive({
+			type: 'add',
+			sound: spec({ kind: 'shot', count: 1, voices: [2], near: 4, far: 0 }),
+		});
+		r.at(0, 0, 0, -1);
+		r.floats[r.layout.rates] = 2;
+		r.run(SETTLE);
+		expect(r.last(MIXER_OUTPUTS.gain, 2)).toBeCloseTo(1, 3);
+		// The next play is far off and slow: the sketch writes it, then the page says it starts.
+		r.at(0, 0, 0, -400);
+		r.floats[r.layout.rates] = 0.5;
+		r.mixer.receive({ type: 'shot', voice: 2 });
+		r.run(1);
+		expect(r.last(MIXER_OUTPUTS.gain, 2)).toBeCloseTo(0.01, 4);
+		expect(r.last(MIXER_OUTPUTS.rate, 2)).toBeCloseTo(0.5, 4);
+		expect(r.last(MIXER_OUTPUTS.z, 2)).toBeCloseTo(-400, 2);
+	});
+});
+
+describe('values that are not numbers', () => {
+	test('silence a voice for as long as they last, and no longer', () => {
+		const r = rig();
+		r.mixer.receive({ type: 'add', sound: spec({ near: 1, far: 50 }) });
+		r.mixer.receive({ type: 'ready', voice: 0 });
+		r.at(0, 0, 0, -2);
+		r.run(SETTLE);
+		r.level(0, Number.POSITIVE_INFINITY);
+		r.floats[r.layout.rates] = Number.NaN;
+		r.at(0, Number.NaN, 0, 0);
+		r.run(SETTLE);
+		for (let i = 0; i < FRAMES; i++)
+			expect(Number.isFinite(r.outputs[MIXER_OUTPUTS.gain]?.[0]?.[i] as number)).toBe(true);
+		// An endless level is silence, not the loudest level.
+		expect(r.last(MIXER_OUTPUTS.gain, 0)).toBeLessThan(1e-4);
+		r.level(0, 1);
+		r.floats[r.layout.rates] = 1;
+		r.at(0, 0, 0, -2);
+		r.run(SETTLE);
+		expect(r.last(MIXER_OUTPUTS.gain, 0)).toBeCloseTo(0.5, 3);
+		expect(r.last(MIXER_OUTPUTS.rate, 0)).toBeCloseTo(1, 3);
+	});
+
+	test("keep a member out of a group's ranking", () => {
+		const r = rig();
+		r.mixer.receive({
+			type: 'add',
+			sound: spec({ kind: 'group', count: 2, voices: [0], near: 1, far: 200 }),
+		});
+		r.mixer.receive({ type: 'ready', voice: 0 });
+		r.at(0, Number.NaN, 0, 0);
+		r.at(1, 0, 0, -10);
+		r.run(SETTLE);
+		expect(Math.round(-r.last(MIXER_OUTPUTS.z, 0))).toBe(10);
+		expect(r.last(MIXER_OUTPUTS.gain, 0)).toBeCloseTo(0.1, 3);
+	});
+});
+
+describe('a sketch that was paused before the sound started', () => {
+	test('is reported as stopped, so the page can suspend the audio', () => {
+		const r = rig();
+		r.mixer.receive({ type: 'add', sound: spec({}) });
+		r.mixer.receive({ type: 'ready', voice: 0 });
+		r.run(SETTLE, true);
+		expect(r.replies).toEqual([{ type: 'idle' }]);
+	});
+});
+
+describe('a reset', () => {
+	test('drops every sound and the table', () => {
+		const r = rig();
+		r.mixer.receive({ type: 'add', sound: spec({}) });
+		r.mixer.receive({ type: 'ready', voice: 0 });
+		r.run(SETTLE);
+		r.mixer.receive({ type: 'reset' });
+		r.run(1);
+		expect(r.last(MIXER_OUTPUTS.gain, 0)).toBe(0);
 	});
 });
 

@@ -79,7 +79,10 @@ export interface SoundPlacement {
  * @category api/sound
  */
 export interface SoundLoopOptions extends SoundPlacement {
-	/** The audio file's address: an absolute address, or `new URL('./file.mp3', import.meta.url)`. */
+	/**
+	 * The audio file's address. A relative address resolves against the page's address, as the
+	 * engine's loaders do. `new URL('./file.mp3', import.meta.url)` names a file beside the sketch.
+	 */
 	file: string | URL;
 	/**
 	 * True for a sound that comes from a place, which `setPosition` moves. False for a bed that plays
@@ -138,13 +141,15 @@ export interface SoundLoop {
 	setTone(tone: number): void;
 	/** Moves the sound to a place in the world. A bed that plays in both ears ignores its place. */
 	setPosition(x: number, y: number, z: number): void;
-	/** Stops the sound, with a short fade, and frees its emitter and its voice. */
+	/** Stops the sound, with a short fade, and frees its emitter and its voice. Its setters then do nothing. */
 	destroy(): void;
 }
 
 /**
  * Many sounds that play one file, such as the engines of the cars in a street, as `sound.group`
- * makes it. Its arrays are views of the table, which a sketch may also write in bulk.
+ * makes it. Its arrays are views of the table, which a sketch may also write in bulk. They belong to
+ * the group until `destroy`: after it, the group's emitters may serve another sound, so a sketch
+ * drops the arrays with the group.
  *
  * @category api/sound
  */
@@ -213,6 +218,15 @@ export interface Sound {
 	destroy(): void;
 }
 
+/**
+ * How long a freed voice rests before another sound takes it, in seconds of sketch time: past the
+ * fade of the sound that freed it, and past the page's release of its nodes.
+ */
+const VOICE_REST = 0.3;
+
+/** The live sound system of each sketch, by its page channel, which one sketch has one of. */
+const live = new WeakMap<object, Sound>();
+
 /** The panning that a quality preset gives: the full ear model on the two heaviest presets. */
 function panningOf(preset: string): Panning {
 	return preset === 'high' || preset === 'ultra' ? 'hrtf' : 'equal-power';
@@ -226,13 +240,15 @@ function canShare(): boolean {
 	);
 }
 
-/** The absolute address of a file that a sketch names. */
+/**
+ * The address of a file that a sketch names. A URL is absolute already. A string goes to the page as
+ * it is, where a relative address resolves against the page's address, as the engine's loaders do.
+ */
 function addressOf(file: string | URL): string {
 	if (file instanceof URL) return file.href;
 	if (typeof file !== 'string' || file === '')
 		throw soundError(SOUND_CODES, 'a sound needs its file: an address string or a URL.');
-	const base = typeof location !== 'undefined' ? location.href : 'http://localhost/';
-	return new URL(file, base).href;
+	return file;
 }
 
 /** A number that a sketch gave, checked: finite, and at least `least`. */
@@ -265,6 +281,8 @@ class SoundSystem implements Sound {
 	private readonly emittersUsed: Uint8Array;
 	/** 1 for each voice that a sound owns. */
 	private readonly voicesUsed = new Uint8Array(MAX_VOICES);
+	/** The sketch time at which each voice was last freed. */
+	private readonly voiceFreedAt = new Float64Array(MAX_VOICES).fill(Number.NEGATIVE_INFINITY);
 	private readonly sounds = new Map<number, SoundSpec>();
 	private nextId = 1;
 	private link: MessagePort | null = null;
@@ -277,7 +295,7 @@ class SoundSystem implements Sound {
 	private readonly turn = new Float64Array(4);
 
 	constructor(
-		ctx: SketchContext,
+		private readonly ctx: SketchContext,
 		private readonly listener: SoundListener,
 		capacity: number,
 		volume: number,
@@ -309,7 +327,11 @@ class SoundSystem implements Sound {
 	/** Takes the page's link, and sends it the table and every sound. */
 	private connect(data: ConnectData): void {
 		if (this.destroyed) return;
-		this.link?.close();
+		if (this.link && this.link !== data.port) {
+			// Another page half asked: the one that held the link stops, rather than ask again.
+			this.send({ type: 'closed', reason: 'replaced' });
+			this.link.close();
+		}
 		this.link = data.port;
 		// Where the sketch runs on the page's thread, the page sent this very box, and reads the live
 		// table from it. Elsewhere the page got a copy of the box, and the table is shared.
@@ -340,22 +362,30 @@ class SoundSystem implements Sound {
 		);
 	}
 
-	/** Takes `count` voices in a row, or throws when the page has no such room. */
-	private takeVoices(count: number): number {
+	/**
+	 * Takes `count` free voices, wherever they sit, or throws when the page has too few. A voice
+	 * freed in the last moments rests first, so the sound it played can fade out.
+	 */
+	private takeVoices(count: number): number[] {
 		const used = this.voicesUsed;
-		let run = 0;
-		for (let v = 0; v < used.length; v++) {
-			run = used[v] === 1 ? 0 : run + 1;
-			if (run === count) {
-				const first = v - count + 1;
-				used.fill(1, first, first + count);
-				return first;
+		const now = this.ctx.time.now;
+		const taken: number[] = [];
+		// Rested voices first, then any free voice, so a sketch that needs them all still gets them.
+		for (const rested of [true, false])
+			for (let v = 0; v < used.length && taken.length < count; v++) {
+				if (used[v] === 1 || taken.includes(v)) continue;
+				if (rested && now - (this.voiceFreedAt[v] as number) < VOICE_REST) continue;
+				taken.push(v);
 			}
+		if (taken.length < count) {
+			const inUse = used.reduce((sum, value) => sum + value, 0);
+			throw soundError(
+				SOUND_CODES + 1,
+				`the sounds need ${count} more voices, and ${inUse} of the page's ${MAX_VOICES} are in use. Give groups and shots fewer voices, or destroy sounds that are no longer heard.`,
+			);
 		}
-		throw soundError(
-			SOUND_CODES + 1,
-			`the sounds need ${count} more voices in a row, and the page plays ${MAX_VOICES} at most. Give groups and shots fewer voices, or destroy sounds that are no longer heard.`,
-		);
+		for (const v of taken) used[v] = 1;
+		return taken;
 	}
 
 	/** Makes a sound's description, takes its emitters and voices, and tells the page. */
@@ -375,9 +405,9 @@ class SoundSystem implements Sound {
 		if (far > 0 && far <= near)
 			throw soundError(SOUND_CODES, `far (${far}) must be larger than near (${near}).`);
 		const first = this.takeEmitters(count);
-		let voice: number;
+		let taken: number[];
 		try {
-			voice = this.takeVoices(voices);
+			taken = this.takeVoices(voices);
 		} catch (error) {
 			this.emittersUsed.fill(0, first, first + count);
 			throw error;
@@ -393,8 +423,7 @@ class SoundSystem implements Sound {
 			file: address,
 			first,
 			count,
-			voice,
-			voices,
+			voices: taken,
 			positional,
 			near,
 			far,
@@ -414,7 +443,11 @@ class SoundSystem implements Sound {
 			this.layout.levels + sound.first + sound.count,
 		);
 		this.emittersUsed.fill(0, sound.first, sound.first + sound.count);
-		this.voicesUsed.fill(0, sound.voice, sound.voice + sound.voices);
+		const now = this.ctx.time.now;
+		for (const v of sound.voices) {
+			this.voicesUsed[v] = 0;
+			this.voiceFreedAt[v] = now;
+		}
 		this.send({ type: 'remove', id: sound.id });
 	}
 
@@ -429,23 +462,29 @@ class SoundSystem implements Sound {
 		floats[layout.places + 3 * e] = x;
 		floats[layout.places + 3 * e + 1] = y;
 		floats[layout.places + 3 * e + 2] = z;
+		// A destroyed loop's setters write nothing, since its emitter may serve the next sound.
+		let alive = true;
 		return {
 			setLevel: (level) => {
-				floats[layout.levels + e] = level;
+				if (alive) floats[layout.levels + e] = level;
 			},
 			setRate: (rate) => {
-				floats[layout.rates + e] = rate;
+				if (alive) floats[layout.rates + e] = rate;
 			},
 			setTone: (tone) => {
-				floats[layout.tones + e] = tone;
+				if (alive) floats[layout.tones + e] = tone;
 			},
 			setPosition: (px, py, pz) => {
+				if (!alive) return;
 				const at = layout.places + 3 * e;
 				floats[at] = px;
 				floats[at + 1] = py;
 				floats[at + 2] = pz;
 			},
-			destroy: () => this.free(sound),
+			destroy: () => {
+				alive = false;
+				this.free(sound);
+			},
 		};
 	}
 
@@ -460,7 +499,11 @@ class SoundSystem implements Sound {
 		const sound = this.make('group', options.file, count, Math.min(voices, count), true, options);
 		const { floats, layout } = this;
 		const first = sound.first;
+		// A destroyed group's setters write nothing, since its emitters may serve the next sound.
+		let alive = true;
+		/** The emitter of member `i`, or -1 once the group is destroyed. */
 		const index = (i: number): number => {
+			if (!alive) return -1;
 			if (!(i >= 0 && i < count))
 				throw soundError(SOUND_CODES + 3, `member ${i} is not one of the group's ${count}.`);
 			return first + i;
@@ -472,21 +515,29 @@ class SoundSystem implements Sound {
 			rates: floats.subarray(layout.rates + first, layout.rates + first + count),
 			tones: floats.subarray(layout.tones + first, layout.tones + first + count),
 			setPosition: (i, x, y, z) => {
-				const at = layout.places + 3 * index(i);
+				const e = index(i);
+				if (e < 0) return;
+				const at = layout.places + 3 * e;
 				floats[at] = x;
 				floats[at + 1] = y;
 				floats[at + 2] = z;
 			},
 			setLevel: (i, level) => {
-				floats[layout.levels + index(i)] = level;
+				const e = index(i);
+				if (e >= 0) floats[layout.levels + e] = level;
 			},
 			setRate: (i, rate) => {
-				floats[layout.rates + index(i)] = rate;
+				const e = index(i);
+				if (e >= 0) floats[layout.rates + e] = rate;
 			},
 			setTone: (i, tone) => {
-				floats[layout.tones + index(i)] = tone;
+				const e = index(i);
+				if (e >= 0) floats[layout.tones + e] = tone;
 			},
-			destroy: () => this.free(sound),
+			destroy: () => {
+				alive = false;
+				this.free(sound);
+			},
 		};
 	}
 
@@ -545,8 +596,11 @@ class SoundSystem implements Sound {
 		this.destroyed = true;
 		this.stopMessages();
 		this.stopQuality();
+		// The page drops this system's table and asks again, for a system the sketch makes next.
+		this.send({ type: 'closed', reason: 'destroyed' });
 		this.link?.close();
 		this.link = null;
+		if (live.get(this.ctx.page) === this) live.delete(this.ctx.page);
 	}
 }
 
@@ -576,5 +630,12 @@ export function createSound(ctx: SketchContext, options: SoundOptions): Sound {
 			`capacity must be a whole number from 1 to ${MAX_CAPACITY}, and got ${capacity}.`,
 		);
 	const volume = checked('volume', options.volume, 1);
-	return new SoundSystem(ctx, listener, capacity, volume);
+	if (live.has(ctx.page))
+		throw soundError(
+			SOUND_CODES + 4,
+			'this sketch has a sound system already. Make every sound with the one that createSound returned, or destroy it before making another.',
+		);
+	const system = new SoundSystem(ctx, listener, capacity, volume);
+	live.set(ctx.page, system);
+	return system;
 }
