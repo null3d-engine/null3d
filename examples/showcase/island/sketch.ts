@@ -152,6 +152,10 @@ export default defineSketch(
 			bounceRays: 0,
 			minRenderScale: 1,
 			maxRenderScale: 1,
+			// A phone's governor keeps its frame steps, but never raises the level threshold: raised,
+			// it draws a model's coarse level near the camera, and the keep's coarse level carries
+			// half its slit windows, so its towers lose their windows at the range a visitor looks.
+			governorLevels: false,
 			// The walls, the roads and the crowns are seen across the ground at a glancing angle, where a
 			// texture without anisotropy blurs into its own average.
 			maxAnisotropy: 16,

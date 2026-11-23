@@ -274,6 +274,7 @@ describe('SketchQuality.lower', () => {
 			softwareOcclusion: low.softwareOcclusion,
 			parallax: low.parallax,
 			governor: true,
+			governorLevels: low.governorLevels,
 			maxAnisotropy: 16,
 			textureMemoryMiB: low.textureMemoryMiB,
 			uploadBytesPerFrame: MEDIUM.uploadBytesPerFrame,
@@ -361,6 +362,7 @@ describe('SketchQuality.setPreset', () => {
 			'cloudSteps',
 			'softwareOcclusion',
 			'governor',
+			'governorLevels',
 			'lodShadowThreshold',
 			'depthPrepass',
 		];

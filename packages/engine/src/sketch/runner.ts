@@ -1180,6 +1180,7 @@ export class SketchRunner {
 		this.heldScale = high;
 		const { governor } = this;
 		governor.setOn(settings.governor);
+		governor.setLevelSteps(settings.governorLevels);
 		governor.setRange(low, high);
 		this.followMovers = settings.followMovingCasters;
 		this.cascadeBlend = settings.shadowCascadeBlend;

@@ -393,6 +393,8 @@ export class Governor {
 	private animationSetting: number = LONGEST_ANIMATION_INTERVAL;
 	/** True while the scene draws a mesh with levels of detail, which the detail steps need. */
 	private levels = false;
+	/** False keeps the level threshold out of the steps, so a model stays whole near the camera. */
+	private levelSteps = true;
 	/** The steps that the sketch's budgets allow: those to the lowest of their floors. */
 	private budgetSteps = 0;
 
@@ -1007,9 +1009,16 @@ export class Governor {
 		this.applySteps();
 	}
 
-	/** The detail steps while the scene draws a mesh with levels of detail. */
+	/** The detail steps while the scene draws a mesh with levels of detail and the scene allows them. */
 	private detailSteps(): number {
-		return this.levels ? DETAIL_STEPS : 0;
+		return this.levels && this.levelSteps ? DETAIL_STEPS : 0;
+	}
+
+	/** Allows or holds the level threshold's steps, and keeps the steps taken within them. */
+	setLevelSteps(on: boolean): void {
+		if (on === this.levelSteps) return;
+		this.levelSteps = on;
+		this.applySteps();
 	}
 
 	/**
