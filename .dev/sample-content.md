@@ -30,6 +30,7 @@ On the owner's Mac, the first fetch of 540 files (183 MB) took 8.7 seconds. A fe
 | The island's stone pines, olives, holm oaks and oleanders (`sources/showcase/island/`), built by script in Blender | The island showcase scene |
 | Dok11's drone scan of Bolton Priory (`sources/splats/bolton-priory/`): 1,710,551 Gaussian splats, as the SOG file that SuperSplat publishes | The source of the splat stream below |
 | The same scan as a splat stream (`sources/splats/bolton-priory-stream/`): an index and 84 SPZ chunk files, 27.6 MB, made by script | The Gaussian splats demo, and a real scan for the splats add-on's devices |
+| 13 field recordings from Freesound (`sources/sound/raw/`), and the loops and one-shots cut from them by script (`sources/sound/loops/`) | The sound add-on and the positional sound of the island, the Creek garden and Skyway |
 
 No Khronos model under an accepted licence uses `EXT_meshopt_compression`. So `tests/lib/meshopt-fixtures.ts` compresses SimpleInstancing (CC0) with gltfpack 1.3, `-cc -ce ext`, into `tests/pages/assets/models/simple-instancing-meshopt.glb`. `bun tests/lib/meshopt-fixtures.ts` writes it again. A unit test checks that the committed file matches what gltfpack builds. [D-34](decisions/D-34-meshopt-decoding.md) records why. The sample content's one Draco model, RiggedSimple, has no texture coordinates. So `tests/lib/draco-fixtures.ts` compresses TextureCoordinateTest (CC0) with Draco's own encoder through glTF-Transform, into `tests/pages/assets/models/texture-coordinates-draco.glb`. A unit test checks that file the same way ([D-112](decisions/D-112-draco-decoding.md)). Small fixtures, such as one glTF file per extension and malformed files, stay in this repository beside their tests. So do the image test references. Khronos's AnisotropyStrengthTest is one: its `glTF-Binary` file is 94,444 bytes and under CC0 by Ed Mackey, so the image tests keep it at `tests/pages/assets/models/sources/khronos/AnisotropyStrengthTest/`, beside the two animation-pointer samples that are kept the same way.  The same holds for Khronos's TextureLinearInterpolationTest: 13,468 bytes under CC0, at `tests/pages/assets/models/sources/khronos/TextureLinearInterpolationTest/`. Its scene checks that a texture samples linearly after its texels decode, a fault that no synthetic scene caught. Khronos's DispersionTest is another: its `glTF-Binary` file is 2,310,944 bytes, SHA-256 `bbac38386632b5a7a27289737963314c2f92095074dfdf0e8c0c1c25270b3e37`, and under CC BY 4.0 by AGI, so the image tests keep it at `tests/pages/assets/models/sources/khronos/DispersionTest/`. Each is the Khronos original, byte for byte.
 
@@ -128,6 +129,48 @@ The Creek's trees file takes 4,198 KB, its plants file 486 KB, its cave file 784
 
 An island plant's card is two upright quads crossed through its trunk and a level quad at two thirds of its crown's height. Cycles renders the plant from the side and from above onto a transparent film, with each surface's own color and no light, so the engine lights the card once. The views fill the card's atlas, the side on the left and the top on the right. Each quad carries its own back face, so the card's material draws one side. A two-sided material would turn the back's normals inward, and half of every card would light dark. The scene hands each plant over from its meshes to its card past a distance that its preset sets.
 
+## Sound loops cut by script
+
+The sound add-on's demos play beds of wind, water, rain and a city, short engine loops for sources that move, and two thunder one-shots. Each comes from a field recording on Freesound under CC0 or CC BY. A script in this repository cuts each recording into a loop or a one-shot. The sample-assets repository keeps both the recording and the result.
+
+Freesound serves an original upload only to a signed-in account. It serves a high-quality preview to anyone: Ogg Vorbis at about 190 kbps. Each raw recording in `sources/sound/raw/<sound>/` is that preview, with the origin kind `files`, so the import script can download it again. Each output in `sources/sound/loops/<sound>/<sound>.mp3` has the origin kind `converted`, which names the script and the recording it reads.
+
+| Script | Builds |
+| --- | --- |
+| `tools/samples/sound/loops.ts` | Every loop and one-shot from its raw recording. The cut, the filters, the fade and the loudness of each sound are data in the script. A change to a sound is a reviewed change to code |
+
+Build them with `bun tools/samples/sound/loops.ts <folder>`. It needs ffmpeg with libmp3lame, on the path or where `FFMPEG` names it, and takes about a minute. It reads the raw recordings from the pinned sample content, or from the folder that `--raw <folder>` names. That may be the `sources/sound/raw` folder of a sample-assets checkout whose commit is not pinned yet. The option `--only <a,b>` builds only those sounds. The option `--spectra <folder>` also writes a spectrum picture of each output there. For each sound, the script:
+
+1. Cuts its stretch of the recording, filters it, resamples it to 48 kHz, and mixes a point source to mono. A gentle high-pass takes out rumble where the recording has it.
+2. Joins a loop's end to its start. The cut runs one fade longer than the loop, and that tail fades out over the head with equal power. So the loop's last sample runs on into its first. A bed's fade takes 2 s and an engine's 0.4 s. A one-shot fades out at its end instead.
+3. Sets a gain that brings a loop to -20 LUFS integrated and a one-shot to -16 LUFS. A lookahead limiter holds the true peak at -1 dBTP or under where the peaks need it. A loop goes through the limiter as three copies and keeps the middle one, so the limiter runs on across the seam.
+4. Encodes VBR MP3 with libmp3lame, at about 130 kbps in stereo and 65 to 85 kbps in mono. The encoder writes a file, not a pipe, so it can fill in the LAME header. That header records the encoder's delay and padding.
+5. Decodes the MP3 again and checks it. The length must match, and the loudness and true peak must meet their targets. The sound add-on trims quiet samples at each end as codec padding. So no loop may start or end below that level, and no one-shot may start below it. At a loop's seam, the step between neighbouring samples must stay under half the largest step inside it. The build stops on a failure, and prints each sound's figures.
+
+To publish them:
+
+1. In the sample-assets repository, add the raw recording's entry and run `bun scripts/import.ts sound/raw/<sound>`.
+2. Build the outputs into that checkout's `sources/sound/loops` folder, with `--raw` naming its `sources/sound/raw` folder. Run `bun scripts/manifest.ts --write` there.
+3. Commit, push, and pin the commit here, as "Add or change an asset" says.
+
+| Sound | What it plays | Length | Channels | Size |
+| --- | --- | --- | --- | --- |
+| `wind` | Steady wind through grass on open ground | 40 s loop | Stereo | 645 KB |
+| `leaves` | Pine needles rustling in a steady wind, a few meters away | 30 s loop | Stereo | 480 KB |
+| `sea` | The open sea from a clifftop: a low swell and a distant wash | 45 s loop | Stereo | 642 KB |
+| `surf` | Waves breaking and washing up a beach, about seven wave cycles | 45 s loop | Stereo | 684 KB |
+| `car` | A compact car's petrol engine held at 2,000 rpm, from outside | 6 s loop | Mono | 59 KB |
+| `bus` | A coach's diesel engine at idle, from outside | 6 s loop | Mono | 62 KB |
+| `stream` | A small river gurgling over stones, close | 30 s loop | Stereo | 466 KB |
+| `waterfall` | A waterfall's steady roar | 30 s loop | Stereo | 428 KB |
+| `hover` | A designed hover engine's steady hum | 6 s loop | Mono | 48 KB |
+| `rain` | Light rain on a city street at night | 40 s loop | Stereo | 673 KB |
+| `thunder-near` | A close clap of thunder and its roll | 11.5 s one-shot | Stereo | 145 KB |
+| `thunder-far` | Distant thunder rolling | 12 s one-shot | Stereo | 155 KB |
+| `city` | A quiet city evening: far traffic and the air of the streets | 45 s loop | Stereo | 672 KB |
+
+The outputs take 5.3 MB, and the raw recordings 20.7 MB. The car and the bus are engines held at one speed: a car at 2,000 rpm and a coach at idle. A car that drives past a microphone changes in level and pitch, so its recording does not loop. The demos set an engine's speed with the playback rate.
+
 ## The sample check
 
 `bun run test` runs `tools/lib/samples.test.ts`. It finds every `samplePath` and `sampleUrl` call in `tests/`, `bench/`, `examples/`, `tools/` and `packages/`. For each named file, it checks that the pinned manifest lists the file with a SHA-256. It also checks that the file's asset is under CC0 or CC BY, with its authors, title, source link, fetch date and changes. The one exception is CC BY-NC, which the check accepts only on an asset that names its `generator`. The sample-assets repository's own check makes its README tables match its manifest, so each pinned asset also has its row in that README.
@@ -137,7 +180,7 @@ An island plant's card is two upright quads crossed through its trunk and a leve
 1. In the sample-assets repository, follow its README: add the asset's entry to `manifest.json`, run `bun scripts/import.ts <asset id>`, then `bun scripts/manifest.ts --write`, then `bun scripts/manifest.ts`.
 2. Accept CC0 and CC BY. Leave out an asset whose licence is non-commercial, no-derivatives or unclear, and add it to the list of assets left out below, with the reason. The sample-assets README lists only the assets it holds.
    The one exception is a model that a generative service made, such as Tripo3D, or a model finished from one. The service's terms bar some commercial uses of its outputs, so the model is under CC BY-NC 4.0. Its manifest entry names the service in `generator`. The check refuses CC BY-NC on an entry without one, here and in the sample-assets repository. So the licence never spreads to an asset that it was not meant for.
-3. Keep each file under 40 MB and each image within 2048 x 2048, which the asset tool's encoder takes. Keep the sources near 400 MB in all. They are 272 MB at the pinned commit, and the Creek garden's models add about 100 MB.
+3. Keep each file under 40 MB and each image within 2048 x 2048, which the asset tool's encoder takes. Keep the sources near 400 MB in all. They are 376 MB at the pinned commit.
 4. Commit and push in the sample-assets repository, and wait for its check to pass.
 5. Here, run `bun run samples:fetch --pin main`, or give a commit. It copies that commit's manifest, records the commit in the lock, and fetches it. Commit `tools/samples/lock.json` and `tools/samples/manifest.json` together.
 
@@ -152,10 +195,11 @@ Well-known sample models that may not go into the sample-assets repository, and 
 | CesiumMan, CompareBaseColor (Khronos) | They carry logos under trademark terms beyond CC BY. RiggedFigure and Fox cover the same skinning cases |
 | DragonAttenuation (Khronos) | The dragon is under the Stanford Graphics licence, which is not CC0 or CC BY |
 | Larger Khronos showcase models | No test needs them, and they would add size |
+| Freesound sounds whose rights are unclear: transfers of studio effects libraries by someone other than their owner, sounds built from sources under custom licences, and sounds whose page adds terms to CC0 | Their licence may not be the uploader's to give |
 
 ## Why a separate repository and a download script
 
-- Size. The sources are 272 MB, and the processed files will add 110 to 170 MB for each version of the encoders. In this repository, they would slow every clone for people, CI and agents.
+- Size. The sources are 376 MB, and the processed files will add 110 to 170 MB for each version of the encoders. In this repository, they would slow every clone for people, CI and agents.
 - Not Git LFS. GitHub's free plan gives 10 GiB of LFS downloads a month, and CI's downloads count. One CI fetch of about 150 MB uses 1.5% of that, so about 65 fetches would use it all. No file is near GitHub's block at 100 MiB, so plain git holds the files well.
 - Not a submodule. Each worktree would need its own checkout of the sources, and this team runs many worktrees at once. CI would need its own submodule step and cache. The download script keeps one checked copy per machine, keyed by commit, and works the same way in CI.
 - Not an npm package. Every version would stay in the registry for good, and the files would land in each worktree's `node_modules`.

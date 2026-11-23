@@ -7097,6 +7097,773 @@
 					"sha256": "8b3c6efa646174755186b2f1d1949d059676c4854873752356bde8660947880f"
 				}
 			]
+		},
+		{
+			"id": "sound/raw/wind",
+			"title": "wind medium blustery whips through grass stalks.flac",
+			"purpose": "The recording that the wind loop is cut from: wind blowing through grass stalks on open ground",
+			"authors": [
+				{
+					"name": "kyles"
+				}
+			],
+			"license": [
+				"CC0-1.0"
+			],
+			"source": "https://freesound.org/people/kyles/sounds/454362/",
+			"fetched": "2026-11-23",
+			"changes": "None to the sound. The file is the high-quality Ogg Vorbis preview, about 190 kbps, that Freesound serves without an account: a lossy copy of the original WAV upload, saved as kyles-454362.ogg.",
+			"dir": "sources/sound/raw/wind",
+			"origin": {
+				"kind": "files",
+				"files": {
+					"https://cdn.freesound.org/previews/454/454362_612689-hq.ogg": "kyles-454362.ogg"
+				}
+			},
+			"files": [
+				{
+					"path": "sources/sound/raw/wind/kyles-454362.ogg",
+					"bytes": 3194909,
+					"sha256": "70c1819161cbe78ab14377406a301b906d8e5074cb0f015b997dcb0e4fc40709"
+				}
+			]
+		},
+		{
+			"id": "sound/raw/leaves",
+			"title": "Wind_pine.wav",
+			"purpose": "The recording that the leaves loop is cut from: a strong wind in the branches of a pine tree",
+			"authors": [
+				{
+					"name": "sinewave1kHz"
+				}
+			],
+			"license": [
+				"CC0-1.0"
+			],
+			"source": "https://freesound.org/people/sinewave1kHz/sounds/202989/",
+			"fetched": "2026-11-23",
+			"changes": "None to the sound. The file is the high-quality Ogg Vorbis preview, about 190 kbps, that Freesound serves without an account: a lossy copy of the original WAV upload, saved as sinewave1khz-202989.ogg.",
+			"dir": "sources/sound/raw/leaves",
+			"origin": {
+				"kind": "files",
+				"files": {
+					"https://cdn.freesound.org/previews/202/202989_1667744-hq.ogg": "sinewave1khz-202989.ogg"
+				}
+			},
+			"files": [
+				{
+					"path": "sources/sound/raw/leaves/sinewave1khz-202989.ogg",
+					"bytes": 2081518,
+					"sha256": "b23d29cf7f4561b7600b0bfcede0c0f2bea8b586f7f9b848a7f0301f539d8cd8"
+				}
+			]
+		},
+		{
+			"id": "sound/raw/sea",
+			"title": "11ft waves breaking on sandy beach in the distance from the top of the cliff",
+			"purpose": "The recording that the sea loop is cut from: heavy waves breaking out at sea, heard from the top of a cliff",
+			"authors": [
+				{
+					"name": "chris_dagorne"
+				}
+			],
+			"license": [
+				"CC0-1.0"
+			],
+			"source": "https://freesound.org/people/chris_dagorne/sounds/426074/",
+			"fetched": "2026-11-23",
+			"changes": "None to the sound. The file is the high-quality Ogg Vorbis preview, about 190 kbps, that Freesound serves without an account: a lossy copy of the original WAV upload, saved as chris-dagorne-426074.ogg.",
+			"dir": "sources/sound/raw/sea",
+			"origin": {
+				"kind": "files",
+				"files": {
+					"https://cdn.freesound.org/previews/426/426074_3380363-hq.ogg": "chris-dagorne-426074.ogg"
+				}
+			},
+			"files": [
+				{
+					"path": "sources/sound/raw/sea/chris-dagorne-426074.ogg",
+					"bytes": 1234424,
+					"sha256": "b6936295625dc88f219902d815af3db9719c159a6b27b429f09b2d1714297ff7"
+				}
+			]
+		},
+		{
+			"id": "sound/raw/surf",
+			"title": "Waves of Hawaii",
+			"purpose": "The recording that the surf loop is cut from: waves breaking on a beach in Hawaii",
+			"authors": [
+				{
+					"name": "florianreichelt"
+				}
+			],
+			"license": [
+				"CC0-1.0"
+			],
+			"source": "https://freesound.org/people/florianreichelt/sounds/450755/",
+			"fetched": "2026-11-23",
+			"changes": "None to the sound. The file is the high-quality Ogg Vorbis preview, about 190 kbps, that Freesound serves without an account: a lossy copy of the original WAV upload, saved as florianreichelt-450755.ogg.",
+			"dir": "sources/sound/raw/surf",
+			"origin": {
+				"kind": "files",
+				"files": {
+					"https://cdn.freesound.org/previews/450/450755_6253486-hq.ogg": "florianreichelt-450755.ogg"
+				}
+			},
+			"files": [
+				{
+					"path": "sources/sound/raw/surf/florianreichelt-450755.ogg",
+					"bytes": 1811381,
+					"sha256": "1d830733524c2d7f9e4424d52ab68ebfd9c68fa40a85305ce8e17fe601e82c2e"
+				}
+			]
+		},
+		{
+			"id": "sound/raw/car",
+			"title": "VEHEngi-HYUNDAI KONA_Engine Static 2000Rpm Exterior 01_KVV AUDIO_FREE",
+			"purpose": "The recording that the car loop is cut from: a Hyundai Kona's engine held at 2,000 rpm, recorded from outside",
+			"authors": [
+				{
+					"name": "KVV_Audio"
+				}
+			],
+			"license": [
+				"CC-BY-4.0"
+			],
+			"source": "https://freesound.org/people/KVV_Audio/sounds/845607/",
+			"fetched": "2026-11-23",
+			"changes": "None to the sound. The file is the high-quality Ogg Vorbis preview, about 190 kbps, that Freesound serves without an account: a lossy copy of the original WAV upload, saved as kvv-audio-845607.ogg.",
+			"dir": "sources/sound/raw/car",
+			"origin": {
+				"kind": "files",
+				"files": {
+					"https://cdn.freesound.org/previews/845/845607_12846320-hq.ogg": "kvv-audio-845607.ogg"
+				}
+			},
+			"files": [
+				{
+					"path": "sources/sound/raw/car/kvv-audio-845607.ogg",
+					"bytes": 282839,
+					"sha256": "8f07fde1405c43c587a09b5d7e8c316d97997844f41cd0d7243ece8babbd8982"
+				}
+			]
+		},
+		{
+			"id": "sound/raw/bus",
+			"title": "bus coach ext idle.wav",
+			"purpose": "The recording that the bus loop is cut from: a coach's diesel engine at idle, recorded from outside",
+			"authors": [
+				{
+					"name": "kyles"
+				}
+			],
+			"license": [
+				"CC0-1.0"
+			],
+			"source": "https://freesound.org/people/kyles/sounds/454419/",
+			"fetched": "2026-11-23",
+			"changes": "None to the sound. The file is the high-quality Ogg Vorbis preview, about 190 kbps, that Freesound serves without an account: a lossy copy of the original WAV upload, saved as kyles-454419.ogg.",
+			"dir": "sources/sound/raw/bus",
+			"origin": {
+				"kind": "files",
+				"files": {
+					"https://cdn.freesound.org/previews/454/454419_612689-hq.ogg": "kyles-454419.ogg"
+				}
+			},
+			"files": [
+				{
+					"path": "sources/sound/raw/bus/kyles-454419.ogg",
+					"bytes": 1181914,
+					"sha256": "4ce3c2fe25b47d32ef7d8a5f6390171355eaf201df77711825e7fb0238bdc72e"
+				}
+			]
+		},
+		{
+			"id": "sound/raw/stream",
+			"title": "RIVER gurgling detailed.wav",
+			"purpose": "The recording that the stream loop is cut from: a small river gurgling, recorded close from a bridge",
+			"authors": [
+				{
+					"name": "nicoproson"
+				}
+			],
+			"license": [
+				"CC0-1.0"
+			],
+			"source": "https://freesound.org/people/nicoproson/sounds/642776/",
+			"fetched": "2026-11-23",
+			"changes": "None to the sound. The file is the high-quality Ogg Vorbis preview, about 190 kbps, that Freesound serves without an account: a lossy copy of the original WAV upload, saved as nicoproson-642776.ogg.",
+			"dir": "sources/sound/raw/stream",
+			"origin": {
+				"kind": "files",
+				"files": {
+					"https://cdn.freesound.org/previews/642/642776_457982-hq.ogg": "nicoproson-642776.ogg"
+				}
+			},
+			"files": [
+				{
+					"path": "sources/sound/raw/stream/nicoproson-642776.ogg",
+					"bytes": 1803980,
+					"sha256": "2a0518aa6cb18f626ba82943bb46cf4271e77c6620db2666172fcdd02313b744"
+				}
+			]
+		},
+		{
+			"id": "sound/raw/waterfall",
+			"title": "Þingvellir waterfall hard 2.wav",
+			"purpose": "The recording that the waterfall loop is cut from: a waterfall at Þingvellir in Iceland",
+			"authors": [
+				{
+					"name": "dikolson"
+				}
+			],
+			"license": [
+				"CC0-1.0"
+			],
+			"source": "https://freesound.org/people/dikolson/sounds/130231/",
+			"fetched": "2026-11-23",
+			"changes": "None to the sound. The file is the high-quality Ogg Vorbis preview, about 190 kbps, that Freesound serves without an account: a lossy copy of the original WAV upload, saved as dikolson-130231.ogg.",
+			"dir": "sources/sound/raw/waterfall",
+			"origin": {
+				"kind": "files",
+				"files": {
+					"https://cdn.freesound.org/previews/130/130231_865981-hq.ogg": "dikolson-130231.ogg"
+				}
+			},
+			"files": [
+				{
+					"path": "sources/sound/raw/waterfall/dikolson-130231.ogg",
+					"bytes": 1862309,
+					"sha256": "60f7968fbcf4bc050ac5b9ab46683ba266acb04d8d0bf8fbe299476283ad370c"
+				}
+			]
+		},
+		{
+			"id": "sound/raw/hover",
+			"title": "Hover engine",
+			"purpose": "The recording that the hover loop is cut from: a designed anti-gravity hover engine that starts, hums and stops, made from recordings of a spinning hard drive, a vacuum cleaner and a fridge",
+			"authors": [
+				{
+					"name": "peridactyloptrix"
+				}
+			],
+			"license": [
+				"CC0-1.0"
+			],
+			"source": "https://freesound.org/people/peridactyloptrix/sounds/213384/",
+			"fetched": "2026-11-23",
+			"changes": "None to the sound. The file is the high-quality Ogg Vorbis preview, about 190 kbps, that Freesound serves without an account: a lossy copy of the original WAV upload, saved as peridactyloptrix-213384.ogg.",
+			"dir": "sources/sound/raw/hover",
+			"origin": {
+				"kind": "files",
+				"files": {
+					"https://cdn.freesound.org/previews/213/213384_2737063-hq.ogg": "peridactyloptrix-213384.ogg"
+				}
+			},
+			"files": [
+				{
+					"path": "sources/sound/raw/hover/peridactyloptrix-213384.ogg",
+					"bytes": 749125,
+					"sha256": "3801007d36c0617486c26b8ab7f9b76d83a98af30983731ff4a55ddc924e711b"
+				}
+			]
+		},
+		{
+			"id": "sound/raw/rain",
+			"title": "Light rain on street.wav",
+			"purpose": "The recording that the rain loop is cut from: light rain on a city street at night, from an open window",
+			"authors": [
+				{
+					"name": "BonnyOrbit"
+				}
+			],
+			"license": [
+				"CC0-1.0"
+			],
+			"source": "https://freesound.org/people/BonnyOrbit/sounds/380651/",
+			"fetched": "2026-11-23",
+			"changes": "None to the sound. The file is the high-quality Ogg Vorbis preview, about 190 kbps, that Freesound serves without an account: a lossy copy of the original WAV upload, saved as bonnyorbit-380651.ogg.",
+			"dir": "sources/sound/raw/rain",
+			"origin": {
+				"kind": "files",
+				"files": {
+					"https://cdn.freesound.org/previews/380/380651_5902878-hq.ogg": "bonnyorbit-380651.ogg"
+				}
+			},
+			"files": [
+				{
+					"path": "sources/sound/raw/rain/bonnyorbit-380651.ogg",
+					"bytes": 2657188,
+					"sha256": "050a42ecf164f0dfda72e409d035e15bd9051d96cbc1b1a37988b1c21345995e"
+				}
+			]
+		},
+		{
+			"id": "sound/raw/thunder-near",
+			"title": "Thunder, Close",
+			"purpose": "The recording that the thunder-near one-shot is cut from: a short, close clap of thunder without rain",
+			"authors": [
+				{
+					"name": "Fission9"
+				}
+			],
+			"license": [
+				"CC0-1.0"
+			],
+			"source": "https://freesound.org/people/Fission9/sounds/505113/",
+			"fetched": "2026-11-23",
+			"changes": "None to the sound. The file is the high-quality Ogg Vorbis preview, about 190 kbps, that Freesound serves without an account: a lossy copy of the original WAV upload, saved as fission9-505113.ogg.",
+			"dir": "sources/sound/raw/thunder-near",
+			"origin": {
+				"kind": "files",
+				"files": {
+					"https://cdn.freesound.org/previews/505/505113_9395330-hq.ogg": "fission9-505113.ogg"
+				}
+			},
+			"files": [
+				{
+					"path": "sources/sound/raw/thunder-near/fission9-505113.ogg",
+					"bytes": 392634,
+					"sha256": "850c4bf83a258a53909208aa2d516c9d6520edd06a5d6ee74335122282877a7a"
+				}
+			]
+		},
+		{
+			"id": "sound/raw/thunder-far",
+			"title": "thunder",
+			"purpose": "The recording that the thunder-far one-shot is cut from: a binaural recording of a series of thunder claps and rumbles",
+			"authors": [
+				{
+					"name": "hifijohn"
+				}
+			],
+			"license": [
+				"CC0-1.0"
+			],
+			"source": "https://freesound.org/people/hifijohn/sounds/242735/",
+			"fetched": "2026-11-23",
+			"changes": "None to the sound. The file is the high-quality Ogg Vorbis preview, about 190 kbps, that Freesound serves without an account: a lossy copy of the original WAV upload, saved as hifijohn-242735.ogg.",
+			"dir": "sources/sound/raw/thunder-far",
+			"origin": {
+				"kind": "files",
+				"files": {
+					"https://cdn.freesound.org/previews/242/242735_1897685-hq.ogg": "hifijohn-242735.ogg"
+				}
+			},
+			"files": [
+				{
+					"path": "sources/sound/raw/thunder-far/hifijohn-242735.ogg",
+					"bytes": 1304220,
+					"sha256": "47a877745226f60b98b6a9e5876a302425f6820419b2d8e0dbe00ff12490f3a4"
+				}
+			]
+		},
+		{
+			"id": "sound/raw/city",
+			"title": "CityNoise_Soft_48k.wav",
+			"purpose": "The recording that the city loop is cut from: a quiet evening in the east of Amsterdam, with street noises in the far distance",
+			"authors": [
+				{
+					"name": "MirkaElina"
+				}
+			],
+			"license": [
+				"CC0-1.0"
+			],
+			"source": "https://freesound.org/people/MirkaElina/sounds/444660/",
+			"fetched": "2026-11-23",
+			"changes": "None to the sound. The file is the high-quality Ogg Vorbis preview, about 190 kbps, that Freesound serves without an account: a lossy copy of the original WAV upload, saved as mirkaelina-444660.ogg.",
+			"dir": "sources/sound/raw/city",
+			"origin": {
+				"kind": "files",
+				"files": {
+					"https://cdn.freesound.org/previews/444/444660_4213224-hq.ogg": "mirkaelina-444660.ogg"
+				}
+			},
+			"files": [
+				{
+					"path": "sources/sound/raw/city/mirkaelina-444660.ogg",
+					"bytes": 2105451,
+					"sha256": "1f52ff4c6391e33e72060f7e09a0b59a1464acc10315918d8771d59af5dfe5da"
+				}
+			]
+		},
+		{
+			"id": "sound/loops/wind",
+			"title": "Wind loop",
+			"purpose": "A seamless stereo bed of steady wind over open grass, for the sound add-on and its demos",
+			"authors": [
+				{
+					"name": "kyles"
+				}
+			],
+			"license": [
+				"CC0-1.0"
+			],
+			"source": "https://freesound.org/people/kyles/sounds/454362/",
+			"fetched": "2026-11-23",
+			"changes": "Cut from sound/raw/wind by tools/samples/sound/loops.ts in the engine repository: 40 s from 0:46; a 150 Hz high-pass; resampled to 48 kHz; its tail crossfaded into its head over 2 s with equal power, so it loops without a seam; brought to -20 LUFS integrated; encoded as VBR MP3 by libmp3lame at quality 5.",
+			"dir": "sources/sound/loops/wind",
+			"origin": {
+				"kind": "converted",
+				"script": "https://github.com/null3d-engine/null3d/blob/main/tools/samples/sound/loops.ts",
+				"from": "sound/raw/wind"
+			},
+			"files": [
+				{
+					"path": "sources/sound/loops/wind/wind.mp3",
+					"bytes": 660860,
+					"sha256": "17fe1711246143262940e2a4673f7f28059413aa2cdd886ee143ee9405511ae6"
+				}
+			]
+		},
+		{
+			"id": "sound/loops/leaves",
+			"title": "Leaves loop",
+			"purpose": "A seamless stereo bed of pine needles rustling in a steady wind, a few metres away",
+			"authors": [
+				{
+					"name": "sinewave1kHz"
+				}
+			],
+			"license": [
+				"CC0-1.0"
+			],
+			"source": "https://freesound.org/people/sinewave1kHz/sounds/202989/",
+			"fetched": "2026-11-23",
+			"changes": "Cut from sound/raw/leaves by tools/samples/sound/loops.ts in the engine repository: 30 s from 0:26; a 80 Hz high-pass; resampled to 48 kHz; its tail crossfaded into its head over 2 s with equal power, so it loops without a seam; brought to -20 LUFS integrated; encoded as VBR MP3 by libmp3lame at quality 5.",
+			"dir": "sources/sound/loops/leaves",
+			"origin": {
+				"kind": "converted",
+				"script": "https://github.com/null3d-engine/null3d/blob/main/tools/samples/sound/loops.ts",
+				"from": "sound/raw/leaves"
+			},
+			"files": [
+				{
+					"path": "sources/sound/loops/leaves/leaves.mp3",
+					"bytes": 491228,
+					"sha256": "51a7c4f1a049f98754e61717e3179c3740145b6f99cb1d502a77a9e535fc73bb"
+				}
+			]
+		},
+		{
+			"id": "sound/loops/sea",
+			"title": "Sea loop",
+			"purpose": "A seamless stereo bed of the open sea heard from a clifftop: a low swell and a distant wash",
+			"authors": [
+				{
+					"name": "chris_dagorne"
+				}
+			],
+			"license": [
+				"CC0-1.0"
+			],
+			"source": "https://freesound.org/people/chris_dagorne/sounds/426074/",
+			"fetched": "2026-11-23",
+			"changes": "Cut from sound/raw/sea by tools/samples/sound/loops.ts in the engine repository: 45 s from 0:12; a 30 Hz high-pass; resampled to 48 kHz; its tail crossfaded into its head over 2 s with equal power, so it loops without a seam; brought to -20 LUFS integrated; encoded as VBR MP3 by libmp3lame at quality 5.",
+			"dir": "sources/sound/loops/sea",
+			"origin": {
+				"kind": "converted",
+				"script": "https://github.com/null3d-engine/null3d/blob/main/tools/samples/sound/loops.ts",
+				"from": "sound/raw/sea"
+			},
+			"files": [
+				{
+					"path": "sources/sound/loops/sea/sea.mp3",
+					"bytes": 657884,
+					"sha256": "6c8e40711f3b044b8bc1a0fc5c06d16f7688cce972faf34133b4f58675784a0c"
+				}
+			]
+		},
+		{
+			"id": "sound/loops/surf",
+			"title": "Surf loop",
+			"purpose": "A seamless stereo bed of waves breaking and washing up a beach, with about seven wave cycles",
+			"authors": [
+				{
+					"name": "florianreichelt"
+				}
+			],
+			"license": [
+				"CC0-1.0"
+			],
+			"source": "https://freesound.org/people/florianreichelt/sounds/450755/",
+			"fetched": "2026-11-23",
+			"changes": "Cut from sound/raw/surf by tools/samples/sound/loops.ts in the engine repository: 45 s from 0:30; a 40 Hz high-pass; resampled to 48 kHz; its tail crossfaded into its head over 2 s with equal power, so it loops without a seam; brought to -20 LUFS integrated; encoded as VBR MP3 by libmp3lame at quality 5.",
+			"dir": "sources/sound/loops/surf",
+			"origin": {
+				"kind": "converted",
+				"script": "https://github.com/null3d-engine/null3d/blob/main/tools/samples/sound/loops.ts",
+				"from": "sound/raw/surf"
+			},
+			"files": [
+				{
+					"path": "sources/sound/loops/surf/surf.mp3",
+					"bytes": 700508,
+					"sha256": "7b3a85dab05f83c93c00c59af89b2d3fb9ede11081d68de0756ceb3d8c778322"
+				}
+			]
+		},
+		{
+			"id": "sound/loops/car",
+			"title": "Car engine loop",
+			"purpose": "A short seamless mono loop of a compact car's petrol engine at a steady 2,000 rpm, heard from outside, for a positional source whose playback rate follows its speed",
+			"authors": [
+				{
+					"name": "KVV_Audio"
+				}
+			],
+			"license": [
+				"CC-BY-4.0"
+			],
+			"source": "https://freesound.org/people/KVV_Audio/sounds/845607/",
+			"fetched": "2026-11-23",
+			"changes": "Cut from sound/raw/car by tools/samples/sound/loops.ts in the engine repository: 6 s from 0:05; mixed to mono; a 30 Hz high-pass; resampled to 48 kHz; its tail crossfaded into its head over 0.4 s with equal power, so it loops without a seam; brought to -20 LUFS integrated; encoded as VBR MP3 by libmp3lame at quality 4.",
+			"dir": "sources/sound/loops/car",
+			"origin": {
+				"kind": "converted",
+				"script": "https://github.com/null3d-engine/null3d/blob/main/tools/samples/sound/loops.ts",
+				"from": "sound/raw/car"
+			},
+			"files": [
+				{
+					"path": "sources/sound/loops/car/car.mp3",
+					"bytes": 60476,
+					"sha256": "3858c686989bce4b27e8ef8b20f8d5e342b95939862f182f10d4c455dd918dd6"
+				}
+			]
+		},
+		{
+			"id": "sound/loops/bus",
+			"title": "Bus engine loop",
+			"purpose": "A short seamless mono loop of a coach's diesel engine at idle, heard from outside, for a positional source",
+			"authors": [
+				{
+					"name": "kyles"
+				}
+			],
+			"license": [
+				"CC0-1.0"
+			],
+			"source": "https://freesound.org/people/kyles/sounds/454419/",
+			"fetched": "2026-11-23",
+			"changes": "Cut from sound/raw/bus by tools/samples/sound/loops.ts in the engine repository: 6 s from 0:20; mixed to mono; a 30 Hz high-pass; resampled to 48 kHz; its tail crossfaded into its head over 0.4 s with equal power, so it loops without a seam; brought to -20 LUFS integrated; encoded as VBR MP3 by libmp3lame at quality 4.",
+			"dir": "sources/sound/loops/bus",
+			"origin": {
+				"kind": "converted",
+				"script": "https://github.com/null3d-engine/null3d/blob/main/tools/samples/sound/loops.ts",
+				"from": "sound/raw/bus"
+			},
+			"files": [
+				{
+					"path": "sources/sound/loops/bus/bus.mp3",
+					"bytes": 63356,
+					"sha256": "c515d1201f6b60c79d25bed1b4b9428728385775039c818f811e2a6e18053f67"
+				}
+			]
+		},
+		{
+			"id": "sound/loops/stream",
+			"title": "Stream loop",
+			"purpose": "A seamless stereo bed of a small river gurgling over stones, close",
+			"authors": [
+				{
+					"name": "nicoproson"
+				}
+			],
+			"license": [
+				"CC0-1.0"
+			],
+			"source": "https://freesound.org/people/nicoproson/sounds/642776/",
+			"fetched": "2026-11-23",
+			"changes": "Cut from sound/raw/stream by tools/samples/sound/loops.ts in the engine repository: 30 s from 0:10; a 60 Hz high-pass; resampled to 48 kHz; its tail crossfaded into its head over 2 s with equal power, so it loops without a seam; brought to -20 LUFS integrated; encoded as VBR MP3 by libmp3lame at quality 5.",
+			"dir": "sources/sound/loops/stream",
+			"origin": {
+				"kind": "converted",
+				"script": "https://github.com/null3d-engine/null3d/blob/main/tools/samples/sound/loops.ts",
+				"from": "sound/raw/stream"
+			},
+			"files": [
+				{
+					"path": "sources/sound/loops/stream/stream.mp3",
+					"bytes": 477068,
+					"sha256": "215fe17e200c4779b5e7f0ea71acdc54501a01b01d9de4f8e549bc8ebb0d30c1"
+				}
+			]
+		},
+		{
+			"id": "sound/loops/waterfall",
+			"title": "Waterfall loop",
+			"purpose": "A seamless stereo bed of a waterfall's steady roar",
+			"authors": [
+				{
+					"name": "dikolson"
+				}
+			],
+			"license": [
+				"CC0-1.0"
+			],
+			"source": "https://freesound.org/people/dikolson/sounds/130231/",
+			"fetched": "2026-11-23",
+			"changes": "Cut from sound/raw/waterfall by tools/samples/sound/loops.ts in the engine repository: 30 s from 0:20; a 40 Hz high-pass; resampled to 48 kHz; its tail crossfaded into its head over 2 s with equal power, so it loops without a seam; brought to -20 LUFS integrated; encoded as VBR MP3 by libmp3lame at quality 5.",
+			"dir": "sources/sound/loops/waterfall",
+			"origin": {
+				"kind": "converted",
+				"script": "https://github.com/null3d-engine/null3d/blob/main/tools/samples/sound/loops.ts",
+				"from": "sound/raw/waterfall"
+			},
+			"files": [
+				{
+					"path": "sources/sound/loops/waterfall/waterfall.mp3",
+					"bytes": 438476,
+					"sha256": "a09c131055c2cd5bd7fcc87cdd7d52493a015926509f83c376ba8ef1d9dc7d53"
+				}
+			]
+		},
+		{
+			"id": "sound/loops/hover",
+			"title": "Hover engine loop",
+			"purpose": "A short seamless mono loop of a designed hover engine's steady hum, for a hover car whose playback rate follows its speed",
+			"authors": [
+				{
+					"name": "peridactyloptrix"
+				}
+			],
+			"license": [
+				"CC0-1.0"
+			],
+			"source": "https://freesound.org/people/peridactyloptrix/sounds/213384/",
+			"fetched": "2026-11-23",
+			"changes": "Cut from sound/raw/hover by tools/samples/sound/loops.ts in the engine repository: 6 s from 0:20; mixed to mono; a 30 Hz high-pass; resampled to 48 kHz; its tail crossfaded into its head over 0.4 s with equal power, so it loops without a seam; brought to -20 LUFS integrated; encoded as VBR MP3 by libmp3lame at quality 4.",
+			"dir": "sources/sound/loops/hover",
+			"origin": {
+				"kind": "converted",
+				"script": "https://github.com/null3d-engine/null3d/blob/main/tools/samples/sound/loops.ts",
+				"from": "sound/raw/hover"
+			},
+			"files": [
+				{
+					"path": "sources/sound/loops/hover/hover.mp3",
+					"bytes": 49316,
+					"sha256": "d24557bcc0a0be7a4159a3fd0b353992f0d0b62b59152a5c80614e5fa7fa0e4d"
+				}
+			]
+		},
+		{
+			"id": "sound/loops/rain",
+			"title": "Rain loop",
+			"purpose": "A seamless stereo bed of steady rain on a city street at night",
+			"authors": [
+				{
+					"name": "BonnyOrbit"
+				}
+			],
+			"license": [
+				"CC0-1.0"
+			],
+			"source": "https://freesound.org/people/BonnyOrbit/sounds/380651/",
+			"fetched": "2026-11-23",
+			"changes": "Cut from sound/raw/rain by tools/samples/sound/loops.ts in the engine repository: 40 s from 0:04; a steep 120 Hz high-pass; resampled to 48 kHz; its tail crossfaded into its head over 2 s with equal power, so it loops without a seam; brought to -20 LUFS integrated, with a lookahead limiter holding its true peak under -1 dBTP; encoded as VBR MP3 by libmp3lame at quality 5.",
+			"dir": "sources/sound/loops/rain",
+			"origin": {
+				"kind": "converted",
+				"script": "https://github.com/null3d-engine/null3d/blob/main/tools/samples/sound/loops.ts",
+				"from": "sound/raw/rain"
+			},
+			"files": [
+				{
+					"path": "sources/sound/loops/rain/rain.mp3",
+					"bytes": 688700,
+					"sha256": "adfacedaad8e4e8500517b10658ca3effd15b45067464d47818c07e0412cf795"
+				}
+			]
+		},
+		{
+			"id": "sound/loops/thunder-near",
+			"title": "Near thunder",
+			"purpose": "A stereo one-shot of a close clap of thunder with its natural roll, not looped",
+			"authors": [
+				{
+					"name": "Fission9"
+				}
+			],
+			"license": [
+				"CC0-1.0"
+			],
+			"source": "https://freesound.org/people/Fission9/sounds/505113/",
+			"fetched": "2026-11-23",
+			"changes": "Cut from sound/raw/thunder-near by tools/samples/sound/loops.ts in the engine repository: 11.5 s from 0:00.3; resampled to 48 kHz; faded out over its last 3 s; brought to -16 LUFS integrated, with a lookahead limiter holding its true peak under -1 dBTP; encoded as VBR MP3 by libmp3lame at quality 5.",
+			"dir": "sources/sound/loops/thunder-near",
+			"origin": {
+				"kind": "converted",
+				"script": "https://github.com/null3d-engine/null3d/blob/main/tools/samples/sound/loops.ts",
+				"from": "sound/raw/thunder-near"
+			},
+			"files": [
+				{
+					"path": "sources/sound/loops/thunder-near/thunder-near.mp3",
+					"bytes": 148580,
+					"sha256": "96e7df6a8cf9cb60103da974c9e8c84e9604b0c5965007da13160255b3f59511"
+				}
+			]
+		},
+		{
+			"id": "sound/loops/thunder-far",
+			"title": "Far thunder",
+			"purpose": "A stereo one-shot of distant thunder rolling, not looped",
+			"authors": [
+				{
+					"name": "hifijohn"
+				}
+			],
+			"license": [
+				"CC0-1.0"
+			],
+			"source": "https://freesound.org/people/hifijohn/sounds/242735/",
+			"fetched": "2026-11-23",
+			"changes": "Cut from sound/raw/thunder-far by tools/samples/sound/loops.ts in the engine repository: 12 s from 0:39.4; resampled to 48 kHz; faded out over its last 3 s; brought to -16 LUFS integrated, with a lookahead limiter holding its true peak under -1 dBTP; encoded as VBR MP3 by libmp3lame at quality 5.",
+			"dir": "sources/sound/loops/thunder-far",
+			"origin": {
+				"kind": "converted",
+				"script": "https://github.com/null3d-engine/null3d/blob/main/tools/samples/sound/loops.ts",
+				"from": "sound/raw/thunder-far"
+			},
+			"files": [
+				{
+					"path": "sources/sound/loops/thunder-far/thunder-far.mp3",
+					"bytes": 158492,
+					"sha256": "dc329269297f542cda0ebe816212d80020786d1bcb97eee765d20555f54d19db"
+				}
+			]
+		},
+		{
+			"id": "sound/loops/city",
+			"title": "City loop",
+			"purpose": "A seamless stereo bed of a quiet city evening: far traffic and the air of the streets, with no voices",
+			"authors": [
+				{
+					"name": "MirkaElina"
+				}
+			],
+			"license": [
+				"CC0-1.0"
+			],
+			"source": "https://freesound.org/people/MirkaElina/sounds/444660/",
+			"fetched": "2026-11-23",
+			"changes": "Cut from sound/raw/city by tools/samples/sound/loops.ts in the engine repository: 45 s from 0:10; a 30 Hz high-pass; resampled to 48 kHz; its tail crossfaded into its head over 2 s with equal power, so it loops without a seam; brought to -20 LUFS integrated; encoded as VBR MP3 by libmp3lame at quality 5.",
+			"dir": "sources/sound/loops/city",
+			"origin": {
+				"kind": "converted",
+				"script": "https://github.com/null3d-engine/null3d/blob/main/tools/samples/sound/loops.ts",
+				"from": "sound/raw/city"
+			},
+			"files": [
+				{
+					"path": "sources/sound/loops/city/city.mp3",
+					"bytes": 687932,
+					"sha256": "0d38f65a88556dc6c68a083d83496b718ced68278d54c3014cc41328baf56ff8"
+				}
+			]
 		}
 	]
 }
