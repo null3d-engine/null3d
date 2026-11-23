@@ -10,7 +10,7 @@ import { defineSketch } from '@null3d/engine';
 import { createSound } from '@null3d/sound';
 import { createRain } from '../addons/weather/index';
 import { interact } from '../lib/interact';
-import { sampleUrl } from '../lib/samples';
+import { RECORDINGS } from './files';
 import { brookPoints, buildMoor, moorHeight } from './moor';
 import { createStorm, FIRST_STRIKE, SKY, scheduledStrike, seeded } from './storm';
 
@@ -27,9 +27,6 @@ const ORBIT = 30;
 const EYE = 6.5;
 const PACE = 0.035;
 const TARGET = [0, 1, 0] as const;
-
-/** The loops and one-shots that the scene plays, from the sample content. */
-const file = (name: string) => sampleUrl(`sources/sound/loops/${name}/${name}.mp3`);
 
 export default defineSketch(async (ctx) => {
 	const { scene, post, page, time, ui } = ctx;
@@ -53,18 +50,18 @@ export default defineSketch(async (ctx) => {
 	// The sound: rain in both ears, the brook as a group of points, and the thunder's two one-shots,
 	// whose distances fade and muffle a far strike.
 	const sound = createSound(ctx, { listener: camera });
-	sound.loop({ file: file('rain'), positional: false, level: 0.5 });
+	sound.loop({ file: RECORDINGS.rain, positional: false, level: 0.5 });
 	const water = brookPoints(5);
 	const brook = sound.group({
-		file: file('stream'),
+		file: RECORDINGS.stream,
 		count: water.length / 3,
 		voices: 3,
 		near: 3,
 		far: 80,
 	});
 	brook.positions.set(water);
-	const crack = sound.shot({ file: file('thunder-near'), near: 250, far: 6000 });
-	const roll = sound.shot({ file: file('thunder-far'), near: 900, far: 14_000 });
+	const crack = sound.shot({ file: RECORDINGS.thunderNear, near: 250, far: 6000 });
+	const roll = sound.shot({ file: RECORDINGS.thunderFar, near: 900, far: 14_000 });
 
 	// Each strike keeps its place, its time and its label until its thunder has come and gone.
 	const strikes = Array.from({ length: MOST_STRIKES }, (_, k) => ({
@@ -91,7 +88,6 @@ export default defineSketch(async (ctx) => {
 		});
 		slot.marker.setPosition(x, slot.y, z);
 		ui.trackLabel(slot.marker, slot.id, { offset: [0, 60, 0] });
-		label(slot.id, '0 s');
 		storm.strike(x, slot.y, z, at, made++);
 	};
 	ground.on('click', (event) => strike(event.point[0], event.point[2]));
@@ -116,7 +112,8 @@ export default defineSketch(async (ctx) => {
 		},
 		onLateUpdate() {
 			camera.getWorldPosition(eye);
-			for (const slot of strikes) {
+			for (let k = 0; k < MOST_STRIKES; k++) {
+				const slot = strikes[k] as (typeof strikes)[number];
 				if (slot.at < 0) continue;
 				const since = time.now - slot.at;
 				const distance = Math.hypot(
@@ -134,7 +131,7 @@ export default defineSketch(async (ctx) => {
 						distance < 1000 ? `${Math.round(distance)} m` : `${(distance / 1000).toFixed(1)} km`,
 					);
 				} else if (!slot.heard && Math.floor(since) > Math.floor(since - time.dt)) {
-					// Another whole second has passed since the flash.
+					// Another whole second has passed since the flash, or the flash is new: 0 s.
 					label(slot.id, `${Math.floor(since)} s`);
 				} else if (slot.heard && since > distance / SPEED_OF_SOUND + LABEL_STAYS) {
 					ui.untrackLabel(slot.id);

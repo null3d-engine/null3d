@@ -3,7 +3,9 @@
 // sound. The sound is on by default: the page starts it as the demo loads. A browser that holds a
 // page's audio until the user acts plays it from the visitor's first click, tap or key. A press of
 // the button turns the sound off or on, and local storage keeps that choice for every demo, so a
-// visitor who turned it off finds it off in the next demo and on the next visit.
+// visitor who turned it off finds it off in the next demo and on the next visit. While the browser
+// holds the audio, the button offers to play it, and a press only lets it play: a visitor who
+// presses it to hear the sound never turns it off.
 import type { Engine } from '@null3d/engine';
 import { connectSound, type PageSound } from '@null3d/sound/page';
 
@@ -65,24 +67,43 @@ export function addSoundButton(engine: Engine, stage: HTMLElement, signal: Abort
 	const cross = stroke(CROSS);
 	icon.append(stroke(SPEAKER), waves, cross);
 	button.append(icon);
-	/** Shows the visitor's choice: waves while the sound is on, a cross while it is off. */
+	/** True while the visitor wants the sound but the browser holds it, before the first input. */
+	const held = () => on && sound.state !== 'on' && sound.state !== 'paused';
+	/**
+	 * Shows the visitor's choice: waves while the sound is on, a cross while it is off. While the
+	 * browser holds the audio, the waves stay faint and the button offers to play the sound.
+	 */
 	const show = () => {
 		waves.style.display = on ? '' : 'none';
 		cross.style.display = on ? 'none' : '';
-		button.setAttribute('aria-pressed', String(on));
-		const label = on ? 'Turn the sound off' : 'Turn the sound on';
+		button.classList.toggle('sound-toggle--held', held());
+		button.setAttribute('aria-pressed', String(on && !held()));
+		const label = !on || held() ? 'Play the sound' : 'Turn the sound off';
 		button.setAttribute('aria-label', label);
 		button.title = label;
 	};
+	// The add-on resumes held audio as the press lifts, which comes before the click, so the press
+	// reads the state as it begins.
+	let pressedWhileHeld = false;
+	const notePress = () => {
+		pressedWhileHeld = held();
+	};
+	button.addEventListener('pointerdown', notePress);
+	button.addEventListener('keydown', notePress);
 	button.addEventListener('click', () => {
-		on = !on;
-		keepChoice(on);
-		sound.setMuted(!on);
-		// A sound that never started, or that the browser holds, starts in this press, which is
-		// what lets the browser play it.
+		// A sound that the browser holds starts or resumes in this press, which is what lets the
+		// browser play it. The press does not also turn it off.
+		const wasHeld = pressedWhileHeld || held();
+		pressedWhileHeld = false;
+		if (!wasHeld) {
+			on = !on;
+			keepChoice(on);
+			sound.setMuted(!on);
+		}
 		if (on) void sound.start();
 		show();
 	});
+	sound.onState(show);
 	show();
 	stage.append(button);
 	// Outside a press, the browser may hold the audio: the add-on then starts it at the visitor's
