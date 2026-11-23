@@ -61,7 +61,6 @@ export default defineSketch(async (ctx) => {
 		shadow: { distance: 50 },
 	});
 	scene.createAmbientLight({ color: '#93a9e0', intensity: 0.25 });
-
 	const look = { mipmaps: true, wrap: 'repeat', anisotropy: 8 } as const;
 	const solid = { castShadows: true, receiveShadows: true };
 	const texture = (data: Uint8Array, colorSpace: 'linear' | 'srgb') => {
@@ -106,7 +105,6 @@ export default defineSketch(async (ctx) => {
 			scale: [s, s, s],
 			...solid,
 		});
-
 	buildWall(ctx, texture, ground);
 
 	// A geodesic frame on the hill behind the wall: the edges of a split icosahedron, as a wireframe
@@ -123,10 +121,14 @@ export default defineSketch(async (ctx) => {
 		position: [fx, ground(fx, fz) - 0.3, fz],
 		castShadows: true,
 	});
-	// The page's button and the P key turn parallax off and on.
+	// The page's button and the P key turn parallax off and on, and the toast names the new value.
+	const setParallax = (parallax: boolean) => {
+		quality.set({ parallax });
+		page.post('toast', `Parallax: ${parallax ? 'on' : 'off'}`);
+	};
 	input.actions.define({ parallax: ['KeyP'] });
 	page.onMessage((name, value) => {
-		if (name === 'parallax') quality.set({ parallax: value === 'On' });
+		if (name === 'parallax') setParallax(value === 'On');
 	});
 
 	return {
@@ -138,7 +140,7 @@ export default defineSketch(async (ctx) => {
 				camera.lookAt(target[0], target[1], target[2]);
 			}
 			view.update(dt);
-			if (input.wasPressed('parallax')) quality.set({ parallax: !quality.settings.parallax });
+			if (input.wasPressed('parallax')) setParallax(!quality.settings.parallax);
 			// The clouds drift with the sketch's time.
 			sky.sky.time = time.now;
 			scene.setBackground(sky);

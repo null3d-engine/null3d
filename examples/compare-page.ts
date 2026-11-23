@@ -299,7 +299,7 @@ export async function runComparison(stage: HTMLElement, comparison: Comparison):
 	backdrop.className = 'sheet-backdrop';
 	backdrop.hidden = true;
 	const sheet = element('section');
-	sheet.className = 'sheet';
+	sheet.className = 'compare-sheet';
 	sheet.hidden = true;
 	sheet.setAttribute('role', 'dialog');
 	sheet.setAttribute('aria-modal', 'true');

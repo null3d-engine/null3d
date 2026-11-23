@@ -95,12 +95,6 @@
 		"date": "2026-10-27",
 		"reason": "the software GPU's drawing of the terrain's per-pixel normals and height-blended layers; drawn on this Mac because the shared queue blocked a CI image run"
 	},
-	"chromium-swiftshader/compat/demo-water.png": {
-		"test": "demo-water",
-		"tier": "compat",
-		"date": "2026-11-21",
-		"reason": "the foam's tail now runs to the fade's own end; drawn here so the branch is green until CI draws the set"
-	},
 	"chromium-swiftshader/compat/feature-instances-shadow.png": {
 		"test": "feature-instances-shadow",
 		"tier": "compat",
@@ -263,18 +257,6 @@
 		"date": "2026-10-29",
 		"reason": "drawn on this Mac's SwiftShader with CI=1, for the block morph that moves the far blocks' silhouette; the branch was not pushed when the set was drawn"
 	},
-	"chromium-swiftshader/compat/water-fall.png": {
-		"test": "water-fall",
-		"tier": "compat",
-		"date": "2026-11-21",
-		"reason": "the fall draws in harder and opens into a veil lower down, and its white water is lighter; software stand-ins until CI draws them"
-	},
-	"chromium-swiftshader/compat/water-rain.png": {
-		"test": "water-rain",
-		"tier": "compat",
-		"date": "2026-11-20",
-		"reason": "a new test on a helper branch with no pull request yet: CI's drawing replaces these once the branch's pull request runs"
-	},
 	"chromium-swiftshader/compat/weather.png": {
 		"test": "weather",
 		"tier": "compat",
@@ -364,12 +346,6 @@
 		"tier": "webgl2",
 		"date": "2026-10-27",
 		"reason": "the software GPU's drawing of the terrain's per-pixel normals and height-blended layers; drawn on this Mac because the shared queue blocked a CI image run"
-	},
-	"chromium-swiftshader/webgl2/demo-water.png": {
-		"test": "demo-water",
-		"tier": "webgl2",
-		"date": "2026-11-21",
-		"reason": "the foam's tail now runs to the fade's own end; drawn here so the branch is green until CI draws the set"
 	},
 	"chromium-swiftshader/webgl2/gltf-clearcoat-car-paint.png": {
 		"test": "gltf-clearcoat-car-paint",
@@ -563,18 +539,6 @@
 		"date": "2026-10-29",
 		"reason": "drawn on this Mac's SwiftShader with CI=1, for the block morph that moves the far blocks' silhouette; the branch was not pushed when the set was drawn"
 	},
-	"chromium-swiftshader/webgl2/water-fall.png": {
-		"test": "water-fall",
-		"tier": "webgl2",
-		"date": "2026-11-21",
-		"reason": "the fall draws in harder and opens into a veil lower down, and its white water is lighter; software stand-ins until CI draws them"
-	},
-	"chromium-swiftshader/webgl2/water-rain.png": {
-		"test": "water-rain",
-		"tier": "webgl2",
-		"date": "2026-11-20",
-		"reason": "a new test on a helper branch with no pull request yet: CI's drawing replaces these once the branch's pull request runs"
-	},
 	"chromium-swiftshader/webgl2/weather.png": {
 		"test": "weather",
 		"tier": "webgl2",
@@ -676,12 +640,6 @@
 		"tier": "webgpu",
 		"date": "2026-10-27",
 		"reason": "the software GPU's drawing of the terrain's per-pixel normals and height-blended layers; drawn on this Mac because the shared queue blocked a CI image run"
-	},
-	"chromium-swiftshader/webgpu/demo-water.png": {
-		"test": "demo-water",
-		"tier": "webgpu",
-		"date": "2026-11-21",
-		"reason": "the foam's tail now runs to the fade's own end; drawn here so the branch is green until CI draws the set"
 	},
 	"chromium-swiftshader/webgpu/gltf-clearcoat-car-paint.png": {
 		"test": "gltf-clearcoat-car-paint",
@@ -880,18 +838,6 @@
 		"tier": "webgpu",
 		"date": "2026-10-29",
 		"reason": "the band hand-over and the water bounds view were drawn before a CI run; CI draws this set again on the next push"
-	},
-	"chromium-swiftshader/webgpu/water-fall.png": {
-		"test": "water-fall",
-		"tier": "webgpu",
-		"date": "2026-11-21",
-		"reason": "the fall draws in harder and opens into a veil lower down, and its white water is lighter; software stand-ins until CI draws them"
-	},
-	"chromium-swiftshader/webgpu/water-rain.png": {
-		"test": "water-rain",
-		"tier": "webgpu",
-		"date": "2026-11-20",
-		"reason": "a new test on a helper branch with no pull request yet: CI's drawing replaces these once the branch's pull request runs"
 	},
 	"chromium-swiftshader/webgpu/weather.png": {
 		"test": "weather",

@@ -43,6 +43,11 @@ function mixerFor(replies: MixerReply[]): Mixer {
 const RATE = 48_000;
 const FRAMES = 128;
 const CAPACITY = 16;
+/**
+ * The tone that a sound keeps at its far distance, which the mixer's muffle takes about a fifth of.
+ * A sound that a scene asks to muffle trades brightness for distance, and this is the whole trade.
+ */
+const TONE_AT_FAR = 0.78;
 
 /** A sound's description with the fields a test does not care about filled in. */
 function spec(over: Partial<SoundSpec>): SoundSpec {
@@ -125,7 +130,9 @@ describe.skipIf(!built)('distance', () => {
 		const muffled = gainAt({ near: 1, far: 50, muffle: true }, 49).last(MIXER_OUTPUTS.cutoff, 0);
 		const open = gainAt({ near: 1, far: 50, muffle: false }, 49).last(MIXER_OUTPUTS.cutoff, 0);
 		expect(open).toBeCloseTo(20_000, -2);
-		expect(muffled).toBeLessThan(open / 4);
+		// The sound stands a meter inside its far distance, where the muffle has reached its whole
+		// share to within a fraction of a per cent.
+		expect(muffled).toBeCloseTo(120 * (20_000 / 120) ** TONE_AT_FAR, -2);
 	});
 
 	test('a table of the most emitters fits the module, and its last emitter sounds', () => {
@@ -207,7 +214,7 @@ describe.skipIf(!built)('a loop', () => {
 		r.floats[r.layout.rates] = 1.5;
 		r.run(SETTLE);
 		expect(r.last(MIXER_OUTPUTS.rate, 0)).toBeCloseTo(1.5, 3);
-		expect(r.last(MIXER_OUTPUTS.cutoff, 0)).toBeCloseTo(120 * (20_000 / 120) ** 0.55, -1);
+		expect(r.last(MIXER_OUTPUTS.cutoff, 0)).toBeCloseTo(120 * (20_000 / 120) ** TONE_AT_FAR, -1);
 		expect(r.last(MIXER_OUTPUTS.gain, 0)).toBeCloseTo(0, 5);
 	});
 
@@ -288,9 +295,10 @@ describe.skipIf(!built)('a group', () => {
 		const r = group();
 		r.run(SETTLE);
 		r.at(5, 0, 0, -2);
-		// The voice that leaves fades out first, at its old member's place, before it moves.
+		// The voice that leaves fades out first, at its old member's place, before it moves. The fade
+		// runs at a time constant of an eighth of a second, so a third of a second holds it whole.
 		let faded = false;
-		for (let q = 0; q < 64 && !faded; q++) {
+		for (let q = 0; q < 128 && !faded; q++) {
 			r.run(1);
 			for (const v of [0, 1]) {
 				const atOld = Math.round(-r.last(MIXER_OUTPUTS.z, v)) === 20;

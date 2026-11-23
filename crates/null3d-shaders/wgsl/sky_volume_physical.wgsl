@@ -6,6 +6,7 @@
 //
 // The noise field and the shader load on the tier's first use. The physical sky's uniform block
 // carries the march's step count in the fourth value of its view.
+#import null3d::fog
 #import null3d::globals::Frame
 #import null3d::tonemap
 #import null3d::backdrop::box_corner
@@ -72,9 +73,12 @@ fn fs(in: CloudOut) -> @location(0) vec4f {
     let seed = bitcast<u32>(in.clip.x) ^ (bitcast<u32>(in.clip.y) << 16u);
     let clouds = cloud_march(direction, light, field, in.steps, seed);
     let scale = values.view.z * frame.output.exposure;
+    // The clouds sit in the fog that the sky behind them takes, so their light dims by the share
+    // of the background's own light that the fog leaves.
+    let left = null3d::fog::background_clear(frame.fog, direction, frame.camera_range.y);
     let color =
         null3d::tonemap::finish(
-            clouds.rgb * scale,
+            clouds.rgb * (scale * left),
             in.clip.xy,
             frame.occlusion.y,
             frame.output,

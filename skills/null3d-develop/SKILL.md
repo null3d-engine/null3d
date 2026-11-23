@@ -23,7 +23,7 @@ The engine docs are the source of truth. This skill describes null3D 0.1.0 and m
 3. Each page starts with front matter. `status: stable` or `experimental` means the API exists, and experimental APIs may still change. `planned` means it does not exist in this version. A note under an experimental title can name parts not built yet: treat those as planned. Do not call a planned API; tell the user, and use the page's workaround.
 4. If the docs and this skill disagree, follow the docs and report the difference, so the skill can be fixed.
 
-Doc IDs appear in backticks, for example `concepts/architecture`. A number in parentheses, such as (0.2), names the roadmap step that adds the part, and no number means step 0.1. The first release, null3D 0.1.0, holds steps 0.1, 0.2 and 0.3.
+Doc IDs appear in backticks, for example `concepts/architecture`. A number in parentheses, such as (0.2), names the roadmap step that adds the part, and no number means step 0.1. null3D 0.1.0 holds steps 0.1 to 0.3.
 
 ## 2. The model
 
@@ -92,21 +92,23 @@ export default defineSketch(({ scene, geometry, materials }) => {
 
 ## 4. Rules that keep null3D fast
 
-Each rule comes with its reason, because the reason covers cases the rule does not name.
+Each rule comes with its reason, which covers cases the rule does not name.
 
 1. Allocate nothing in `onUpdate`, `onFixedUpdate` or `onLateUpdate`: no `new`, no array or object literals, no closures, no `map` or `filter`. Create scratch values at setup, such as `const tmp = vec3.create()`. A garbage collection pause stalls the frame.
-2. Use an instance batch for many copies of one mesh. It is one engine object and one typed array, where `createMesh` calls would mean as many objects to manage. (`concepts/instances`)
-3. Move many objects by writing arrays, not by calling setters in a loop. Each setter crosses into WebAssembly, and a typed-array write does not.
-4. Create an object with `dynamic: true` only if it changes most frames. Static objects rely on setters to mark them changed, so write arrays only for dynamic objects and batches.
-5. Pool short-lived objects such as bullets: make a batch with a fixed capacity and use `setActiveCount`. A frame with a structural change (create, destroy, a new mesh or material) rebuilds the draw tables; `setVisible` and `setActiveCount` do not. The engine sizes its memory for the scene it holds, so create meshes, materials and batches during setup.
-6. Load and warm up before play: `await assets.preload([...])` and `await scene.warmUp()` behind a loading screen. A shader feature, such as a normal map, is fixed when you create the material. The first frame waits for its pipeline, so create every variant before play. (`guides/loading-screens`)
-7. Keep the DOM on the page, and keep messages rare: send events, not per-frame state. Labels that follow objects use `ui.trackLabel` (0.2), which needs no messages. (`guides/ui-overlays`)
+2. Use an instance batch for many copies of one mesh: one engine object and one typed array, where `createMesh` calls would mean many objects. (`concepts/instances`)
+3. Move many objects by writing arrays, not by setters in a loop: each setter crosses into WebAssembly, a typed-array write does not.
+4. Create `dynamic: true` objects only for what changes most frames; write arrays for those and batches.
+5. Pool short-lived objects such as bullets in a batch with a fixed capacity and `setActiveCount`. A structural change (create, destroy, a new mesh or material) rebuilds the draw tables; `setVisible` and `setActiveCount` do not. Create meshes, materials and batches at setup, since the engine sizes memory for what the scene holds.
+6. Load and warm up before play: `await assets.preload([...])` and `await scene.warmUp()` behind a loading screen. A shader feature, such as a normal map, is fixed when you create the material, and the first frame waits for its pipeline, so create every variant before play. (`guides/loading-screens`)
+7. Keep the DOM on the page and messages rare: send events, not per-frame state. Labels that follow objects use `ui.trackLabel` (0.2), which needs no messages. (`guides/ui-overlays`)
 8. Use layer masks to limit work. A camera with a mask draws fewer objects, and a raycast (0.2) with a mask tests fewer. (`concepts/render-layers`)
-9. Respect the quality preset. Do not force a heavier preset on phones. When frames run long, the engine's governor lowers a sketch's budgets and the render scale in turn, a budget's step first, then the shadow settings, by itself. Keep your own values per preset, such as particle counts or AI update rates, in one table keyed by `quality.preset`. Listen to `quality.onChange` to apply the values. (`concepts/quality-presets`)
-10. Ship optimized assets: KTX2 textures, which stay compressed on the GPU, and glTF models with integer vertices (0.2). `bunx @null3d/cli assets optimize <in> <out>` makes both, or a `?optimized` import of a `.glb` through the Vite plugin. It compresses models with meshopt, adds blockers for WebGL2's occlusion culling, stores raycast trees for large mesh parts, and bakes normal map detail into the roughness mips so distant bumpy surfaces do not flicker. It records the shader features each model needs, so the engine builds only the pipelines it draws. The KTX2 and meshopt decoders load with the first file that needs them: set no decoder path and copy no worker file. (`api/textures`, `guides/assets-pipeline`, `concepts/assets`)
-11. Keep custom WGSL portable. Use only the three language features every browser shares, and write flat interpolation as `@interpolate(flat, either)`. The build rejects other features, `enable` lines and `f16`, but it cannot check the portable limits or `textureSample` in branches. Test those on each GPU path. (`shaders/wgsl-rules`)
-12. Never branch on GPU names or user agents; read `engine.capabilities` on the page. A name does not tell you what the engine enabled; `engine.capabilities.drawPath` says why the direct draw path is on or off.
-13. Put performance-sensitive work in Rust. The engine's per-frame loops run there, and your TypeScript is an interface to them. Use the engine's bulk calls over many objects. For a loop that grows with the scene, use a Rust WebAssembly module on the job workers through `runTask`. A task answers between frames, so a loop for the current frame belongs in the engine's calls. Keep setup, wiring and page logic in TypeScript. (`guides/performance`, `api/tasks`)
+9. Respect the quality preset. Do not force a heavier preset on phones. When frames run long, the governor lowers a sketch's budgets and the render scale, then the shadow and effect settings once the scale floors, by itself. Keep your own values per preset, such as particle counts or AI update rates, in one table keyed by `quality.preset`, and apply them in `quality.onChange`. (`concepts/quality-presets`)
+10. Ship optimized assets: KTX2 textures, compressed on the GPU, and glTF models with integer vertices (0.2). `bunx @null3d/cli assets optimize <in> <out>` makes both, or a `?optimized` import of a `.glb` through the Vite plugin. It compresses with meshopt, stores raycast trees, and bakes normal detail into the roughness mips so far surfaces do not flicker. It records each model's shader features, so the engine builds only the pipelines it draws. The decoders load with the first file that needs them: set no decoder path and copy no worker file. (`api/textures`, `guides/assets-pipeline`, `concepts/assets`)
+11. Keep custom WGSL portable: only the three language features every browser shares, and flat interpolation as `@interpolate(flat, either)`. The build rejects other features, `enable` lines and `f16`, but cannot check the portable limits or `textureSample` in branches. Test those on each GPU path. (`shaders/wgsl-rules`)
+12. Never branch on GPU names or user agents; read `engine.capabilities`. A name does not say what is enabled; `capabilities.drawPath` says why the direct path is on or off.
+13. Put performance-sensitive work in Rust, where the engine's per-frame loops run; your TypeScript is an interface to it. Use bulk calls over many objects. For a loop that grows with the scene, use a Rust WebAssembly module on the job workers through `runTask`; a task answers between frames, so a loop for the current frame belongs in the engine's calls. Keep setup, wiring and page logic in TypeScript. (`guides/performance`, `api/tasks`)
+14. Night scenes: make the sky's stand-in light follow the hour. A fixed ambient or hemisphere light lights sand and walls as bright at night as at noon. Scale and cool it; set exposure at the hour shown longest. (`concepts/lighting`)
+15. A far card must read as its mesh: bake its views (five by five or more), unlit sRGB, a normal per texel, check a matched crop. One side view serves only cards of a few tens of pixels. (`api/impostors`)
 
 ## 5. When the engine may not have the feature
 
@@ -116,7 +118,7 @@ A request may need a capability that null3D has not built. Settle its state befo
 - The devices and browsers it must run on, such as a mid-range Android phone.
 - The cost it may take, in milliseconds per frame or lowest frame rate.
 
-1. Search first: the docs page (section 1), `references/api-quickref.md`, then the add-on table in section 6. A core call or an add-on may answer the need.
+1. Search first: the docs page (section 1), `references/api-quickref.md`, then the add-on table in section 6.
 2. A page whose status is `planned`, or whose note says "not built yet", describes a call this version lacks. Tell the user, name the step that adds it, and use the page's workaround. Do not call it, and do not invent an option in its place.
 3. If nothing covers the need, build it above the public API: a custom material, vertex offset, post effect or render pass. Keep that code in the project; never imitate engine API, which breaks on the next update.
 4. Never write a second version of a feature in the add-on table. A hand-rolled copy gets no fixes.
@@ -126,7 +128,7 @@ A request may need a capability that null3D has not built. Settle its state befo
 
 ### Search before you hand-roll
 
-Check this table before you write a generator, control, effect or loader. Each foundation add-on is the one place that feature lives, with both GPU paths and fixes from the engine.
+Check this table before you write a generator, control, effect or loader. Each add-on is the one place that feature lives, with both GPU paths and fixes from the engine.
 
 | Need | Use | Docs | Status |
 | --- | --- | --- | --- |

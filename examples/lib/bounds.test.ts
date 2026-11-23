@@ -129,42 +129,50 @@ describe('keepInside', () => {
 });
 
 describe('the bounded Manual camera', () => {
-	it('flies with the wheel and no farther than its bounds allow', () => {
+	it('zooms with the wheel toward the point it turns around, which stays put', () => {
 		const { camera, pointer, target, frame, distance } = manual();
 		const start = distance();
-		const before = [...camera.stored] as [number, number, number];
-		for (let k = 0; k < 240; k++) {
-			pointer.wheel = 120;
+		const aim = [...target] as [number, number, number];
+		// Scrolling in draws the camera toward the point it turns around, and the point stays put
+		// (owner's ruling: a zoom never moves the focal point). It stops at the ground's clearance.
+		for (let k = 0; k < 400; k++) {
+			pointer.wheel = -120;
 			frame();
+			expect(camera.stored[1] as number).toBeGreaterThanOrEqual(GROUND_CLEARANCE - 1e-3);
 		}
 		pointer.wheel = 0;
 		for (let k = 0; k < 30; k++) frame();
-		// The wheel flies the camera back along the way it looks and the point it turns around comes
-		// along, so the view keeps its size instead of zooming in or out (owner's ruling).
-		expect(Math.abs(distance() - start)).toBeLessThan(0.05);
-		expect(camera.stored[1] as number).toBeGreaterThan(before[1] as number);
-		// The fly stops at the edge of the area the camera turns around, still above the ground.
-		expect(
-			Math.hypot((target[0] as number) - FLAT.center[0], (target[2] as number) - FLAT.center[1]),
-		).toBeLessThanOrEqual(FLAT.focus + 1e-3);
-		expect(target[1] as number).toBeGreaterThanOrEqual(FLAT.focusHeight[0] - 1e-3);
-		expect(target[1] as number).toBeLessThanOrEqual(FLAT.focusHeight[1] + 1e-3);
-		expect(camera.stored[1] as number).toBeGreaterThanOrEqual(GROUND_CLEARANCE - 1e-3);
-		// Scrolling the other way flies it forward again, at the same distance from its target.
-		for (let k = 0; k < 400; k++) {
+		expect(target).toEqual(aim);
+		expect(distance()).toBeLessThan(start);
+		expect(distance()).toBeGreaterThanOrEqual(1 - 1e-3);
+		const floor = distance();
+		// Scrolling out flies it back, no farther than the bounds allow.
+		for (let k = 0; k < 600; k++) {
+			pointer.wheel = 120;
+			frame();
+			expect(distance()).toBeLessThanOrEqual(FLAT.distance + 1e-3);
+		}
+		pointer.wheel = 0;
+		for (let k = 0; k < 30; k++) frame();
+		expect(target).toEqual(aim);
+		expect(distance()).toBeGreaterThan(start);
+		// Scrolling in again returns the camera to the same place: the point never moved.
+		for (let k = 0; k < 600; k++) {
 			pointer.wheel = -120;
 			frame();
 		}
 		pointer.wheel = 0;
 		for (let k = 0; k < 30; k++) frame();
-		expect(Math.abs(distance() - start)).toBeLessThan(0.05);
+		expect(target).toEqual(aim);
+		expect(distance()).toBeCloseTo(floor, 0);
 	});
 
-	it('flies with a two-finger pinch, and keeps the distance from its target', () => {
-		const { camera, touches, frame, distance } = manual();
+	it('zooms with a two-finger pinch toward the point it turns around', () => {
+		const { camera, target, touches, frame, distance } = manual();
 		const start = distance();
+		const aim = [...target] as [number, number, number];
 		const before = [...camera.stored] as [number, number, number];
-		// The midpoint stays put, so the fingers only pinch: they spread, and the camera flies on.
+		// The midpoint stays put, so the fingers only pinch: they spread, and the camera flies in.
 		const first = { id: 1, x: 200, y: 180, dx: 0, dy: 0 };
 		const second = { id: 2, x: 300, y: 180, dx: 0, dy: 0 };
 		touches.push(first, second);
@@ -176,7 +184,8 @@ describe('the bounded Manual camera', () => {
 			second.dx = 4;
 			frame();
 		}
-		expect(Math.abs(distance() - start)).toBeLessThan(0.05);
+		expect(target).toEqual(aim);
+		expect(distance()).toBeLessThan(start - 10);
 		expect(
 			Math.hypot(
 				(camera.stored[0] as number) - before[0],

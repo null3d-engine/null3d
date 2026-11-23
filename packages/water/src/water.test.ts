@@ -114,6 +114,17 @@ describe('the water’s waves', () => {
 		expect(two).toBeCloseTo(one * 2, 10);
 	});
 
+	it('hands the mirror the slope that a pixel cannot resolve, so the image scatters by it', () => {
+		// A wave that a pixel's footprint drops cannot bend the mirror from pixel to pixel, but its
+		// tilt still spreads the light that the pixel sees, so the gather widens by that spread.
+		const waves = wgslFunction(read('water.wgsl'), 'waves');
+		expect(waves).toContain('var lost = 0.0');
+		expect(waves).toContain('sqrt(lost)');
+		const surface = wgslFunction(read('water.wgsl'), 'surface');
+		expect(surface).toContain('let cone = (w.w + s.roughness * s.roughness) * MIRROR_CONE;');
+		expect(surface).toContain('mirror_at(mirrorUv, cone)');
+	});
+
 	it('gives the long waves and the wind’s lift the surface’s height factor, and the fine ripples none', () => {
 		const surface = read('water.wgsl');
 		expect(wgslFunction(surface, 'waves')).toContain(
@@ -267,6 +278,22 @@ describe('the water’s wind', () => {
 		const shader = read('water.wgsl');
 		expect(shader).toContain('material.windStrength > 0.0');
 		expect(shader).toContain('wind_sample(');
+	});
+});
+
+describe('the water’s wind ripple', () => {
+	it('stays off unless a surface asks for it', () => {
+		// The default is none, so a surface that names no ripple keeps the waves that it had.
+		expect(read('water.ts')).toContain('windRipple: options.windRipple ?? 0');
+		expect(read('water.wgsl')).toContain('windRipple: f32');
+	});
+
+	it('turns the surface’s slope with the air when a surface asks for it', () => {
+		const surface = wgslFunction(read('water.wgsl'), 'surface');
+		// The crests join the waves' slope, so the reflection and the shading follow them.
+		expect(surface).toContain('material.windRipple > 0.0');
+		expect(surface).toContain('material.windStrength > 0.0');
+		expect(surface).toContain('slope += (heading * cos(along)');
 	});
 });
 

@@ -78,9 +78,18 @@ export interface Demo {
 	 * gust. The page's touch controls show its button on a coarse pointer, and the control sends the
 	 * same key that the keyboard sends.
 	 */
-	gustKey?: string;
 	/** The sketch time, in seconds, that the demo's image test holds at. */
 	hold: number;
+	/**
+	 * True for a demo whose camera is the showcases' cinematic one: its route, its Auto and Manual
+	 * modes, and, unless `focus` is off, its double-click that takes the camera to a picked object.
+	 */
+	cinematic?: boolean;
+	/**
+	 * Whether a double press focuses the camera on a picked object. A scene whose user drives a
+	 * vehicle leaves it off, since the camera belongs to the vehicle. The default is on.
+	 */
+	focus?: boolean;
 	/** True for a demo that starts the engine in large-world mode. */
 	largeWorld?: boolean;
 	/**
@@ -161,10 +170,10 @@ export const DEMOS: readonly Demo[] = [
 			'A clear creek crosses the top of a round cliff from rim to rim, fed by a spring pool, over a cobbled bed that shows through the water, and leaves over both rims in white falls. Mossy stones line its banks. Stone steps climb from the creek through a roofed gate between stone lanterns to a bronze Buddha on a terrace, above raked gravel and moss islands. Dark walls of pillars and ledges run down into the cloud, which billows and drifts in the light of the time of day.',
 		assets:
 			'Shows how a statue, a gate with its roof dragons, lanterns, boulders, cloud-pruned pines, ferns and hostas load from optimized glTF models, made from generated meshes and finished by script in Blender, each with levels of detail, and how recorded loops of the creek, the falls, the wind and the leaves load once the speaker button starts the sound.',
-		controls: [...SHOWCASE_CONTROLS, { keys: ['G'], does: 'Send a gust down the valley' }],
-		gustKey: 'KeyG',
+		controls: SHOWCASE_CONTROLS,
 		sound: true,
 		hold: 0.5,
+		cinematic: true,
 		// A software GPU draws the scene with its bloom, its water and its models, which takes it
 		// well past a minute on a loaded runner, past three on an emulated Firefox GPU, and past five
 		// while the machine runs other work.
@@ -180,11 +189,12 @@ export const DEMOS: readonly Demo[] = [
 		summary:
 			'A hilly island alone in the sea on a summer morning, with forests of cypress, umbrella pine, olive and holm oak, oleanders along its lanes, a long beach, a golf course on its headland and a harbour town. Turn around the whole island, or zoom down to any place on it.',
 		assets:
-			'Shows how thousands of trees load from optimized glTF models built by script in Blender, with levels of detail and far cards, and how recorded loops of the sea, the surf, the wind and the leaves load once the speaker button starts the sound.',
+			'Shows how thousands of trees load from optimized glTF models built by script in Blender, with levels of detail and far cards, and how recorded loops of the sea, the surf, the wind, the leaves, the cars and the bus load once the speaker button starts the sound.',
 		momentTransparency: true,
 		controls: SHOWCASE_CONTROLS,
 		sound: true,
 		hold: 0.5,
+		cinematic: true,
 		// A software GPU builds the pipelines of the town, the trees and the water, and draws the
 		// island's first frame slowly while the heavy shards share a runner. The figure leaves room
 		// for that load.
@@ -204,6 +214,8 @@ export const DEMOS: readonly Demo[] = [
 		controls: SKYWAY_CONTROLS,
 		sound: true,
 		hold: 1,
+		cinematic: true,
+		focus: false,
 		timeoutSeconds: 300,
 	},
 	{
@@ -217,6 +229,7 @@ export const DEMOS: readonly Demo[] = [
 			'A new car under softbox area lights on a mirror floor in a dark studio, with a tablet beside it. A tap on the tablet changes the paint, the wheels, the trim or the lights, and the car takes the change at once. The car turns on the spot, then drives out through the opening into a short wet street, where the lamps and the neon signs streak down the asphalt and the lit fog catches their light.',
 		controls: [{ keys: ['Click'], does: 'change the car on the tablet' }],
 		hold: 1,
+		cinematic: true,
 		timeoutSeconds: 300,
 	},
 	{

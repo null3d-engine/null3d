@@ -208,6 +208,13 @@ function keyHelp(demo: Demo): HTMLElement | undefined {
 		for (const key of control.keys) caps.append(element('kbd', key));
 		panel.append(caps, element('dd', control.does));
 	}
+	// A demo with the showcases' cinematic camera takes a double-click to a picked object, and the
+	// list names it once for those demos alone, unless the camera belongs to a vehicle.
+	if (demo.cinematic && demo.focus !== false) {
+		const focus = element('dt');
+		focus.append(element('kbd', 'Double-click'));
+		panel.append(focus, element('dd', 'Focus on an object'));
+	}
 	return panel;
 }
 
@@ -225,9 +232,27 @@ function gestureHelp(demo: Demo): HTMLElement {
 	row('Drag the scene', 'Turn the camera in Manual mode');
 	row('Pinch', 'Zoom in or out');
 	row('Two fingers', 'Pan the camera in Manual mode');
-	row('Auto / Manual', 'Switch between the camera route and your control');
-	if (demo.gustKey !== undefined) row('Gust', 'Send a gust across the scene');
+	row('HUD', 'Open it at the bottom of the screen. The Auto / Manual switch is inside.');
+	row('Double-tap', 'Focus the camera on an object');
 	return panel;
+}
+
+/**
+ * The key help with a small close icon at its top right, so the visitor can clear the picture.
+ * Closing hides it for the visit; a reload brings it back, since nothing else would.
+ */
+function helpPanel(panel: HTMLElement): HTMLElement {
+	const box = element('div');
+	box.className = 'corner__help-panel';
+	const close = element('button', '×');
+	close.type = 'button';
+	close.className = 'corner__help-close';
+	close.setAttribute('aria-label', 'Hide the controls');
+	close.addEventListener('click', () => {
+		box.hidden = true;
+	});
+	box.append(panel, close);
+	return box;
 }
 
 /** The sheet's about: the demo's title, what it shows, its code and its credits. */
@@ -279,6 +304,8 @@ interface Sheet {
 	close(): void;
 	/** Shows a start's failure in the sheet. */
 	showError(message: string): void;
+	/** Fills the sheet's Controls tab, or hides the tab when there is nothing to show. */
+	setControls(panel: HTMLElement | undefined): void;
 	readonly isOpen: boolean;
 }
 
@@ -306,8 +333,39 @@ function createSheet(demo: Demo): Sheet {
 	const body = element('div');
 	body.className = 'sheet__body';
 	const about = aboutBody(demo);
-	body.append(about);
-	dialog.append(head, body);
+	const aboutPanel = element('section');
+	aboutPanel.className = 'sheet__panel';
+	aboutPanel.setAttribute('role', 'tabpanel');
+	aboutPanel.append(about);
+	const controlsPanel = element('section');
+	controlsPanel.className = 'sheet__panel';
+	controlsPanel.setAttribute('role', 'tabpanel');
+	controlsPanel.hidden = true;
+	body.append(aboutPanel, controlsPanel);
+	// The tabs sit between the title and the body: the demo's story, and what it does under the hand.
+	const tabs = element('div');
+	tabs.className = 'sheet__tabs';
+	tabs.setAttribute('role', 'tablist');
+	const tab = (label: string, panel: HTMLElement): HTMLButtonElement => {
+		const button = element('button', label);
+		button.type = 'button';
+		button.className = 'sheet__tab';
+		button.setAttribute('role', 'tab');
+		button.addEventListener('click', () => select(panel));
+		return button;
+	};
+	const aboutTab = tab('About', aboutPanel);
+	const controlsTab = tab('Controls', controlsPanel);
+	tabs.append(aboutTab, controlsTab);
+	const select = (panel: HTMLElement): void => {
+		const controls = panel === controlsPanel;
+		if (controls && controlsTab.hidden) return;
+		aboutPanel.hidden = controls;
+		controlsPanel.hidden = !controls;
+		aboutTab.setAttribute('aria-selected', String(!controls));
+		controlsTab.setAttribute('aria-selected', String(controls));
+	};
+	dialog.append(head, tabs, body);
 	root.append(backdrop, dialog);
 
 	let opener: HTMLElement | undefined;
@@ -346,10 +404,17 @@ function createSheet(demo: Demo): Sheet {
 			first.focus();
 		}
 	});
+	select(aboutPanel);
 	const sheet: Sheet = {
 		element: root,
 		open,
 		close: closeSheet,
+		setControls(panel) {
+			const shown = panel !== undefined;
+			controlsTab.hidden = !shown;
+			controlsPanel.replaceChildren(...(panel ? [panel] : []));
+			if (!shown && !controlsPanel.hidden) select(aboutPanel);
+		},
 		showError(message) {
 			const error = element('p', message);
 			error.className = 'error';
@@ -407,13 +472,14 @@ async function runDemo(demo: Demo): Promise<void> {
 	const query = matchMedia(COARSE_INPUT);
 	const stopWatching = watchInputKind(query, (kind) => {
 		document.body.dataset.input = kind;
-		const drawn = demo.controls?.length
-			? kind === 'coarse'
-				? gestureHelp(demo)
-				: keyHelp(demo)
-			: undefined;
-		help.replaceChildren(...(drawn ? [drawn] : []));
-		help.hidden = drawn === undefined;
+		const coarse = kind === 'coarse';
+		// A finger reads the gestures in the sheet's Controls tab, where they never sit over the
+		// scene; a mouse keeps its keys under the chip, out of the way of the picture.
+		const gestures = demo.controls?.length && coarse ? gestureHelp(demo) : undefined;
+		const keys = demo.controls?.length && !coarse ? keyHelp(demo) : undefined;
+		sheet.setControls(gestures);
+		help.replaceChildren(...(keys ? [helpPanel(keys)] : []));
+		help.hidden = keys === undefined;
 	});
 	// A sketch reads its switches from its own address, such as Skyway's `mood` and `storm`, so the
 	// page's switches go on to it.
@@ -438,6 +504,16 @@ listDemos();
 restoreNavScroll();
 rememberNavScroll();
 handleDrawer();
+
+// A production build caches the page and the engine's files for the next visit, and for offline
+// play; the dev server's pages stay out of the cache, since its modules change on every edit.
+// A bundler declares `import.meta.env` itself, so it is read through a cast here.
+const buildEnv = (import.meta as { env?: { PROD?: boolean } }).env;
+if (buildEnv?.PROD && 'serviceWorker' in navigator) {
+	window.addEventListener('load', () => {
+		void navigator.serviceWorker.register('./sw.js').catch(() => {});
+	});
+}
 if (comparison) void runComparison(stage, comparison);
 else if (current) void runDemo(current);
 else welcome(compareName ?? name ?? undefined);

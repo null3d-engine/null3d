@@ -44,6 +44,12 @@ fn toneCurve(color: vec3f) -> vec3f {
  */
 export const AIR = { density: 0.0068, falloff: 0.02, grey: 0.9, curve: 'exp2' } as const;
 
+/**
+ * The Creek's lit fog: the sun through the cloud above, and the mist's light over the cloud sea.
+ * The garden's air is thick, so the lit part is modest and reaches across the valley.
+ */
+const CREEK_SHAFTS = { intensity: 4, anisotropy: 0.65, distance: 400 } as const;
+
 /** The Creek's stage options, the air's among them. */
 export const STAGE: StageOptions = {
 	heading: HEADING,
@@ -51,6 +57,7 @@ export const STAGE: StageOptions = {
 	fogHeight: { height: CLOUD_TOP, falloff: AIR.falloff },
 	fogGrey: AIR.grey,
 	fogCurve: AIR.curve,
+	volumetric: CREEK_SHAFTS,
 	cloudCoverage: 0.95,
 	haze: { Morning: 1.4, Golden: 1.2, Dusk: 1.5 },
 	// The cloud above and the cloud below both fill the garden with soft light: the sun's own light
@@ -72,7 +79,9 @@ export function createCreekStage(
 	sun: DirectionalLight,
 	sky: Environment | Promise<Environment>,
 	room: Environment | Promise<Environment>,
+	/** How much of the fog the sky and the background take, from 0 to 1. */
+	backgroundFog = 0,
 ): Stage {
 	ctx.post.set({ toneMapping: TONE_CURVE });
-	return createMoods(ctx, sun, sky, room, STAGE);
+	return createMoods(ctx, sun, sky, room, { ...STAGE, backgroundFog });
 }

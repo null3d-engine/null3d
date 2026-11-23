@@ -20,6 +20,11 @@ export const hypot = (x: number, y: number) => Math.sqrt(x * x + y * y);
 export const GROUND = 1800;
 /** The sea's level, in meters. */
 export const SEA_LEVEL = 0;
+/**
+ * How far above the sea the beach's sand stays wet, in meters. Nothing dry stands where the ground
+ * lies below this on the beach.
+ */
+export const WET_SAND = 0.6;
 /** The town's middle, x and z, and the radius of its core, in meters. */
 export const TOWN = { x: -85, z: 190, radius: 110, height: 9 } as const;
 /** The golf course's middle, x and z, and the radius of its gentle ground, in meters. */

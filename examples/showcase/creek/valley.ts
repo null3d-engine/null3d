@@ -6,6 +6,7 @@
 // and walls, and where a plant would stand in the view to the statue. One seed places it all, so
 // every device and both GPU paths draw the same garden. A plant that the camera's route would fly
 // into is left out, so no pass crosses a crown.
+import { type LevelView, levelAt, levelDistances } from '@null3d/engine';
 import { routePosition, routeTimeline } from '../../lib/cinematic';
 import { Noise, random } from '../../lib/procedural';
 import { gardenPlaces, terraceStones, underGarden } from './garden';
@@ -88,29 +89,30 @@ export const SCALE: Readonly<Record<string, readonly [number, number]>> = {
 };
 
 /**
- * The height, in pixels, of the render that the levels' switch table encodes at High's one-pixel
- * threshold. The table's switches are the distances at which the pinned model switches, worked out
- * the engine's own way: its error times the part's node scale times this height and the camera's
- * `p11` over two. A copy of another scale switches at that many times the distance, and a render of
- * another height at its share of this one.
+ * The render height, in pixels, at which the ground cover's triangle budget is measured: High's own
+ * render, at its one-pixel threshold.
  */
 export const LEVEL_RULER = 1080;
 
-/** `1 / tan(fov / 2)` for the camera's 45 degree vertical field of view, as the engine's rule takes it. */
-const P11 = 1 / Math.tan((22.5 * Math.PI) / 180);
+/** The camera's vertical field of view, in degrees, which the levels' switches follow. */
+const FOV = 45;
+
+/** High's level-of-detail threshold, in pixels. */
+const THRESHOLD = 1;
 
 /**
- * Each ground plant's parts: their triangles at each of their three levels; the distances at which a
- * copy of scale 1 switches to its next level on the ruler above; and its bounding sphere, its centre
- * in meters from the model's foot and its radius, both at scale 1, which the engine measures its
- * levels from. All of them are read from the pinned models' own bounds, node scales and
- * `NULL3D_lod_error` values.
+ * Each ground plant's parts: their triangles at each of their three levels; each lower level's
+ * error, in the units of the model's own mesh, and the node scale that turns those units into
+ * meters; and the part's bounding sphere, its centre in meters from the model's foot and its
+ * radius, both at scale 1, which the engine measures its levels from. All of them are read from the
+ * pinned models' own bounds, node scales and `NULL3D_lod_error` values.
  */
 export const GROUND_LEVELS: Record<
 	PlantKind,
 	readonly {
 		readonly triangles: readonly [number, number, number];
-		readonly switches: readonly [number, number];
+		readonly errors: readonly [number, number];
+		readonly nodeScale: number;
 		readonly offset: readonly [number, number, number];
 		readonly radius: number;
 	}[]
@@ -118,13 +120,15 @@ export const GROUND_LEVELS: Record<
 	'rim-conifer': [
 		{
 			triangles: [1088, 722, 618],
-			switches: [40.5, 47.1],
+			errors: [218.26374143977176, 253.3543751117608],
+			nodeScale: 0.00014248816498264698,
 			offset: [0.1467, 0.5272, -0.1018],
 			radius: 1.6749,
 		},
 		{
 			triangles: [4708, 2356, 1180],
-			switches: [70, 117.7],
+			errors: [230.69843038920993, 387.9342321069955],
+			nodeScale: 0.00023277141465333359,
 			offset: [0.1305, 0.5234, -0.0705],
 			radius: 2.4945,
 		},
@@ -132,13 +136,15 @@ export const GROUND_LEVELS: Record<
 	'clipped-shrub': [
 		{
 			triangles: [534, 330, 256],
-			switches: [79.7, 105.5],
+			errors: [625.5665872788388, 828.2870198176441],
+			nodeScale: 0.00009767145695197658,
 			offset: [0.0501, 0.4452, 0.037],
 			radius: 1.2221,
 		},
 		{
 			triangles: [2640, 1320, 660],
-			switches: [61.5, 98.9],
+			errors: [439.376187940806, 706.5392513709147],
+			nodeScale: 0.00010742502961120624,
 			offset: [0.0397, 0.5088, 0.024],
 			radius: 1.3097,
 		},
@@ -146,13 +152,15 @@ export const GROUND_LEVELS: Record<
 	azalea: [
 		{
 			triangles: [852, 498, 394],
-			switches: [79.7, 93.2],
+			errors: [601.7364573097244, 704.1596840858477],
+			nodeScale: 0.00010153946841308095,
 			offset: [0.0287, 0.2577, 0.0133],
 			radius: 1.1929,
 		},
 		{
 			triangles: [1568, 784, 392],
-			switches: [62.4, 97.5],
+			errors: [425.783947888411, 664.8985240512139],
+			nodeScale: 0.0001124983697425662,
 			offset: [0.0081, 0.3208, 0.0197],
 			radius: 1.2913,
 		},
@@ -160,13 +168,15 @@ export const GROUND_LEVELS: Record<
 	'autumn-clump': [
 		{
 			triangles: [1744, 1154, 724],
-			switches: [55, 77.3],
+			errors: [402.05586670476777, 564.9742392320552],
+			nodeScale: 0.00010496053781249195,
 			offset: [-0.1078, 0.2131, 0.0008],
 			radius: 1.2425,
 		},
 		{
 			triangles: [2352, 1176, 588],
-			switches: [55.3, 80.2],
+			errors: [342.32069467543687, 496.5264793051737],
+			nodeScale: 0.00012386046376834022,
 			offset: [-0.1021, 0.2755, 0.004],
 			radius: 1.3953,
 		},
@@ -174,7 +184,8 @@ export const GROUND_LEVELS: Record<
 	'moss-cushion': [
 		{
 			triangles: [384, 128, 60],
-			switches: [23.5, 49.7],
+			errors: [205.04473995537793, 434.01136623888334],
+			nodeScale: 0.00008778571936991497,
 			offset: [-0.0051, 0.1731, 0.0076],
 			radius: 1.0241,
 		},
@@ -182,7 +193,8 @@ export const GROUND_LEVELS: Record<
 	fern: [
 		{
 			triangles: [416, 208, 104],
-			switches: [24.4, 72.6],
+			errors: [174.0882540411963, 518.5409492029215],
+			nodeScale: 0.00010741678180984472,
 			offset: [-0.0224, 0.3935, 0.0063],
 			radius: 1.2136,
 		},
@@ -190,7 +202,8 @@ export const GROUND_LEVELS: Record<
 	hosta: [
 		{
 			triangles: [560, 200, 120],
-			switches: [20.6, 91.3],
+			errors: [220.7641918859763, 978.0692045581228],
+			nodeScale: 0.00007156957776993395,
 			offset: [0.0036, 0.2583, -0.0482],
 			radius: 0.8637,
 		},
@@ -200,24 +213,22 @@ export const GROUND_LEVELS: Record<
 /** The most triangles that the ground cover may draw from the opening camera, at its levels. */
 export const GROUND_BUDGET = 320000;
 
-/** The engine's least distance, which its level rule never measures below. */
-const LEAST_DISTANCE = 1e-3;
-
 /**
  * The ground cover's triangles: at the finest level of every copy, and as drawn from a camera, each
- * part of each copy at the level its distance and scale pick. The distance is the engine's: to the
- * part's bounding-sphere centre, less half its world radius, capped at twice the distance to its
- * nearest point; and the switches are read for the render's height against the ruler above.
+ * part of each copy at the level that the engine's rule picks for its distance and scale.
  */
 export function groundTriangles(
 	plants: readonly Spot[],
 	from: readonly [number, number, number] = WIDE,
 	height = LEVEL_RULER,
 ): { full: number; drawn: number } {
+	const view: LevelView = { height, fov: FOV, threshold: THRESHOLD };
 	let full = 0;
 	let drawn = 0;
 	for (const plant of plants)
-		for (const { triangles, switches, offset, radius } of GROUND_LEVELS[plant.kind as PlantKind]) {
+		for (const { triangles, errors, nodeScale, offset, radius } of GROUND_LEVELS[
+			plant.kind as PlantKind
+		]) {
 			full += triangles[0];
 			// The part's bounding-sphere centre: its place in the model, turned by the copy's yaw and
 			// scaled, about the copy's foot, which sinks a little.
@@ -227,13 +238,19 @@ export function groundTriangles(
 				plant.y - 0.03 + oy,
 				plant.z - Math.sin(plant.yaw) * ox + Math.cos(plant.yaw) * oz,
 			];
-			const far = Math.hypot(centre[0] - from[0], centre[1] - from[1], centre[2] - from[2]);
 			const world = radius * plant.size;
-			const near = (r: number) => Math.max(far - r, LEAST_DISTANCE);
-			const distance = Math.min(near(0.5 * world), 2 * near(world));
-			const scale = (plant.size * height) / LEVEL_RULER;
-			drawn +=
-				triangles[distance > switches[1] * scale ? 2 : distance > switches[0] * scale ? 1 : 0];
+			const distance = levelDistances(view, {
+				centre: [centre[0] - from[0], centre[1] - from[1], centre[2] - from[2]],
+				radius: world,
+			});
+			const level = levelAt(
+				view,
+				errors.map((error) => ({ error })),
+				nodeScale * plant.size,
+				world,
+				distance,
+			);
+			drawn += triangles[level];
 		}
 	return { full, drawn };
 }

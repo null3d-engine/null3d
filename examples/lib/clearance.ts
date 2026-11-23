@@ -8,7 +8,13 @@
 // and a cave may be entered. The scene's camera must draw both layers.
 //
 // The guard allocates nothing per call: it holds its ray and its one hit result, made once.
-import { type RaycastHit, type SketchContext, type Vec3Like, vec3 } from '@null3d/engine';
+import {
+	type RaycastHit,
+	type RaycastOptions,
+	type SketchContext,
+	type Vec3Like,
+	vec3,
+} from '@null3d/engine';
 import { SOLID_LAYERS } from './layers';
 
 export { EFFECT_LAYER, INTERIOR_LAYER, markEffect, markInterior } from './layers';
@@ -26,6 +32,11 @@ export interface Clearance {
 	 * margin. Returns true when it moved the point.
 	 */
 	move(from: Vec3Like, to: Vec3Like, out: Vec3Like): boolean;
+	/**
+	 * True when a straight move from `from` toward `to` keeps the margin from every surface, so a
+	 * camera may travel it without a clamp. It tests the same surfaces and margin as `move`.
+	 */
+	clear(from: Vec3Like, to: Vec3Like): boolean;
 }
 
 /**
@@ -45,7 +56,8 @@ export function createClearance(ctx: SketchContext, options: ClearanceOptions = 
 		distance: 0,
 		triangle: -1,
 	};
-	const solids = { layers: SOLID_LAYERS };
+	/** The ray's options, made once: its layers, and the limit that the move before it sets. */
+	const solids: RaycastOptions = { layers: SOLID_LAYERS };
 	/** The raycast along a unit direction, up to a distance. True with the nearest hit. */
 	const cast = (
 		ox: number,
@@ -54,6 +66,7 @@ export function createClearance(ctx: SketchContext, options: ClearanceOptions = 
 		dx: number,
 		dy: number,
 		dz: number,
+		limit: number,
 	): boolean => {
 		origin[0] = ox;
 		origin[1] = oy;
@@ -61,6 +74,9 @@ export function createClearance(ctx: SketchContext, options: ClearanceOptions = 
 		direction[0] = dx;
 		direction[1] = dy;
 		direction[2] = dz;
+		// A hit past the limit changes nothing, so the cast stops there: the walk need not visit the
+		// geometry that lies beyond the step it guards.
+		solids.maxDistance = limit;
 		return ctx.scene.raycast(origin, direction, solids, hit);
 	};
 	return {
@@ -81,13 +97,31 @@ export function createClearance(ctx: SketchContext, options: ClearanceOptions = 
 			// behind the move is never hit, so a point within the margin of one, such as the ground,
 			// still moves away from it freely; a surface ahead within the margin holds the point
 			// where it is rather than letting it draw closer.
-			if (!cast(from[0] as number, from[1] as number, from[2] as number, dx, dy, dz)) return false;
+			if (
+				!cast(from[0] as number, from[1] as number, from[2] as number, dx, dy, dz, length + margin)
+			)
+				return false;
 			if (hit.distance >= length + margin) return false;
 			const stop = Math.max(0, hit.distance - margin);
 			out[0] = (from[0] as number) + dx * stop;
 			out[1] = (from[1] as number) + dy * stop;
 			out[2] = (from[2] as number) + dz * stop;
 			return true;
+		},
+		clear(from, to) {
+			const ax = (to[0] as number) - (from[0] as number);
+			const ay = (to[1] as number) - (from[1] as number);
+			const az = (to[2] as number) - (from[2] as number);
+			const length = Math.hypot(ax, ay, az);
+			if (length === 0) return true;
+			const dx = ax / length;
+			const dy = ay / length;
+			const dz = az / length;
+			if (
+				!cast(from[0] as number, from[1] as number, from[2] as number, dx, dy, dz, length + margin)
+			)
+				return true;
+			return hit.distance >= length + margin;
 		},
 	};
 }

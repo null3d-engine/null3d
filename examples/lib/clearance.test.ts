@@ -66,6 +66,21 @@ test('the air and the interiors are not solid to the guard', () => {
 	expect(INTERIOR_LAYER).toBeGreaterThan(EFFECT_LAYER);
 });
 
+test('a judged move is clear exactly when the guard would not move it', () => {
+	// The route's certificate asks `clear` and skips the guard while the answer holds; it must
+	// answer as `move` does, so a stretch judged clear needs no clamp and one that is not stays
+	// guarded.
+	const out = vec3.create();
+	const from = point(0, 0, 0);
+	for (const x of [0.5, 5, 9.2, 9.4, 9.5, 9.6, 10, 12, 40]) {
+		const to = point(x, 0, 0);
+		expect(guardAt(10).clear(from, to)).toBe(!guardAt(10).move(from, to, out));
+	}
+	// A move away from the wall, and a move that does not move, are clear.
+	expect(guardAt(10).clear(point(9, 1, 0), point(8, 1, 0))).toBe(true);
+	expect(guardAt(10).clear(from, from)).toBe(true);
+});
+
 /** A manual orbit camera over an empty scene, with the input ring the controls read. */
 function manualCamera() {
 	const buffer = createControlBuffer(false);

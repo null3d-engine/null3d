@@ -349,8 +349,9 @@ mod ids {
     }
     /// The uniform buffer of bloom's steps and of the final pass's bloom build.
     /// Each view's cluster pass: its per-patch runs and offsets, its index list, its indirect
-    /// draws and its parameters, five ids from `CLUSTER_BUFFERS + 5 * view`, the view's bind group
-    /// after those, and the scene's tables after the groups.
+    /// draws and its parameters, five ids from `CLUSTER_BUFFERS + 5 * view`, then the scene's
+    /// tables. The band after these buffers stays free, so the pass's group numbers with the
+    /// other groups without moving a buffer id.
     const CLUSTER_BUFFERS: u32 = LIGHT_BUFFERS + 3 * MAX_VIEWS as u32;
 
     pub const fn cluster_runs(view: ViewId) -> u32 {
@@ -367,9 +368,6 @@ mod ids {
     }
     pub const fn cluster_params(view: ViewId) -> u32 {
         cluster_runs(view) + 4
-    }
-    pub const fn cluster_group(view: ViewId) -> u32 {
-        CLUSTER_BUFFERS + 5 * MAX_VIEW_IDS as u32 + view.index() as u32
     }
     /// The scene's patch table and its indices, which every view's cluster pass reads.
     pub const CLUSTER_PATCHES: u32 = CLUSTER_BUFFERS + 6 * MAX_VIEW_IDS as u32;
@@ -592,10 +590,9 @@ mod ids {
     pub const PROBE_TEXTURES: u32 = STILL_BLANK_OUTLINE + 1;
     /// The buffers of GPU picking's reads, one for each read that may wait for the GPU.
     pub const PICK_BUFFERS: u32 = PROBE_TEXTURES + 4;
-    /// The bind group of GPU picking's resolve pass.
-    pub const PICK_GROUP: u32 = PICK_BUFFERS + crate::pick::RING as u32;
-    /// The buffers of compute pass reads, one for each read that may wait for the GPU.
-    pub const PASS_READ_BUFFERS: u32 = PICK_GROUP + 1;
+    /// The buffers of compute pass reads, one for each read that may wait for the GPU. The id
+    /// after the pick's buffers stays unused, so the pick's group can sit with the other groups.
+    pub const PASS_READ_BUFFERS: u32 = PICK_BUFFERS + crate::pick::RING as u32 + 1;
     /// The buffers of the sky maps' light captures, one for each read that may wait for the GPU.
     pub const SKY_LIGHT_BUFFERS: u32 = PASS_READ_BUFFERS + crate::readback::RING as u32;
     /// The buffers of the occlusion check's reads of the camera's counts, one for each read that
@@ -847,8 +844,18 @@ mod ids {
     /// The bind groups of the one-sample layer's composite and depth copy, after the light depth
     /// reductions'.
     pub const SINGLE_GROUPS: u32 = LIGHT_DEPTH_GROUPS + MAX_VIEW_IDS as u32;
-    /// The bind groups of materials' maps, after the one-sample layer's.
-    pub const TEXTURE_GROUPS: u32 = SINGLE_GROUPS + SingleIds::GROUPS;
+    /// The bind group of each view's light clustering pass, after the one-sample layer's. It
+    /// numbers with the other groups, not with the buffers, so that another pass's group cannot
+    /// take its id.
+    pub const CLUSTER_GROUPS: u32 = SINGLE_GROUPS + SingleIds::GROUPS;
+    pub const fn cluster_group(view: ViewId) -> u32 {
+        CLUSTER_GROUPS + view.index() as u32
+    }
+    /// The bind group of GPU picking's resolve pass, after the light clustering groups. It numbers
+    /// with the other groups, not with the buffers, so that a view's cull group cannot take its id.
+    pub const PICK_GROUP: u32 = CLUSTER_GROUPS + MAX_VIEW_IDS as u32;
+    /// The bind groups of materials' maps, after the pick's.
+    pub const TEXTURE_GROUPS: u32 = PICK_GROUP + 1;
 
     pub const fn bundle(view: ViewId) -> u32 {
         1 + view.index() as u32
@@ -2990,7 +2997,7 @@ impl GpuDrivenRenderer {
         }
         let changed = motion_on.then_some(self.motion.changed_matrices());
         self.layout
-            .upload_matrices(list, input, parity, upload_everything, changed)?;
+            .upload_matrices(list, arena, input, parity, upload_everything, changed)?;
         self.layout
             .upload_row_values(list, input, parity, upload_everything || values_remade)?;
         self.layout.upload_object_ranges(list, arena)?;
@@ -4701,6 +4708,41 @@ mod tests {
                 assert!(
                     !reads.contains(&id),
                     "view {index} takes the buffer id {id}, which a read maps"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn the_pick_group_keeps_an_id_of_its_own() {
+        // The pick's resolve binds its group at group 0, and each cull pass binds a group of its
+        // own layout there. Two groups that share an id hand one pass the other's group.
+        for index in 0..MAX_VIEW_IDS {
+            let view = ViewId::from_index(index);
+            for (name, id) in [
+                ("frame", ids::frame_group(view)),
+                ("cull", ids::cull_group(view)),
+                ("index", ids::index_group(view)),
+            ] {
+                assert_ne!(
+                    ids::PICK_GROUP,
+                    id,
+                    "the pick's group takes the id of view {index}'s {name} group"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn the_cluster_groups_keep_ids_of_their_own() {
+        // The light clustering pass binds its group at group 0, and a parallax build binds a frame
+        // group there. Two groups that share an id hand one pass the other's group.
+        for index in 0..MAX_VIEW_IDS {
+            for other in 0..MAX_VIEW_IDS {
+                assert_ne!(
+                    ids::cluster_group(ViewId::from_index(index)),
+                    ids::frame_parallax_group(ViewId::from_index(other)),
+                    "view {index}'s cluster group takes view {other}'s parallax group"
                 );
             }
         }

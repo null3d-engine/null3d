@@ -309,6 +309,8 @@ The entry goes on trial as a step down does. Frames that come clearly slower aft
 
 `?tier=lowest` starts a page in the tier, for tests, devices and a known weak class. The governor stays the default path to the tier.
 
+A sketch whose own thread limits its frames keeps the tier out. Its smaller render cannot make the sketch work cheaper, so the picture only loses detail. `defineSketch(setup, { lowestTier: false })` sets that.
+
 ### Settings of an add-on's feature
 
 An add-on's feature declares its own settings in the same form as the engine's table: a value on each preset, an optional WebGL2 column, and the values it takes. The feature's budget joins the sketch's budgets. A step of the budgets' scale then lowers the feature's share of full quality with the sketch's own systems. A setting that names a `governor` follows that share: a count shrinks with it, and an interval doubles with each step. The stats overlay shows the feature's values and its budget beside the engine's figures. [Add-on feature descriptions](../api/features.md#preset-settings-and-the-frame-budget-governor) shows how a feature declares them.

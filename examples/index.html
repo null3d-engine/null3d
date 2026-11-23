@@ -245,6 +245,10 @@
 				border-radius: 16px;
 				box-shadow: 0 30px 70px rgb(0 0 0 / 0.55), inset 0 1px 0 rgb(255 255 255 / 0.12);
 			}
+			/* A finger reads no keyboard shortcuts: the touch screen has no keyboard, so the key caps
+			   are left out of the panel and the chevron rather than shown greyed. */
+			body[data-input="coarse"] .hud__btn kbd,
+			body[data-input="coarse"] .hud__chevron .hud__key { display: none; }
 			body[data-input="coarse"] .sheet { align-items: flex-end; }
 			body[data-input="coarse"] .sheet__dialog {
 				width: 100%;
@@ -268,12 +272,54 @@
 			}
 			.sheet__close:hover { background: rgb(255 255 255 / 0.1); }
 			.sheet__close:focus-visible { outline: 2px solid #7fd1ff; outline-offset: 2px; }
+			.sheet__tabs { display: flex; gap: 0.25rem; padding: 0.35rem 0.9rem 0; }
+			.sheet__tab {
+				padding: 0.4rem 0.7rem;
+				color: var(--muted);
+				font: inherit;
+				font-size: 13px;
+				background: transparent;
+				border: 1px solid transparent;
+				border-radius: 999px;
+				cursor: pointer;
+			}
+			.sheet__tab:hover { color: var(--text); background: rgb(255 255 255 / 0.08); }
+			.sheet__tab[aria-selected="true"] {
+				color: var(--text);
+				background: rgb(255 255 255 / 0.12);
+				border-color: rgb(255 255 255 / 0.18);
+			}
+			.sheet__tab:focus-visible { outline: 2px solid #7fd1ff; outline-offset: 2px; }
+			.sheet__tab[hidden] { display: none; }
+			.sheet__panel[hidden] { display: none; }
 			.sheet__body { overflow-y: auto; overscroll-behavior: contain; padding: 0.9rem 1rem 1.1rem; }
 			.about__scene { margin: 0 0 0.5rem; color: var(--muted); }
 			.about__summary { margin: 0 0 0.6rem; line-height: 1.45; }
 			.about .quiet { margin: 0.25rem 0 0; font-size: 12px; color: var(--muted); }
 			.about .quiet a { color: var(--muted); }
 			.corner__help { display: flex; flex-direction: column; align-items: flex-start; }
+			/* The key list floats on the scene, with a small close icon at its top right. */
+			.corner__help-panel { position: relative; display: flex; flex-direction: column; align-items: flex-start; }
+			.corner__help-panel[hidden] { display: none; }
+			.corner__help-close {
+				position: absolute;
+				top: -11px;
+				right: -11px;
+				width: 28px;
+				height: 28px;
+				padding: 0;
+				color: var(--text);
+				font: inherit;
+				font-size: 16px;
+				line-height: 1;
+				background: rgb(13 17 23 / 0.9);
+				border: 1px solid rgb(255 255 255 / 0.18);
+				border-radius: 50%;
+				box-shadow: 0 4px 12px rgb(0 0 0 / 0.35);
+				cursor: pointer;
+			}
+			.corner__help-close:hover { background: rgb(30 38 50 / 0.95); }
+			.corner__help-close:focus-visible { outline: 2px solid #7fd1ff; outline-offset: 2px; }
 			.corner__help[hidden] { display: none; }
 			.choices {
 				position: absolute;
@@ -349,12 +395,12 @@
 				transition: transform 200ms ease, background 200ms ease;
 			}
 			.hud__chevron:hover { transform: translateY(-2px); background: rgb(10 14 20 / 0.66); }
-			/* The speaker of a demo with sound: a small round pane of glass over the canvas's top right
-			   corner, level with the engine's frame rate and just left of it while the page shows it. */
+			/* The speaker of a demo with sound: a small round pane of glass over the canvas's bottom
+			   left corner, out of the way of the frame rate and the controls. */
 			.sound-toggle {
 				position: absolute;
-				top: 10px;
-				right: max(12px, env(safe-area-inset-right));
+				bottom: max(12px, env(safe-area-inset-bottom));
+				left: max(12px, env(safe-area-inset-left));
 				z-index: 10;
 				display: inline-flex;
 				align-items: center;
@@ -377,7 +423,11 @@
 			.sound-toggle:focus-visible { opacity: 1; background: rgb(14 18 27 / 0.5); }
 			.sound-toggle[aria-pressed='false'] { opacity: 0.6; }
 			.sound-toggle--held svg path:nth-child(2) { opacity: 0.45; }
-			body:has([data-null3d-stats]) .sound-toggle { right: 136px; }
+			/* A driving scene's thumb stick takes the corner, so the speaker stands above it. */
+			body:has(.pad:not([hidden])) .sound-toggle {
+				bottom: calc(max(22px, env(safe-area-inset-bottom)) + 150px);
+				left: max(18px, env(safe-area-inset-left));
+			}
 			.hud__chevron svg { transition: transform 260ms cubic-bezier(0.2, 0.8, 0.2, 1); }
 			.hud.open .hud__chevron svg { transform: rotate(180deg); }
 			.hud__chevron .hud__key {
@@ -884,7 +934,7 @@
 				background: rgb(5 6 8 / 0.62);
 				backdrop-filter: blur(6px);
 			}
-			.stage > .sheet {
+			.stage > .compare-sheet {
 				position: absolute;
 				top: 50%;
 				left: 50%;
@@ -899,9 +949,9 @@
 				background: rgb(20 23 29 / 0.98);
 				box-shadow: 0 30px 80px rgb(0 0 0 / 0.6);
 			}
-			.stage > .sheet[hidden] { display: none; }
+			.stage > .compare-sheet[hidden] { display: none; }
 			.sheet-head { display: flex; align-items: flex-start; gap: 0.75rem; padding: 1rem 1.1rem 0.6rem; }
-			.sheet h2 { margin: 0; font-size: 1.25rem; }
+			.compare-sheet h2 { margin: 0; font-size: 1.25rem; }
 			.sheet-close {
 				display: grid;
 				place-items: center;

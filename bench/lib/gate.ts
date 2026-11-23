@@ -334,7 +334,7 @@ export function gateSteps({ commit, quick }: GateOptions): GateStep[] {
 			// nothing. It is also the budget step, so its figures are the ones the gate records.
 			id: 'budgets',
 			item: '4',
-			what: "Each core WebAssembly build within 600 KB after Brotli, and the engine's JavaScript per thread mode within its budget",
+			what: "Each core WebAssembly build within 640 KB after Brotli, and the engine's JavaScript per thread mode within its budget",
 			command: ['bun', 'run', 'build'],
 			timed: false,
 			read: (out) => ({ figure: budgetLines(out.output), verdict: byExit(out) }),

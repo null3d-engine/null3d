@@ -60,6 +60,7 @@ An error that `setup` throws ends the start: `createEngine` rejects with it. An 
 | --- | --- | --- |
 | `fixedRate` | 60 | Fixed steps per second of sketch time: how often `onFixedUpdate` runs |
 | `maxFixedSteps` | 8 | The most fixed steps that one frame runs, after a slow frame |
+| `lowestTier` | true | False keeps the governor's lowest quality tier out, for a scene that its own sketch thread limits |
 
 ```ts
 export default defineSketch(setup, { fixedRate: 120 });

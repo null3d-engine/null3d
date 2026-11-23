@@ -9,6 +9,7 @@ import {
 	moodMix,
 	moodShare,
 	nearestMood,
+	nightAlbedo,
 	type StageOptions,
 	type StagePart,
 } from './stage';
@@ -30,6 +31,7 @@ function staged(overrides: Partial<StageOptions> = {}) {
 			height?: number;
 			heightFalloff?: number;
 			curve?: string;
+			volumetric?: { intensity: number; anisotropy: number; distance: number };
 		} | null;
 		dir?: readonly number[];
 		exposure?: number;
@@ -136,6 +138,25 @@ test('leaving the studio takes the whole look back to the hour', () => {
 	expect(last.background).not.toBe(ROOM);
 	expect(last.environment).toBe(SKY);
 	expect(last.fog?.density).toBeCloseTo(middayDensity, 5);
+});
+
+test("a scene's lit fog turns off and on without moving the rest of the fog", () => {
+	const lit = { intensity: 12, anisotropy: 0.6, distance: 2200 } as const;
+	const { stage, last, frames } = staged({ volumetric: lit });
+	stage.set('Midday');
+	frames(240);
+	expect(last.fog?.volumetric).toEqual(lit);
+	const density = last.fog?.density as number;
+	// The shafts go, and the hour's fog stays as it was.
+	stage.setShafts(false);
+	expect(last.fog?.volumetric).toBeUndefined();
+	expect(last.fog?.density).toBeCloseTo(density, 6);
+	stage.setShafts(true);
+	expect(last.fog?.volumetric).toEqual(lit);
+	// A scene without lit fog keeps no shafts, whatever its switch asks.
+	const plain = staged();
+	plain.stage.setShafts(true);
+	expect(plain.last.fog?.volumetric).toBeUndefined();
 });
 
 test("a scene's fog curve holds through the hours, and the studio's fog stays exponential", () => {
@@ -352,4 +373,22 @@ test("a scene's weather thickens the fog and dims the light, and clears again", 
 	expect(last.fog?.density as number).toBeCloseTo(clearDensity, 4);
 	expect(last.backgroundOptions?.intensity as number).toBeCloseTo(clearSky, 4);
 	expect(last.sunIntensity as number).toBeCloseTo(clearSun, 4);
+});
+
+test('open ground darkens from its day colour to a cool night colour as the lamps come on', () => {
+	// The day's own colour, untouched.
+	expect(nightAlbedo(0)).toEqual([1, 1, 1]);
+	const night = nightAlbedo(1);
+	expect(night[0]).toBeCloseTo(0.06, 5);
+	expect(night[1]).toBeCloseTo(0.07, 5);
+	expect(night[2]).toBeCloseTo(0.1, 5);
+	// A share outside the range holds the ends, so a stray value cannot over-darken or brighten.
+	expect(nightAlbedo(-1)).toEqual([1, 1, 1]);
+	expect(nightAlbedo(2)).toEqual(night);
+	// The night colour leans cool: blue keeps the largest share of its own value.
+	expect(night[2] / night[0]).toBeGreaterThan(1);
+	// A frame that writes into its own array gets the same colour back.
+	const held: [number, number, number] = [1, 1, 1];
+	expect(nightAlbedo(1, held)).toBe(held);
+	expect(held).toEqual(night);
 });

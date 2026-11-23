@@ -86,123 +86,12 @@ export interface Sound {
 const BED = -20;
 
 /** VBR qualities that give about 130 kbps in stereo and about 80 kbps in mono. */
-const STEREO_QUALITY = 5;
 const MONO_QUALITY = 4;
-/** A bed's crossfade, long enough to hide a change of texture across its seam. */
-const BED_FADE = 2;
 /** An engine's crossfade, short enough that its firing rhythm does not blur. */
 const ENGINE_FADE = 0.4;
 
 /** Every output, in the order the build makes them. */
 export const SOUNDS: readonly Sound[] = [
-	{
-		// Wind through grass stalks on open ground, in a stretch without the stalks' sharpest
-		// rustles. The high-pass takes out the gusts' rumble on the microphone and keeps the rush.
-		name: 'wind',
-		raw: 'wind/kyles-454362.ogg',
-		start: 46,
-		length: 40,
-		channels: 2,
-		filters: ['highpass=f=150:poles=2'],
-		fade: BED_FADE,
-		loop: true,
-		loudness: BED,
-		quality: STEREO_QUALITY,
-	},
-	{
-		// Pine needles in a steady wind, a few metres from the tree, after a twig's snap.
-		name: 'leaves',
-		raw: 'leaves/sinewave1khz-202989.ogg',
-		start: 26,
-		length: 30,
-		channels: 2,
-		filters: ['highpass=f=80:poles=2'],
-		fade: BED_FADE,
-		loop: true,
-		loudness: BED,
-		quality: STEREO_QUALITY,
-	},
-	{
-		// Heavy swell breaking far below a clifftop: a low, wide wash with no single wave close.
-		name: 'sea',
-		raw: 'sea/chris-dagorne-426074.ogg',
-		start: 12,
-		length: 45,
-		channels: 2,
-		filters: ['highpass=f=30:poles=2'],
-		fade: BED_FADE,
-		loop: true,
-		loudness: BED,
-		quality: STEREO_QUALITY,
-	},
-	{
-		// Waves breaking and washing up a beach, with each wave's rise and fall.
-		name: 'surf',
-		raw: 'surf/florianreichelt-450755.ogg',
-		start: 30,
-		length: 45,
-		channels: 2,
-		filters: ['highpass=f=40:poles=2'],
-		fade: BED_FADE,
-		loop: true,
-		loudness: BED,
-		quality: STEREO_QUALITY,
-	},
-	{
-		// A compact car's petrol engine held at 2,000 rpm, from outside. The demo sets its speed
-		// with the playback rate.
-		name: 'car',
-		raw: 'car/kvv-audio-845607.ogg',
-		start: 5,
-		length: 6,
-		channels: 1,
-		mono: 'mix',
-		filters: ['highpass=f=30:poles=2'],
-		fade: ENGINE_FADE,
-		loop: true,
-		loudness: BED,
-		quality: MONO_QUALITY,
-	},
-	{
-		// A coach's diesel engine at idle, from outside.
-		name: 'bus',
-		raw: 'bus/kyles-454419.ogg',
-		start: 20,
-		length: 6,
-		channels: 1,
-		mono: 'mix',
-		filters: ['highpass=f=30:poles=2'],
-		fade: ENGINE_FADE,
-		loop: true,
-		loudness: BED,
-		quality: MONO_QUALITY,
-	},
-	{
-		// A small river's gurgle over stones, close.
-		name: 'stream',
-		raw: 'stream/nicoproson-642776.ogg',
-		start: 10,
-		length: 30,
-		channels: 2,
-		filters: ['highpass=f=60:poles=2'],
-		fade: BED_FADE,
-		loop: true,
-		loudness: BED,
-		quality: STEREO_QUALITY,
-	},
-	{
-		// A waterfall at Þingvellir in Iceland, as a steady roar.
-		name: 'waterfall',
-		raw: 'waterfall/dikolson-130231.ogg',
-		start: 20,
-		length: 30,
-		channels: 2,
-		filters: ['highpass=f=40:poles=2'],
-		fade: BED_FADE,
-		loop: true,
-		loudness: BED,
-		quality: STEREO_QUALITY,
-	},
 	{
 		// A designed hover engine's steady hum, made from a spinning hard drive, a vacuum cleaner
 		// and a fridge.
@@ -232,58 +121,6 @@ export const SOUNDS: readonly Sound[] = [
 		loop: true,
 		loudness: BED,
 		quality: MONO_QUALITY,
-	},
-	{
-		// Light rain on a street at night, from an open window. The high-pass takes out the far
-		// traffic's rumble under it.
-		name: 'rain',
-		raw: 'rain/bonnyorbit-380651.ogg',
-		start: 4,
-		length: 40,
-		channels: 2,
-		filters: ['highpass=f=120:poles=2', 'highpass=f=120:poles=2'],
-		fade: BED_FADE,
-		loop: true,
-		loudness: BED,
-		quality: STEREO_QUALITY,
-	},
-	{
-		// A close clap of thunder with no rain: the rumble that builds to it, the crack and the
-		// roll, cut before a bird calls.
-		name: 'thunder-near',
-		raw: 'thunder-near/fission9-505113.ogg',
-		start: 0.3,
-		length: 11.5,
-		channels: 2,
-		fade: 3,
-		loop: false,
-		loudness: null,
-		quality: STEREO_QUALITY,
-	},
-	{
-		// Distant thunder rolling for several seconds, with no sharp crack.
-		name: 'thunder-far',
-		raw: 'thunder-far/hifijohn-242735.ogg',
-		start: 39.4,
-		length: 12,
-		channels: 2,
-		fade: 3,
-		loop: false,
-		loudness: null,
-		quality: STEREO_QUALITY,
-	},
-	{
-		// A quiet evening in a city: far traffic and the air of the streets, with no voices.
-		name: 'city',
-		raw: 'city/mirkaelina-444660.ogg',
-		start: 10,
-		length: 45,
-		channels: 2,
-		filters: ['highpass=f=30:poles=2'],
-		fade: BED_FADE,
-		loop: true,
-		loudness: BED,
-		quality: STEREO_QUALITY,
 	},
 ];
 
@@ -631,7 +468,7 @@ export function reportProblems(sound: Sound, report: Report): string[] {
 
 /** The folder of raw recordings in the pinned sample content. */
 function pinnedRawFolder(): string {
-	return dirname(dirname(samplePath('sources/sound/raw/wind/kyles-454362.ogg')));
+	return dirname(dirname(samplePath('sources/sound/raw/hover/peridactyloptrix-213384.ogg')));
 }
 
 if (import.meta.main) {

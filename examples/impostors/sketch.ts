@@ -31,7 +31,7 @@ import {
 } from './forest';
 
 export default defineSketch(async (ctx) => {
-	const { scene, assets, geometry, materials, textures, post, input, time } = ctx;
+	const { scene, assets, geometry, materials, textures, post, input, time, page } = ctx;
 	const day = timeOfDay('goldenHour', { heading: 2.2 });
 	scene.setBackground({ sky: { ...day.sky, cloudCoverage: 0.3 } }, { intensity: day.skyIntensity });
 	scene.setEnvironment(await assets.skyEnvironment(), { intensity: day.skyIntensity * 0.7 });
@@ -116,13 +116,17 @@ export default defineSketch(async (ctx) => {
 
 	return {
 		onUpdate(dt) {
-			if (input.wasPressed('KeyT')) sweeping = !sweeping;
+			if (input.wasPressed('KeyT')) {
+				sweeping = !sweeping;
+				page.post('toast', `Sun sweep: ${sweeping ? 'on' : 'off'}`);
+			}
 			if (sweeping) {
 				hour = (hour + dt * 0.03) % 1;
 				turnSun(sun, hour);
 			}
 			if (input.wasPressed('KeyL')) {
 				cardsOn = !cardsOn;
+				page.post('toast', `Far cards: ${cardsOn ? 'on' : 'off, every tree draws as a mesh'}`);
 				if (cardsOn) {
 					cards.batch.setActiveCount(far.length);
 					handOverToCards(detail, cards.batch, SWITCH);

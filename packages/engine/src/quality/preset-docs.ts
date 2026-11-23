@@ -148,6 +148,7 @@ export const SETTING_DOCS: {
 		print: (value) => (Number(value) === 0 ? 'flat layer' : String(value)),
 	},
 	governor: { label: 'Frame-budget governor', print: (value) => (value ? 'on' : 'off') },
+	governorLevels: { label: 'Governor raises the level threshold', print: yesNo },
 	depthPrepass: { label: 'Depth prepass', print: yesNo },
 	gpuOcclusion: { label: 'GPU occlusion culling (WebGPU)', print: yesNo },
 	morphTargets: { label: 'Morph targets per object on WebGL2' },

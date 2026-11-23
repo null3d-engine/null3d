@@ -373,6 +373,14 @@ export const QUALITY_SETTINGS = {
 		changes: 'live',
 		values: 'flag',
 	},
+	// Whether the governor may raise the level threshold as one of its steps, trading model detail
+	// for frames. False leaves every model's level where its distance puts it while the governor's
+	// other steps still run, for a scene whose models read badly at a coarse level near the camera.
+	governorLevels: {
+		presets: [true, true, true, true],
+		changes: 'live',
+		values: 'flag',
+	},
 	// FXAA on Low, which phones draw: MSAA's samples cost them more memory traffic.
 	antialias: {
 		presets: ['fxaa', 'msaa', 'msaa', 'msaa'],
@@ -743,6 +751,13 @@ export interface QualitySettings {
 	 * other settings as set, as benchmarks and captures need. It changes during play.
 	 */
 	governor: boolean;
+	/**
+	 * Whether the governor may raise `lodThreshold` as one of its steps, trading model detail for
+	 * frames. True does, up to four doublings while a mesh has levels of detail. False leaves every
+	 * model's level where its distance puts it, while the governor's other steps still run, so a
+	 * model stays whole near the camera on a slow device. It changes during play.
+	 */
+	governorLevels: boolean;
 	/**
 	 * How the engine smooths the edges of what it draws: `msaa` draws 4 samples per pixel, `fxaa`
 	 * smooths edges in the final pass, and `none` leaves them sharp. The mode is fixed when the

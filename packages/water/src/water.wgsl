@@ -35,6 +35,8 @@ struct Uniforms {
     windStrength: f32,
     // The layer of the field's texture that holds the newest state.
     windLayer: f32,
+    // The slope that a gust raises in a short ripple of its own, or 0 for water that shows none.
+    windRipple: f32,
     // How hard rain falls on the surface, from 0 for none to 1 for a downpour.
     rain: f32,
 }
@@ -391,8 +393,9 @@ fn junction(p: vec2f, body: f32) -> vec2f {
 /// travel with the water, in two copies that take turns, as `carried` gives them. Still water keeps
 /// the authored directions and each wave's own speed. A wave's slope fades as the wave grows finer
 /// than `footprint`, the meters that one pixel covers, so a slope that a pixel cannot resolve never
-/// turns into noise that changes each frame.
-fn waves(p: vec2f, t: f32, current: vec3f, fine: bool, footprint: f32) -> vec3f {
+/// turns into noise that changes each frame. That lost slope still tilts the mirror, so `w` gives
+/// its spread: the root of the summed squares of the slopes that the fade removes.
+fn waves(p: vec2f, t: f32, current: vec3f, fine: bool, footprint: f32) -> vec4f {
     // Each wave: its direction, its wave number, and the speed it runs at in still water.
     let list = array<vec4f, 6>(
         vec4f(1.0, 0.15, 2.3, 0.9),
@@ -404,6 +407,9 @@ fn waves(p: vec2f, t: f32, current: vec3f, fine: bool, footprint: f32) -> vec3f 
     );
     var h = 0.0;
     var slope = vec2f(0.0);
+    // The squares of the slopes that the footprint drops, which add across the waves since their
+    // crests meet at every angle.
+    var lost = 0.0;
     let moving = current.z > 1e-5;
     let copies = carried(t);
     let count = select(3u, 6u, fine);
@@ -426,24 +432,48 @@ fn waves(p: vec2f, t: f32, current: vec3f, fine: bool, footprint: f32) -> vec3f 
             let second = base - run * copies.y + cycle_seed(t, 0.5) * turn;
             h += amplitude * (copies.z * sin(first) + copies.w * sin(second));
             slope += dir * (amplitude * w.z * (copies.z * cos(first) + copies.w * cos(second)) * resolved);
+            // Each copy's cosine averages a half of its square, and the two copies' phases differ.
+            let faded = amplitude * w.z * (1.0 - resolved);
+            lost += faded * faded * (copies.z * copies.z + copies.w * copies.w) * 0.5;
         } else {
             // Still: each wave runs at its own speed.
             let still = w.z * dot(own, p) - w.w * t;
             h += amplitude * sin(still);
             slope += dir * (amplitude * w.z * cos(still) * resolved);
+            let faded = amplitude * w.z * (1.0 - resolved);
+            lost += faded * faded * 0.5;
         }
     }
-    return vec3f(h, slope);
+    return vec4f(h, slope.x, slope.y, sqrt(lost));
 }
 
 /// The waves at a point with a share of the river's waves over still water's. Two meshes that meet
 /// carry one current there and read one share, so they give the same surface.
-fn shared_waves(p: vec2f, t: f32, current: vec3f, share: f32, fine: bool, footprint: f32) -> vec3f {
+fn shared_waves(p: vec2f, t: f32, current: vec3f, share: f32, fine: bool, footprint: f32) -> vec4f {
     let moving = waves(p, t, current, fine, footprint);
     if share >= 1.0 {
         return moving;
     }
     return mix(waves(p, t, vec3f(0.0), fine, footprint), moving, share);
+}
+
+/// The air at a world place, from the field's own reading and box. The vertex stage lifts a long
+/// wave by it, and a surface that asks for a wind ripple turns its short crests by it.
+fn air_here(world: vec3f) -> vec4f {
+    let reading = wind_reading(
+        textureLoad(airSettings, vec2i(0, 0), 0),
+        textureLoad(airSettings, vec2i(1, 0), 0),
+        textureLoad(airSettings, vec2i(2, 0), 0),
+        textureLoad(airSettings, vec2i(3, 0), 0),
+        frame.time,
+    );
+    return wind_sample(
+        world,
+        camera.position.xz - vec2f(material.windBox * 0.5),
+        material.windBox,
+        i32(material.windLayer),
+        reading,
+    );
 }
 
 fn vertexOffset(input: VertexInput) -> vec3f {
@@ -455,27 +485,43 @@ fn vertexOffset(input: VertexInput) -> vec3f {
     // geometry rather than a pixel, so the fine ripples keep their full detail here.
     var lift = waves(input.position.xz, frame.time, current, false, 0.0).x * (1.0 - flatness);
     if (material.windStrength > 0.0) {
-        // The air over the surface: its speed lifts a short wave, and its direction sets where the
+        // The air over the surface: its speed lifts a long wave, and its direction sets where the
         // crest stands. The field's box follows the camera, as it does for every reader of the field.
         let place = (object.worldMatrix * vec4f(input.position, 1.0)).xyz + camera.position;
-        let reading = wind_reading(
-            textureLoad(airSettings, vec2i(0, 0), 0),
-            textureLoad(airSettings, vec2i(1, 0), 0),
-            textureLoad(airSettings, vec2i(2, 0), 0),
-            textureLoad(airSettings, vec2i(3, 0), 0),
-            frame.time,
-        );
-        let air = wind_sample(
-            place,
-            camera.position.xz - vec2f(material.windBox * 0.5),
-            material.windBox,
-            i32(material.windLayer),
-            reading,
-        );
+        let air = air_here(place);
         let along = dot(air.xz, vec2f(0.919, 0.394));
         lift += material.waveAmplitude * 0.035 * air.a * sin(dot(input.position.xz, vec2f(0.7, 0.3)) * 0.5 + frame.time * 2.0 + along);
     }
     return vec3f(0.0, lift, 0.0);
+}
+
+/// The reflection texture coordinates that one unit of surface slope moves the mirrored image by, as
+/// the water's ripples are tuned to bend it.
+const MIRROR_SLOPE: f32 = 0.08;
+
+/// The reflection texture coordinates that one unit of slope spread widens the mirror by: a tilt turns
+/// the reflected view by twice its angle, which at a 45 degree view moves the mirror by about 2.4 of
+/// the target per unit slope, and the gather's radius takes half of that. Every slope that a pixel
+/// resolves moves the sample itself, so a ripple bends the image. The slopes that the pixel's
+/// footprint drops cannot bend it, but they still tilt the light that reaches the pixel, so the
+/// mirrored image arrives over a cone of directions rather than one. A wider gather softens the edge
+/// of a reflected bank and gives the sheet the surface's structure; too wide a one smears a
+/// reflected branch into ghosts.
+const MIRROR_CONE: f32 = 1.2;
+
+/// The color of the mirror at `uv`, gathered over a cone of `radius` in texture coordinates. The five
+/// taps sit on the center and two diagonals, and the center weighs twice, so the gather keeps a flat
+/// image flat. At a radius of nothing every tap reads the center, so water that resolves every wave
+/// keeps a glassy, sharp mirror.
+fn mirror_at(uv: vec2f, radius: f32) -> vec3f {
+    let a = vec2f(0.70710678, 0.70710678) * radius;
+    let b = vec2f(0.70710678, -0.70710678) * radius;
+    var sum = textureSampleLevel(mirror, mirrorSampler, uv, 0.0).rgb * 2.0;
+    sum += textureSampleLevel(mirror, mirrorSampler, uv + a, 0.0).rgb;
+    sum += textureSampleLevel(mirror, mirrorSampler, uv - a, 0.0).rgb;
+    sum += textureSampleLevel(mirror, mirrorSampler, uv + b, 0.0).rgb;
+    sum += textureSampleLevel(mirror, mirrorSampler, uv - b, 0.0).rgb;
+    return sum / 6.0;
 }
 
 /// The distance in front of the camera of a depth value, as sceneDistance converts the copy's.
@@ -507,10 +553,27 @@ fn surface(input: SurfaceInput) -> Surface {
     if material.rain > 0.0 {
         slope += rain_rings(p, frame.time, current.xy * current.z, material.rain, footprint);
     }
+    // A gust raises short crests of its own, so a surface that asks shows the air that the trees and
+    // the lawns read. The waves run with the air and take its speed, at a feature a small basin can
+    // show, so a pool's reflection moves with the wind rather than only with the clock.
+    if (material.windRipple > 0.0 && material.windStrength > 0.0) {
+        let air = air_here(input.worldPosition);
+        let gust = clamp(air.a / 6.0, 0.0, 1.0);
+        let heading = normalize(air.xz + vec2f(1e-4, 0.0));
+        let across = vec2f(-heading.y, heading.x);
+        let along = dot(p, heading) * 14.0 - frame.time * (4.0 + 3.0 * gust);
+        let cross = dot(p, across) * 21.0 + frame.time * 5.0;
+        slope += (heading * cos(along) + across * 0.6 * cos(cross)) * (material.windRipple * 0.07 * gust);
+    }
     s.normal = normalize(vec3f(-slope.x, 1.0, -slope.y));
     let clip = camera.viewProjection * vec4f(input.relativePosition, 1.0);
-    let mirrorUv = reflection_uv(clip, slope * 0.08);
-    s.reflection = vec4f(textureSampleLevel(mirror, mirrorSampler, mirrorUv, 0.0).rgb, 1.0);
+    let mirrorUv = reflection_uv(clip, slope * MIRROR_SLOPE);
+    // The pixel's mirror reads the slope that it resolves as a bend of the image. The waves' slope
+    // that it cannot resolve still scatters the light, and the surface's roughness spreads it
+    // further: their spread widens the gather, so a reflected bank seen through ripples meets the
+    // sheet on a soft edge rather than on a cut one.
+    let cone = (w.w + s.roughness * s.roughness) * MIRROR_CONE;
+    s.reflection = vec4f(mirror_at(mirrorUv, cone), 1.0);
     // The water's depth: the gap between the sheet and the geometry behind the pixel along the view
     // ray, from the copy of the opaque scene's depth. The depth below the surface is that gap
     // measured against the view's slope.

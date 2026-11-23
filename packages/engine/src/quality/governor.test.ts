@@ -475,6 +475,19 @@ describe('the bloom steps', () => {
 		expect(controller.stepChanges).toBe(before + 1);
 	});
 
+	it('holds the level threshold when the scene keeps its models whole', () => {
+		const { controller } = controlled(950);
+		controller.setShadows(5, 1, true);
+		controller.setCasters(1, false);
+		controller.setLevels(true);
+		controller.setLevelSteps(false);
+		// The steps that remain are the ones that do not reach the level threshold.
+		expect(controller.detailFactor).toBe(1);
+		const steps = controller.steps;
+		controller.setLevelSteps(true);
+		expect(controller.steps).toBeGreaterThanOrEqual(steps);
+	});
+
 	it("halves bloom's base after the shadow steps, only while bloom is on", () => {
 		const { controller, untilStep } = controlled(900);
 		controller.setShadows(5, 2, true);

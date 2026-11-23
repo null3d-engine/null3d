@@ -55,7 +55,7 @@ Settle its state before you design the scene.
 | --- | --- | --- |
 | Orbit, map, fly and first-person cameras, and drag, rotate or scale handles | `@null3d/controls` | built |
 | Torus knots, polyhedra, lathes, extrusions and tubes | `@null3d/geometry` | built |
-| Far objects as camera-facing cards, or one mesh per far grid cell | `@null3d/impostors` | built |
+| Far objects as camera-facing cards, or one mesh per far grid cell | `@null3d/impostors` | built; bake several views for any card bigger than a few pixels |
 | Fire, smoke, sparks, rain and other particle effects | `@null3d/particles` | built |
 | Gaussian splats from a scan or a training run | `@null3d/splats` | built |
 | Ground from a height field | `@null3d/terrain` | built |
@@ -63,7 +63,7 @@ Settle its state before you design the scene.
 | Rigid bodies, joints and character movement | the physics add-on | not built yet; run Rapier or cannon-es in the sketch worker |
 | Text in the scene | the MSDF text add-on | not built yet; use HTML labels |
 | A river or a lake, with waves, foam and soft shores | `@null3d/water` | built; see the docs page api/water |
-| Trees, shrubs, ferns, grass and their placement by ecological rules | `@null3d/vegetation` | built (twelve species, the scatter and grass) |
+| Trees, shrubs, ferns and their placement by ecological rules | the vegetation add-on | not published; it is unfinished and ships nowhere, so make plants in code or from glTF models, with the wind add-on for the sway |
 | Wind that plants, flags and smoke read, with travelling gusts and pushes | `@null3d/wind` | built (the field carries no state between frames yet; see the docs page api/wind) |
 | Sound placed in the scene: loops, groups of many sources and one-shots | `@null3d/sound` | built; see the docs page api/sound |
 | three.js look modes for a port | `@null3d/three-compat` | built |

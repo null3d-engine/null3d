@@ -290,6 +290,7 @@ export function addHero(
 		setBias() {
 			keen = !keen;
 			mesh.setLevelBias(keen ? 0.25 : 1);
+			return keen;
 		},
 	};
 }

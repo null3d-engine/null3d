@@ -6,6 +6,7 @@
 // the mesh shaders write theirs: into the HDR scene color, or tone mapped and encoded on the 8-bit
 // path (the TONE_MAP builds). It binds the background's group as the cube map background does, and
 // reads no texture.
+#import null3d::fog
 #import null3d::globals::Frame
 #import null3d::tonemap
 #import null3d::backdrop::{Backdrop, box_corner}
@@ -61,8 +62,19 @@ fn fs(in: SkyOut) -> @location(0) vec4f {
         color += second_sky_weight * sky_light(direction, second, settings, backdrop.sun.w * backdrop.layer.x);
     }
     let scale = backdrop.params.x * frame.output.exposure;
+    // The sky takes the same fog as a surface at the camera's far plane, so the haze over the land
+    // continues over the sky it meets.
+    let exposed = color * scale;
+    let fogged = null3d::fog::fogged_background(
+        frame.fog,
+        exposed,
+        direction,
+        frame.camera_range.y,
+        frame.sun_direction.xyz,
+        frame.sun_color.xyz,
+    );
     return null3d::tonemap::finish(
-        color * scale,
+        fogged,
         in.clip.xy,
         frame.occlusion.y,
         frame.output,

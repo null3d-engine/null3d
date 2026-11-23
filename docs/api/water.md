@@ -31,7 +31,7 @@ flowchart LR
     spray --> fall
 ```
 
-`@null3d/water` draws the water in a scene. A river follows a line, and a lake fills an outline, and both come from one description. The surface has long waves that the current carries downstream, and finer ripples in its normal. It draws caustics on the bed, foam around what breaks the surface, and a shore that fades where the bed rises to meet it. A reflection pass mirrors the banks and the sky, and redraws as often as the quality preset affords. The same surface draws from below, and `createUnderwater` gives the view from under the water its color, its bend and its caustics.
+`@null3d/water` draws the water in a scene. A river follows a line, and a lake fills an outline, and both come from one description. The surface has long waves that the current carries downstream, and finer ripples in its normal. It draws caustics on the bed, foam around what breaks the surface, and a shore that fades where the bed rises to meet it. A reflection pass mirrors the banks and the sky, and redraws as often as the quality preset affords. The mirror softens where the waves lie finer than a pixel covers, since their tilt still scatters the light. A bank seen through ripples meets the surface on a soft edge, while water close to the camera stays glassy. The same surface draws from below, and `createUnderwater` gives the view from under the water its color, its bend and its caustics.
 
 `createWaterfall` draws a fall from a river's lip, with spray at the lip, mist down the fall and a plume of mist at its foot.
 
@@ -140,6 +140,7 @@ the bed at a point, and the current there.
 | `material` | The standard material values | None | The surface's material, such as its volume's tint. The surface works its own thickness and transmission out, so it takes no value for those |
 | `camera` | A `Camera` | None | The camera that the reflection follows. While it moves or turns, the reflection draws in every frame, so a moving view shows no mirror of an older one; a still camera keeps the cadence above. Without one, the cadence holds whatever the view does |
 | `wind` | A wind field's `texture`, `size` and `air` | None | The wind that lifts the surface's short waves and carries their crests. The surface reads it once for each vertex |
+| `windRipple` | A number from 0 | 0 | The slope that the wind raises in short crests of its own, at a feature of a few tenths of a meter. At 0 the surface's waves run with their clocks alone |
 | `rain` | A number from 0 to 1 | 0 | How hard rain falls on the surface. Each drop rings the surface where it lands. 0 draws no rings and costs nothing |
 
 ## The foam around what breaks the water
@@ -182,6 +183,17 @@ return {
 `createWater` takes a plain texture and its box, so the water package does not import the wind add-on. A page can connect any field that gives a texture with the same layout. A surface that names no field still declares the field's textures, which it never reads.
 
 `waveAmplitude` scales the lift that the wind gives the surface, along with the long waves. A slow stream can therefore keep a nearly flat surface, with fine ripples. Its wind field still moves the plants and the leaves around it.
+
+A field's lift rides on a long swell, which suits a lake or a river. A pool, a basin or a fountain is small beside that swell, so the lift reads there as one flat tilt of the whole surface. Give such a body a `windRipple` and the surface takes the air in short crests of its own, a few tenths of a meter apart, so its reflection moves with the gusts that sway the trees. It is 0 by default, which leaves every other surface as it was. The crests cost one read of the field for each pixel, so a wide lake keeps the default and lets its swell answer the wind.
+
+```ts
+const pool = createWater(ctx, {
+  shapes,
+  wind: wind.field,
+  windRipple: 1,
+  ripple: 0,
+});
+```
 
 ## Rain on the surface
 
@@ -395,6 +407,7 @@ export default defineSketch(async (ctx) => {
 | `foam` | A number above 0, in meters | 1.1 | The height at which foam breaks on a crest |
 | `softness` | A number above 0, in meters | 0.12 | The gap to the bed over which the water fades at a shore |
 | `reflectionEvery` | A frame count from 1 to 16 for each preset | 2 on Low and Medium, 1 on High and Ultra | The frames between two draws of the reflection |
+| `reflectionFollowsBudget` | `true` or `false` | `true` | Whether the frame-budget governor may raise `reflectionEvery`. Between draws the sea shows the reflection of an older camera, so on a moving camera a raised count reads as a lag. `false` keeps the count |
 | `layers` | A 32-bit mask | The camera's layers | The layers that the reflection draws |
 | `reflectionScale` | `1`, `0.5` or `0.25` | 1 | The reflection's size as a share of the render size each way |
 | `material` | The standard material values | None | The surface's material, such as the water's tint and its thickness |

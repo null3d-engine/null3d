@@ -114,6 +114,10 @@ A sound with neither distance keeps the level that the sketch gives it wherever 
 
 A browser mixes a few dozen voices well, and a scene may have hundreds of sources of one kind. A group gives its members a few voices. The mixer ranks the members by their loudness where the listener stands, from their level and distance. It gives each voice to one of the loudest. A voice keeps its member while that member stays close to the cut. So a voice does not flap between two members at the same distance. A voice that moves to another member fades out first, so its sound never jumps across the scene. It takes the new member's pitch before it fades in.
 
+A group's voices add as power: three at full level sound about 5 dB louder than one. Give a group's points lower levels than a loop's. Write a mass of like sources as one loop, whose level follows the density around the camera, not one source for each object.
+
+A group's voices play one file, each from a point of its own, so the copies never sound in step. Rates that differ for each member add no richness that the offsets do not already give. They also make the group's pitch change as the camera moves and the nearest members change. Keep the members at one rate, and use `setRate` for a source whose own speed differs, such as a car's engine.
+
 The page plays 32 voices at most. A loop takes one voice, a group takes its `voices`, and a shot takes its `voices`, wherever free voices sit. A sketch that asks for more than 32 at once gets error 2501, which names the count. While other voices are free, a destroyed sound's voices rest for a third of a second before another sound takes them. So their fade ends first.
 
 ## The page's calls

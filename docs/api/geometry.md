@@ -278,6 +278,11 @@ An `error` level draws while it covers fewer pixels than the `lodThreshold` qual
 
 Each level must have the mesh's vertex attributes, as it draws with the same pipelines. A level may name a `material` of its own, so a far level shades more cheaply. A level without one draws with the material of the level before it. The base level draws with the object's or the instance batch's material. An empty list takes the levels away, and destroying a level's mesh takes every level away. `mesh.levels` lists them as you gave them. A mesh whose bound covers fewer pixels than the threshold draws nothing: its last level holds no geometry. Wrong levels throw [E1221](../errors/E1221.md). [Levels of detail](../concepts/lod.md) explains the three measures, the hide distance, the fading bands and the shadows. It also explains how glTF files from the asset tool bring their levels.
 
+A far object that draws as a card follows its own rules. A card that lights unlike its mesh reads as
+another tree. [Impostors](impostors.md#make-a-card-read-as-its-mesh) says which mesh to bake, the
+color space, the views and texels, the normal bake, and the matched-crop check before a card is
+accepted.
+
 ## Destroying a mesh
 
 `mesh.destroy()` frees a mesh that the scene no longer draws. Destroy the objects and instance batches that use it first. They can go in the same frame, just before the mesh:

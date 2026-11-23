@@ -125,6 +125,7 @@ export default defineSketch(async (ctx) => {
 			if (input.wasPressed('layout')) {
 				inset = !inset;
 				layout();
+				page.post('toast', `Inset view: ${inset ? 'on' : 'off'}`);
 			}
 		},
 	};

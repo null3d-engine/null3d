@@ -48,7 +48,7 @@ fn fog_reaches_every_view<B: FrameBuilder + Views>(mut world: World<B>) {
     set(
         &mut world,
         curve::LINEAR,
-        [0.0, 10.0, 80.0, 0.0, 0.0, 0.0, 8.0],
+        [0.0, 10.0, 80.0, 0.0, 0.0, 0.0, 8.0, 0.0],
     );
     world.record(false);
     let linear = fog_of(&world, ViewId::CAMERA);
@@ -70,7 +70,7 @@ fn fog_reaches_every_view<B: FrameBuilder + Views>(mut world: World<B>) {
     set(
         &mut world,
         curve::EXPONENTIAL,
-        [0.02, 0.0, 0.0, 1.0, 0.5, 0.25, 16.0],
+        [0.02, 0.0, 0.0, 1.0, 0.5, 0.25, 16.0, 0.4],
     );
     world.record(true);
     for (view, height) in [(ViewId::CAMERA, 0.0f32), (side, 2.0)] {
@@ -78,6 +78,10 @@ fn fog_reaches_every_view<B: FrameBuilder + Views>(mut world: World<B>) {
         assert_eq!(
             (fog.curve, fog.density, fog.sun_glow, fog.sun_exponent),
             (curve::EXPONENTIAL, 0.02, 0.25, 16.0)
+        );
+        assert_eq!(
+            fog.background, 0.4,
+            "the background's share of the fog reaches every view's uniform"
         );
         let share = (-0.5 * (height - 1.0)).exp();
         assert!(

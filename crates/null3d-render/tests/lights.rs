@@ -146,7 +146,7 @@ fn lights_reach_the_frame<B: FrameBuilder>(mut world: World<B>) {
     let fog = Fog::from_code(
         fog::curve::EXP2,
         [0.5, 0.5, 1.0],
-        [0.1, 0.0, 0.0, 0.0, 0.0, 0.0, 8.0],
+        [0.1, 0.0, 0.0, 0.0, 0.0, 0.0, 8.0, 0.0],
     );
     settings.set_fog(fog);
     record(&mut world, &mut lights);

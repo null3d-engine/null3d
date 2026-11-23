@@ -34,6 +34,13 @@ import { CAR_LOOK, CARS, createTraffic } from './traffic';
 const FOV = 58;
 /** The bearing of the moon and the sky's light about +Y. */
 const HEADING = 2.1;
+
+/** The effects that Skyway's HUD offers, which its controls answer. */
+export const SUPPORTED = {
+	atmosphere: ['sky', 'fog', 'shafts', 'rain', 'storm'],
+	lighting: ['ao', 'environment'],
+	post: ['bloom', 'dof', 'exposure', 'vignette'],
+} as const;
 /** The fog's density in the ordinary weather, and the lit fog that the sun and the lamps show. */
 const FOG_DENSITY = 0.0042;
 const FOG_LIT = { intensity: 1.5, anisotropy: 0.42, distance: 430 };
@@ -151,6 +158,7 @@ export default defineSketch(async (ctx) => {
 	const stage = createMoods(ctx, sun, skyLight, room, {
 		heading: HEADING,
 		fogDensity: FOG_DENSITY,
+		backgroundFog: Number(new URL(import.meta.url).searchParams.get('background-fog')) || 0,
 		cloudCoverage: 0.45,
 		backdrop: [0.01, 0.012, 0.02],
 		volumetric: FOG_LIT,
@@ -293,7 +301,11 @@ export default defineSketch(async (ctx) => {
 		stage,
 		start: {
 			sky: true,
-			fog: true,
+			// Every showcase starts with the air clear, and the HUD's Fog switch adds the haze.
+			// `?fog=on` starts the haze on, as a cost run and a picture need it with the shafts.
+			fog: new URL(import.meta.url).searchParams.get('fog') === 'on',
+			// The shafts light the fog, so they start off with it; `?shafts=on` starts them on.
+			shafts: new URL(import.meta.url).searchParams.get('shafts') === 'on',
 			rain: true,
 			storm,
 			ao: true,
@@ -303,11 +315,7 @@ export default defineSketch(async (ctx) => {
 			exposure: false,
 			vignette: true,
 		},
-		supported: {
-			atmosphere: ['sky', 'fog', 'rain', 'storm'],
-			lighting: ['ao', 'environment'],
-			post: ['bloom', 'dof', 'exposure', 'vignette'],
-		},
+		supported: SUPPORTED,
 		// The lens kit owns the vignette, and the scene's own lens owns the depth of field, so their
 		// switches answer here rather than through the shared post cases.
 		own: ['dof', 'vignette'],
@@ -375,6 +383,8 @@ export default defineSketch(async (ctx) => {
 		target: TARGET,
 		groups: controls.groups,
 		bounds: { ...BOUNDS, ground: () => 0 },
+		// The camera belongs to the hover car, so a double press focuses nothing.
+		focus: false,
 		keys: [
 			{
 				code: 'KeyV',

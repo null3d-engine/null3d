@@ -31,8 +31,9 @@ struct Fog {
     sun_glow: f32,
     /// The power of the glow's fall away from the sun: higher values make the glow smaller.
     sun_exponent: f32,
-    /// Fills the block to a multiple of 16 bytes.
-    spare: f32,
+    /// How much of the fog the background takes, from 0 to 1: 1 gives the sky and a cube map the
+    /// fog of a surface at the camera's far plane, 0 leaves them unfogged.
+    background: f32,
     /// The fog's curve: `OFF`, `LINEAR`, `EXP2` or `EXPONENTIAL`.
     curve: u32,
 }
@@ -91,10 +92,55 @@ fn fog_factor(fog: Fog, relative_position: vec3f) -> f32 {
 /// and `light_color` its exposed color.
 fn fog_color(fog: Fog, relative_position: vec3f, light_direction: vec3f, light_color: vec3f) -> vec3f {
     let toward_sun = max(dot(normalize(relative_position), -light_direction), 0.0);
-    return fog.color.xyz + light_color * (fog.sun_glow * pow(toward_sun, fog.sun_exponent));
+    // A glow of power zero fills every direction alike. `pow` of zero raised to zero is undefined
+    // on some GPUs, which turned the glow, and so the whole sky, black away from the sun, so such
+    // a glow takes its value without a power.
+    let glow = select(
+        fog.sun_glow,
+        fog.sun_glow * pow(toward_sun, fog.sun_exponent),
+        fog.sun_exponent > 0.0,
+    );
+    return fog.color.xyz + light_color * glow;
 }
 
 /// A color seen through fog: `c` blended toward `fog_color` by the fog factor.
 fn apply_fog(c: vec3f, fog_color: vec3f, factor: f32) -> vec3f {
     return mix(c, fog_color, factor);
+}
+
+/// The share of fog over the background along `direction`, `far` from the camera, from 0, no fog,
+/// to `fog.background`, the most that the background takes. It is the fog that a surface at that
+/// distance takes, so the far edge of the land and the sky behind it meet on one color. The
+/// direction's rise shortens the path through fog that thins with height, which leaves the sky
+/// overhead lighter than the haze at the horizon.
+fn background_share(fog: Fog, direction: vec3f, far: f32) -> f32 {
+    return fog.background * fog_factor(fog, normalize(direction) * far);
+}
+
+/// A background's exposed linear color after the fog, mixed toward the fog's own as the mesh
+/// shaders mix theirs: the fog color plus the light that the fog scatters toward the camera.
+fn fogged_background(
+    fog: Fog,
+    color: vec3f,
+    direction: vec3f,
+    far: f32,
+    light_direction: vec3f,
+    light_color: vec3f,
+) -> vec3f {
+    let share = background_share(fog, direction, far);
+    // A background that takes no fog keeps its own color, and reads no fog color at all.
+    if share <= 0.0 {
+        return color;
+    }
+    let relative = normalize(direction) * far;
+    let fogged = fog_color(fog, relative, light_direction, light_color);
+    return mix(color, fogged, share);
+}
+
+/// How much of a background's own light survives the fog along `direction`, `far` from the
+/// camera: 1 where the background takes no fog, and 0 where the fog hides everything. A light that
+/// a pass adds over the sky, such as a cloud's, dims by this, so it sits in the fog that the sky
+/// behind it takes instead of standing out of it.
+fn background_clear(fog: Fog, direction: vec3f, far: f32) -> f32 {
+    return 1.0 - background_share(fog, direction, far);
 }

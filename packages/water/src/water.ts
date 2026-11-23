@@ -129,6 +129,13 @@ export interface WaterOptions {
 	/** The meters of the gap to the bed over which the water fades at a shore. It is 0.12 by default. */
 	readonly softness?: number;
 	/**
+	 * The slope that the wind raises in short crests of its own, from 0, at a feature of a few tenths
+	 * of a meter. It is 0 by default: the water's waves then run with their clocks alone. A surface
+	 * that asks for it moves with the field's air as the scene's trees do, which suits a body small
+	 * enough that a long swell would read as one flat tilt.
+	 */
+	readonly windRipple?: number;
+	/**
 	 * The share of the water's color at a low view, from 0 to 1, that reads the whole way the view runs
 	 * through the water, as a wide sea's does: a low view then shows no sharp outline of the bed in the
 	 * distance. A view from above keeps the depth. At 0, the default, it reads the depth at every view.
@@ -486,6 +493,7 @@ export function createWater(ctx: SketchContext, options: WaterOptions): Water {
 			windBox: wind?.size ?? 0,
 			windStrength: wind ? 1 : 0,
 			windLayer: 0,
+			windRipple: options.windRipple ?? 0,
 			rain,
 		},
 	});

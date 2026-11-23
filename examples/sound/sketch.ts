@@ -10,6 +10,7 @@ import { defineSketch } from '@null3d/engine';
 import { createSound } from '@null3d/sound';
 import { createRain } from '../addons/weather/index';
 import { interact } from '../lib/interact';
+import { SOUND_GAIN } from '../lib/sound-gain';
 import { RECORDINGS } from './files';
 import { brookPoints, buildMoor, moorHeight } from './moor';
 import { createStorm, FIRST_STRIKE, SKY, scheduledStrike, seeded } from './storm';
@@ -60,6 +61,7 @@ export default defineSketch(async (ctx) => {
 		far: 80,
 	});
 	brook.positions.set(water);
+	brook.levels.fill(SOUND_GAIN.stream);
 	const crack = sound.shot({ file: RECORDINGS.thunderNear, near: 250, far: 6000 });
 	const roll = sound.shot({ file: RECORDINGS.thunderFar, near: 900, far: 14_000 });
 
@@ -125,7 +127,8 @@ export default defineSketch(async (ctx) => {
 					// The sound front reaches the camera now: the thunder plays from the strike's place.
 					slot.heard = true;
 					const shot = distance < CRACK_WITHIN ? crack : roll;
-					shot.play(slot.x, slot.y + 120, slot.z, 1, 0.85 + 0.25 * seeded(slot.number, 6));
+					const gain = shot === crack ? SOUND_GAIN.thunderNear : SOUND_GAIN.thunderFar;
+					shot.play(slot.x, slot.y + 120, slot.z, gain, 0.85 + 0.25 * seeded(slot.number, 6));
 					label(
 						slot.id,
 						distance < 1000 ? `${Math.round(distance)} m` : `${(distance / 1000).toFixed(1)} km`,

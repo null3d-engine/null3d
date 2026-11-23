@@ -61,11 +61,12 @@ pub const MOVING: u32 = 2;
 /// A voice or a slot that holds no emitter, or a voice that no sound owns.
 const NONE: i32 = -1;
 /// How fast a voice's gain follows its target, as a time constant in seconds.
-const GAIN_TIME: f32 = 0.05;
+const GAIN_TIME: f32 = 0.08;
 /// How fast a voice fades in once its file plays.
 const FADE_IN_TIME: f32 = 0.25;
-/// How fast a voice fades out before it moves to another emitter, or as its sound stops.
-const SWITCH_TIME: f32 = 0.02;
+/// How fast a voice fades out before it moves to another emitter, or as its sound stops. A short
+/// fade leaves a dip that the ear hears as a flutter as a group's nearest members change.
+const SWITCH_TIME: f32 = 0.12;
 /// How fast a voice's tone and rate follow their targets.
 const TONE_TIME: f32 = 0.08;
 /// How fast every sound fades when the sketch stops or starts again.
@@ -83,7 +84,9 @@ const SILENT: f32 = 1e-4;
 const LOW_CUTOFF: f32 = 120.0;
 const HIGH_CUTOFF: f32 = 20_000.0;
 /// The share of its tone that a muffled sound loses at its far distance.
-const MUFFLE: f32 = 0.45;
+/// The share of its tone that a sound loses at its far distance. A voice that moves between a
+/// group's members takes a gentler share, so the mix's brightness does not jump with the swap.
+const MUFFLE: f32 = 0.22;
 /// Where a sound with a far distance starts to fade, as a share of that distance.
 const FAR_FADE: f32 = 0.6;
 /// The largest level that the mixer takes from the table.
@@ -721,6 +724,9 @@ impl Mixer {
             e = self.next[v];
             self.emitter[v] = e;
             self.next[v] = NONE;
+            // The voice is silent, so the new member's pitch and tone go in whole. Easing them
+            // would bend the file's speed while the voice is heard again, which sounds as the
+            // water changing pitch under a moving camera.
             self.snap[v] = SNAP_PITCH;
         }
         if before < SILENT && self.dying[v] {
@@ -1018,6 +1024,41 @@ mod tests {
     }
 
     const SETTLE: usize = 2 * 48_000 / FRAMES;
+
+    #[test]
+    fn a_voice_takes_its_new_members_pitch_and_tone_while_it_is_silent() {
+        // Two members of one group play at different speeds and tones. As the listener's nearest
+        // member changes, the voice moves between them; it must take the new member's values as it
+        // moves, not slide to them afterwards, which would be heard as the file bending in pitch.
+        let mut m = mixer_with_table();
+        add(&mut m, GROUP, 0, 2, &[0], 1.0);
+        m.ready[0] = true;
+        let rates = m.layout.rates;
+        m.table[rates + 1] = 0.9;
+        m.table[m.layout.tones + 1] = 0.3;
+        m.table[12 + 2] = -10.0;
+        m.table[12 + 3 + 2] = -40.0;
+        run(&mut m, SETTLE);
+        assert_eq!(m.emitter[0], 0);
+        assert!((m.values[3] - 1.0).abs() < 1e-4);
+        // The other member becomes the nearer one.
+        m.table[12 + 2] = -40.0;
+        m.table[12 + 3 + 2] = -10.0;
+        let mut moved = false;
+        for _ in 0..SETTLE {
+            let before = m.gain[0];
+            run(&mut m, 1);
+            if m.emitter[0] != 0 {
+                assert_eq!(m.emitter[0], 1);
+                assert!(before < SILENT, "the voice was heard as it moved");
+                assert!((m.values[3] - 0.9).abs() < 1e-4, "the rate slid");
+                assert!((m.values[4] - cutoff_of(0.3)).abs() < 1.0, "the tone slid");
+                moved = true;
+                break;
+            }
+        }
+        assert!(moved, "the voice never moved to the nearer member");
+    }
 
     #[test]
     fn a_loop_fades_in_to_its_level_at_its_distance() {

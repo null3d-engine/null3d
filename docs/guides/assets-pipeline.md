@@ -482,7 +482,7 @@ The preview serves HTTPS by default. A secure origin is what makes WebGPU, and s
 
 The empty variable makes a full set, because the recording reads every word that the pages ask for. Without it, the build narrows to the list that a recorded run wrote.
 
-The recorder writes `examples/shader-permutations.txt`, and `bun run examples:build` reads it. The recorder runs from a checkout of this repository, because it drives a browser through the repository's own page list and browser launcher. A project outside the repository runs it from such a checkout and names its pages with one `--page <path>` for each, instead of `--pages demos`.
+The recorder writes `examples/shader-permutations.txt`, and `bun run examples:build` reads it. Its `--page-root` names the address that the pages sit under. Use `/` for a preview of the built site, or `/examples/` for this repository's own dev server. A demo that draws more in a state its controls cannot reach enters that state through the recorder's own query. The island's pages record with its highest walker count. The recorder runs from a checkout of this repository, because it drives a browser through the repository's own page list and browser launcher. A project outside the repository runs it from such a checkout and names its pages with one `--page <path>` for each, instead of `--pages demos`.
 
 A game page that starts its engine on a click needs `--live` pages and `--click <selector>`, such as `--click "#play"`. A production build of the engine folder ignores the URL switches. Record against a development build of that folder (`vite build --mode development`). The [deterministic simulation guide](deterministic-simulation.md#a-production-build-of-a-games-engine-files) gives the full sequence.
 
