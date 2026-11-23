@@ -244,6 +244,16 @@ const MEMORY_EVERY = 8;
 /** Frames over which the sketch thread averages its parallel work before it asks for job workers. */
 const JOB_WINDOW = 30;
 /**
+ * The longest a window waits for its frames, in seconds of wall time, and the fewest frames it
+ * judges: a software GPU draws so few frames a second that a window of frames alone would never
+ * end inside a page's run, so the deadline ends the window once it holds the fewest frames, fast
+ * enough for the sketch to ask for the job workers it can use. The mean over those frames decides
+ * as it does for a full window.
+ */
+const JOB_WINDOW_SECONDS = 2;
+/** The fewest frames a window needs before the deadline may end it. */
+const JOB_WINDOW_MIN_FRAMES = 2;
+/**
  * The mean time per frame that the sketch thread spends in loops it hands out, in microseconds,
  * from which it asks for more job workers: twice as many, and at least 2.
  */
@@ -429,6 +439,8 @@ export class SketchRunner {
 	 */
 	private jobWindowUs = 0;
 	private jobWindowFrames = 0;
+	/** The wall-clock time at which the window's first frame arrived, in milliseconds. */
+	private jobWindowStart = 0;
 	/** The sketch time at which the sketch thread times its parallel loops again, while they pause. */
 	private jobPauseUntil = -1;
 	/** Whether the core times the parallel loops that the sketch thread hands out. */
@@ -1106,8 +1118,9 @@ export class SketchRunner {
 	/**
 	 * Adds a frame's parallel work to the window, and at the window's end asks the page for twice
 	 * the `asked` job workers, and at least 2, when the frames handed out enough work to share.
-	 * After a window with less, the loops go untimed for a while; once every job worker has been
-	 * asked for, for good.
+	 * The window ends at its frame count, or at its deadline once it holds enough frames, so a
+	 * slow GPU asks as a fast one does. After a window with less, the loops go untimed for a
+	 * while; once every job worker has been asked for, for good.
 	 */
 	private growJobs(glue: CoreGlue, asked: number): void {
 		if (asked >= this.jobRecords.length) {
@@ -1120,8 +1133,14 @@ export class SketchRunner {
 			this.timeHandedLoops(glue, true);
 			return;
 		}
+		if (this.jobWindowFrames === 0) this.jobWindowStart = performance.now();
 		this.jobWindowUs += glue.takeHandedUs();
-		if (++this.jobWindowFrames < JOB_WINDOW) return;
+		this.jobWindowFrames++;
+		const byFrames = this.jobWindowFrames >= JOB_WINDOW;
+		const byDeadline =
+			this.jobWindowFrames >= JOB_WINDOW_MIN_FRAMES &&
+			performance.now() - this.jobWindowStart >= JOB_WINDOW_SECONDS * 1000;
+		if (!byFrames && !byDeadline) return;
 		const enough = this.jobWindowUs >= JOB_GROW_US * this.jobWindowFrames;
 		this.jobWindowUs = 0;
 		this.jobWindowFrames = 0;

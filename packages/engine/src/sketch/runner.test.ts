@@ -437,6 +437,23 @@ describe('SketchRunner', () => {
 		expect(light.asked).toEqual([2]);
 	});
 
+	it('asks for job workers on a deadline when a slow page draws too few frames to fill the window', async () => {
+		const busy = { most: 6, handedMs: 0.25, asked: [] as number[], timing: [] as boolean[] };
+		let clock = performance.now();
+		const now = spyOn(performance, 'now').mockImplementation(() => clock);
+		try {
+			const { runner } = await start(() => ({}), undefined, { jobs: busy });
+			// Two frames 3 s apart: too few for a 30-frame window, but past the 2 s deadline.
+			runner.step(0);
+			expect(busy.asked).toEqual([]);
+			clock += 3000;
+			runner.step(16);
+			expect(busy.asked).toEqual([2]);
+		} finally {
+			now.mockRestore();
+		}
+	});
+
 	it('times its parallel loops again after the same sketch time at a slow frame rate', async () => {
 		// About 9 frames a second, as CI's software GPU draws some pages. The first window has too
 		// little work, as a page's first frames before its heavy work starts.
