@@ -367,15 +367,60 @@ describe('a sketch that was paused before the sound started', () => {
 	});
 });
 
-describe('a reset', () => {
-	test('drops every sound and the table', () => {
+describe('rates and levels at their limits', () => {
+	test('holds a rate past the widest at the widest, and plays one that is not a number at 1', () => {
 		const r = rig();
-		r.mixer.receive({ type: 'add', sound: spec({}) });
+		r.mixer.receive({ type: 'add', sound: spec({ positional: false }) });
 		r.mixer.receive({ type: 'ready', voice: 0 });
+		r.floats[r.layout.rates] = 0;
 		r.run(SETTLE);
-		r.mixer.receive({ type: 'reset' });
-		r.run(1);
+		expect(r.last(MIXER_OUTPUTS.rate, 0)).toBeCloseTo(1 / 16, 3);
+		r.floats[r.layout.rates] = 100;
+		r.run(SETTLE);
+		expect(r.last(MIXER_OUTPUTS.rate, 0)).toBeCloseTo(16, 2);
+		r.floats[r.layout.rates] = Number.NaN;
+		r.run(SETTLE);
+		expect(r.last(MIXER_OUTPUTS.rate, 0)).toBeCloseTo(1, 3);
+	});
+
+	test('reads an endless level at a good place as silence', () => {
+		const r = rig();
+		r.mixer.receive({ type: 'add', sound: spec({ near: 1, far: 50 }) });
+		r.mixer.receive({ type: 'ready', voice: 0 });
+		r.at(0, 0, 0, -2);
+		r.level(0, Number.POSITIVE_INFINITY);
+		r.run(SETTLE);
 		expect(r.last(MIXER_OUTPUTS.gain, 0)).toBe(0);
+	});
+
+	test('ranks members at one distance by their level', () => {
+		const r = rig();
+		r.mixer.receive({
+			type: 'add',
+			sound: spec({ kind: 'group', count: 2, voices: [0], near: 1, far: 200 }),
+		});
+		r.mixer.receive({ type: 'ready', voice: 0 });
+		r.at(0, -10, 0, 0);
+		r.at(1, 10, 0, 0);
+		r.level(0, 0.3);
+		r.level(1, 0.9);
+		r.run(SETTLE);
+		expect(Math.round(r.last(MIXER_OUTPUTS.x, 0))).toBe(10);
+		expect(r.last(MIXER_OUTPUTS.gain, 0)).toBeCloseTo(0.09, 3);
+	});
+});
+
+describe('a sketch whose frames have not moved yet', () => {
+	test('swells no voice before its frame count moves', () => {
+		const r = rig();
+		r.mixer.receive({ type: 'add', sound: spec({ positional: false }) });
+		r.mixer.receive({ type: 'ready', voice: 0 });
+		let loudest = 0;
+		for (let q = 0; q < SETTLE; q++) {
+			r.run(1, true);
+			loudest = Math.max(loudest, r.last(MIXER_OUTPUTS.gain, 0));
+		}
+		expect(loudest).toBe(0);
 	});
 });
 

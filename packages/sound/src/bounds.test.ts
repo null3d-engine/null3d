@@ -35,7 +35,7 @@ function mp3Head(options: {
 }
 
 describe('mp3Gapless', () => {
-	test("reads ffmpeg's delay and padding, which count the decoder's delay already", () => {
+	test("reads the delay and padding of a file from ffmpeg's encoder", () => {
 		const header = mp3Gapless(mp3Head({ frames: 251, delay: 576, padding: 576, mono: true }));
 		expect(header).toEqual({ start: 576, end: 576, length: 288_000, sampleRate: 48_000 });
 	});

@@ -274,6 +274,52 @@ describe('startOnInput', () => {
 	});
 });
 
+describe('the audio that the browser takes', () => {
+	test('is interrupted, and resumes at the next input', async () => {
+		const { connectSound } = await import('./page');
+		const { engine, ctx, listener } = engineAndSketch();
+		const sound = createSound(ctx, { listener });
+		const page = connectSound(engine);
+		FakeContext.activated = true;
+		await page.start();
+		await settle();
+		expect(page.state).toBe('on');
+		// The system takes the audio, as a call does on an iPhone.
+		FakeContext.activated = false;
+		const context = FakeContext.all[0] as FakeContext;
+		context.state = 'suspended';
+		context.onstatechange?.();
+		expect(page.state).toBe('interrupted');
+		FakeContext.activated = true;
+		input('keydown', 'a');
+		await settle();
+		expect(page.state).toBe('on');
+		page.stop();
+		sound.destroy();
+	});
+});
+
+describe('a sound system that ends', () => {
+	test("keeps its voices' nodes until their fade has ended", async () => {
+		const { connectSound } = await import('./page');
+		const { engine, ctx, listener } = engineAndSketch();
+		const sound = createSound(ctx, { listener });
+		sound.loop({ file: '/sea.mp3', positional: false });
+		const page = connectSound(engine);
+		FakeContext.activated = true;
+		await page.start();
+		await settle();
+		const loop = FakeSource.all.find((source) => source.options.loop) as FakeSource;
+		expect(loop.stopped).toBe(false);
+		sound.destroy();
+		await settle();
+		expect(loop.stopped).toBe(false);
+		await settle(300);
+		expect(loop.stopped).toBe(true);
+		page.stop();
+	});
+});
+
 describe('a shot', () => {
 	test('tells the mixer before its file starts, and unplugs each play that ends', async () => {
 		const { connectSound } = await import('./page');
@@ -284,20 +330,24 @@ describe('a shot', () => {
 		FakeContext.activated = true;
 		await page.start();
 		await settle();
+		const types = () => FakeWorklet.messages.map((m) => (m as { type: string }).type);
+		const plays = () => FakeSource.all.filter((source) => !source.options.loop);
 		thunder.play(0, 0, -100);
 		await settle();
+		// The sketch runs on this thread and shares no memory, so a copy of the table goes first.
+		expect(types().slice(-2)).toEqual(['copy', 'shot']);
 		thunder.play(0, 0, -200);
 		await settle();
-		const plays = FakeSource.all.filter((source) => !source.options.loop);
-		expect(plays).toHaveLength(2);
-		expect(
-			FakeWorklet.messages.filter((m) => (m as { type: string }).type === 'shot'),
-		).toHaveLength(2);
-		// The newer play starts a little after its message, and the older one stops and unplugs.
-		expect(plays[1]?.started[0]).toBeGreaterThan(0);
-		expect(plays[0]?.stopped).toBe(true);
-		plays[0]?.onended?.();
-		expect(plays[0]?.connections.size).toBe(0);
+		// The older play fades out first; the newer one waits for its fade before it takes the voice.
+		expect(plays()).toHaveLength(1);
+		expect(plays()[0]?.stopped).toBe(true);
+		await settle(100);
+		expect(plays()).toHaveLength(2);
+		expect(types().filter((type) => type === 'shot')).toHaveLength(2);
+		// The newer play starts a little after its message, and the older one unplugs as it ends.
+		expect(plays()[1]?.started[0]).toBeGreaterThan(0);
+		plays()[0]?.onended?.();
+		expect(plays()[0]?.connections.size).toBe(0);
 		page.stop();
 		sound.destroy();
 	});

@@ -256,7 +256,7 @@ Read these when the task needs them:
 
 - The code uses only APIs whose status is `stable` or `experimental`, and no part marked not built yet.
 - Per-frame callbacks allocate nothing.
-- DOM, audio and HTML UI code is in `page.ts`.
+- DOM, HTML UI and the audio's start are in `page.ts`.
 - You looked at a rendered image from `bunx @null3d/cli shot` or the dev server, not only at build output.
 - `bunx @null3d/cli test` passes, including a new or updated image test for visual changes.
 - For rendering changes, the WebGL2 path renders too.

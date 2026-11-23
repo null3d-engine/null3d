@@ -94,9 +94,13 @@ function toneOf(value: number): number {
 	return value >= 0 ? (value < 1 ? value : 1) : value < 0 ? 0 : 1;
 }
 
-/** A playback rate from the table, within the widest rate, and 1 for one that is not. */
+/**
+ * A playback rate from the table, held within the widest rates each way, so a stopping engine's
+ * falling rate stays at the slowest. A value that is not a number plays at the file's own speed.
+ */
 function rateOf(value: number): number {
-	return value > 1 / FASTEST && value < FASTEST ? value : 1;
+	if (Number.isNaN(value)) return 1;
+	return value < 1 / FASTEST ? 1 / FASTEST : value > FASTEST ? FASTEST : value;
 }
 
 /** No voice moves its rate and tone at once. */
@@ -156,7 +160,11 @@ export class Mixer {
 	private idleQuanta = 0;
 
 	private lastFrame = 0;
-	private stillQuanta = 0;
+	/**
+	 * The quanta for which the frame count has stood still. It starts as if the sketch had stopped,
+	 * so no voice swells before the count first moves.
+	 */
+	private stillQuanta = Number.MAX_SAFE_INTEGER;
 	private pause = 0;
 	/**
 	 * True once the mixer has told the page that the sketch stopped. It starts false, so a sketch
@@ -221,14 +229,6 @@ export class Mixer {
 				return;
 			case 'shot':
 				if (this.isVoice(message.voice)) this.snap[message.voice] = SNAP_ALL;
-				return;
-			case 'reset':
-				for (let v = 0; v < this.setup.voices; v++) this.clear(v);
-				this.groups = [];
-				this.layout = null;
-				this.floats = null;
-				this.ints = null;
-				this.own = null;
 				return;
 		}
 	}

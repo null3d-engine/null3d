@@ -98,9 +98,7 @@ export type MixerMessage =
 	 * A shot starts on a voice: the mixer takes the voice's values at once, with no easing, so the
 	 * play's attack sounds at its own level, place and pitch.
 	 */
-	| { readonly type: 'shot'; readonly voice: number }
-	/** The sketch's sound system ended: the mixer drops every sound and the table. */
-	| { readonly type: 'reset' };
+	| { readonly type: 'shot'; readonly voice: number };
 
 /** What the mixer sends the page. */
 export type MixerReply =

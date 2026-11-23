@@ -12,8 +12,10 @@ const PADDING_LEVEL = 1e-4;
 /** The most samples of silence that the fallback cuts from a file's start or end. */
 const PADDING_MOST = 2048;
 /**
- * The delay of an MP3 decoder, in samples, which a file from the LAME encoder leaves out of the
- * delay that its header records. ffmpeg's encoder counts the whole delay in the header.
+ * The delay of an MP3 decoder, in samples. A decoder that applies no header at all also keeps
+ * these samples at a file's start, and the gapless convention of the LAME encoder trims them with
+ * the header's delay. Chrome and WebKit apply a header that names LAME themselves; WebKit drops
+ * only its decoder's own delay from a file whose header names another encoder, such as ffmpeg's.
  */
 const LAME_DECODER_DELAY = 529;
 

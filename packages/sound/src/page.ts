@@ -51,6 +51,13 @@ const CONNECT_SLOWLY_MS = 5000;
 const SHOT_DELAY = 0.02;
 /** How fast a shot that a newer play replaces fades out, as a time constant in seconds. */
 const SHOT_FADE = 0.01;
+/**
+ * How long a newer play waits for the play that it replaces to fade, in milliseconds, before the
+ * mixer takes the newer play's values: the voice is shared, so its level jumps only once silent.
+ */
+const SHOT_SWAP_MS = 60;
+/** The most copies of the table that wait for the mixer at once. */
+const MOST_COPIES = 4;
 /** The inputs after which a browser lets a page start its audio. */
 const ACTIVATIONS = ['pointerup', 'touchend', 'click', 'keydown'] as const;
 /** How often a suspended page looks for the sketch's frames, in milliseconds. */
@@ -61,13 +68,14 @@ const RELEASE_MS = 200;
 const FLAT_Q = -3.0103;
 
 /**
- * Where the page's sound stands: not started, starting, playing, suspended, or stopped for good. The
- * sound is suspended while the engine is paused or the page is hidden, and while the browser holds
- * the audio, as an iPhone does during a call, until the page shows or the user's next input.
+ * Where the page's sound stands: not started, starting, playing, paused while the engine is paused
+ * or the page is hidden, interrupted while the browser holds the audio, as an iPhone does during a
+ * call, or stopped for good. An interrupted sound resumes at the user's next input, or when the page
+ * shows again.
  *
  * @category api/sound
  */
-export type SoundState = 'off' | 'starting' | 'on' | 'paused' | 'stopped';
+export type SoundState = 'off' | 'starting' | 'on' | 'paused' | 'interrupted' | 'stopped';
 
 /**
  * Options for `connectSound`.
@@ -314,11 +322,14 @@ class SoundPage implements PageSound {
 		}
 	}
 
-	/** Drops the ended sound system's table and sounds, and asks for the sketch's next one. */
+	/**
+	 * Drops the ended sound system's table and sounds, and asks for the sketch's next one. The
+	 * sketch removed each sound before it closed the link, so each voice fades in the mixer, and its
+	 * nodes go once the fade has ended.
+	 */
 	private reset(): void {
-		for (let v = 0; v < MAX_VOICES; v++) this.disconnect(v);
+		for (const sound of this.sounds.values()) this.release(sound);
 		this.sounds.clear();
-		this.toMixer({ type: 'reset' });
 		this.stopCopies();
 		this.endWaking();
 		this.layout = null;
@@ -368,15 +379,23 @@ class SoundPage implements PageSound {
 		this.copyFrame = requestAnimationFrame(copy);
 	}
 
-	/** Sends the mixer one copy of the table, if a spare buffer is back from it. */
-	private copyNow(): void {
-		const spare = this.spares.pop();
+	/**
+	 * Sends the mixer one copy of the table, if a spare buffer is back from it. `always` makes a new
+	 * buffer when none is back, for a shot, whose values the mixer must read before it starts.
+	 */
+	private copyNow(always = false): void {
 		const floats = this.tableFloats;
-		if (!spare) return;
-		if (!floats) {
-			this.spares.push(spare);
-			return;
+		if (!floats) return;
+		let spare = this.spares.pop();
+		if (!spare && always && this.inFlight.length < MOST_COPIES) {
+			const buffer = new ArrayBuffer(floats.byteLength);
+			spare = {
+				floats: new Float32Array(buffer),
+				message: { type: 'copy', buffer },
+				transfer: [buffer],
+			};
 		}
+		if (!spare) return;
 		spare.floats.set(floats);
 		this.toMixer(spare.message, spare.transfer);
 		// The buffer now belongs to the mixer, which sends it back with its copy reply.
@@ -402,7 +421,8 @@ class SoundPage implements PageSound {
 				copy.message.buffer = reply.buffer;
 				copy.transfer[0] = reply.buffer;
 				copy.floats = new Float32Array(reply.buffer);
-				this.spares.push(copy);
+				// The extra copy that a shot made goes once two spares wait again.
+				if (this.spares.length < 2) this.spares.push(copy);
 				return;
 			}
 			case 'idle':
@@ -463,10 +483,14 @@ class SoundPage implements PageSound {
 			this.listen(true);
 			return;
 		}
-		this.setState('paused');
+		if (this.idleSuspend) {
+			this.setState('paused');
+			return;
+		}
 		// The browser or the system took the audio, as an iPhone does during a call: the next input,
 		// or the page showing again, gives it back.
-		if (!this.idleSuspend) this.listen(true);
+		this.setState('interrupted');
+		this.listen(true);
 	}
 
 	start(): Promise<void> {
@@ -585,28 +609,38 @@ class SoundPage implements PageSound {
 		const sound = this.sounds.get(id);
 		const v = sound?.voices[slot];
 		if (!sound || v === undefined || !this.context || !this.mixer) return;
-		// The mixer must read the play's values before it takes them: a copied table goes first.
-		if (!this.shared) this.copyNow();
-		this.toMixer({ type: 'shot', voice: v });
 		void this.load(sound.file).then((loaded) => {
 			const context = this.context;
 			const voice = this.voices[v];
 			if (!loaded || !context || voice?.sound !== sound) return;
 			const old = voice.play;
 			// A newer play replaces the slot's last one with a quick fade, so the old play never clicks.
+			// The voice is shared, so the newer play takes it only once the old one is silent.
 			if (old?.fade) {
 				old.fade.gain.setTargetAtTime(0, context.currentTime, SHOT_FADE);
 				old.source.stop(context.currentTime + SHOT_FADE * 6);
-			}
-			voice.play = this.source(
-				loaded,
-				v,
-				false,
-				loaded.start,
-				context.currentTime + SHOT_DELAY,
-				true,
-			);
+				voice.play = null;
+				setTimeout(() => this.startShot(sound, v, loaded), SHOT_SWAP_MS);
+			} else this.startShot(sound, v, loaded);
 		});
+	}
+
+	/** Tells the mixer that a shot starts on voice `v`, then starts its file a moment later. */
+	private startShot(sound: SoundSpec, v: number, loaded: Loaded): void {
+		const context = this.context;
+		const voice = this.voices[v];
+		if (!context || voice?.sound !== sound) return;
+		// The mixer must read the play's values before it takes them: a copied table goes first.
+		if (!this.shared) this.copyNow(true);
+		this.toMixer({ type: 'shot', voice: v });
+		voice.play = this.source(
+			loaded,
+			v,
+			false,
+			loaded.start,
+			context.currentTime + SHOT_DELAY,
+			true,
+		);
 	}
 
 	/**
