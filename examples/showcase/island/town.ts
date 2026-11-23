@@ -1030,68 +1030,145 @@ function courtWalkMesh(): Build {
 	};
 	STAIR_WALKS.forEach((walk, k) => {
 		const [kx, kz] = KEEPS[k] as readonly [number, number, number];
-		/** A station's outward direction from the keep, its outer edge, and the ground below it. */
+		/**
+		 * Each segment's outward normal, across the walk and away from the keep's middle, so the
+		 * band keeps its width whichever way its line runs.
+		 */
+		const normals = walk.slice(0, -1).map((p, n) => {
+			const q = walk[n + 1] as { x: number; z: number };
+			const length = hypot(q.x - p.x, q.z - p.z) || 1;
+			const [nx, nz] = [-(q.z - p.z) / length, (q.x - p.x) / length];
+			const out = (p.x + q.x - 2 * kx) * nx + (p.z + q.z - 2 * kz) * nz >= 0 ? 1 : -1;
+			return [nx * out, nz * out] as const;
+		});
+		/**
+		 * A station's outward direction across the walk, its outer edge, and the ground below that
+		 * edge. A bend takes its segments' mitre, so the band keeps its width round the court; a
+		 * turn too sharp for a mitre keeps the incoming segment's own normal.
+		 */
 		const station = (m: number) => {
 			const p = walk[m] as { x: number; y: number; z: number };
-			const [rx, rz] = [p.x - kx, p.z - kz];
-			const length = hypot(rx, rz) || 1;
-			const [ux, uz] = [rx / length, rz / length];
-			const [ox, oz] = [p.x + ux * COURT_WALK_HALF, p.z + uz * COURT_WALK_HALF];
+			const before = normals[m - 1];
+			const after = normals[m];
+			let [ux, uz, reach] = [0, 0, 1];
+			const [sx, sz] = before && after ? [before[0] + after[0], before[1] + after[1]] : [0, 0];
+			const length = hypot(sx, sz);
+			const cos = before && length > 0 ? (sx * before[0] + sz * before[1]) / length : 0;
+			if (before && after && cos > 1 / COURT_WALK_MITER) {
+				[ux, uz, reach] = [sx / length, sz / length, 1 / cos];
+			} else [ux, uz] = (after ?? before) as readonly [number, number];
+			const [ox, oz] = [p.x + ux * COURT_WALK_HALF * reach, p.z + uz * COURT_WALK_HALF * reach];
 			return {
 				x: p.x,
 				y: p.y,
 				z: p.z,
 				ux,
 				uz,
+				reach,
 				ox,
 				oz,
 				ground: Math.min(p.y - 0.05, groundHeight(ox, oz) - 0.1),
 			};
 		};
-		for (let n = 0; n + 1 < walk.length; n++) {
+		// The stair's landing meets the walk within a band's own width, so the band starts at the
+		// first station clear of it: paving over that lead would fold across the turn.
+		let first = 0;
+		while (first + 1 < walk.length) {
+			const [a, c] = [
+				walk[first] as { x: number; z: number },
+				walk[first + 1] as { x: number; z: number },
+			];
+			if (hypot(c.x - a.x, c.z - a.z) >= COURT_WALK_HALF) break;
+			first++;
+		}
+		for (let n = first; n + 1 < walk.length; n++) {
 			const [p, q] = [station(n), station(n + 1)];
-			// The stone top, in quads that take the map.
+			const [ipx, ipz] = [
+				p.x - p.ux * COURT_WALK_HALF * p.reach,
+				p.z - p.uz * COURT_WALK_HALF * p.reach,
+			];
+			const [iqx, iqz] = [
+				q.x - q.ux * COURT_WALK_HALF * q.reach,
+				q.z - q.uz * COURT_WALK_HALF * q.reach,
+			];
+			const py = p.y + COURT_WALK_LIFT;
+			const qy = q.y + COURT_WALK_LIFT;
+			// The stone top, in quads that take the map, held a little above the court's own floor so
+			// the paving shows where the two share a level. A stretch that climbs splits at its middle,
+			// so the paving cannot fold across a rise.
+			const paving = (
+				a: readonly number[],
+				o: readonly number[],
+				oq: readonly number[],
+				iq: readonly number[],
+			) => facing(a, o, oq, iq, [0, 1, 0], top);
+			if (Math.abs(p.y - q.y) > 0.2) {
+				const mid = (p.y + q.y) / 2 + COURT_WALK_LIFT;
+				paving(
+					[ipx, py, ipz],
+					[p.ox, py, p.oz],
+					[(p.ox + q.ox) / 2, mid, (p.oz + q.oz) / 2],
+					[(ipx + iqx) / 2, mid, (ipz + iqz) / 2],
+				);
+				paving(
+					[(ipx + iqx) / 2, mid, (ipz + iqz) / 2],
+					[(p.ox + q.ox) / 2, mid, (p.oz + q.oz) / 2],
+					[q.ox, qy, q.oz],
+					[iqx, qy, iqz],
+				);
+			} else paving([ipx, py, ipz], [p.ox, py, p.oz], [q.ox, qy, q.oz], [iqx, qy, iqz]);
+			// Outside the court, the face that holds the walk above the bank, with its coping. Inside
+			// the court, the paving's edges drop to the floor, so they read as laid stone.
+			if (p.y - Math.min(groundHeight(p.ox, p.oz), groundHeight(q.ox, q.oz)) < 0.12) {
+				facing(
+					[ipx, py, ipz],
+					[iqx, qy, iqz],
+					[iqx, q.y - 0.02, iqz],
+					[ipx, p.y - 0.02, ipz],
+					[-p.ux, 0, -p.uz],
+					face,
+				);
+				facing(
+					[p.ox, py, p.oz],
+					[q.ox, qy, q.oz],
+					[q.ox, q.y - 0.02, q.oz],
+					[p.ox, p.y - 0.02, p.oz],
+					[p.ux, 0, p.uz],
+					face,
+				);
+				continue;
+			}
+			const front = [normals[n]?.[0] ?? p.ux, 0, normals[n]?.[1] ?? p.uz] as const;
 			facing(
-				[p.x - p.ux * COURT_WALK_HALF, p.y, p.z - p.uz * COURT_WALK_HALF],
-				[p.x + p.ux * COURT_WALK_HALF, p.y, p.z + p.uz * COURT_WALK_HALF],
-				[q.x + q.ux * COURT_WALK_HALF, q.y, q.z + q.uz * COURT_WALK_HALF],
-				[q.x - q.ux * COURT_WALK_HALF, q.y, q.z - q.uz * COURT_WALK_HALF],
-				[0, 1, 0],
-				top,
-			);
-			// Outside the court, the face that holds the walk above the bank, with its coping. Where the
-			// walk meets the court's floor, both end into it.
-			if (p.y - Math.min(groundHeight(p.ox, p.oz), groundHeight(q.ox, q.oz)) < 0.12) continue;
-			const front = [p.ux, 0, p.uz] as const;
-			facing(
-				[p.ox, p.y, p.oz],
-				[q.ox, q.y, q.oz],
+				[p.ox, py, p.oz],
+				[q.ox, qy, q.oz],
 				[q.ox, q.ground, q.oz],
 				[p.ox, p.ground, p.oz],
 				front,
 				face,
 			);
-			const [ipx, ipz] = [
-				p.x + p.ux * (COURT_WALK_HALF - 0.35),
-				p.z + p.uz * (COURT_WALK_HALF - 0.35),
+			// The coping: a flat band along the walk's outer edge, with a small upstand.
+			const [cpx, cpz] = [
+				p.x + p.ux * (COURT_WALK_HALF - 0.35) * p.reach,
+				p.z + p.uz * (COURT_WALK_HALF - 0.35) * p.reach,
 			];
-			const [iqx, iqz] = [
-				q.x + q.ux * (COURT_WALK_HALF - 0.35),
-				q.z + q.uz * (COURT_WALK_HALF - 0.35),
+			const [cqx, cqz] = [
+				q.x + q.ux * (COURT_WALK_HALF - 0.35) * q.reach,
+				q.z + q.uz * (COURT_WALK_HALF - 0.35) * q.reach,
 			];
 			facing(
-				[ipx, p.y + 0.09, ipz],
-				[p.ox, p.y + 0.09, p.oz],
-				[q.ox, q.y + 0.09, q.oz],
-				[iqx, q.y + 0.09, iqz],
+				[cpx, py + 0.09, cpz],
+				[p.ox, py + 0.09, p.oz],
+				[q.ox, qy + 0.09, q.oz],
+				[cqx, qy + 0.09, cqz],
 				[0, 1, 0],
 				coping,
 			);
 			facing(
-				[p.ox, p.y - 0.02, p.oz],
-				[q.ox, q.y - 0.02, q.oz],
-				[q.ox, q.y + 0.09, q.oz],
-				[p.ox, p.y + 0.09, p.oz],
+				[p.ox, py - 0.02, p.oz],
+				[q.ox, qy - 0.02, q.oz],
+				[q.ox, qy + 0.09, q.oz],
+				[p.ox, py + 0.09, p.oz],
 				front,
 				coping,
 			);
@@ -1102,6 +1179,16 @@ function courtWalkMesh(): Build {
 
 /** The half width of a court walk, in meters: its inner edge meets the court wall's face. */
 const COURT_WALK_HALF = 1.3;
+/**
+ * How far the drawn court walk stands above the court's floor, in meters, so its paving shows over
+ * the ground that shares its level.
+ */
+const COURT_WALK_LIFT = 0.06;
+/**
+ * The longest mitre that bends a walk's outer edge, as the ratio of its reach to the walk's half
+ * width. A sharper turn keeps the segment's own normal so the edge cannot run away.
+ */
+const COURT_WALK_MITER = 1.6;
 
 /** Writes one row of a batch: its place, its turn, and optionally its color and its size. */
 function row(
