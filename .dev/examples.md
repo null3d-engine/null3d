@@ -1166,15 +1166,16 @@ The demos' groups are the owner's ruling. In the sidebar's order, they are Showc
 - The folder names do not follow the titles, because the image tests, the code links and the device plans use them.
 - The demos that load files (creek, environment, gltf-model, character and look-at) carry a "loads files" tag, from their `assets` field. The gltf-model demo sits with light and materials, since its look is what it shows.
 
-## Sound in the showcase scenes
+## Sound in the demos
 
 The three showcase scenes play sound with `@null3d/sound` ([D-384](decisions/D-384-sound-add-on.md)). Each scene's `sound.ts` makes its sounds and sets their levels from the scene, and its sketch calls their `update` in `onLateUpdate`.
 
 - The island plays the sea from points offshore all round it and the surf from points along the bay's beach. The mixer plays the nearest few of each. It also plays the wind and the leaves in both ears. The wind follows the air's speed at the camera, from the trees' wind field, and rises with height and over open water. The leaves follow the canopy around the camera and the wind.
-- The creek plays the creek from points along its middle, louder where its current runs quick, and each fall from the middle of its drop. Its wind and the leaves of its crowns follow the garden's wind field at the camera, so the G key's gust raises them as it passes the camera.
+- The creek plays the creek from points along its middle, louder where its current runs quick, and each fall from the middle of its drop. Its wind and the leaves of its crowns follow the garden's wind field at the camera. So the G key's gust raises them as it passes the camera.
 - Skyway plays the hero car's engine, whose pitch follows its speed, and the roamers and the lane cars as groups. The roamers' places are their batch's rows, and the lanes give the places of the cars that hold their real lights. The rain follows the rain and storm switches, a storm rolls thunder now and then, and the city hums. From the seat, the glass dulls the rain and the city.
-- The entry's `sound` flag makes `startDemo` add a speaker button beside the controls' chevron (`examples/lib/sound-button.ts`). Its first press starts the audio, which a browser allows only in answer to the user, and later presses mute it. A held frame shows no controls, so it plays no sound and draws as before. A page of the website's own layout styles the button by its `hud__sound` class, as the examples page does in `examples/index.html`.
-- The sounds are recorded loops in the sample content, which load only once the button starts the sound ([Sample content](sample-content.md)).
+- The entry's `sound` flag makes `startDemo` start the sound as the demo loads and add a speaker button over the canvas's top right corner (`examples/lib/sound-button.ts`). The button sits just left of the engine's frame rate. A browser holds a page's audio until the user acts, so the sound starts at the visitor's first click, tap or key. A press of the button turns the sound off or on. Local storage keeps that choice under `null3d-demos-sound`, for every demo and the next visit. A held frame shows no button and plays no sound.
+- The sounds are recorded loops in the sample content ([Sample content](sample-content.md)). They load as the demo starts, unless the visitor turned the sound off.
+- The sound demo, in Motion and interaction, shows the add-on alone: a thunderstorm on a moor. Each strike's thunder plays from where it struck, once sound could have crossed to the camera at 343 m/s, and a label counts the seconds. The rain is a loop in both ears, the brook a group of points along its course, and the thunder two shots. Its `sketch.ts` holds the sound, `storm.ts` the bolt and the flash, and `moor.ts` the land.
 
 ## The deterministic simulation demo
 

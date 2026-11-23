@@ -314,9 +314,11 @@ export async function startDemo({
 	// The overlay leaves once the first frame is drawn and the scene's own loading has gone quiet,
 	// so a stage that reports after the frame never changes a card that is already going.
 	void engine.firstFrame.then(reachedFirstFrame, reachedFirstFrame);
-	// A demo with sound shows its speaker beside the controls. A held frame shows no controls, so
-	// it plays no sound.
-	if (demo.sound && hud) addSoundButton(engine, hud, stopWithDemo(engine, signal).signal);
+	// A demo with sound shows its speaker over the canvas's top right corner and plays its sound
+	// from the start. A held frame shows no controls, so it plays no sound.
+	const stage = canvas.parentElement;
+	if (demo.sound && hud && stage)
+		addSoundButton(engine, stage, stopWithDemo(engine, signal).signal);
 	// Browsers lock the pointer only right after the user acts, and refuse it on phones.
 	if (demo.pointerLock)
 		canvas.addEventListener('click', () => engine.requestPointerLock().catch(() => {}), { signal });

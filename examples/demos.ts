@@ -129,7 +129,8 @@ export interface Demo {
 	pagePart?: boolean;
 	/**
 	 * True for a demo whose sketch plays sound with `@null3d/sound`. On a live page, `startDemo`
-	 * adds a speaker button beside the controls, whose first press starts the sound.
+	 * starts the sound and adds a speaker button over the canvas's top right corner that turns it
+	 * off or on. Local storage keeps that choice for every demo.
 	 */
 	sound?: boolean;
 }
@@ -825,6 +826,22 @@ export const DEMOS: readonly Demo[] = [
 		hold: 2,
 		timeoutSeconds: 60,
 		choices: [{ name: 'mode', label: 'Mode', options: ['Translate', 'Rotate', 'Scale'] }],
+	},
+	{
+		name: 'sound',
+		group: 'Motion and interaction',
+		sketch: new URL('./sound/sketch.ts', import.meta.url),
+		code: 'sound/',
+		title: 'Positional sound',
+		scene: 'Thunderstorm on the moor',
+		summary:
+			"Lightning strikes a dark moor every few seconds, and a click strikes where it lands. Each strike's thunder comes from where it struck, once sound could have crossed to the camera at 343 meters a second. So a far rumble comes seconds after its flash, quieter and duller, while a label counts the seconds. The rain fills both ears, and a brook past a ring of standing stones sounds from its nearest stretch as the camera circles.",
+		assets:
+			"Shows how recorded loops of the rain and the brook, and the thunder's two recordings, load once the sound starts; the moor itself is made in code.",
+		controls: [{ keys: ['Click'], does: 'Strike the moor with lightning' }],
+		sound: true,
+		hold: 1,
+		timeoutSeconds: 60,
 	},
 	{
 		name: 'math',
