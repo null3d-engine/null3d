@@ -1669,14 +1669,24 @@ export const FUNCTIONS: readonly LibraryFunction[] = [
 	{
 		name: 'fog::fog_color',
 		cases: (random) =>
-			[0, 0.5].flatMap((glow) =>
-				samples((r) =>
+			[0, 0.5].flatMap((glow) => [
+				// A glow of power zero is the same size in every direction, even exactly away from the
+				// light, where `pow` of zero with zero is undefined on some GPUs.
+				(() => {
+					const light = unit(random);
+					return sceneFog(random, FOG_CURVE_EXPONENTIAL, 0)
+						.setF(3, [glow, 0])
+						.setF(4, light)
+						.setF(5, light)
+						.setF(6, values(random, 3, 0, 4));
+				})(),
+				...samples((r) =>
 					sceneFog(r, FOG_CURVE_EXPONENTIAL, 0)
 						.setF(3, [glow, between(r, 1, 32)])
 						.setF(5, unit(r))
 						.setF(6, values(r, 3, 0, 4)),
 				)(random),
-			),
+			]),
 		expected: (i) => {
 			const [glow, exponent] = i.f(3);
 			const toward = Math.max(dot(normalize(xyz(i.f(4))), scale(xyz(i.f(5)), -1)), 0);

@@ -92,7 +92,15 @@ fn fog_factor(fog: Fog, relative_position: vec3f) -> f32 {
 /// and `light_color` its exposed color.
 fn fog_color(fog: Fog, relative_position: vec3f, light_direction: vec3f, light_color: vec3f) -> vec3f {
     let toward_sun = max(dot(normalize(relative_position), -light_direction), 0.0);
-    return fog.color.xyz + light_color * (fog.sun_glow * pow(toward_sun, fog.sun_exponent));
+    // A glow of power zero fills every direction alike. `pow` of zero raised to zero is undefined
+    // on some GPUs, which turned the glow, and so the whole sky, black away from the sun, so such
+    // a glow takes its value without a power.
+    let glow = select(
+        fog.sun_glow,
+        fog.sun_glow * pow(toward_sun, fog.sun_exponent),
+        fog.sun_exponent > 0.0,
+    );
+    return fog.color.xyz + light_color * glow;
 }
 
 /// A color seen through fog: `c` blended toward `fog_color` by the fog factor.
@@ -119,9 +127,14 @@ fn fogged_background(
     light_direction: vec3f,
     light_color: vec3f,
 ) -> vec3f {
+    let share = background_share(fog, direction, far);
+    // A background that takes no fog keeps its own color, and reads no fog color at all.
+    if share <= 0.0 {
+        return color;
+    }
     let relative = normalize(direction) * far;
     let fogged = fog_color(fog, relative, light_direction, light_color);
-    return mix(color, fogged, background_share(fog, direction, far));
+    return mix(color, fogged, share);
 }
 
 /// How much of a background's own light survives the fog along `direction`, `far` from the
