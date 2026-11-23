@@ -226,6 +226,12 @@ const VOICE_REST = 0.3;
 
 /** The live sound system of each sketch, by its page channel, which one sketch has one of. */
 const live = new WeakMap<object, Sound>();
+/**
+ * The sketch time at which each voice was last freed, for each sketch, by its page channel. It
+ * outlives a sound system, so a system made at once after another rests the voices that the ended
+ * system's sounds still fade on.
+ */
+const rests = new WeakMap<object, Float64Array>();
 
 /** The panning that a quality preset gives: the full ear model on the two heaviest presets. */
 function panningOf(preset: string): Panning {
@@ -281,8 +287,8 @@ class SoundSystem implements Sound {
 	private readonly emittersUsed: Uint8Array;
 	/** 1 for each voice that a sound owns. */
 	private readonly voicesUsed = new Uint8Array(MAX_VOICES);
-	/** The sketch time at which each voice was last freed. */
-	private readonly voiceFreedAt = new Float64Array(MAX_VOICES).fill(Number.NEGATIVE_INFINITY);
+	/** The sketch time at which each voice was last freed, which the sketch's systems share. */
+	private readonly voiceFreedAt: Float64Array;
 	private readonly sounds = new Map<number, SoundSpec>();
 	private nextId = 1;
 	private link: MessagePort | null = null;
@@ -308,6 +314,12 @@ class SoundSystem implements Sound {
 		this.floats[this.layout.volume] = volume;
 		this.floats[this.layout.listenerTurn + 3] = 1;
 		this.emittersUsed = new Uint8Array(capacity);
+		let freedAt = rests.get(ctx.page);
+		if (!freedAt) {
+			freedAt = new Float64Array(MAX_VOICES).fill(Number.NEGATIVE_INFINITY);
+			rests.set(ctx.page, freedAt);
+		}
+		this.voiceFreedAt = freedAt;
 		this.panning = panningOf(ctx.quality.preset);
 		this.stopMessages = ctx.page.onMessage((type, data) => {
 			if (type === CONNECT_MESSAGE && isConnectData(data)) this.connect(data);

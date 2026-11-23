@@ -143,6 +143,12 @@ export class Mixer {
 	private readonly free: Uint8Array;
 	/** Which of a voice's values it takes at once in the next quantum, with no easing. */
 	private readonly snap: Uint8Array;
+	/**
+	 * A shot voice's place, level, rate and tone, taken from the table as its play starts. The
+	 * voice keeps them until its next play, so a play that fades out keeps its own values while the
+	 * sketch writes the next play's into the slot.
+	 */
+	private readonly held: Float32Array;
 	private readonly gain: Float32Array;
 	private readonly tone: Float32Array;
 	private readonly rate: Float32Array;
@@ -161,10 +167,15 @@ export class Mixer {
 
 	private lastFrame = 0;
 	/**
-	 * The quanta for which the frame count has stood still. It starts as if the sketch had stopped,
-	 * so no voice swells before the count first moves.
+	 * True once the mixer has read the sketch's frame count from a table that holds it, so the first
+	 * count it reads is a reference, not a move. A copied table holds it once its first copy lands.
 	 */
-	private stillQuanta = Number.MAX_SAFE_INTEGER;
+	private primed = false;
+	/** True once the frame count has moved since the mixer first read it. */
+	private moved = false;
+	private awaitingCopy = false;
+	/** The quanta for which the frame count has stood still. */
+	private stillQuanta = 0;
 	private pause = 0;
 	/**
 	 * True once the mixer has told the page that the sketch stopped. It starts false, so a sketch
@@ -189,6 +200,7 @@ export class Mixer {
 		this.dying = new Uint8Array(voices);
 		this.free = new Uint8Array(voices);
 		this.snap = new Uint8Array(voices);
+		this.held = new Float32Array(voices * 6);
 		this.gain = new Float32Array(voices);
 		this.tone = new Float32Array(voices).fill(1);
 		this.rate = new Float32Array(voices).fill(1);
@@ -207,11 +219,15 @@ export class Mixer {
 				this.ints = new Int32Array(bytes, 0, layout.length);
 				this.own = buffer ? null : this.floats;
 				this.loudness = new Float32Array(layout.capacity);
+				this.primed = false;
+				this.moved = false;
+				this.awaitingCopy = buffer === null;
 				return;
 			}
 			case 'copy': {
 				const own = this.own;
 				if (own) own.set(new Float32Array(message.buffer, 0, own.length));
+				this.awaitingCopy = false;
 				this.send({ type: 'copy', buffer: message.buffer }, [message.buffer]);
 				return;
 			}
@@ -248,6 +264,7 @@ export class Mixer {
 		this.dying[v] = 0;
 		this.snap[v] = EASE;
 		this.gain[v] = 0;
+		this.held[v * 6 + 3] = 0;
 	}
 
 	private add(sound: SoundSpec): void {
@@ -390,6 +407,18 @@ export class Mixer {
 		}
 	}
 
+	/** Takes emitter `e`'s place, level, rate and tone from the table into voice `v`'s held values. */
+	private hold(v: number, floats: Float32Array, layout: TableLayout, e: number): void {
+		const h = v * 6;
+		const held = this.held;
+		held[h] = floats[layout.places + 3 * e] as number;
+		held[h + 1] = floats[layout.places + 3 * e + 1] as number;
+		held[h + 2] = floats[layout.places + 3 * e + 2] as number;
+		held[h + 3] = floats[layout.levels + e] as number;
+		held[h + 4] = floats[layout.rates + e] as number;
+		held[h + 5] = floats[layout.tones + e] as number;
+	}
+
 	private isChosen(e: number, count: number): boolean {
 		for (let k = 0; k < count; k++) if (this.chosen[k] === e) return true;
 		return false;
@@ -419,19 +448,32 @@ export class Mixer {
 		const rates = outputs[out.rate];
 		const cutoffs = outputs[out.cutoff];
 
-		// The sketch counts its frames; a count that stands still means the sketch has stopped.
+		// A copied table says nothing until its first copy lands: the mixer stays silent meanwhile.
+		if (this.awaitingCopy) {
+			for (let v = 0; v < gains.length; v++) gains[v]?.fill(0);
+			return;
+		}
+		// The sketch counts its frames; a count that stands still means the sketch has stopped. The
+		// first count read is the reference that later counts move from.
 		const frame = ints[layout.frame] as number;
-		if (frame !== this.lastFrame) {
+		if (!this.primed) {
+			this.primed = true;
 			this.lastFrame = frame;
 			this.stillQuanta = 0;
+		} else if (frame !== this.lastFrame) {
+			this.lastFrame = frame;
+			this.stillQuanta = 0;
+			this.moved = true;
 			if (this.idle) {
 				this.idle = false;
 				this.send({ type: 'active' });
 			}
 		} else if (this.stillQuanta < this.idleQuanta) this.stillQuanta++;
-		const running = this.stillQuanta < this.idleQuanta;
+		// No voice sounds until the count moves, and the sketch counts as stopped only once its count
+		// has stood still for the whole wait, so a sketch paused from the start swells nothing.
+		const running = this.moved && this.stillQuanta < this.idleQuanta;
 		this.pause += ((running ? 1 : 0) - this.pause) * this.pauseStep;
-		if (!running && !this.idle && this.pause < SILENT) {
+		if (this.stillQuanta >= this.idleQuanta && !this.idle && this.pause < SILENT) {
 			this.idle = true;
 			this.send({ type: 'idle' });
 		}
@@ -482,12 +524,17 @@ export class Mixer {
 			let toneTarget = 1;
 			let rateTarget = this.rate[v] as number;
 			if (e !== NONE) {
-				const level = levelOf(floats[layout.levels + e] as number);
-				toneTarget = toneOf(floats[layout.tones + e] as number);
-				rateTarget = rateOf(floats[layout.rates + e] as number);
+				// A shot takes its slot's values once, as its play starts, and keeps them until the next.
+				const shot = sound.kind === 'shot';
+				if (shot && this.snap[v] === SNAP_ALL) this.hold(v, floats, layout, e);
+				const values = shot ? this.held : floats;
+				const h = v * 6;
+				const level = levelOf((shot ? values[h + 3] : floats[layout.levels + e]) as number);
+				toneTarget = toneOf((shot ? values[h + 5] : floats[layout.tones + e]) as number);
+				rateTarget = rateOf((shot ? values[h + 4] : floats[layout.rates + e]) as number);
 				let share = 1;
 				if (sound.positional) {
-					if (this.place(floats, layout.places, e)) {
+					if (shot ? this.place(this.held, h, 0) : this.place(floats, layout.places, e)) {
 						share = distanceGain(sound, this.distance);
 						toneTarget *= distanceTone(sound, this.distance);
 						xs?.[v]?.fill(this.rx);

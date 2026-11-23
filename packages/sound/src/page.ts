@@ -58,6 +58,8 @@ const SHOT_FADE = 0.01;
 const SHOT_SWAP_MS = 60;
 /** The most copies of the table that wait for the mixer at once. */
 const MOST_COPIES = 4;
+/** The level, in decibels below full scale, above which the page's limiter holds the mix. */
+const LIMIT_THRESHOLD = -3;
 /** The inputs after which a browser lets a page start its audio. */
 const ACTIVATIONS = ['pointerup', 'touchend', 'click', 'keydown'] as const;
 /** How often a suspended page looks for the sketch's frames, in milliseconds. */
@@ -139,6 +141,8 @@ interface VoiceNodes {
 	readonly panner: PannerNode | null;
 	/** The file that plays on the voice now: a loop's one source, or a shot's newest play. */
 	play: Play | null;
+	/** A shot's play that waits for the play it replaces to fade, which a newer play replaces. */
+	waiting: ReturnType<typeof setTimeout> | undefined;
 }
 
 /** A copy of the table for the mixer, with the message and the transfer list that carry it. */
@@ -324,11 +328,10 @@ class SoundPage implements PageSound {
 
 	/**
 	 * Drops the ended sound system's table and sounds, and asks for the sketch's next one. The
-	 * sketch removed each sound before it closed the link, so each voice fades in the mixer, and its
-	 * nodes go once the fade has ended.
+	 * sketch removed each sound before it closed the link, so each voice is fading in the mixer
+	 * already, and its nodes go once the fade has ended.
 	 */
 	private reset(): void {
-		for (const sound of this.sounds.values()) this.release(sound);
 		this.sounds.clear();
 		this.stopCopies();
 		this.endWaking();
@@ -543,7 +546,17 @@ class SoundPage implements PageSound {
 			this.splitters.push(splitter);
 		}
 		const master = new GainNode(context, { gain: this.muted ? 0 : 1 });
-		master.connect(context.destination);
+		// A limiter holds the mix under full scale: loud sounds that sum, or a stereo burst that a
+		// panner moves to one side, would otherwise clip.
+		const limiter = new DynamicsCompressorNode(context, {
+			threshold: LIMIT_THRESHOLD,
+			knee: 0,
+			ratio: 20,
+			attack: 0.003,
+			release: 0.25,
+		});
+		master.connect(limiter);
+		limiter.connect(context.destination);
 		this.master = master;
 		this.giveMixerTable();
 	}
@@ -586,7 +599,7 @@ class SoundPage implements PageSound {
 				gain.connect(panner);
 				panner.connect(master);
 			} else gain.connect(master);
-			this.voices[v] = { sound, filter, gain, panner, play: null };
+			this.voices[v] = { sound, filter, gain, panner, play: null, waiting: undefined };
 		}
 		void this.load(sound.file).then((loaded) => {
 			if (!loaded || sound.kind === 'shot') return;
@@ -615,12 +628,19 @@ class SoundPage implements PageSound {
 			if (!loaded || !context || voice?.sound !== sound) return;
 			const old = voice.play;
 			// A newer play replaces the slot's last one with a quick fade, so the old play never clicks.
-			// The voice is shared, so the newer play takes it only once the old one is silent.
+			// The voice is shared, so the newer play takes it only once the old one is silent. A play
+			// that arrives while another waits replaces the waiting one: the newest play wins.
 			if (old?.fade) {
 				old.fade.gain.setTargetAtTime(0, context.currentTime, SHOT_FADE);
 				old.source.stop(context.currentTime + SHOT_FADE * 6);
 				voice.play = null;
-				setTimeout(() => this.startShot(sound, v, loaded), SHOT_SWAP_MS);
+			}
+			if (old?.fade || voice.waiting !== undefined) {
+				if (voice.waiting !== undefined) clearTimeout(voice.waiting);
+				voice.waiting = setTimeout(() => {
+					voice.waiting = undefined;
+					this.startShot(sound, v, loaded);
+				}, SHOT_SWAP_MS);
 			} else this.startShot(sound, v, loaded);
 		});
 	}
@@ -735,6 +755,7 @@ class SoundPage implements PageSound {
 		const voice = this.voices[v];
 		if (!voice) return;
 		this.voices[v] = undefined;
+		if (voice.waiting !== undefined) clearTimeout(voice.waiting);
 		const play = voice.play;
 		voice.play = null;
 		if (play) {

@@ -131,7 +131,8 @@ describe('a loop', () => {
 		const r = rig();
 		r.mixer.receive({ type: 'add', sound: spec({}) });
 		r.mixer.receive({ type: 'ready', voice: 0 });
-		r.run(1);
+		// The first quantum reads the frame count; the second sees it move and starts the fade-in.
+		r.run(2);
 		const channel = r.outputs[MIXER_OUTPUTS.gain]?.[0] as Float32Array;
 		expect(channel[0] as number).toBeLessThan(channel[FRAMES - 1] as number);
 		for (let i = 1; i < FRAMES; i++)
@@ -306,11 +307,19 @@ describe('a shot', () => {
 		});
 		r.at(0, 0, 0, -1);
 		r.floats[r.layout.rates] = 2;
+		// A shot's voice is silent until its first play.
+		r.run(SETTLE);
+		expect(r.last(MIXER_OUTPUTS.gain, 2)).toBe(0);
+		r.mixer.receive({ type: 'shot', voice: 2 });
 		r.run(SETTLE);
 		expect(r.last(MIXER_OUTPUTS.gain, 2)).toBeCloseTo(1, 3);
-		// The next play is far off and slow: the sketch writes it, then the page says it starts.
+		// The sketch writes the next play far off and slow. Until the page says it starts, the voice
+		// keeps the last play's values, so a play that still fades keeps its own level.
 		r.at(0, 0, 0, -400);
 		r.floats[r.layout.rates] = 0.5;
+		r.run(4);
+		expect(r.last(MIXER_OUTPUTS.gain, 2)).toBeCloseTo(1, 3);
+		expect(r.last(MIXER_OUTPUTS.rate, 2)).toBeCloseTo(2, 3);
 		r.mixer.receive({ type: 'shot', voice: 2 });
 		r.run(1);
 		expect(r.last(MIXER_OUTPUTS.gain, 2)).toBeCloseTo(0.01, 4);
@@ -411,8 +420,9 @@ describe('rates and levels at their limits', () => {
 });
 
 describe('a sketch whose frames have not moved yet', () => {
-	test('swells no voice before its frame count moves', () => {
+	test('swells no voice before its frame count moves, whatever the count reads', () => {
 		const r = rig();
+		r.ints[r.layout.frame] = 5000;
 		r.mixer.receive({ type: 'add', sound: spec({ positional: false }) });
 		r.mixer.receive({ type: 'ready', voice: 0 });
 		let loudest = 0;

@@ -115,6 +115,7 @@ const GLOBALS = {
 	GainNode: FakeGain,
 	BiquadFilterNode: FakeFilter,
 	PannerNode: FakePanner,
+	DynamicsCompressorNode: FakeNode,
 	AudioBufferSourceNode: FakeSource,
 	requestAnimationFrame: () => 1,
 	cancelAnimationFrame: () => {},
@@ -348,6 +349,55 @@ describe('a shot', () => {
 		expect(plays()[1]?.started[0]).toBeGreaterThan(0);
 		plays()[0]?.onended?.();
 		expect(plays()[0]?.connections.size).toBe(0);
+		page.stop();
+		sound.destroy();
+	});
+});
+
+describe('shots in quick succession', () => {
+	test('send a fresh copy of the table before each play, even with no spare copy back', async () => {
+		const { connectSound } = await import('./page');
+		const { engine, ctx, listener } = engineAndSketch();
+		const sound = createSound(ctx, { listener });
+		const steps = sound.shot({ file: '/step.mp3', voices: 3 });
+		const page = connectSound(engine);
+		FakeContext.activated = true;
+		await page.start();
+		await settle();
+		// The stand-in mixer never hands a copy back, so the third play finds no spare.
+		steps.play(0, 0, -1);
+		steps.play(0, 0, -2);
+		steps.play(0, 0, -3);
+		await settle();
+		const types = FakeWorklet.messages
+			.map((m) => (m as { type: string }).type)
+			.filter((type) => type === 'copy' || type === 'shot');
+		expect(types).toEqual(['copy', 'shot', 'copy', 'shot', 'copy', 'shot']);
+		page.stop();
+		sound.destroy();
+	});
+
+	test('on one voice, play only the newest of the plays that wait for a fade', async () => {
+		const { connectSound } = await import('./page');
+		const { engine, ctx, listener } = engineAndSketch();
+		const sound = createSound(ctx, { listener });
+		const knock = sound.shot({ file: '/knock.mp3', voices: 1 });
+		const page = connectSound(engine);
+		FakeContext.activated = true;
+		await page.start();
+		await settle();
+		knock.play(0, 0, -1);
+		await settle();
+		knock.play(0, 0, -2);
+		await settle(5);
+		knock.play(0, 0, -3);
+		await settle(150);
+		const plays = FakeSource.all.filter((source) => !source.options.loop);
+		// The first play, then one more: the third replaced the second while it waited.
+		expect(plays).toHaveLength(2);
+		expect(
+			FakeWorklet.messages.filter((m) => (m as { type: string }).type === 'shot'),
+		).toHaveLength(2);
 		page.stop();
 		sound.destroy();
 	});

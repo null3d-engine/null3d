@@ -77,7 +77,7 @@ Call `sound.update()` once a frame, in `onLateUpdate`. It reads the listener's p
 | `createSound(ctx, options)` | Makes the sketch's sounds. `listener` is required: the camera, or another object that hears. `capacity` is the emitters that the sounds hold together, 256 by default and 4,096 at most. `volume` sets every sound's volume, from 0 to 1. A sketch has one sound system at a time: a second call while the first lives throws error 2504. |
 | `loop(options)` | A sound that plays its file over and over. `positional: false` makes a bed that plays in both ears. `level`, `rate`, `tone` and `position` give its first values. |
 | `group(options)` | `count` sounds that play one file, of which the loudest `voices` sound at once. Use it for the cars in a street or the bees of a swarm. |
-| `shot(options)` | A sound that plays its file once for each call of its `play`, such as thunder. `voices` plays that many at once, 2 by default. A play past that count fades the oldest out quickly. Each play starts about 20 ms after the call, at its own level, place and pitch. |
+| `shot(options)` | A sound that plays its file once for each call of its `play`, such as thunder. `voices` plays that many at once, 2 by default. A play past that count fades the oldest out quickly. Each play starts about 20 ms after the call, at its own level, place and pitch, or about 80 ms after it when it replaces a play that still sounds. |
 | `setVolume(volume)` | The volume of every sound, from 0 to 1. |
 | `update()` | Reads the listener's place and turn, and counts the frame. Call it once a frame. |
 | `destroy()` | Stops every sound and closes the link to the page. The page then waits for the sketch's next sound system. |
@@ -153,6 +153,7 @@ A relative address resolves against the page's address, as the engine's loaders 
 
 - The mixer runs on the audio thread. Its work grows with the voices and with the members of each group, which it ranks every fourth render quantum. With 32 voices and a group of 200 moving members, it takes about 2.4 ms of work per second of audio. That figure comes from Bun's JavaScript engine on a desktop computer.
 - Each voice is a source, a filter, a gain and a panner. The panner's HRTF model costs the most of them, which is why the lighter presets drop it.
+- A limiter on the page's output holds the mix under full scale, so sounds that sum, or a stereo sound panned to one side, never clip. It adds about 2 dB to quiet passages.
 - The table holds 12 numbers for the listener and 6 for each emitter: 6 KB at the default capacity.
 - The page plays 32 voices at once and the table holds 4,096 emitters at most.
 
