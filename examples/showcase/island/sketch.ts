@@ -17,6 +17,7 @@ import { type CameraBounds, createCinematic, type Shot } from '../../lib/cinemat
 import { EFFECT_LAYER, INTERIOR_LAYER, SUN_LAYERS } from '../../lib/layers';
 import { createShowcaseEffects } from '../../lib/showcase-effects';
 import { createMoods, isMood } from '../../lib/stage';
+import { BIRD_COUNT, createBirds, ROOST_LAMPS } from './birds';
 import { SEA_LEVEL } from './island';
 import { createLand } from './land';
 import { loadLifeModels } from './models';
@@ -325,6 +326,14 @@ export default defineSketch(
 			...(Number.isFinite(walkers) && walkers > 0 && { walkers }),
 		};
 		let traffic = createTraffic(ctx, life ?? createPlaceholderModels(ctx), trafficOptions);
+		// The crows fly their own errands between the perches, and roost while the town's lamps are
+		// lit. `?birds=N` sets how many fly, so a cost run can compare counts.
+		const asked = params.get('birds');
+		const birdCount = asked === null ? BIRD_COUNT : Number(asked);
+		const birds = createBirds(ctx, camera, {
+			count: Number.isFinite(birdCount) ? birdCount : BIRD_COUNT,
+			night: () => stage.lamps >= ROOST_LAMPS,
+		});
 		// A live page loads the models after its first frame, so the load never holds the first frame.
 		// The placeholders move meanwhile, and they leave when the models stand.
 		let settling = false;
@@ -398,6 +407,7 @@ export default defineSketch(
 				land.update(eye);
 				sea.update();
 				traffic.update(time.now);
+				birds.update();
 				trees?.update();
 			},
 		};
