@@ -215,52 +215,6 @@ function keyHelp(demo: Demo): HTMLElement | undefined {
 	return panel;
 }
 
-/** The name that the page keeps of its choice to show the key list. */
-const HELP_OPEN = 'null3d.help-open';
-
-/**
- * The key help in a card of its own, open by default and closed by the small icon at its top
- * right, so the visitor can clear the picture. A closed list leaves a compact button that opens
- * it again, and the choice is kept across visits.
- */
-function helpPanel(panel: HTMLElement): HTMLElement {
-	const box = element('div');
-	box.className = 'corner__help-panel';
-	const card = element('div');
-	card.className = 'corner__help-card';
-	const close = element('button', '×');
-	close.type = 'button';
-	close.className = 'corner__help-close';
-	close.setAttribute('aria-label', 'Hide the controls');
-	const reopen = element('button', 'Controls');
-	reopen.type = 'button';
-	reopen.className = 'corner__help-toggle';
-	const stored = (): boolean => {
-		try {
-			return localStorage.getItem(HELP_OPEN) !== '0';
-		} catch {
-			return true;
-		}
-	};
-	let open = stored();
-	const show = (wanted: boolean): void => {
-		open = wanted;
-		card.hidden = !open;
-		reopen.hidden = open;
-		try {
-			localStorage.setItem(HELP_OPEN, open ? '1' : '0');
-		} catch {
-			// A browser that refuses storage keeps the choice for this visit only.
-		}
-	};
-	close.addEventListener('click', () => show(false));
-	reopen.addEventListener('click', () => show(true));
-	card.append(panel, close);
-	box.append(card, reopen);
-	show(open);
-	return box;
-}
-
 /**
  * The demo's gestures, for a finger: what a drag and the touch controls do, with no key caps, since
  * a touch screen has no keyboard.
@@ -279,6 +233,24 @@ function gestureHelp(demo: Demo): HTMLElement {
 	row('Double-tap', 'Focus the camera on an object');
 	if (demo.gustKey !== undefined) row('Gust', 'Send a gust across the scene');
 	return panel;
+}
+
+/**
+ * The key help with a small close icon at its top right, so the visitor can clear the picture.
+ * Closing hides it for the visit; a reload brings it back, since nothing else would.
+ */
+function helpPanel(panel: HTMLElement): HTMLElement {
+	const box = element('div');
+	box.className = 'corner__help-panel';
+	const close = element('button', '×');
+	close.type = 'button';
+	close.className = 'corner__help-close';
+	close.setAttribute('aria-label', 'Hide the controls');
+	close.addEventListener('click', () => {
+		box.hidden = true;
+	});
+	box.append(panel, close);
+	return box;
 }
 
 /** The sheet's about: the demo's title, what it shows, its code and its credits. */
