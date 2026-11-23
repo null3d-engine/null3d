@@ -34,6 +34,8 @@ export const API_PACKAGES: readonly ApiPackage[] = [
 	{ entry: 'packages/three-compat/src/index.ts', source: 'packages/three-compat/src' },
 	{ entry: 'packages/water/src/index.ts', source: 'packages/water/src' },
 	{ entry: 'packages/wind/src/index.ts', source: 'packages/wind/src' },
+	{ entry: 'packages/sound/src/index.ts', source: 'packages/sound/src' },
+	{ entry: 'packages/sound/src/page.ts', source: 'packages/sound/src' },
 ];
 const API_TSCONFIG = 'packages/engine/tsconfig.json';
 

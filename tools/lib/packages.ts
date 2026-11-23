@@ -225,6 +225,14 @@ export const PACKAGES: Readonly<Record<string, PackageBuild>> = {
 		required: ['shaders/field.wgsl'],
 		wasm: ['dist/wind.wasm'],
 	},
+	// Its mixer goes beside its page entry: the worklet module that the page loads into the audio
+	// thread, and the mixer's WebAssembly in the package's `dist`, which `bun run build` builds.
+	sound: {
+		compile: true,
+		shaders: false,
+		docs: false,
+		required: ['lib/page.js', 'lib/mixer-worklet.js', 'dist/sound.wasm'],
+	},
 	cli: {
 		compile: false,
 		shaders: false,

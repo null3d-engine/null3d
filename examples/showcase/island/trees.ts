@@ -13,7 +13,7 @@ import {
 } from '@null3d/engine';
 import { createGrass } from '@null3d/grass';
 import { handOverToCards } from '@null3d/impostors';
-import { createWind } from '@null3d/wind';
+import { createWind, type Wind } from '@null3d/wind';
 import { type Stand, type SwayLook, standPart, swayingPart } from '../../lib/blender-models';
 import { Noise } from '../../lib/procedural';
 import { createSway } from '../../lib/sway';
@@ -181,7 +181,7 @@ export async function createTrees(
 	ctx: SketchContext,
 	camera: Camera,
 	{ spires = true }: { spires?: boolean } = {},
-): Promise<{ update(): void }> {
+): Promise<{ update(): void; wind: Wind }> {
 	const preset = ctx.quality.preset;
 	const onWall = onRetainingWall();
 	const kept = standing(TREE_SPOTS, TREE_SHARE[preset]).filter((spot) => !onWall(spot.x, spot.z));
@@ -259,6 +259,8 @@ export async function createTrees(
 	});
 	if (spires) placeCypresses(ctx, kept, fills);
 	return {
+		// The island's sound reads the same air, for the wind's and the leaves' levels.
+		wind,
 		update() {
 			// The field's box follows the camera, and a gust fades, so it steps every frame.
 			wind.update();

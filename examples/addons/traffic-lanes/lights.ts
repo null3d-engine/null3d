@@ -88,6 +88,42 @@ export function laneGroups(positions: Float32Array, rows: number, alongX: boolea
 	return groups;
 }
 
+/** The search that a pool's key names. The key less that search's first key is the row. */
+export function keySearch(key: number): number {
+	return Math.floor(key / ROWS_PER_SEARCH);
+}
+
+/** The row that a pool's key names, within its search. */
+export function keyRow(key: number): number {
+	return key - keySearch(key) * ROWS_PER_SEARCH;
+}
+
+/**
+ * Writes the place of row `k` at `time` into `out` at `at`: its lane's start moved along its
+ * heading, `alongX` and `alongZ`, by the distance it has travelled, wrapped by the lane's length, as
+ * the vehicles' shader moves it.
+ */
+export function carPlace(
+	positions: Float32Array,
+	values: Float32Array,
+	k: number,
+	time: number,
+	alongX: number,
+	alongZ: number,
+	out: Float32Array,
+	at: number,
+): void {
+	const lane = values[k * 4 + 2] as number;
+	const travelled = (values[k * 4] as number) + time * (values[k * 4 + 1] as number);
+	const along = travelled - lane * Math.floor(travelled / lane);
+	out[at] = (positions[k * 3] as number) + alongX * along;
+	out[at + 1] = positions[k * 3 + 1] as number;
+	out[at + 2] = (positions[k * 3 + 2] as number) + alongZ * along;
+}
+
+/** The place that one search's row works out to, which the search reads back. */
+const found = new Float32Array(3);
+
 /**
  * Moves the pool to the cars nearest `eye` at `time`, within `range`, and leaves a slot at an
  * infinite distance when no car fills it. The search reads every car of the lanes near the eye, so
@@ -145,12 +181,10 @@ export function moveLights(
 						break;
 					}
 				}
-				const lane = values[k * 4 + 2] as number;
-				const travelled = (values[k * 4] as number) + time * (values[k * 4 + 1] as number);
-				const at = travelled - lane * Math.floor(travelled / lane);
-				const x = (positions[k * 3] as number) + along[0] * at;
-				const y = positions[k * 3 + 1] as number;
-				const z = (positions[k * 3 + 2] as number) + along[1] * at;
+				carPlace(positions, values, k, time, along[0], along[1], found, 0);
+				const x = found[0] as number;
+				const y = found[1] as number;
+				const z = found[2] as number;
 				const dx = x - eyeX;
 				const dyToCar = y - eyeY;
 				const dz = z - eyeZ;
