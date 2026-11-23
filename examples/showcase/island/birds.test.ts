@@ -7,10 +7,15 @@ import { describe, expect, it } from 'bun:test';
 import type { MeshArrays } from '@null3d/engine';
 import {
 	BIRD_COUNT,
+	BIRD_MAX_SPEED,
+	BIRD_SLOW_SPEED,
 	createFlock,
 	crowBody,
 	crowWing,
+	type Flight,
 	type Flock,
+	flightLength,
+	HOP_METERS,
 	islandPerches,
 	PERCH_GAP,
 	PERCH_TREE_CLEAR,
@@ -228,6 +233,49 @@ describe('the flock', () => {
 			const close = near.some(({ k }) => flock.birds[k] === bird);
 			expect(bird.perched).toBe(!close);
 		}
+	});
+
+	it('hops between perches no farther than a crow’s hop', () => {
+		const flock = createFlock(islandPerches(), BIRD_COUNT);
+		const tracked = new Map<number, Flight>();
+		let flights = 0;
+		for (let t = 0; t < SETTLE; t += 1 / 60) {
+			flock.step(1 / 60, { night: false });
+			for (const [bird, flight] of flock.flights) {
+				if (tracked.get(bird) === flight) continue;
+				tracked.set(bird, flight);
+				flights++;
+				const [ax, , az] = [flight.path[0], flight.path[1], flight.path[2]];
+				const [bx, , bz] = [flight.path[9], flight.path[10], flight.path[11]];
+				const hop = Math.hypot((bx as number) - (ax as number), (bz as number) - (az as number));
+				expect(hop).toBeGreaterThanOrEqual(HOP_METERS[0] - 1e-6);
+				expect(hop).toBeLessThanOrEqual(HOP_METERS[1] + 1e-6);
+			}
+		}
+		expect(flights).toBeGreaterThan(0);
+	});
+
+	it('flies every path no faster than the crow’s cruise', () => {
+		// The flock's own perches, the shipped count and the shipped seed: each flight's path, at the
+		// duration the flock gave it, stays within the crow's slow and fast cruise speeds.
+		const flock = createFlock(islandPerches(), BIRD_COUNT);
+		const tracked = new Map<number, Flight>();
+		let flights = 0;
+		let longest = 0;
+		for (let t = 0; t < SETTLE; t += 1 / 60) {
+			flock.step(1 / 60, { night: false });
+			for (const [bird, flight] of flock.flights) {
+				if (tracked.get(bird) === flight) continue;
+				tracked.set(bird, flight);
+				flights++;
+				longest = Math.max(longest, flight.seconds);
+				const speed = flightLength(flight.path) / flight.seconds;
+				expect(speed).toBeLessThanOrEqual(BIRD_MAX_SPEED + 1e-6);
+				expect(speed).toBeGreaterThanOrEqual(BIRD_SLOW_SPEED - 1e-6);
+			}
+		}
+		expect(flights).toBeGreaterThan(0);
+		expect(longest).toBeGreaterThan(0);
 	});
 
 	it('leaves a battlements perch outward, away from the keep’s stone', () => {

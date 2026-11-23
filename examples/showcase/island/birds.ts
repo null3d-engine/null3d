@@ -49,11 +49,23 @@ const BIRD_SIZE_MOST = 6;
 /** The drawn size of a bird seen from `distance` meters. */
 const birdSize = (distance: number): number =>
 	Math.min(BIRD_SIZE_MOST, Math.max(1, distance / BIRD_SIZE_FROM));
-/** The seconds that a perch visit lasts, at least and at most, and the same for a flight. */
+/** The seconds that a perch visit lasts, at least and at most. */
 const PERCH_SECONDS = [6, 40] as const;
-const FLIGHT_SECONDS = [3, 10] as const;
+/**
+ * The fastest and slowest that a crow cruises, in meters a second. A real crow flies at about 10 to
+ * 15 m/s, so the flock's fastest flight tops out a little under that, and each flight lasts as long
+ * as its own path needs at a speed picked between the slow and the fast.
+ */
+export const BIRD_SLOW_SPEED = 6;
+export const BIRD_MAX_SPEED = 14;
 /** The height above the higher perch that a flight crosses the island at, at least and at most. */
 const CRUISE_HEIGHT = [5, 25] as const;
+/**
+ * The distance of a flight between perches, in meters, at least and at most, and how many of the
+ * nearest free perches the bird may pick from: a hop is usually short, and the far end is rare.
+ */
+export const HOP_METERS = [40, 300] as const;
+const HOP_CHOICES = 6;
 /**
  * The highest drawn stone of a keep's corner merlons, and of the walk inside them, above the keep's
  * ground. The landmark model's blocks are a meter square with their tops at the battlements' height,
@@ -102,10 +114,12 @@ export interface Crow {
 	timer: number;
 }
 
-/** The flock: its birds, and the step that moves them. */
+/** The flock: its birds, the flights in the air, and the step that moves them. */
 export interface Flock {
 	readonly birds: readonly Crow[];
 	readonly perches: readonly Perch[];
+	/** The flight of each bird in the air, by the bird's index, for a reader of the paths. */
+	readonly flights: ReadonlyMap<number, Flight>;
 	step(dt: number, world: FlockWorld): void;
 }
 
@@ -331,7 +345,7 @@ function flightPoint(
 }
 
 /** A flight: its four control points, its duration and where it lands. */
-interface Flight {
+export interface Flight {
 	readonly path: Cubic;
 	readonly seconds: number;
 	readonly to: number;
@@ -339,12 +353,29 @@ interface Flight {
 	readonly beatRate: number;
 }
 
+/** The length of the cubic path, as the sum of the straight steps through `samples` points. */
+export function flightLength(path: Cubic, samples = 32): number {
+	const [ax, ay, az] = [path[0], path[1], path[2]];
+	let [px, py, pz] = [ax, ay, az];
+	let length = 0;
+	const point = [0, 0, 0, 0, 0, 0];
+	for (let k = 1; k <= samples; k++) {
+		flightPoint(path, k / samples, point);
+		const [x, y, z] = [point[0] as number, point[1] as number, point[2] as number];
+		length += Math.hypot(x - px, y - py, z - pz);
+		px = x;
+		py = y;
+		pz = z;
+	}
+	return length;
+}
+
 /**
  * Makes the flock that stands on `perches`. Each bird starts on a perch of its own and moves on its
  * own clock; `step` runs the flock by one frame's time.
  */
 export function createFlock(perches: readonly Perch[], count = BIRD_COUNT, seed = 7349): Flock {
-	if (perches.length === 0) return { birds: [], perches, step() {} };
+	if (perches.length === 0) return { birds: [], perches, flights: new Map(), step() {} };
 	const next = random(seed);
 	const birds: Crow[] = [];
 	/** The bird that holds each perch, as its index plus one, or 0 for a free perch. */
@@ -354,13 +385,35 @@ export function createFlock(perches: readonly Perch[], count = BIRD_COUNT, seed 
 	const claim = (perch: number, bird: number): void => {
 		claimed[perch] = bird + 1;
 	};
-	const free = (not: number): number => {
-		const start = Math.floor(next() * perches.length);
-		for (let k = 0; k < perches.length; k++) {
-			const at = (start + k) % perches.length;
-			if (at !== not && claimed[at] === 0) return at;
+	/** The free perches within the hop's band, by their distance from the perch the bird leaves. */
+	const candidates: { at: number; distance: number }[] = [];
+	const free = (from: Perch): number => {
+		candidates.length = 0;
+		for (let at = 0; at < perches.length; at++) {
+			if (claimed[at] !== 0) continue;
+			const perch = perches[at] as Perch;
+			const distance = Math.hypot(perch.x - from.x, perch.z - from.z);
+			if (distance < HOP_METERS[0] || distance > HOP_METERS[1]) continue;
+			candidates.push({ at, distance });
 		}
-		return -1;
+		// A perch off the hop's ends stands in when the band has none free: the nearest of all.
+		if (candidates.length === 0) {
+			let nearest = -1;
+			let best = Number.POSITIVE_INFINITY;
+			for (let at = 0; at < perches.length; at++) {
+				if (claimed[at] !== 0) continue;
+				const perch = perches[at] as Perch;
+				const distance = Math.hypot(perch.x - from.x, perch.z - from.z);
+				if (distance > 0 && distance < best) {
+					best = distance;
+					nearest = at;
+				}
+			}
+			return nearest;
+		}
+		candidates.sort((a, b) => a.distance - b.distance);
+		const choices = Math.min(HOP_CHOICES, candidates.length);
+		return (candidates[Math.floor(next() * choices)] as { at: number }).at;
 	};
 	birds.length = 0;
 	// The perches are shuffled, so a flock smaller than the list stands on every kind of perch: roofs,
@@ -390,12 +443,12 @@ export function createFlock(perches: readonly Perch[], count = BIRD_COUNT, seed 
 	}
 	/** Lifts a bird from its perch: it gives the perch up and takes the one it flies to. */
 	const launch = (bird: Crow, index: number): void => {
-		const target = free(bird.perch);
+		const from = perches[bird.perch] as Perch;
+		const target = free(from);
 		if (target < 0) {
 			bird.timer = seconds(PERCH_SECONDS);
 			return;
 		}
-		const from = perches[bird.perch] as Perch;
 		const to = perches[target] as Perch;
 		claimed[bird.perch] = 0;
 		claim(target, index);
@@ -414,22 +467,25 @@ export function createFlock(perches: readonly Perch[], count = BIRD_COUNT, seed 
 		// middle of the flight, between the two.
 		const out = 2.5 + next() * 2.5;
 		const along = 2.5 + next() * 2.5;
+		const path: Cubic = [
+			from.x,
+			from.y + 0.02,
+			from.z,
+			from.x + Math.sin(from.yaw) * out,
+			inner,
+			from.z + Math.cos(from.yaw) * out,
+			to.x + Math.sin(to.yaw) * along + px * bow * 0.6,
+			inner,
+			to.z + Math.cos(to.yaw) * along + pz * bow * 0.6,
+			to.x,
+			to.y + 0.02,
+			to.z,
+		];
+		// The flight lasts as long as its own path needs at a cruise speed picked for it.
+		const speed = BIRD_SLOW_SPEED + next() * (BIRD_MAX_SPEED - BIRD_SLOW_SPEED);
 		flights.set(index, {
-			path: [
-				from.x,
-				from.y + 0.02,
-				from.z,
-				from.x + Math.sin(from.yaw) * out,
-				inner,
-				from.z + Math.cos(from.yaw) * out,
-				to.x + Math.sin(to.yaw) * along + px * bow * 0.6,
-				inner,
-				to.z + Math.cos(to.yaw) * along + pz * bow * 0.6,
-				to.x,
-				to.y + 0.02,
-				to.z,
-			],
-			seconds: seconds(FLIGHT_SECONDS),
+			path,
+			seconds: flightLength(path) / speed,
 			to: target,
 			beat: next() * 12,
 			beatRate: 5 + next() * 2,
@@ -504,7 +560,7 @@ export function createFlock(perches: readonly Perch[], count = BIRD_COUNT, seed 
 			}
 		}
 	};
-	return { birds, perches, step };
+	return { birds, perches, flights, step };
 }
 
 /**
