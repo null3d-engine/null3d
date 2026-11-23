@@ -861,15 +861,59 @@ function boundary(b: Build, w: number, back: number, front: number, gate = 2): v
 	}
 }
 
+/** A pool's water rectangle, in the garden's own frame, and its surface's height above the garden. */
+export interface PoolWater {
+	readonly x0: number;
+	readonly x1: number;
+	readonly z0: number;
+	readonly z1: number;
+	readonly level: number;
+}
+
+/** How far a pool's stone paving runs past its water, in meters. */
+export const POOL_PAVING = 1.4;
+/** The width of the stone rim around a pool's water, in meters. */
+export const POOL_RIM = 0.3;
+
+/**
+ * The pools that each garden kind holds, in the garden's own frame: the data that the garden's mesh
+ * draws and the plan reads to keep plants, parasols and props out of the water.
+ */
+export const GARDEN_POOLS: readonly (readonly PoolWater[])[] = [
+	[{ x0: -5, x1: 3, z0: -12.5, z1: -8.5, level: 0.1 }],
+	[],
+	[],
+	[],
+	[],
+	[{ x0: -6, x1: 4, z0: -14.5, z1: -10, level: 0.1 }],
+];
+
 /** Adds a swimming pool with its stone rim and two thin loungers. */
-function pool(b: Build, x0: number, x1: number, z0: number, z1: number): void {
-	box(b, x0 - 1.4, -0.1, z0 - 1.4, x1 + 1.4, 0.06, z1 + 1.4, PAVING);
+function pool(b: Build, water: PoolWater): void {
+	const { x0, x1, z0, z1 } = water;
+	box(
+		b,
+		x0 - POOL_PAVING,
+		-0.1,
+		z0 - POOL_PAVING,
+		x1 + POOL_PAVING,
+		0.06,
+		z1 + POOL_PAVING,
+		PAVING,
+	);
 	const rim: Color = [0.85, 0.83, 0.78];
-	box(b, x0 - 0.3, 0, z0 - 0.3, x1 + 0.3, 0.14, z0, rim);
-	box(b, x0 - 0.3, 0, z1, x1 + 0.3, 0.14, z1 + 0.3, rim);
-	box(b, x0 - 0.3, 0, z0, x0, 0.14, z1, rim);
-	box(b, x1, 0, z0, x1 + 0.3, 0.14, z1, rim);
-	quad(b, [x0, 0.1, z1], [x1, 0.1, z1], [x1, 0.1, z0], [x0, 0.1, z0], POOL);
+	box(b, x0 - POOL_RIM, 0, z0 - POOL_RIM, x1 + POOL_RIM, 0.14, z0, rim);
+	box(b, x0 - POOL_RIM, 0, z1, x1 + POOL_RIM, 0.14, z1 + POOL_RIM, rim);
+	box(b, x0 - POOL_RIM, 0, z0, x0, 0.14, z1, rim);
+	box(b, x1, 0, z0, x1 + POOL_RIM, 0.14, z1, rim);
+	quad(
+		b,
+		[x0, water.level, z1],
+		[x1, water.level, z1],
+		[x1, water.level, z0],
+		[x0, water.level, z0],
+		POOL,
+	);
 	for (const z of [z0 + 0.4, z0 + 1.6]) lounger(b, x1 + 0.5, z, 0.06);
 }
 
@@ -966,7 +1010,7 @@ export const GARDEN_KINDS: readonly GardenKind[] = (() => {
 	return [
 		make([10, 14, 7], (b) => {
 			boundary(b, 10, 14, 7);
-			pool(b, -5, 3, -12.5, -8.5);
+			pool(b, GARDEN_POOLS[0]?.[0] as PoolWater);
 			table(b, 6.5, -7);
 			pot(b, -8.5, 0, 5.5, 0.4, true);
 			pot(b, 8.5, 0, 5.5, 0.4);
@@ -996,7 +1040,7 @@ export const GARDEN_KINDS: readonly GardenKind[] = (() => {
 		}),
 		make([11, 16, 7], (b) => {
 			boundary(b, 11, 16, 7);
-			pool(b, -6, 4, -14.5, -10);
+			pool(b, GARDEN_POOLS[5]?.[0] as PoolWater);
 			box(b, -6, -0.1, -8.5, 7.5, 0.06, -5, PAVING);
 			table(b, 5, -6.8, 0.06);
 			pot(b, -9.5, 0, 5.5, 0.45, true);

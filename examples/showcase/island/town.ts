@@ -13,7 +13,7 @@ import {
 import { type Part, standPart } from '../../lib/blender-models';
 import { INTERIOR_LAYER } from '../../lib/layers';
 import { Noise, random } from '../../lib/procedural';
-import { STAIR_HALF, WAY_HALF } from './ground';
+import { FOUNTAIN_WATER, STAIR_HALF, WAY_HALF } from './ground';
 import { type HouseLot, loadHouses, standHouse, standsByKind } from './houses';
 import {
 	BAY,
@@ -63,6 +63,7 @@ import {
 	circleRadius,
 	groundHeight,
 	HOLES,
+	inWater,
 	KEEPS,
 	LOTS,
 	type Lot,
@@ -1468,9 +1469,9 @@ export function squarePropPlaces(): {
 		[17, 9],
 	] as const)
 		pots.push([x + ox, z + oz]);
-	// Every table and pot comes to rest on the piazza's own level floor.
+	// Every table and pot comes to rest on the piazza's own level floor, and clear of the fountain's water.
 	const settled = (places: [number, number][], reach: number): [number, number][] =>
-		places.map(([px, pz]) => settleOnPiazza(px, pz, reach));
+		places.map(([px, pz]) => settleOnPiazza(px, pz, reach)).filter(([px, pz]) => !inWater(px, pz));
 	const awnings = [
 		{ x: x - hx - 2, z: z + 4, yaw: Math.PI / 2 },
 		{ x: x + hx + 2, z: z + 4, yaw: -Math.PI / 2 },
@@ -1540,12 +1541,14 @@ function createSquare(
 	ring(b, x, z, 5.4, top + 0.22, 5.4, top + 0.44, 28, [0.66, 0.6, 0.5]);
 	ring(b, x, z, 5.4, top + 0.44, 4.2, top + 0.44, 28, stone);
 	ring(b, x, z, 4.2, top + 0.44, 4.2, top + 1.05, 28, stone);
-	ring(b, x, z, 4.3, top + 1.05, 3.7, top + 1.05, 28, stone);
-	ring(b, x, z, 3.7, top + 0.95, 0, top + 0.95, 28, water);
+	ring(b, x, z, 4.3, top + 1.05, FOUNTAIN_WATER.basin, top + 1.05, 28, stone);
+	const basinTop = top + FOUNTAIN_WATER.basinAbove;
+	ring(b, x, z, FOUNTAIN_WATER.basin, basinTop, 0, basinTop, 28, water);
 	ring(b, x, z, 0.5, top + 0.95, 0.34, top + 2.5, 12, stone);
 	ring(b, x, z, 0.34, top + 2.5, 1.5, top + 2.75, 18, stone);
 	ring(b, x, z, 1.5, top + 2.75, 1.5, top + 2.95, 18, stone);
-	ring(b, x, z, 1.35, top + 2.9, 0, top + 2.9, 18, water);
+	const bowlTop = top + FOUNTAIN_WATER.bowlAbove;
+	ring(b, x, z, FOUNTAIN_WATER.bowl, bowlTop, 0, bowlTop, 18, water);
 	ring(b, x, z, 0.22, top + 2.9, 0.12, top + 3.9, 8, stone);
 	ring(b, x, z, 0.3, top + 3.9, 0, top + 4.2, 8, stone);
 	// The beds of stone around the shade trees.
@@ -2189,7 +2192,7 @@ export function parasolSpots(): ParasolSpot[] {
 			const turn = a + ((next() - 0.5) * 2.6) / r;
 			const x = BAY.x + Math.cos(turn) * r;
 			const z = BAY.z + Math.sin(turn) * r;
-			if (inland(x, z) < 8 || next() < 0.08) continue;
+			if (inland(x, z) < 8 || next() < 0.08 || inWater(x, z)) continue;
 			if (LOTS.some((lot) => hypot(lot.x - x, lot.z - z) < lot.reach + 4)) continue;
 			if (roadEdge(x, z) < PARASOL_FROM_ROAD) continue;
 			spots.push({
@@ -2239,7 +2242,7 @@ function createBeach(ctx: SketchContext): InstanceBatch {
 		];
 		const r = BAY.radius + sandWidth(ex, ez) + 4 + next() * 10;
 		const [x, z] = [BAY.x + Math.cos(a) * r, BAY.z + Math.sin(a) * r];
-		if (inland(x, z) > 20) palms.push([x, z]);
+		if (inland(x, z) > 20 && !inWater(x, z)) palms.push([x, z]);
 	}
 	const trees = scene.createInstances(geometry.fromArrays(finish(palm())), palms.length, {
 		material: materials.standard({ vertexColors: true, roughness: 0.9, doubleSided: true }),

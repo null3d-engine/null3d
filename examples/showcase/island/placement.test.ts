@@ -5,9 +5,31 @@
 // two parasol canvases may overlap, and every prop's ground contacts must lie over the surface that
 // carries it.
 import { describe, expect, it } from 'bun:test';
+import { FOUNTAIN_WATER, inWorld } from './ground';
 import { hypot, quayWallZ } from './island';
-import { type Build, bareTable, bench, HOUSE_KINDS, pavilion, planter, streetLamp } from './kit';
-import { groundHeight, LOTS, ROADS, roadEdge, SQUARE } from './plan';
+import {
+	type Build,
+	bareTable,
+	bench,
+	GARDEN_POOLS,
+	HOUSE_KINDS,
+	POOL_PAVING,
+	pavilion,
+	planter,
+	streetLamp,
+} from './kit';
+import {
+	FILL_SPOTS,
+	groundHeight,
+	inWater,
+	LOTS,
+	POOLS,
+	ROADS,
+	roadEdge,
+	SHRUBS,
+	SQUARE,
+	TREE_SPOTS,
+} from './plan';
 import { LOUNGER_OFFSETS, loungerStands } from './props';
 import { STREET } from './routes';
 import {
@@ -18,6 +40,7 @@ import {
 	hullDepth,
 	MOORINGS,
 	parasolClubs,
+	parkLawns,
 	parkPlans,
 	SQUARE_HARBOUR_PATH,
 	squareFloor,
@@ -501,5 +524,85 @@ describe('the island props stand on their surfaces', () => {
 				1,
 			);
 		});
+	});
+});
+
+describe('the island keeps everything dry out of the water', () => {
+	it('keeps every tree and shrub out of the sea, the wet sand, the pools and the fountain', () => {
+		for (const [name, list] of [
+			['trees', TREE_SPOTS],
+			['far trees', FILL_SPOTS],
+			['shrubs', SHRUBS],
+		] as const) {
+			const wet = list.filter((spot) => inWater(spot.x, spot.z));
+			expect(wet.length, `${name} in water: ${wet.length}`).toBe(0);
+		}
+	});
+
+	it('keeps every parasol, park lawn and square prop out of water', () => {
+		for (const spot of parasolClubs()) expect(inWater(spot.x, spot.z)).toBe(false);
+		for (const lawn of parkLawns()) {
+			expect(inWater(lawn.x, lawn.z), 'a park lawn in water').toBe(false);
+			const reach = lawn.size * 0.4;
+			for (let k = 0; k < 72; k++) {
+				const a = (k / 72) * Math.PI * 2;
+				expect(
+					inWater(lawn.x + Math.cos(a) * reach, lawn.z + Math.sin(a) * reach),
+					'a park lawn edge in water',
+				).toBe(false);
+			}
+		}
+		const places = squarePropPlaces();
+		for (const [x, z] of [...places.covered, ...places.open, ...places.pots])
+			expect(inWater(x, z), 'a square table or pot in water').toBe(false);
+		// The climbing flowers grow on the fronts of the houses, so their walls stand on dry ground.
+		for (const lot of LOTS) {
+			const { half } = HOUSE_KINDS[lot.kind] as (typeof HOUSE_KINDS)[number];
+			expect(inWater(...inWorld(lot, 0, half[1])), 'a flowering wall in water').toBe(false);
+		}
+	});
+
+	it('holds every garden kind that carries a pool to its water and its stone deck', () => {
+		const pooled = GARDEN_POOLS.map((pools, kind) => ({ kind, pools })).filter(
+			({ pools }) => pools.length > 0,
+		);
+		expect(pooled.length, 'garden kinds with a pool').toBeGreaterThan(0);
+		for (const { kind, pools } of pooled) {
+			const lots = LOTS.filter((lot) => lot.garden === kind);
+			expect(lots.length, `lots of garden kind ${kind}`).toBeGreaterThan(0);
+			const [w, back, front] = (lots[0] as (typeof LOTS)[number]).plot;
+			for (const water of pools) {
+				// The pool's water lies inside the garden that draws it.
+				expect(Math.max(-water.x0, water.x1), 'pool past the garden side').toBeLessThanOrEqual(w);
+				expect(water.z0, 'pool past the garden back').toBeGreaterThanOrEqual(-back);
+				expect(water.z1, 'pool past the garden front').toBeLessThanOrEqual(front);
+			}
+			for (const lot of lots) {
+				expect(
+					POOLS.some((pool) => pool.lot === lot),
+					'the lot has no pool footprint',
+				).toBe(true);
+				for (const water of pools) {
+					const mid = (water.z0 + water.z1) / 2;
+					for (const [u, v] of [
+						[water.x0, water.z0],
+						[water.x1, water.z1],
+						[(water.x0 + water.x1) / 2, mid],
+					] as const)
+						expect(inWater(...inWorld(lot, u, v)), 'a pool corner out of the water').toBe(true);
+					// The stone deck around the water is part of the footprint, so no bush leans in.
+					const [px, pz] = inWorld(lot, water.x1 + POOL_PAVING - 0.01, mid);
+					expect(inWater(px, pz), 'the pool deck out of the footprint').toBe(true);
+				}
+			}
+		}
+	});
+
+	it('holds the fountain basin as water and the piazza beside it as dry ground', () => {
+		expect(inWater(FOUNTAIN_WATER.x, FOUNTAIN_WATER.z), 'the fountain middle').toBe(true);
+		expect(
+			inWater(FOUNTAIN_WATER.x + FOUNTAIN_WATER.basin + 1, FOUNTAIN_WATER.z),
+			'the piazza beside the fountain',
+		).toBe(false);
 	});
 });

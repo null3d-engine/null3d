@@ -46,6 +46,20 @@ export type Tread = { x: number; y: number; z: number };
 export const CHURCH_AT = { x: -92, z: 186 } as const;
 export const SQUARE = { x: -92, z: 226, hx: 22, hz: 18 } as const;
 
+/**
+ * The square's fountain water, in meters: the basin's and the upper bowl's radii and their heights
+ * above the square's paving. The fountain's stone rings draw from this, and the plan reads the
+ * basin to keep plants and props out of the water.
+ */
+export const FOUNTAIN_WATER = {
+	x: SQUARE.x,
+	z: SQUARE.z,
+	basin: 3.7,
+	basinAbove: 0.95,
+	bowl: 1.35,
+	bowlAbove: 2.9,
+} as const;
+
 /** The steepest bank that roads and plots may leave, as rise over run. */
 export const STEEPEST_BANK = 0.42;
 /** The radius of the turning circle at the end of a road of a half width. */

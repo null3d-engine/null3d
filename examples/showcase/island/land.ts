@@ -13,9 +13,11 @@ import {
 	hypot,
 	inland,
 	onOutcrop,
+	SEA_LEVEL,
 	sandWidth,
 	sandyBed,
 	VILLAGES,
+	WET_SAND,
 } from './island';
 import { canopyAt, groundHeight, slopeAt } from './plan';
 
@@ -74,7 +76,7 @@ function splat(x: number, z: number, out: number[]): void {
 	const under_trees = canopyAt(x, z);
 	const mottle = smoothstep(noise.fbm2(x * 0.09 + 3, z * 0.09, 3), -0.25, 0.25);
 	const kept = golfShare(x, z);
-	const wet = beach * (1 - smoothstep(y, 0, 0.6)) * (1 - under) * 0.55;
+	const wet = beach * (1 - smoothstep(y, SEA_LEVEL, SEA_LEVEL + WET_SAND)) * (1 - under) * 0.55;
 	const dry = Math.max(0, 1 - under_trees * 1.2) * (0.55 + 0.45 * mottle) * (1 - kept);
 	const earth = Math.max(dry, wet);
 	out[3] = sand * (1 - wet);

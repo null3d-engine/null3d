@@ -13,6 +13,7 @@ import {
 	cellAt,
 	clumps,
 	edgeGrid,
+	FOUNTAIN_WATER,
 	fromCell,
 	groundHeight,
 	inCore,
@@ -47,10 +48,13 @@ import {
 	naturalHeight,
 	northOfRidge,
 	onOutcrop,
+	SEA_LEVEL,
+	sandAt,
 	townShare,
 	VILLAGES,
+	WET_SAND,
 } from './island';
-import { HOUSE_KINDS } from './kit';
+import { GARDEN_POOLS, HOUSE_KINDS, POOL_PAVING, type PoolWater } from './kit';
 import LAYOUT from './layout.json';
 import { PARKS, type Road, type RoadPoint } from './routes';
 
@@ -58,6 +62,7 @@ export {
 	CHURCH_AT,
 	circleRadius,
 	FEWEST_ON_LANE,
+	FOUNTAIN_WATER,
 	groundHeight,
 	KEEPS,
 	type Lot,
@@ -469,6 +474,67 @@ function open(x: number, z: number): boolean {
 	);
 }
 
+/** A pool of the stored plan's gardens, in the world. */
+export interface PoolFoot {
+	readonly lot: Lot;
+	/** The water's rectangle in the garden's own frame. */
+	readonly water: PoolWater;
+	/** The height of the water's surface in the world, in meters. */
+	readonly level: number;
+}
+
+/** Every pool of the island's gardens, in the order of the lots. */
+export const POOLS: readonly PoolFoot[] = LOTS.flatMap((lot) =>
+	(lot.garden >= 0 ? (GARDEN_POOLS[lot.garden] ?? []) : []).map((water) => ({
+		lot,
+		water,
+		level: lot.y + water.level,
+	})),
+);
+
+/** Each pool's turned frame and its paving's reach, worked out once for the plan's searches. */
+const poolFrames = POOLS.map((pool) => {
+	const [c, s] = [Math.cos(pool.lot.yaw), Math.sin(pool.lot.yaw)];
+	const { x0, x1, z0, z1 } = pool.water;
+	return {
+		...pool,
+		c,
+		s,
+		reach: Math.max(Math.abs(x0), Math.abs(x1), Math.abs(z0), Math.abs(z1)) + POOL_PAVING,
+	};
+});
+
+/** Whether a place lies in a pool's water or on the stone deck that runs around it. */
+function onPool(x: number, z: number): boolean {
+	for (const { lot, water, c, s, reach } of poolFrames) {
+		const [dx, dz] = [x - lot.x, z - lot.z];
+		if (Math.abs(dx) > reach || Math.abs(dz) > reach) continue;
+		const u = dx * c - dz * s;
+		const v = dx * s + dz * c;
+		if (
+			u >= water.x0 - POOL_PAVING &&
+			u <= water.x1 + POOL_PAVING &&
+			v >= water.z0 - POOL_PAVING &&
+			v <= water.z1 + POOL_PAVING
+		)
+			return true;
+	}
+	return false;
+}
+
+/**
+ * Whether a place lies in water, or on ground that water keeps wet, where no plant, parasol or
+ * prop stands: the sea and the harbour's basin, the beach's wet sand, each pool's basin with its
+ * stone deck, and the square's fountain basin.
+ */
+export function inWater(x: number, z: number): boolean {
+	if (hypot(x - FOUNTAIN_WATER.x, z - FOUNTAIN_WATER.z) < FOUNTAIN_WATER.basin) return true;
+	const y = groundHeight(x, z);
+	if (y < SEA_LEVEL) return true;
+	if (y < SEA_LEVEL + WET_SAND && sandAt(x, z) > 0.05) return true;
+	return onPool(x, z);
+}
+
 /** The dry stone walls of the terraces. */
 export const TERRACES: TerraceWall[] = [];
 /** The meters of terrace wall to each olive, and the least gap between them, in meters. */
@@ -762,6 +828,7 @@ export const TREE_SPOTS: readonly TreeSpot[] = (() => {
 		if (nearestTerraceWall(x, z).d < TRUNK_CLEAR) return false;
 		const y = groundHeight(x, z);
 		if (y < 2 || slopeAt(x, z) > 5) return false;
+		if (inWater(x, z)) return false;
 		for (let i = -1; i <= 1; i++)
 			for (let j = -1; j <= 1; j++)
 				for (const s of near.get(lookupKey(x + i * LOOKUP, z + j * LOOKUP)) ?? [])
@@ -958,6 +1025,7 @@ export const FILL_SPOTS: readonly TreeSpot[] = (() => {
 			if (open(x, z) || inPlot(x, z) || terracedAt(x, z) || read(edgeGrid, x, z) < 2.5) continue;
 			const y = groundHeight(x, z);
 			if (y < 2 || slopeAt(x, z) > 4.5 || onHilltop(x, z)) continue;
+			if (inWater(x, z)) continue;
 			const fold = (around(x, z) - read(natural, x, z)) / FOLD_DEPTH;
 			const kind = pick < 0.2 + fold * 0.6 ? CYPRESS : pick > 0.85 + fold ? OLIVE : OAK;
 			if (inParkSightLine(x, z)) continue;
@@ -1062,6 +1130,7 @@ export const SHRUBS: readonly ShrubSpot[] = (() => {
 	const spots: ShrubSpot[] = [];
 	const add = (x: number, z: number, scale: number, flower: boolean) => {
 		if (read(edgeGrid, x, z) < 0.8 || inland(x, z) < 5) return;
+		if (inWater(x, z)) return;
 		spots.push({ x, y: groundHeight(x, z) - 0.1, z, scale, flower });
 	};
 	for (const lot of LOTS) {
@@ -1132,7 +1201,7 @@ export const SHRUBS: readonly ShrubSpot[] = (() => {
 })();
 
 /** The fingerprint of the stored plan, which the plan tests and the browser test both hold it to. */
-export const PLAN_FINGERPRINT = 2559993068;
+export const PLAN_FINGERPRINT = 2604729754;
 
 /**
  * A number that changes with any road, house, tree, wall or sample of the ground, to the millimeter. A
