@@ -26,8 +26,9 @@
 #[cfg(all(target_arch = "wasm32", not(test)))]
 #[panic_handler]
 fn panic(_: &core::panic::PanicInfo) -> ! {
-    // A call reaches this only through a layout that the worklet passed wrong. A trap stops the
-    // worklet's processing, which the page reports; the module keeps no state to repair.
+    // Every index that a message or the table reaches is checked, so a call reaches this only
+    // through a fault in the module. A trap stops the worklet's processing: the page hears of it
+    // through the node's processor error, warns and stops the sound.
     core::arch::wasm32::unreachable()
 }
 
@@ -370,6 +371,15 @@ impl Mixer {
         muffle: bool,
         voice_count: usize,
     ) {
+        let voice_count = voice_count.min(MAX_VOICES);
+        // The new sound's voices leave the sounds that held them first. A fading sound that gives up
+        // its last voice so frees its place, which keeps a place free whenever a voice is.
+        for k in 0..voice_count {
+            let v = self.scratch[k];
+            if v >= 0 && (v as usize) < self.voices {
+                self.clear(v as usize);
+            }
+        }
         // A free place for the sound: one that no live sound holds and no voice still plays.
         let mut slot = NONE;
         for s in 0..MAX_VOICES {
@@ -396,7 +406,7 @@ impl Mixer {
             voice_count: 0,
             live: true,
         };
-        for k in 0..voice_count.min(MAX_VOICES) {
+        for k in 0..voice_count {
             let v = self.scratch[k];
             if v < 0 || v as usize >= self.voices {
                 continue;
@@ -404,7 +414,6 @@ impl Mixer {
             let v = v as usize;
             sound.voices[sound.voice_count] = v as u8;
             sound.voice_count += 1;
-            self.clear(v);
             self.owner[v] = s as i32;
             // A loop and a shot keep one emitter for each voice; a group's voices wait for a ranking.
             self.emitter[v] = if kind == GROUP {
@@ -533,11 +542,17 @@ impl Mixer {
         } else {
             0.0
         };
-        // A voice keeps its emitter while that emitter is chosen, or stays near the cut.
+        // A voice keeps its emitter while that emitter is chosen, or stays near the cut. A voice that
+        // another sound has taken since is that sound's now, and the group leaves it alone.
+        let mine = |m: &Mixer, v: usize| m.owner[v] == s as i32;
         for j in 0..wanted {
             let v = sound.voices[j] as usize;
+            if !mine(self, v) {
+                continue;
+            }
             let held = self.held_emitter(v);
-            let keep = held != NONE && {
+            let inside = held >= sound.first as i32 && held < end as i32;
+            let keep = inside && {
                 let loud = self.loudness[held as usize];
                 loud > SILENT && (self.chosen[..count].contains(&held) || loud >= cut)
             };
@@ -551,6 +566,9 @@ impl Mixer {
             let mut free_voice = NONE;
             for j in 0..wanted {
                 let v = sound.voices[j] as usize;
+                if !mine(self, v) {
+                    continue;
+                }
                 let held = self.held_emitter(v);
                 if held == e && !self.free[v] {
                     held_by = v as i32;
@@ -1038,6 +1056,46 @@ mod tests {
         m.ready[0] = true;
         run(&mut m, SETTLE);
         assert!((last_gain(&m, 0) - 1.0).abs() < 1e-3);
+    }
+
+    #[test]
+    fn a_new_sound_takes_a_place_when_every_place_holds_a_fading_sound() {
+        let mut m = mixer_with_table();
+        // 32 one-voice loops, all playing, then all removed: each fades on its voice.
+        for v in 0..MAX_VOICES {
+            m.scratch[0] = v as i32;
+            m.add(v as i32, LOOP, v % CAPACITY, 1, false, 0.0, 0.0, false, 1);
+            m.ready[v] = true;
+        }
+        run(&mut m, SETTLE);
+        for id in 0..MAX_VOICES as i32 {
+            m.remove(id);
+        }
+        // The next system's loops take voices that still fade, as a page's reset makes them.
+        for v in 0..6 {
+            m.scratch[0] = v as i32;
+            m.add(100 + v as i32, LOOP, v, 1, false, 0.0, 0.0, false, 1);
+            m.ready[v] = true;
+            m.fresh[v] = true;
+        }
+        run(&mut m, SETTLE);
+        for v in 0..6 {
+            assert!((last_gain(&m, v) - 1.0).abs() < 1e-3, "voice {v}");
+        }
+    }
+
+    #[test]
+    fn a_group_leaves_alone_a_voice_that_another_sound_took() {
+        let mut m = mixer_with_table();
+        m.layout.capacity = MAX_CAPACITY;
+        m.scratch[0] = 3;
+        m.add(1, GROUP, 0, 4, true, 1.0, 0.0, false, 1);
+        // A shot takes the group's voice with an emitter past the end of the loudness list.
+        m.scratch[..2].copy_from_slice(&[5, 3]);
+        m.add(2, SHOT, MAX_CAPACITY - 1, 2, true, 1.0, 0.0, false, 2);
+        m.emitter[3] = MAX_CAPACITY as i32;
+        run(&mut m, SETTLE);
+        assert_eq!(m.owner[3], m.owner[5]);
     }
 
     #[test]

@@ -78,9 +78,11 @@ export class Mixer {
 	private own: Float32Array | null = null;
 	/** True until the first copy of a copied table lands, while the mixer stays silent. */
 	private awaitingCopy = false;
-	/** A view of each voice's gains for a quantum of `gainFrames` frames. */
-	private gainViews: Float32Array[] = [];
-	private gainFrames = 0;
+	/**
+	 * A view of each voice's gains for each length of render that the module has given, made once:
+	 * a quantum longer than the module's most renders in pieces, of at most two lengths.
+	 */
+	private readonly gainViews = new Map<number, Float32Array[]>();
 
 	constructor(
 		sampleRate: number,
@@ -126,7 +128,11 @@ export class Mixer {
 			case 'add': {
 				const { sound } = message;
 				const count = Math.min(sound.voices.length, VOICE_LIST);
-				for (let k = 0; k < count; k++) this.voiceList[k] = sound.voices[k] as number;
+				// A voice that is not one of the mixer's goes to the module as -1, which it skips.
+				for (let k = 0; k < count; k++) {
+					const v = sound.voices[k] as number;
+					this.voiceList[k] = this.isVoice(v) ? v : -1;
+				}
 				wasm.sound_add(
 					sound.id,
 					KINDS[sound.kind],
@@ -144,12 +150,17 @@ export class Mixer {
 				wasm.sound_remove(message.id);
 				return;
 			case 'ready':
-				wasm.sound_ready(message.voice);
+				if (this.isVoice(message.voice)) wasm.sound_ready(message.voice);
 				return;
 			case 'shot':
-				wasm.sound_shot(message.voice);
+				if (this.isVoice(message.voice)) wasm.sound_shot(message.voice);
 				return;
 		}
+	}
+
+	/** True for a whole number that names one of the mixer's voices. */
+	private isVoice(v: number): boolean {
+		return Number.isInteger(v) && v >= 0 && v < this.setup.voices;
 	}
 
 	/** Gives the module the table's layout and makes the view that each quantum copies into. */
@@ -177,7 +188,7 @@ export class Mixer {
 		const out = this.setup.outputs;
 		const gains = outputs[out.gain];
 		const frames = gains?.[0]?.length ?? 0;
-		if (!gains || frames === 0 || frames > this.maxFrames) return;
+		if (!gains || frames === 0) return;
 		const table = this.table;
 		const source = this.source;
 		if (!table || !source || this.awaitingCopy) {
@@ -185,10 +196,17 @@ export class Mixer {
 			return;
 		}
 		table.set(source);
-		const report = this.wasm.sound_render(frames);
+		// The module renders at most its own length of frames at a time, so a longer quantum, which
+		// a browser may choose, renders in pieces. The voices' other values come from the last.
+		let report = 0;
+		for (let start = 0; start < frames; start += this.maxFrames) {
+			const length = Math.min(this.maxFrames, frames - start);
+			report |= this.wasm.sound_render(length);
+			const views = this.viewsFor(length);
+			for (let v = 0; v < this.setup.voices; v++) gains[v]?.set(views[v] as Float32Array, start);
+		}
 		if (report & STOPPED) this.send({ type: 'idle' });
 		if (report & MOVING) this.send({ type: 'active' });
-		if (frames !== this.gainFrames) this.makeGainViews(frames);
 		const xs = outputs[out.x];
 		const ys = outputs[out.y];
 		const zs = outputs[out.z];
@@ -197,7 +215,6 @@ export class Mixer {
 		const values = this.values;
 		// The module did the work; each voice's values go to the browser's arrays in its own calls.
 		for (let v = 0; v < this.setup.voices; v++) {
-			gains[v]?.set(this.gainViews[v] as Float32Array);
 			const at = v * VALUES;
 			xs?.[v]?.fill(values[at] as number);
 			ys?.[v]?.fill(values[at + 1] as number);
@@ -207,13 +224,17 @@ export class Mixer {
 		}
 	}
 
-	/** Makes a view of each voice's gains for a quantum of `frames` frames. */
-	private makeGainViews(frames: number): void {
-		const start = this.wasm.sound_gains();
-		this.gainViews = [];
-		for (let v = 0; v < this.setup.voices; v++)
-			this.gainViews.push(new Float32Array(this.memory, start + v * this.maxFrames * 4, frames));
-		this.gainFrames = frames;
+	/** The views of each voice's gains for a render of `frames` frames, made at its first use. */
+	private viewsFor(frames: number): Float32Array[] {
+		let views = this.gainViews.get(frames);
+		if (!views) {
+			const start = this.wasm.sound_gains();
+			views = [];
+			for (let v = 0; v < this.setup.voices; v++)
+				views.push(new Float32Array(this.memory, start + v * this.maxFrames * 4, frames));
+			this.gainViews.set(frames, views);
+		}
+		return views;
 	}
 }
 

@@ -517,10 +517,17 @@ class SoundPage implements PageSound {
 		context.onstatechange = () => this.followContext();
 		void context.resume().catch(() => {});
 		this.setState('starting');
-		const wasm = fetch(MIXER_WASM_URL).then((response) => {
-			if (!response.ok) throw new Error(`the mixer's module answered ${response.status}`);
-			return response.arrayBuffer();
-		});
+		const wasm = fetch(MIXER_WASM_URL)
+			.then((response) => {
+				if (!response.ok) throw new Error(`the mixer's module answered ${response.status}`);
+				return response.arrayBuffer();
+			})
+			.then((bytes) => {
+				// A host that answers a missing file with a page of its own sends text, which the worklet
+				// could not compile.
+				if (!WebAssembly.validate(bytes)) throw new Error("the mixer's module is not WebAssembly");
+				return bytes;
+			});
 		return Promise.all([context.audioWorklet.addModule(MIXER_URL), wasm])
 			.then(([, bytes]) => {
 				if (this.state === 'stopped') return;
@@ -546,6 +553,11 @@ class SoundPage implements PageSound {
 			processorOptions: setup,
 		});
 		mixer.port.onmessage = (event: MessageEvent<MixerReply>) => this.fromMixer(event.data);
+		// A mixer that fails on the audio thread drives no voice again, so the sound stops and says so.
+		mixer.onprocessorerror = () => {
+			console.warn('null3D sound: the mixer failed on the audio thread, so the sound stops.');
+			this.stop();
+		};
 		this.mixer = mixer;
 		this.splitters = [];
 		for (let output = 0; output < OUTPUT_COUNT; output++) {

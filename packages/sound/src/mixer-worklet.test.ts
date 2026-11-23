@@ -494,6 +494,45 @@ describe.skipIf(!built)('a sketch whose frames have not moved yet', () => {
 	});
 });
 
+describe.skipIf(!built)('quanta and voices that the module does not take as they come', () => {
+	test('a quantum longer than the module renders plays in pieces, with no frame left silent', () => {
+		const layout = tableLayout(CAPACITY);
+		const buffer = new SharedArrayBuffer(layout.length * 4);
+		const floats = new Float32Array(buffer);
+		const ints = new Int32Array(buffer);
+		floats[layout.volume] = 1;
+		floats[layout.listenerTurn + 3] = 1;
+		floats[layout.levels] = 1;
+		floats[layout.rates] = 1;
+		floats[layout.tones] = 1;
+		const mixer = mixerFor([]);
+		mixer.receive({ type: 'table', layout, buffer });
+		mixer.receive({ type: 'add', sound: spec({ positional: false }) });
+		mixer.receive({ type: 'ready', voice: 0 });
+		const long = 2560;
+		const outputs = Array.from({ length: OUTPUT_COUNT }, () =>
+			Array.from({ length: MAX_VOICES }, () => new Float32Array(long)),
+		);
+		for (let q = 0; q < 200; q++) {
+			ints[layout.frame] = (ints[layout.frame] as number) + 1;
+			mixer.render(outputs);
+		}
+		const gains = outputs[MIXER_OUTPUTS.gain]?.[0] as Float32Array;
+		expect(Math.min(...gains)).toBeGreaterThan(0.99);
+	});
+
+	test('a voice that is not a whole number in range is refused, as the page never sends one', () => {
+		const r = rig();
+		r.mixer.receive({ type: 'add', sound: spec({ voices: [Number.NaN] }) });
+		r.mixer.receive({ type: 'add', sound: spec({ id: 2, voices: [2.9] }) });
+		r.mixer.receive({ type: 'ready', voice: Number.NaN });
+		r.mixer.receive({ type: 'ready', voice: 2.9 });
+		r.at(0, 0, 0, -1);
+		r.run(SETTLE);
+		for (let v = 0; v < 3; v++) expect(r.last(MIXER_OUTPUTS.gain, v)).toBe(0);
+	});
+});
+
 describe.skipIf(!built)('a table the page copies', () => {
 	test('reads each copy and hands the buffer back', () => {
 		const layout = tableLayout(4);

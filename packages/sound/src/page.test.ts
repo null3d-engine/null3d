@@ -103,8 +103,17 @@ class FakeWorklet extends FakeNode {
 		postMessage: (message: unknown) => FakeWorklet.messages.push(message),
 		onmessage: null,
 	};
+	onprocessorerror: (() => void) | null = null;
 	static messages: unknown[] = [];
+	static last: FakeWorklet | null = null;
+	constructor(context: FakeContext) {
+		super(context);
+		FakeWorklet.last = this;
+	}
 }
+
+/** The smallest WebAssembly module: its magic number and its version, which the page validates. */
+const EMPTY_MODULE = new Uint8Array([0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00]).buffer;
 
 /** The page's globals that the half reads, kept so a test puts them back. */
 const saved: Record<string, unknown> = {};
@@ -144,7 +153,7 @@ beforeEach(() => {
 			windowListeners.get(name)?.delete(handler),
 	};
 	g.document = { visibilityState: 'visible', addEventListener() {}, removeEventListener() {} };
-	g.fetch = async () => ({ ok: true, arrayBuffer: async () => new ArrayBuffer(8) });
+	g.fetch = async () => ({ ok: true, arrayBuffer: async () => EMPTY_MODULE.slice(0) });
 });
 
 afterEach(() => {
@@ -315,6 +324,40 @@ describe('a start before the user acts', () => {
 		await settle();
 		expect(FakeSource.all).toHaveLength(1);
 		page.stop();
+		sound.destroy();
+	});
+});
+
+describe('a mixer that fails', () => {
+	test('stops the sound when the module the host sent is not WebAssembly', async () => {
+		const { connectSound } = await import('./page');
+		const { engine, ctx, listener } = engineAndSketch();
+		const sound = createSound(ctx, { listener });
+		// A host that answers a missing file with its own page sends text with an answer of 200.
+		const page404 = new TextEncoder().encode('<!doctype html><title>Not found</title>').buffer;
+		(globalThis as Record<string, unknown>).fetch = async () => ({
+			ok: true,
+			arrayBuffer: async () => page404,
+		});
+		const page = connectSound(engine);
+		FakeContext.activated = true;
+		await page.start();
+		await settle();
+		expect(page.state).toBe('stopped');
+		sound.destroy();
+	});
+
+	test('stops the sound when the mixer fails on the audio thread', async () => {
+		const { connectSound } = await import('./page');
+		const { engine, ctx, listener } = engineAndSketch();
+		const sound = createSound(ctx, { listener });
+		const page = connectSound(engine);
+		FakeContext.activated = true;
+		await page.start();
+		await settle();
+		expect(page.state).toBe('on');
+		FakeWorklet.last?.onprocessorerror?.();
+		expect(page.state).toBe('stopped');
 		sound.destroy();
 	});
 });

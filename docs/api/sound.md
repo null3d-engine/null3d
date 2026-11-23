@@ -127,7 +127,7 @@ The page plays 32 voices at most. A loop takes one voice, a group takes its `voi
 | `onState(handler)` | Calls the handler at each change of the state, such as to label a sound button. Returns a function that removes the handler. |
 | `stop()` | Stops the audio for good. The engine's stop does the same. |
 
-The page loads nothing until `start` runs: no file, no audio and no mixer. The mixer's module is about 18 KB. Each file loads once, however many sounds play it. A file that fails to load leaves its sounds silent, and the console names the file.
+The page loads nothing until `start` runs: no file, no audio and no mixer. The mixer's module is about 18 KB. Each file loads once, however many sounds play it. A file that fails to load leaves its sounds silent, and the console names the file. A mixer that fails on the audio thread stops the sound with a warning. So does a mixer module that the host answers with something else, such as its own page for a missing file.
 
 While the browser holds the audio, the page starts no file. So the browser warns once, as the page makes the audio, and not for each voice. A shot that plays in that time is dropped. It would otherwise sound late, after the user's first input, long after the event that played it.
 
