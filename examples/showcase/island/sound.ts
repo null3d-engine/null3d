@@ -136,8 +136,8 @@ export function createIslandSound(ctx: SketchContext, camera: Camera): IslandSou
 		file: seaFile,
 		count: shore.length,
 		voices: 3,
-		near: 40,
-		far: 300,
+		near: 15,
+		far: 70,
 	});
 	for (const [k, [x, z]] of shore.entries()) {
 		seaShore.setPosition(k, x, SEA_LEVEL, z);
@@ -150,8 +150,8 @@ export function createIslandSound(ctx: SketchContext, camera: Camera): IslandSou
 		file: sampleUrl('sources/sound/surf/surf.mp3'),
 		count: beach.length,
 		voices: 3,
-		near: 30,
-		far: 400,
+		near: 10,
+		far: 60,
 	});
 	beach.forEach((point, k) => {
 		surf.setPosition(k, point.x, SEA_LEVEL + 1, point.z);
@@ -233,8 +233,10 @@ export function createIslandSound(ctx: SketchContext, camera: Camera): IslandSou
 			const out = -inland(x, z);
 
 			// Far out at sea the water surrounds the camera; near the shore it comes from the shore's points.
+			// The open sea belongs to a camera over open water: it fades out as the ground rises toward
+			// the town, so inland hears the wind and the trees rather than the water's far wash.
 			seaOpen.setLevel(
-				SEA_OPEN * smoothstep(60, 400, out) * (1 - smoothstep(5, 60, height)) * SOUND_GAIN.sea,
+				SEA_OPEN * smoothstep(60, 400, out) * (1 - smoothstep(3, 25, height)) * SOUND_GAIN.sea,
 			);
 
 			let speed = STEADY_WIND;
