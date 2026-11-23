@@ -15,7 +15,7 @@ import {
 import { type Part, standPart } from '../../lib/blender-models';
 import { INTERIOR_LAYER } from '../../lib/layers';
 import { Noise, random } from '../../lib/procedural';
-import { nightAlbedo } from '../../lib/stage';
+import { NIGHT_HOURS, nightAlbedo } from '../../lib/stage';
 import { ROOST_LAMPS } from './birds';
 import { FOUNTAIN_WATER, STAIR_HALF, WAY_HALF } from './ground';
 import { type HouseLot, loadHouses, standHouse, standsByKind } from './houses';
@@ -3338,11 +3338,18 @@ export interface TownNight {
 
 /** The warm light of the town's lamps, linear: their glass, their windows and the pools they cast. */
 const LAMP_GLOW: readonly [number, number, number] = [1.0, 0.7, 0.36];
+/** The hour at which the houses' windows go out, eleven at night. */
+const WINDOWS_OUT = 23;
+
 /**
- * The hour, from dusk on, when the houses' windows go out, about eleven at night: the stage's own
- * Night mood stands at 23:00, so the windows stay lit through its first half hour.
+ * Whether the houses' windows are lit: from the night's start until eleven at night, while the
+ * town's lamps are lit. They stay out until the next dusk, so the hours after midnight do not light
+ * them again.
  */
-const WINDOWS_OUT = 23.5;
+export function windowsLit(lit: boolean, hours: number): boolean {
+	const h = ((hours % 24) + 24) % 24;
+	return lit && h >= NIGHT_HOURS.start && h < WINDOWS_OUT;
+}
 /** The point lights that follow the view, the range of each in meters, and the light of one. */
 const POOL_COUNT = 32;
 const POOL_RANGE = 10;
@@ -3451,9 +3458,9 @@ function createTownNight(ctx: SketchContext, count = POOL_COUNT): TownNight & Ni
 			headMaterial.set({ color: lit ? [...LAMP_GLOW] : [0, 0, 0] });
 			for (const batch of heads) batch.setActiveCount(lit ? batch.count : 0);
 			// The houses' windows go out at the hour, while the street lamps stay lit.
-			const windowsLit = lit && hours < WINDOWS_OUT;
-			windowMaterial.set({ color: windowsLit ? [...LAMP_GLOW] : [0, 0, 0] });
-			for (const batch of windows) batch.setActiveCount(windowsLit ? batch.count : 0);
+			const windowsShown = windowsLit(lit, hours);
+			windowMaterial.set({ color: windowsShown ? [...LAMP_GLOW] : [0, 0, 0] });
+			for (const batch of windows) batch.setActiveCount(windowsShown ? batch.count : 0);
 			if (!lit) {
 				for (const light of lights) light.setVisible(false);
 				return;

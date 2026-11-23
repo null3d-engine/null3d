@@ -90,8 +90,12 @@ function nightEdge(from: number, to: number): number {
 	return (a + b) / 2;
 }
 
-/** The hours at which the night begins, after dusk, and ends, before dawn. */
-const NIGHT = { start: nightEdge(HOURS.Dusk, 24), end: nightEdge(0, HOURS.Dawn) };
+/**
+ * The hours at which the night begins, after dusk, and ends, before dawn. A scene that switches
+ * something by hand at night, such as a town's windows, reads the start so that it comes on with
+ * the dark hours however the hour is reached.
+ */
+export const NIGHT_HOURS = { start: nightEdge(HOURS.Dusk, 24), end: nightEdge(0, HOURS.Dawn) };
 /** The fixed moods of the lit hours, in the order of their hours. */
 const LIT_MOODS = (Object.entries(HOURS) as [FixedMood, number][])
 	.filter(([mood]) => mood !== 'Night')
@@ -109,8 +113,8 @@ export function moodMix(hours: number, out: MoodMix = { from: 'Night', to: 'Nigh
 	out.from = 'Night';
 	out.to = 'Night';
 	out.share = 0;
-	if (h >= NIGHT.start || h <= NIGHT.end) return out;
-	let at = NIGHT.end;
+	if (h >= NIGHT_HOURS.start || h <= NIGHT_HOURS.end) return out;
+	let at = NIGHT_HOURS.end;
 	for (const [mood, hour] of LIT_MOODS) {
 		if (h < hour) {
 			out.to = mood;
@@ -120,7 +124,7 @@ export function moodMix(hours: number, out: MoodMix = { from: 'Night', to: 'Nigh
 		out.from = mood;
 		at = hour;
 	}
-	out.share = smoothstep(at, NIGHT.start, h);
+	out.share = smoothstep(at, NIGHT_HOURS.start, h);
 	return out;
 }
 
