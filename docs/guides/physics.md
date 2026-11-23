@@ -192,7 +192,7 @@ ball.addEventListener('collide', (event: { contact: CANNON.ContactEquation }) =>
 
 On the page, `onSketchMessage` receives each `bounce` message with its position and speed.
 
-[Messages between sketch and page](../api/page.md) covers messages, and [Audio with Web Audio](audio.md) plays a sound at a point in the scene.
+[Messages between sketch and page](../api/page.md) covers messages, and [Sound in a scene](audio.md) plays a sound at the bounce's place.
 
 ## Related pages
 

@@ -225,6 +225,13 @@ export const PACKAGES: Readonly<Record<string, PackageBuild>> = {
 		required: ['shaders/field.wgsl'],
 		wasm: ['dist/wind.wasm'],
 	},
+	// Its mixer module goes beside its page entry, which the page loads into the audio thread.
+	sound: {
+		compile: true,
+		shaders: false,
+		docs: false,
+		required: ['lib/page.js', 'lib/mixer-worklet.js'],
+	},
 	cli: {
 		compile: false,
 		shaders: false,

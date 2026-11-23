@@ -42,6 +42,7 @@
 		"packages/splats/**",
 		"packages/water/**",
 		"packages/wind/**",
+		"packages/sound/**",
 		// The vegetation add-on's own tools and tests, which tsconfig.vegetation.json checks with the
 		// add-on's switch on (tools/lib/vegetation-switch.ts lists them).
 		"tests/image/plant-*.spec.ts",

@@ -25,6 +25,7 @@ Some null3D packages ship code from other projects, as the original file or as a
 | `@null3d/grass` | None, its own code | None | `lib/index.js` | None |
 | `@null3d/impostors` | None, its own code | None | `lib/index.js` | None |
 | `@null3d/particles` | None, its own code | None | `lib/index.js` | None |
+| `@null3d/sound` | None, its own code | None | `lib/index.js`, `lib/page.js` | None |
 | `@null3d/splats` | None, its own code, which reads Niantic's published SPZ format | None | `lib/index.js` | None |
 | `@null3d/terrain` | None, its own code | None | `lib/index.js` | None |
 | `@null3d/water` | None, its own code | None | `lib/index.js` | None |
