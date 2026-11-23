@@ -354,6 +354,13 @@ const WALK_SPEED = [1.05, 1.5] as const;
 const PARKED_KERB = 0.5;
 /** The least gap between a parked car's middle and a moving car's middle, in meters. */
 const PARKED_CLEAR = 2;
+/** The seconds of motion that a parked car's place is judged against, one full cycle of the runs. */
+const PARKED_SWEEP = 360;
+/**
+ * The least gap that a parked car's body keeps from every moving body, in meters. It is smaller
+ * than the headway's gap because a kerbside car cannot move away, and the shoulder is narrow.
+ */
+const PARKED_GAP = 0.15;
 /** The margin that a parked car's outline keeps from a house, in meters. */
 const PARKED_HOUSE_CLEAR = 0.05;
 /** The height of the drawn road's surface over its stored middle line, in meters. */
@@ -373,6 +380,12 @@ export const BUS_HALF_LENGTH = 4.3;
 export const BUS_HALF_WIDTH = 1.2;
 /** The least gap that a follower keeps between its body and another vehicle's body, in meters. */
 const VEHICLE_GAP = 0.5;
+/**
+ * The least gap between a parked car's own body and every moving body's drawn line, in meters. A
+ * parked car stands at a kerb, and a loop's body line can run nearer than its middle line at a
+ * junction, so the placement checks the body line with the widest body that runs the roads.
+ */
+
 /** The radius of a person's body, in meters. */
 export const PERSON_RADIUS = 0.3;
 /** The least gap between two visible people, in meters. */
@@ -1129,6 +1142,8 @@ interface VehicleMotion {
 	readonly runIndex: Uint8Array;
 	/** The random stream that picks where a run begins, so a plan repeats for its seed. */
 	readonly rand: () => number;
+	/** The parked cars that a run's start must clear, which the plan gives after it stands them. */
+	parked: readonly ParkedCar[];
 	/** The body of each vehicle at the last step. */
 	readonly curX: Float64Array;
 	readonly curZ: Float64Array;
@@ -1257,7 +1272,29 @@ function runStart(
 				ox + ofx * otherReach,
 				oz + ofz * otherReach,
 			);
-			if (d < actor.halfWidth + other.halfWidth + VEHICLE_GAP) clear = false;
+			if (
+				d <
+				actor.halfWidth + other.halfWidth + VEHICLE_GAP + (actor.speed + other.speed) * motion.step
+			)
+				clear = false;
+		}
+		// A run must not start on a parked car either.
+		if (clear) {
+			const fx = Math.sin(MOTION_POSE.yaw);
+			const fz = Math.cos(MOTION_POSE.yaw);
+			for (const car of motion.parked) {
+				for (let step = -4; step <= 4; step++) {
+					const reach = (actor.halfLength * step) / 4;
+					if (
+						parkedDistance(car, MOTION_POSE.x + fx * reach, MOTION_POSE.z + fz * reach) <
+						actor.halfWidth + VEHICLE_GAP
+					) {
+						clear = false;
+						break;
+					}
+				}
+				if (!clear) break;
+			}
 		}
 		if (clear) return at;
 	}
@@ -1382,7 +1419,12 @@ function stepMotion(motion: VehicleMotion): void {
 				ox + ofx * otherReach,
 				oz + ofz * otherReach,
 			);
-			if (d < actor.halfWidth + other.halfWidth + VEHICLE_GAP) {
+			// A follower can close a step's worth of both bodies' travel before the next check, so
+			// the hold keeps that much more, and the body gap never falls below VEHICLE_GAP.
+			if (
+				d <
+				actor.halfWidth + other.halfWidth + VEHICLE_GAP + (actor.speed + other.speed) * motion.step
+			) {
 				clear = false;
 				// Two cars that face each other can never pass, so the one that moved last starts
 				// its next run instead of standing nose to nose.
@@ -1496,6 +1538,7 @@ function createMotion(actors: readonly VehicleActor[], seed: number): VehicleMot
 		runIndex: new Uint8Array(count),
 		held: new Float64Array(count),
 		rand: random(seed),
+		parked: [],
 		curX: new Float64Array(count),
 		curZ: new Float64Array(count),
 		curFX: new Float64Array(count),
@@ -2384,7 +2427,7 @@ export function planTraffic(options: TrafficOptions = {}): TrafficPlan {
 		const cycle = carCycles[k % carCycles.length] as Cycle;
 		const onCycle = assigned.get(cycle) ?? 0;
 		assigned.set(cycle, onCycle + 1);
-		const lateral = Math.max(0.25, Math.min(0.6, cycle.minHalf * 0.3));
+		const lateral = Math.max(0.1, Math.min(0.3, cycle.minHalf * 0.15));
 		const speed =
 			(CAR_SPEED[0] as number) +
 			((k + rand() * 0.6) / carCount) * ((CAR_SPEED[1] as number) - (CAR_SPEED[0] as number));
@@ -2400,7 +2443,7 @@ export function planTraffic(options: TrafficOptions = {}): TrafficPlan {
 				const next = otherCycle(route);
 				route = next.path;
 				at = rand() * next.length;
-				lane = Math.max(0.25, Math.min(0.6, next.minHalf * 0.3));
+				lane = Math.max(0.1, Math.min(0.3, next.minHalf * 0.15));
 			}
 			const seconds = RUN_SECONDS[0] + rand() * (RUN_SECONDS[1] - RUN_SECONDS[0]);
 			// A run ends after a stretch of driving, not after a time: a car held in a queue keeps
@@ -2435,25 +2478,26 @@ export function planTraffic(options: TrafficOptions = {}): TrafficPlan {
 			route: busCycle.path,
 			speed,
 			phase: 0,
-			lateral: Math.min(0.5, busCycle.minHalf * 0.25),
+			lateral: Math.min(0.3, busCycle.minHalf * 0.15),
 			halfLength: BUS_HALF_LENGTH,
 			halfWidth: BUS_HALF_WIDTH,
 			script,
 		});
 	}
 	// The vehicles move together, holding a headway, so that no two ever pass through each other.
-	createMotion(vehicles, seed + 977);
+	const motion = createMotion(vehicles, seed + 977);
 
 	// The lines that the vehicles' bodies run their middles along, and the roads' own middle lines.
 	// A walk keeps clear of the first, and a parked car stands clear of the second.
 	type Run = { ax: number; az: number; bx: number; bz: number };
 	const routeKey = (x: number, z: number) =>
 		`${Math.floor(x / BODY_CELL)},${Math.floor(z / BODY_CELL)}`;
-	const gridOf = (offset: boolean): Map<string, Run[]> => {
+	const gridOf = (offset: boolean, kind?: 'car' | 'bus'): Map<string, Run[]> => {
 		const grid = new Map<string, Run[]>();
 		const routePose: Pose = { x: 0, y: 0, z: 0, yaw: 0 };
 		const routeScratch: Pose = { x: 0, y: 0, z: 0, yaw: 0 };
 		for (const vehicle of vehicles) {
+			if (kind !== undefined && vehicle.kind !== kind) continue;
 			const count = vehicle.route.distance.length;
 			const lines: { x: number; z: number }[] = [];
 			for (let k = 0; k < count; k++) {
@@ -2507,7 +2551,125 @@ export function planTraffic(options: TrafficOptions = {}): TrafficPlan {
 	const trafficClearance = (x: number, z: number): number => distanceTo(bodyGrid, x, z);
 	/** How far a place stands from the road's own middle line, in meters. */
 	const laneClearance = (x: number, z: number): number => distanceTo(laneGrid, x, z);
-
+	/**
+	 * The moving bodies over one motion cycle, by a coarse grid, so a parked car's place is judged
+	 * against the bodies as they pass it, bends and all.
+	 */
+	type SweptBody = {
+		x: number;
+		z: number;
+		yaw: number;
+		hl: number;
+		hw: number;
+		corners: readonly Point[];
+	};
+	const swept = (() => {
+		const grid = new Map<string, SweptBody[]>();
+		const cell = 4;
+		const pose: Pose = { x: 0, y: 0, z: 0, yaw: 0 };
+		for (let at = 0; at <= PARKED_SWEEP; at += 0.25) {
+			for (const vehicle of vehicles) {
+				// Only a body that draws can sweep a kerb; a car between runs is out of sight.
+				if (vehicleFadeAt(vehicle, at) <= 0) continue;
+				vehicleAt(vehicle, at, pose);
+				const [c, s] = [Math.cos(pose.yaw), Math.sin(pose.yaw)];
+				const corners = (
+					[
+						[vehicle.halfLength, vehicle.halfWidth],
+						[vehicle.halfLength, -vehicle.halfWidth],
+						[-vehicle.halfLength, vehicle.halfWidth],
+						[-vehicle.halfLength, -vehicle.halfWidth],
+					] as const
+				).map(([u, w]) => ({
+					x: pose.x + u * s + w * c,
+					y: 0,
+					z: pose.z + u * c - w * s,
+				}));
+				const body: SweptBody = {
+					x: pose.x,
+					z: pose.z,
+					yaw: pose.yaw,
+					hl: vehicle.halfLength,
+					hw: vehicle.halfWidth,
+					corners,
+				};
+				const key = `${Math.floor(pose.x / cell)},${Math.floor(pose.z / cell)}`;
+				const list = grid.get(key);
+				if (list) list.push(body);
+				else grid.set(key, [body]);
+			}
+		}
+		return { grid, cell };
+	})();
+	/** The distance from a point to a body's box: below zero inside it. */
+	const pointToBody = (
+		px: number,
+		pz: number,
+		body: { x: number; z: number; yaw: number; hl: number; hw: number },
+	): number => {
+		const [c, s] = [Math.cos(body.yaw), Math.sin(body.yaw)];
+		const dx = px - body.x;
+		const dz = pz - body.z;
+		const u = Math.abs(dx * s + dz * c) - body.hl;
+		const v = Math.abs(dx * c - dz * s) - body.hw;
+		return u <= 0 && v <= 0 ? Math.max(u, v) : hypot(Math.max(u, 0), Math.max(v, 0));
+	};
+	/** A parked car's four corners. */
+	const cornersOf = (car: ParkedCar): Point[] => {
+		const [c, s] = [Math.cos(car.yaw), Math.sin(car.yaw)];
+		return (
+			[
+				[CAR_HALF_LENGTH, CAR_HALF_WIDTH],
+				[CAR_HALF_LENGTH, -CAR_HALF_WIDTH],
+				[-CAR_HALF_LENGTH, CAR_HALF_WIDTH],
+				[-CAR_HALF_LENGTH, -CAR_HALF_WIDTH],
+			] as const
+		).map(([u, w]) => ({ x: car.x + u * s + w * c, y: 0, z: car.z + u * c - w * s }));
+	};
+	/**
+	 * True where no moving body comes within the headway's gap of the parked car over a motion
+	 * cycle: each body's corners are tested against the parked box and the parked car's corners
+	 * against each body, which is every vertex-to-edge pair of two boxes.
+	 */
+	const parkedClear = (car: ParkedCar): boolean => {
+		if (laneClearance(car.x, car.z) < PARKED_CLEAR) return false;
+		const corners = cornersOf(car);
+		for (const point of [{ x: car.x, z: car.z }, ...corners]) {
+			const ci = Math.floor(point.x / swept.cell);
+			const cj = Math.floor(point.z / swept.cell);
+			for (let i = ci - 3; i <= ci + 3; i++)
+				for (let j = cj - 3; j <= cj + 3; j++)
+					for (const body of swept.grid.get(`${i},${j}`) ?? []) {
+						for (const corner of body.corners)
+							if (parkedDistance(car, corner.x, corner.z) < PARKED_GAP) return false;
+						for (const corner of corners)
+							if (pointToBody(corner.x, corner.z, body) < PARKED_GAP) return false;
+					}
+		}
+		return true;
+	};
+	/** The gap between two boxes that stand still, moving neither; below zero overlaps. */
+	const boxGap = (first: ParkedCar, second: ParkedCar): number => {
+		const a = { x: first.x, z: first.z, yaw: first.yaw, hl: CAR_HALF_LENGTH, hw: CAR_HALF_WIDTH };
+		const b = {
+			x: second.x,
+			z: second.z,
+			yaw: second.yaw,
+			hl: CAR_HALF_LENGTH,
+			hw: CAR_HALF_WIDTH,
+		};
+		let least = Number.POSITIVE_INFINITY;
+		for (const corner of cornersOf(first))
+			least = Math.min(least, pointToBody(corner.x, corner.z, b));
+		for (const corner of cornersOf(second))
+			least = Math.min(least, pointToBody(corner.x, corner.z, a));
+		return least;
+	};
+	/** True where a parked car keeps the headway's gap from the parked cars already placed. */
+	const clearOfParked = (car: ParkedCar, others: readonly ParkedCar[]): boolean => {
+		for (const other of others) if (boxGap(car, other) < PARKED_GAP) return false;
+		return true;
+	};
 	const eastStreet = roadNear(-52, 190);
 	const westStreet = roadNear(-130, 200);
 	const harbourStreet = roadNear(-7, 190);
@@ -2557,7 +2719,7 @@ export function planTraffic(options: TrafficOptions = {}): TrafficPlan {
 					if (at < 0 || at > length) break;
 					if (direction > 0 ? at >= gate : at <= gate) break;
 					const car = parkedBeside(road, at, side);
-					if (laneClearance(car.x, car.z) < PARKED_CLEAR) continue;
+					if (!parkedClear(car) || !clearOfParked(car, carSpots)) continue;
 					if (!parkedClearOfHouses(car)) continue;
 					parking = { at, car };
 					break;
@@ -2674,7 +2836,7 @@ export function planTraffic(options: TrafficOptions = {}): TrafficPlan {
 			const at = projectOnRoad(definition.road, end.x, end.z).at;
 			for (const shift of [0, -2, 2, -4, 4, -6, 6]) {
 				const beside = parkedBeside(definition.road, at + shift, definition.roadSide);
-				if (laneClearance(beside.x, beside.z) < PARKED_CLEAR) continue;
+				if (!parkedClear(beside) || !clearOfParked(beside, carSpots)) continue;
 				if (!parkedClearOfHouses(beside)) continue;
 				car = beside;
 				break;
@@ -2740,7 +2902,7 @@ export function planTraffic(options: TrafficOptions = {}): TrafficPlan {
 		let parkedAt = base;
 		for (const shift of [0, -2, 2, -4, 4, -6, 6]) {
 			const beside = parkedBeside(road, base + shift, draft.definition.roadSide);
-			if (laneClearance(beside.x, beside.z) < PARKED_CLEAR) continue;
+			if (!parkedClear(beside) || !clearOfParked(beside, carSpots)) continue;
 			if (!parkedClearOfHouses(beside)) continue;
 			if (!parkedClearOfWalks(beside, walkPaths)) continue;
 			placed = beside;
@@ -2825,15 +2987,23 @@ export function planTraffic(options: TrafficOptions = {}): TrafficPlan {
 			if (placed >= 2) break;
 			const at = projectOnRoad(road, lot.gate.x, lot.gate.z).at;
 			const door = doorOf(lot);
-			const car = parkedBeside(road, at, sideToward(road, arcsOf(road), at, door.x, door.z));
-			if (laneClearance(car.x, car.z) < PARKED_CLEAR) continue;
-			if (!parkedClearOfHouses(car)) continue;
-			if (!parkedClearOfWalks(car, walkPaths)) continue;
-			parked.push(car);
-			placed++;
+			const side = sideToward(road, arcsOf(road), at, door.x, door.z);
+			// A kerb where traffic sweeps the shoulder takes no car; try along the road for one that
+			// traffic never comes near.
+			for (const shift of [0, -3, 3, -6, 6, -10, 10, -14, 14, -18, 18]) {
+				const car = parkedBeside(road, at + shift, side);
+				if (!parkedClear(car) || !clearOfParked(car, parked)) continue;
+				if (!parkedClearOfHouses(car)) continue;
+				if (!parkedClearOfWalks(car, walkPaths)) continue;
+				parked.push(car);
+				placed++;
+				break;
+			}
 		}
 	}
 	const kept = parked.slice(0, Math.max(parkedCount, carSpots.length));
+	// A run that starts later clears the parked cars too, so no car appears inside one.
+	motion.parked = kept;
 	const counts = {
 		cars: vehicles.filter((vehicle) => vehicle.kind === 'car').length,
 		buses: vehicles.filter((vehicle) => vehicle.kind === 'bus').length,

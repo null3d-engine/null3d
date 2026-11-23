@@ -306,6 +306,81 @@ describe('the vehicles', () => {
 		}
 	});
 
+	it('keeps every pair of vehicle bodies apart, moving or parked', () => {
+		/** The gap between two bodies, each a box turned by its heading; below zero overlaps. */
+		const boxGap = (
+			a: { x: number; z: number; yaw: number; hl: number; hw: number },
+			b: { x: number; z: number; yaw: number; hl: number; hw: number },
+		): number => {
+			const along = (
+				p: { x: number; z: number; yaw: number; hl: number; hw: number },
+				q: { x: number; z: number; yaw: number; hl: number; hw: number },
+			): number => {
+				let best = Number.POSITIVE_INFINITY;
+				const steps = Math.max(2, Math.ceil((2 * p.hl) / 0.25));
+				for (let k = 0; k <= steps; k++) {
+					const t = -p.hl + (2 * p.hl * k) / steps;
+					const px = p.x + Math.sin(p.yaw) * t;
+					const pz = p.z + Math.cos(p.yaw) * t;
+					best = Math.min(best, parkedGap(q, px, pz));
+				}
+				return best;
+			};
+			return Math.min(along(a, b), along(b, a)) - Math.min(a.hw, b.hw);
+		};
+		const poses = PLAN.vehicles.map(() => ({ x: 0, y: 0, z: 0, yaw: 0 }));
+		let least = Number.POSITIVE_INFINITY;
+		let worst = '';
+		for (let seconds = 0; seconds <= 900; seconds += 0.2) {
+			PLAN.vehicles.forEach((vehicle, k) => {
+				vehicleAt(vehicle, seconds, poses[k] as Pose);
+			});
+			for (let a = 0; a < PLAN.vehicles.length; a++) {
+				const A = PLAN.vehicles[a] as (typeof PLAN.vehicles)[number];
+				const pa = poses[a] as Pose;
+				const boxA = { x: pa.x, z: pa.z, yaw: pa.yaw, hl: A.halfLength, hw: A.halfWidth };
+				for (let b = a + 1; b < PLAN.vehicles.length; b++) {
+					const B = PLAN.vehicles[b] as (typeof PLAN.vehicles)[number];
+					const pb = poses[b] as Pose;
+					const gap = bodyGap(A, pa, B, pb);
+					if (gap < least) {
+						least = gap;
+						worst = `moving ${a}/${b} at ${seconds.toFixed(1)} s`;
+					}
+				}
+				for (const car of PLAN.parked) {
+					const gap = boxGap(boxA, {
+						x: car.x,
+						z: car.z,
+						yaw: car.yaw,
+						hl: CAR_HALF_LENGTH,
+						hw: CAR_HALF_WIDTH,
+					});
+					if (gap < least) {
+						least = gap;
+						worst = `moving ${a} and a parked car at ${seconds.toFixed(1)} s`;
+					}
+				}
+			}
+			for (let a = 0; a < PLAN.parked.length; a++)
+				for (let b = a + 1; b < PLAN.parked.length; b++) {
+					const first = PLAN.parked[a] as (typeof PLAN.parked)[number];
+					const second = PLAN.parked[b] as (typeof PLAN.parked)[number];
+					const gap = boxGap(
+						{ x: first.x, z: first.z, yaw: first.yaw, hl: CAR_HALF_LENGTH, hw: CAR_HALF_WIDTH },
+						{ x: second.x, z: second.z, yaw: second.yaw, hl: CAR_HALF_LENGTH, hw: CAR_HALF_WIDTH },
+					);
+					if (gap < least) {
+						least = gap;
+						worst = `parked ${a}/${b}`;
+					}
+				}
+		}
+		// Every body keeps the headway's gap from every other, moving or at rest.
+		expect(least).toBeGreaterThan(0.5);
+		console.log(`closest vehicle bodies: ${least.toFixed(3)} m, ${worst}`);
+	});
+
 	it('stands every parked car at a road kerb, clear of the traffic', () => {
 		expect(PLAN.parked.length).toBe(PLAN.counts.parkedCars);
 		const cars = PLAN.vehicles.filter((vehicle) => vehicle.kind === 'car');
