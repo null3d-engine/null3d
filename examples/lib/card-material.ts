@@ -10,7 +10,8 @@ import type { Material, SketchContext, Texture } from '@null3d/engine';
 /**
  * The card's material: its color map, lit through the engine's own shading with a dome normal about
  * the plant's foot. A card's left atlas half holds its side view and its right half the view from
- * above: the upright quads take the dome's normal, and the level quad keeps the sky's.
+ * above: the upright quads take the dome's normal, and the level quad keeps the sky's and gives way
+ * as the sight flattens, where it would lie across the crown as a plate.
  *
  * The approximation has a limit: every upright face shows the same side view, so the dome cannot
  * vary with the direction the camera looks from. Per-view normals, or more stored views, are the
@@ -31,6 +32,13 @@ fn surface(input: SurfaceInput) -> Surface {
     let stretch = max(dot(duv1 * texels, duv1 * texels), dot(duv2 * texels, duv2 * texels));
     let mip = max(0.0, 0.5 * log2(max(stretch, 1e-8)));
     s.alpha = texel.a * (1.0 + 0.25 * mip);
+    // The level quad holds the view from above. Seen less steeply than a look down from above, and
+    // from beneath a crown, it lies across the sight as a flat plate: the upright quads already
+    // carry the crown's side, so the quad stands fully only past half a right angle over the crown
+    // and nowhere else.
+    if (input.uv.x >= 0.5) {
+        s.alpha *= smoothstep(0.26, 0.71, input.viewDirection.y);
+    }
     // The upright quads show the side view. Their normal follows a dome about the plant's foot: the
     // trunk below the crown lies sideways, and the crown's normal rises toward the sky with the
     // height that the side view's second texture coordinate gives. The level quad keeps the sky's

@@ -2,8 +2,9 @@
 // third to four fifths brighter than their meshes and a third to a half flatter, so the far crowns
 // read as another species. This draws one plant as its mesh and as its card, at one pose under one
 // sun, and compares the crown's value and shading spread. The limits are set from the island's fixed
-// cards: the dome-lit card measures 3 per cent over its mesh's value and 0.84 of its spread, where
-// the pinned card measured 9 per cent and 0.69. A card that strays past them reads as another tree.
+// cards: the dome-lit card measures 3 per cent under its mesh's value and the same spread, where
+// the pinned card measured 9 per cent over and 0.69 of it. A card that strays past them reads as
+// another tree.
 import { expect, test } from '@playwright/test';
 
 /** The most that a card's crown value may exceed its mesh's, as a share. */
