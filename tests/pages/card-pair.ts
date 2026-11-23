@@ -10,6 +10,8 @@ const mode = params.get('mode') === 'card' ? 'card' : 'mesh';
 const kind = params.get('kind') ?? 'stone-pine';
 const dist = params.get('dist') ?? '150';
 const scale = params.get('scale') ?? '1';
+/** A roughness for the card's light, as a query, so a species' own roughness can be tried. */
+const roughness = params.get('roughness');
 const WHITE = 0.0;
 
 /** The crown's color, value and shading spread over a crop of the frame, for its green pixels. */
@@ -57,7 +59,7 @@ run('card-pair', async (): Promise<Record<string, unknown>> => {
 	canvas.style.height = '1080px';
 	const engine = await createEngine({
 		canvas,
-		sketch: `/tests/pages/sketches/card-pair-sketch.ts?kind=${kind}&mode=${mode}&dist=${dist}&scale=${scale}`,
+		sketch: `/tests/pages/sketches/card-pair-sketch.ts?kind=${kind}&mode=${mode}&dist=${dist}&scale=${scale}${roughness ? `&roughness=${roughness}` : ''}`,
 		preset: 'medium',
 		stats: false,
 		maxPixelRatio: 1,

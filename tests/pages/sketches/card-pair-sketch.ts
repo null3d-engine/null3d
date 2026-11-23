@@ -32,6 +32,8 @@ const kind = (params.get('kind') ?? 'stone-pine') as PlantKind;
 const mode = params.get('mode') === 'card' ? 'card' : 'mesh';
 const distance = number('dist', 150);
 const size = number('scale', 1);
+/** The roughness that the card lights with, or the material's default when the query gives none. */
+const roughness = params.has('roughness') ? number('roughness', 1) : undefined;
 /** The file that holds this plant: the oleander is in the shrubs file, the rest in the trees file. */
 const glb = `/samples/sources/showcase/island/${kind === 'oleander' ? 'shrubs' : 'trees'}.glb`;
 
@@ -73,6 +75,7 @@ export default defineSketch(async (ctx) => {
 			room: card.room,
 			depth: card.depth,
 			castShadows: false,
+			...(roughness !== undefined && { roughness }),
 		});
 		ctx.page.post('ready', { kind, mode, distance });
 		return { onUpdate() {} };
