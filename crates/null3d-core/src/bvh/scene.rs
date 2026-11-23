@@ -49,6 +49,7 @@ use super::rows::RowQuery;
 use super::top::{TopTree, WorldRay};
 use super::{Aabb, Ray, Reach};
 use crate::CoreError;
+use crate::bitset::Bitset;
 use crate::handle::Handle;
 use crate::instances::{BatchTable, InstanceBatch};
 use crate::jobs::JobSystem;
@@ -56,6 +57,11 @@ use crate::scene::{SceneStorage, flags};
 
 /// The mesh id of an object without a mesh, which queries never find.
 pub const NO_MESH: u32 = 0;
+
+/// The most sources created since the trees were listed that the trees carry past the listing a
+/// change would make. A few, such as an object created, join the moving tree, where a query
+/// tests them anyway; more than this asks for the listing.
+const MAX_PENDING: u32 = 512;
 
 /// What an item of the trees is.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -208,6 +214,12 @@ pub struct SceneBvh {
     epoch: Option<u32>,
     /// The scene's frame and world version whose world output the trees hold.
     synced: Option<(u32, u32)>,
+    /// The sources created since the listing, each with the moving tree's item that holds it.
+    /// They sit past the items the listing owns, so every item index it gave stays.
+    pending: Vec<(u32, u32)>,
+    /// The slots that the trees were listed from, and those among them that drew as dynamic.
+    listed: Bitset,
+    listed_dynamic: Bitset,
 }
 
 /// True when a change stamp lies after frame `since` and at or before frame `now`, or there was
@@ -262,6 +274,9 @@ impl SceneBvh {
         self.statics.clear();
         self.dynamics.clear();
         self.batches.clear();
+        self.pending.clear();
+        self.listed.clear_all();
+        self.listed_dynamic.clear_all();
         self.static_objects = 0;
         self.dynamic_objects = 0;
         self.epoch = None;
@@ -317,10 +332,21 @@ impl SceneBvh {
         }
         let key = (frame, scene.world_version());
         let epoch = scene.structure_epoch();
-        let rebuild = self.epoch != Some(epoch) || !self.same_batches(batches);
-        if !rebuild && self.synced == Some(key) && !self.batches_updated(batches) {
-            return Ok(());
+        let epoch_changed = self.epoch != Some(epoch);
+        let batches_changed = !self.same_batches(batches);
+        if !epoch_changed && !batches_changed && self.synced == Some(key) {
+            let updated = self.batches_updated(batches);
+            if !updated {
+                return Ok(());
+            }
         }
+        // A small change to the scene's structure costs a few sources tested beside the trees,
+        // where listing every item costs the whole scene. A batch's rows change their ids and
+        // places, so a batch change lists again, and the first listing of a scene lists.
+        let small = !batches_changed
+            && self.synced.is_some()
+            && (!epoch_changed || self.note_structure(scene));
+        let rebuild = batches_changed || !small;
         let result = self.sync_trees(scene, batches, jobs, mesh_bounds, rebuild);
         if result.is_err() {
             self.clear();
@@ -329,6 +355,54 @@ impl SceneBvh {
             self.synced = Some(key);
         }
         result
+    }
+
+    /// Reads the scene's sources against the ones the trees listed, for a change of the scene's
+    /// structure. A source that the scene created since the listing joins the moving tree, which
+    /// a query walks anyway, so the change costs no listing. Returns false when a listing is
+    /// needed: a source that went, a source whose mesh or static/dynamic kind changed, or more
+    /// created sources than the trees carry beside them.
+    fn note_structure(&mut self, scene: &SceneStorage) -> bool {
+        // A scene without a listing, or one that asked for the next sync to list it again, lists.
+        if self.epoch.is_none() {
+            return false;
+        }
+        let (meshes, created, kinds, cells) = (
+            scene.meshes(),
+            scene.created(),
+            scene.flags(),
+            scene.cells(),
+        );
+        let drawn = |slot: u32| created.get(slot) && meshes[slot as usize] != NO_MESH;
+        let dynamic = |slot: u32| kinds[slot as usize] & flags::DYNAMIC != 0;
+        // Every source the trees listed must still be listed, placed by the kind it had.
+        let changed = self
+            .listed
+            .iter_ones()
+            .any(|slot| !drawn(slot) || dynamic(slot) != self.listed_dynamic.get(slot));
+        if changed {
+            return false;
+        }
+        let fresh = |slot: u32| drawn(slot) && !self.listed.get(slot);
+        let added = created.iter_ones().filter(|&slot| fresh(slot)).count() as u32;
+        if added > MAX_PENDING || self.dynamics.try_reserve(added).is_err() {
+            return false;
+        }
+        // Each created source joins the moving tree, past the items that the batches and the
+        // listing own, so every item index that the listing gave stays.
+        for slot in created.iter_ones() {
+            if !drawn(slot) || self.listed.get(slot) {
+                continue;
+            }
+            let item = self.dynamics.len();
+            self.dynamics.push(slot, cells[slot as usize], Aabb::EMPTY);
+            self.listed.set(slot);
+            if dynamic(slot) {
+                self.listed_dynamic.set(slot);
+            }
+            self.pending.push((slot, item));
+        }
+        true
     }
 
     fn sync_trees(
@@ -348,6 +422,7 @@ impl SceneBvh {
         };
         let table = scene.cell_table();
         if rebuild {
+            self.pending.clear();
             self.list_items(scene, batches, &object_box, mesh_bounds)?;
         } else {
             // The objects stamped in the frame of the last sync are looked at again: a late
@@ -425,6 +500,7 @@ impl SceneBvh {
                 });
             rows.screen_reach = screen_reach(batch, rows.rows);
         }
+        self.refresh_pending(scene, &object_box);
         self.dynamics
             .build_morton(table, jobs)
             .map_err(out_of_memory)?;
@@ -511,7 +587,29 @@ impl SceneBvh {
                 }
             }
         }
+        // The sources that this listing holds, and those among them that drew as dynamic, are
+        // what the next structure change is read against.
+        self.listed.grow(scene.capacity() + 1);
+        self.listed.clear_all();
+        self.listed_dynamic.grow(scene.capacity() + 1);
+        self.listed_dynamic.clear_all();
+        for slot in created.iter_ones().filter(drawn) {
+            self.listed.set(slot);
+            if is_dynamic(slot) {
+                self.listed_dynamic.set(slot);
+            }
+        }
         Ok(())
+    }
+
+    /// Brings the created sources' cells and boxes up to date with the world output, where the
+    /// moving tree holds them.
+    fn refresh_pending(&mut self, scene: &SceneStorage, object_box: &dyn Fn(u32) -> Aabb) {
+        let cells = scene.cells();
+        for &(slot, item) in &self.pending {
+            self.dynamics
+                .set(item, cells[slot as usize], object_box(slot));
+        }
     }
 
     /// The nearest item that `hit` reports a hit on, and the distance. `hit` gets each item
@@ -615,6 +713,133 @@ impl SceneBvh {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::scene::Command;
+
+    const SHOWN: u32 = flags::VISIBLE;
+    const MESH: u32 = 7;
+    const BOX: Aabb = Aabb {
+        min: [-1.0, -1.0, -1.0],
+        max: [1.0, 1.0, 1.0],
+    };
+
+    fn object(scene: &mut SceneStorage, position: [f32; 3]) -> (Handle, Command) {
+        let handle = scene.reserve().unwrap();
+        scene.set_position(handle, position).unwrap();
+        scene.set_local_radius(handle, 1.0).unwrap();
+        (handle, Command::create(handle, Handle::NONE, MESH, SHOWN))
+    }
+
+    fn bounds(mesh: u32) -> Aabb {
+        if mesh == MESH { BOX } else { Aabb::EMPTY }
+    }
+
+    /// A scene with one object at rest, whose trees are synced.
+    fn scene_with_one_object(jobs: &JobSystem) -> (SceneStorage, SceneBvh) {
+        let mut scene = SceneStorage::with_capacity(8);
+        let (_, create) = object(&mut scene, [0.0, 0.0, 0.0]);
+        scene.apply_commands(&[create], 1).unwrap();
+        scene.update_transforms(jobs);
+        let mut bvh = SceneBvh::new();
+        bvh.sync(&scene, &BatchTable::with_capacity(0), jobs, &bounds)
+            .unwrap();
+        (scene, bvh)
+    }
+
+    /// The source id that a ray along z through `position` finds.
+    fn hit_at(scene: &SceneStorage, bvh: &SceneBvh, position: [f64; 3]) -> Option<u32> {
+        let ray = WorldRay::new([position[0], position[1], -100.0], [0.0, 0.0, 1.0]);
+        bvh.raycast(&ray, &Reach::NONE, |id, _ray| {
+            let slot = match bvh.source(id) {
+                Source::Object(slot) => slot,
+                Source::Row { .. } => return None,
+            };
+            let matrix = scene.world(scene.parity()).matrix(slot as usize);
+            let at = f64::from(matrix[11]);
+            ((at - position[2]).abs() < 2.0).then_some(0.0)
+        })
+        .map(|(id, _)| id)
+    }
+
+    #[test]
+    fn an_object_created_after_a_sync_is_found_without_listing_again() {
+        // An object created between two syncs is carried beside the trees, not paid for with a
+        // listing of every item the scene holds.
+        let jobs = JobSystem::new(0);
+        let (mut scene, mut bvh) = scene_with_one_object(&jobs);
+        let (listed, moving) = (bvh.statics.len(), bvh.dynamics.len());
+        let first = hit_at(&scene, &bvh, [0.0, 0.0, 0.0]).unwrap();
+
+        scene.begin_frame(2);
+        let (second, create) = object(&mut scene, [0.0, 0.0, 40.0]);
+        scene.apply_commands(&[create], 2).unwrap();
+        scene.update_transforms(&jobs);
+        bvh.sync(&scene, &BatchTable::with_capacity(0), &jobs, &bounds)
+            .unwrap();
+        assert_eq!(
+            bvh.statics.len(),
+            listed,
+            "the trees listed every item again"
+        );
+        assert_eq!(
+            bvh.dynamics.len(),
+            moving + 1,
+            "the new object is not carried"
+        );
+        assert_eq!(
+            hit_at(&scene, &bvh, [0.0, 0.0, 40.0]),
+            Some(scene.resolve(second).unwrap()),
+            "a query misses the object that the frame created"
+        );
+        assert_eq!(hit_at(&scene, &bvh, [0.0, 0.0, 0.0]), Some(first));
+    }
+
+    #[test]
+    fn a_listing_takes_the_carried_sources_into_the_trees() {
+        // A listing after a carried creation must forget that it was carried, or its item would
+        // name another source's place in the moving tree.
+        let jobs = JobSystem::new(0);
+        let (mut scene, mut bvh) = scene_with_one_object(&jobs);
+        scene.begin_frame(2);
+        let (_, create) = object(&mut scene, [0.0, 0.0, 40.0]);
+        scene.apply_commands(&[create], 2).unwrap();
+        scene.update_transforms(&jobs);
+        bvh.sync(&scene, &BatchTable::with_capacity(0), &jobs, &bounds)
+            .unwrap();
+        assert_eq!(bvh.pending.len(), 1);
+
+        // A mesh change asks for the next sync to list every item again.
+        bvh.invalidate();
+        scene.begin_frame(3);
+        scene.update_transforms(&jobs);
+        bvh.sync(&scene, &BatchTable::with_capacity(0), &jobs, &bounds)
+            .unwrap();
+        assert!(
+            bvh.pending.is_empty(),
+            "the carried source outlived the listing"
+        );
+        assert!(bvh.dynamics.is_empty(), "the carried item stayed");
+        assert_eq!(bvh.statics.len(), 2, "the listing missed a source");
+        assert!(hit_at(&scene, &bvh, [0.0, 0.0, 0.0]).is_some());
+        assert!(hit_at(&scene, &bvh, [0.0, 0.0, 40.0]).is_some());
+    }
+
+    #[test]
+    fn a_destroyed_object_is_not_found() {
+        let jobs = JobSystem::new(0);
+        let (mut scene, mut bvh) = scene_with_one_object(&jobs);
+        let handle = scene.created().iter_ones().next().map(Handle::from_raw);
+        let handle = handle.unwrap();
+        assert!(hit_at(&scene, &bvh, [0.0, 0.0, 0.0]).is_some());
+
+        scene.begin_frame(2);
+        scene
+            .apply_commands(&[Command::destroy(handle)], 2)
+            .unwrap();
+        scene.update_transforms(&jobs);
+        bvh.sync(&scene, &BatchTable::with_capacity(0), &jobs, &bounds)
+            .unwrap();
+        assert_eq!(hit_at(&scene, &bvh, [0.0, 0.0, 0.0]), None);
+    }
 
     #[test]
     fn stamps_count_after_the_last_sync() {

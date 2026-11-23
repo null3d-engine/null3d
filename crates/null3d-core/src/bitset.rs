@@ -10,7 +10,7 @@ use crate::memory::{MemoryUse, vec_bytes};
 
 /// A bitset with a fixed number of bits, which only [`Bitset::grow`] changes. Bits past [`Bitset::len`] in the last
 /// word are always clear.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Bitset {
     words: Vec<u64>,
     len: u32,
