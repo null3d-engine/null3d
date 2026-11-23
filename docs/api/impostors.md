@@ -129,6 +129,12 @@ The bake decides the result:
   wants 32 to 64 texels across its cell.
 - Take the bake's `size` and its foot. A card at scale 1 stands on the object's lowest point. A card
   pivoted at its middle sinks into the ground.
+- Light a hand-made card with a dome normal when it stores one side view. A view-independent
+  normal built per pixel about the plant's foot lets a crown catch the sun as a rounded mass. A
+  trunk then shades as a trunk. `examples/lib/card-material.ts` builds it from the side view's
+  height share. The approximation has a
+  limit: one stored view cannot vary with the view. A trunk's flat face still catches the sun as a
+  plane. Per-view normals, or more stored views, are exact and cost texture memory.
 - Check a card beside its mesh before accepting it. Draw both at one pose under one light, and crop
   each to the same size. Compare the mean color per channel within 10 per cent. Compare the
   silhouette's area within 10 per cent, and the crown's shading spread within 25 per cent. A card

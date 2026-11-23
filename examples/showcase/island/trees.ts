@@ -8,6 +8,7 @@
 import {
 	type Camera,
 	type InstanceBatch,
+	type Material,
 	type QualityPreset,
 	quat,
 	type SketchContext,
@@ -15,7 +16,14 @@ import {
 import { createGrass } from '@null3d/grass';
 import { handOverCards, handOverMeshes, handOverSwitches } from '@null3d/impostors';
 import { createWind } from '@null3d/wind';
-import { type Stand, type SwayLook, standPart, swayingPart } from '../../lib/blender-models';
+import {
+	type Part,
+	type Stand,
+	type SwayLook,
+	standPart,
+	swayingPart,
+} from '../../lib/blender-models';
+import { createCardMaterial } from '../../lib/card-material';
 import { Noise, random } from '../../lib/procedural';
 import { createSway } from '../../lib/sway';
 import { edgeGrid, inCore, read } from './ground';
@@ -542,6 +550,8 @@ export async function createTrees(
 	const { kept, fills } = treeStands(ctx);
 	const wind = createWind(ctx, { camera, box: WIND_BOX, grid: WIND_GRID });
 	const sway = createSway(ctx, { wind });
+	/** Each plant's card material, made once and reused by every copy. */
+	const cardMaterials = new Map<Part, Material>();
 	// A distance band that fades discards pixels in a screen-door pattern, and past a thinning
 	// crown those holes show the card, which is flat where the mesh's leaves are not, so the holes
 	// read as dots. The hand-over already stands each card at full coverage before its mesh goes,
@@ -593,7 +603,14 @@ export async function createTrees(
 		// The cards stand behind every group, at full coverage before the earliest switch. Each
 		// group's own wood and leaves draw only to its own switch, so a frame takes one group's
 		// cards rather than every tree of the species at once.
-		const cards = standPart(ctx, card, stands, card.material);
+		// The card lights with a dome normal, so a far crown catches the sun as a rounded mass
+		// rather than as one flat face; the material is made once for each plant.
+		let cardMaterial = cardMaterials.get(card);
+		if (!cardMaterial) {
+			cardMaterial = createCardMaterial(ctx, { map: card.maps.map });
+			cardMaterials.set(card, cardMaterial);
+		}
+		const cards = standPart(ctx, card, stands, cardMaterial);
 		const groups = handOverGroups(stands, handOver);
 		for (const { stands: own, switchDistance } of groups) {
 			handOverMeshes(standPart(ctx, wood, own, woodMaterial), switchDistance);

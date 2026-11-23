@@ -97,7 +97,7 @@ Each rule comes with its reason, which covers cases the rule does not name.
 1. Allocate nothing in `onUpdate`, `onFixedUpdate` or `onLateUpdate`: no `new`, no array or object literals, no closures, no `map` or `filter`. Create scratch values at setup, such as `const tmp = vec3.create()`. A garbage collection pause stalls the frame.
 2. Use an instance batch for many copies of one mesh: one engine object and one typed array, where `createMesh` calls would mean many objects. (`concepts/instances`)
 3. Move many objects by writing arrays, not by setters in a loop: each setter crosses into WebAssembly, a typed-array write does not.
-4. Create an object with `dynamic: true` only if it changes most frames. Static objects rely on setters to mark them changed, so write arrays only for dynamic objects and batches.
+4. Create an object with `dynamic: true` only if it changes most frames. Static objects rely on setters to mark them changed, so write arrays for dynamic objects and batches.
 5. Pool short-lived objects such as bullets in a batch with a fixed capacity and `setActiveCount`. A structural change (create, destroy, a new mesh or material) rebuilds the draw tables; `setVisible` and `setActiveCount` do not. The engine sizes memory for what the scene holds, so create meshes, materials and batches at setup.
 6. Load and warm up before play: `await assets.preload([...])` and `await scene.warmUp()` behind a loading screen. A shader feature, such as a normal map, is fixed when you create the material, and the first frame waits for its pipeline, so create every variant before play. (`guides/loading-screens`)
 7. Keep the DOM on the page and messages rare: send events, not per-frame state. Labels that follow objects use `ui.trackLabel` (0.2), which needs no messages. (`guides/ui-overlays`)
@@ -107,8 +107,8 @@ Each rule comes with its reason, which covers cases the rule does not name.
 11. Keep custom WGSL portable: only the three language features every browser shares, and flat interpolation as `@interpolate(flat, either)`. The build rejects other features, `enable` lines and `f16`, but cannot check the portable limits or `textureSample` in branches. Test those on each GPU path. (`shaders/wgsl-rules`)
 12. Never branch on GPU names or user agents; read `engine.capabilities`. A name does not say what is enabled; `capabilities.drawPath` says why the direct path is on or off.
 13. Put performance-sensitive work in Rust, where the engine's per-frame loops run; your TypeScript is an interface to it. Use bulk calls over many objects. For a loop that grows with the scene, use a Rust WebAssembly module on the job workers through `runTask`; a task answers between frames, so a loop for the current frame belongs in the engine's calls. Keep setup, wiring and page logic in TypeScript. (`guides/performance`, `api/tasks`)
-14. Night scenes: make the sky's stand-in light follow the hour. A fixed ambient or hemisphere light lights sand and walls as bright at night as at noon. Scale and cool it, and set exposure at the hour shown longest. (`concepts/lighting`)
-15. A far card must read as its mesh: bake the mesh it replaces, unlit sRGB color, a normal per texel, enough views; check a matched crop. (`api/impostors`)
+14. Night scenes: make the sky's stand-in light follow the hour. A fixed ambient or hemisphere light lights sand and walls as bright at night as at noon. Scale and cool it; set exposure at the hour shown longest. (`concepts/lighting`)
+15. A far card must read as its mesh: bake its mesh, unlit sRGB color, a normal per texel or a dome, enough views; check a matched crop. (`api/impostors`)
 
 ## 5. When the engine may not have the feature
 
