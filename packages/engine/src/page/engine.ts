@@ -52,11 +52,16 @@ import { createMetricsBuffer, MetricsReader, threadRoles } from '../shared/metri
 import { addMeasurementRelease } from '../shared/page-measurement';
 import type { ReplayProgram, ReplayResult } from '../shared/recording';
 import { clearJobTasks, type JobTaskHost, jobAsker, setJobTasks } from '../shared/task-host';
-import { onAddonChecked } from '../shared/version';
+import { hearAddonsEarly, onAddonChecked } from '../shared/version';
 import { VIDEO_FOLLOW, type VideoFollowMessage } from '../shared/videos';
 import { notifySlot, setWakeByMessage } from '../shared/wake';
 import { WGSL_UPDATE_EVENT, type WgslUpdate } from '../shared/wgsl-updates';
-import { spawnWorker, startedWorkerScript, watchWorkerError } from '../shared/worker-start';
+import {
+	spawnWorker,
+	startedWorkerScript,
+	watchWorkerError,
+	workerScriptOf,
+} from '../shared/worker-start';
 import { loadSketch } from '../sketch/define-sketch';
 import type { QualityStart, QualityUpdate } from '../sketch/quality';
 import type { SketchRunner } from '../sketch/runner';
@@ -949,9 +954,11 @@ interface WorkerEvents {
 	sketchError(error: Error): void;
 	/**
 	 * A failure of a thread. It ends a start that is still under way, unless `endsStart` is false:
-	 * the engine then runs on without the thread.
+	 * the engine then runs on without the thread. It ends hold mode's read-back of its frame too,
+	 * unless `endsHold` is false: the frames never needed the thread, such as a job worker that did
+	 * not start.
 	 */
-	failure(error: EngineError, endsStart?: boolean): void;
+	failure(error: EngineError, endsStart?: boolean, endsHold?: boolean): void;
 	/** The quality preset and settings after a change, and the preset check's result. */
 	quality(update: QualityUpdate): void;
 	/** The sketch asked to show or hide the stats overlay, or to change its options. */
@@ -1457,13 +1464,10 @@ function startJobWorker(
 			events.failure(
 				error instanceof EngineError ? error : startError(`job ${index}`, messageOf(error)),
 				false,
+				false,
 			);
 	};
-	const start = () =>
-		new Worker(new URL('../workers/job-worker.ts', import.meta.url), {
-			type: 'module',
-			name: `null3d-job-${index}`,
-		});
+	const start = () => newJobWorker(index);
 	try {
 		const first = startEngineWorker(start);
 		const job = new EngineWorker(
@@ -1482,6 +1486,14 @@ function startJobWorker(
 		failed(thrown);
 		return undefined;
 	}
+}
+
+/** Constructs job worker `index`, in the form that bundlers read. */
+function newJobWorker(index: number): Worker {
+	return new Worker(new URL('../workers/job-worker.ts', import.meta.url), {
+		type: 'module',
+		name: `null3d-job-${index}`,
+	});
 }
 
 /**
@@ -1813,6 +1825,10 @@ async function startEngine(
 	const replay = modes.replay === undefined ? undefined : await readReplay(modes.replay, sketchUrl);
 	// A replay records nothing of its own: it runs a file that already holds the frames and input.
 	const record = modes.record && replay === undefined;
+	// A live start loads the sketch's module while the core downloads, so the module's imports and
+	// its top-level code run meanwhile. Hold mode, a replay and a recording load it once the runner
+	// has seeded the thread's random numbers, so that code draws the same numbers on every run.
+	const moduleFirst = hold === undefined && replay === undefined && !record;
 	// The quality preset follows the device hints and the crash marker, which the page has at once,
 	// so its memory maximum is known before the core loads. Hold mode and the ?preset= switch fix
 	// the preset for tests, so they neither read nor write the marker.
@@ -1885,26 +1901,23 @@ async function startEngine(
 	);
 	// A page that runs the sketch itself needs the core's loader, the sketch runner and the sketch
 	// module right after the core, so they download while the core does: each later start delays the
-	// first frame by a round trip on a slow network. The sketch module's top-level code then runs when
-	// the module arrives. Hold mode loads the module once the runner has seeded the thread's random
-	// numbers, so that code draws the same numbers on every run.
+	// first frame by a round trip on a slow network. A live sketch module's top-level code then runs
+	// when the module arrives.
 	if (sketchOnPage) void awaitLater(loadGlue(build));
 	const runnerModule = sketchOnPage ? loadRunnerModule() : undefined;
 	// A development build with input off hears each add-on that the sketch's module loads, such as
 	// @null3d/controls, from before the load begins, and hands them to the runner once it exists.
-	let earlyAddons: string[] | undefined;
-	if (DEV && sketchOnPage && hold === undefined && options.input === false) {
-		const heard: string[] = [];
-		earlyAddons = heard;
-		stopEarlyAddons = onAddonChecked((name) => heard.push(name));
+	const earlyAddons =
+		DEV && sketchOnPage && moduleFirst && options.input === false ? hearAddonsEarly() : undefined;
+	if (earlyAddons) {
+		stopEarlyAddons = earlyAddons.stop;
 		// The start runs on with no wait to the try below, whose failure stops the engine and this
 		// hearing with it. A start that throws before that try ends the hearing here.
 		queueMicrotask(() => {
 			if (!startTried) stopEarlyAddons?.();
 		});
 	}
-	const sketchModule =
-		sketchOnPage && hold === undefined ? awaitLater(loadSketch(sketchUrl)) : undefined;
+	const sketchModule = sketchOnPage && moduleFirst ? awaitLater(loadSketch(sketchUrl)) : undefined;
 	const powerPreference = options.powerPreference ?? DEFAULT_POWER_PREFERENCE;
 
 	const messageHandlers = new Set<(name: string, data: unknown) => void>();
@@ -1933,6 +1946,8 @@ async function startEngine(
 		for (const handler of messageHandlers) handler(name, data);
 	};
 	const failureHandlers = new Set<(error: EngineError) => void>();
+	/** Ends hold mode's read-back of its frame, while it reads the frame back. */
+	let endHold: ((error: EngineError) => void) | undefined;
 	const stopHandlers = new Set<() => void>();
 	/** True once the engine draws no new frames, which each stop handler hears once. */
 	let drawingEnded = false;
@@ -1974,19 +1989,25 @@ async function startEngine(
 	let starting = true;
 	const cancelStart = () => start.abort(signal?.reason);
 	signal?.addEventListener('abort', cancelStart, { once: true });
-	const onFailure = (error: EngineError, endsStart = true) => {
+	const onFailure = (error: EngineError, endsStart = true, endsHold = true) => {
 		if (reported.has(error.message)) return;
 		reported.add(error.message);
 		if (starting && endsStart) {
 			start.abort(error);
 			return;
 		}
+		// Hold mode reads its frame back after the start. A failure ends that read-back, which then
+		// reports it, unless the frames never needed the thread that failed.
+		const hold = endsHold ? endHold : undefined;
+		hold?.(error);
 		// The failure reaches its handlers, or the console, before the stop handlers hear that the
 		// frames ended, so a page hears why before it hears that.
 		try {
 			if (failureHandlers.size === 0) {
-				earlyFailures.push(error);
-				console.error(error);
+				if (!hold) {
+					earlyFailures.push(error);
+					console.error(error);
+				}
 			} else for (const handler of failureHandlers) handler(error);
 		} finally {
 			if (FAILURES_THAT_END_DRAWING.has(error.code)) endDrawing();
@@ -2129,8 +2150,12 @@ async function startEngine(
 	let drawModule = renderThread === 'main' ? loadDrawModule() : undefined;
 	/** The worker that keeps the canvas from an engine before, which draws for this one. */
 	const keptWorker = movedTo ? takeParkedWorker(options.canvas, canvasHold) : undefined;
-	// With worker threads the page starts the workers now. A sketch worker gets the sketch module
-	// into the browser's cache, and still runs the module only after it has started the core.
+	// With worker threads the page starts the workers now. A live sketch's worker imports the sketch
+	// module as soon as its script runs, while the core downloads. In hold mode, a replay and a
+	// recording it imports the module only after it has started the core and the runner, so the page
+	// gets the module into the browser's cache meanwhile. A live start leaves that download to the
+	// worker's own import, which a second request of the same file would only delay, or double where
+	// the browser does not join two requests of one file.
 	const threads = threaded
 		? startWorkers(
 				!sketchOnPage,
@@ -2140,9 +2165,17 @@ async function startEngine(
 			)
 		: undefined;
 	if (threads?.sketch) {
-		prefetch(sketchUrl);
 		// In low-latency mode the sketch worker draws, so it loads the renderer now too.
 		if (renderThread === 'sketch-worker') threads.sketch.send({ type: 'load-renderer' });
+		if (moduleFirst) threads.sketch.send({ type: 'load-sketch', url: sketchUrl });
+		else prefetch(sketchUrl);
+	}
+	// The job workers start later, as the sketch's tasks and frames ask for them, and a setup that
+	// loads a model asks at once. Their script downloads now, so the first of them start from the
+	// browser's cache.
+	if (jobWorkers > 0) {
+		const jobScript = workerScriptOf(() => newJobWorker(0));
+		if (jobScript) prefetch(jobScript.href);
 	}
 
 	// What the start sets up, which a stop takes down again, from any point of the start.
@@ -2680,29 +2713,41 @@ async function startEngine(
 			const taskPorts = Array.from({ length: jobWorkers }, () => channel());
 			/** The job workers that started, by index, which the on-demand loader sends its tasks to. */
 			const running: number[] = [];
-			/** Notes a job worker that started, by its index. */
-			const noteStarted = (index: number) => running.push(index);
+			/**
+			 * Tells the thread that runs the sketch which job workers run, in a new list each time. A
+			 * sketch on this page reads the news itself, since no sketch worker carries it.
+			 */
+			const tell = () => {
+				running.sort((a, b) => a - b);
+				threads?.sketch?.send({ type: 'job-workers', running: [...running] });
+				if (jobTaskHost) jobTaskHost.running = [...running];
+			};
 			growJobs = (count) => {
+				// The sketch thread hears of each job worker as soon as it is ready, so its first task
+				// runs on the first that is, and only on workers that run. A batch none of whose workers
+				// started still says so once it has settled, so a task that waits for them goes to a
+				// task worker instead. A batch that started no worker at all, because the browser
+				// refused them or the engine is stopping, stays unheard: the thread then uses the
+				// workers it asked for.
+				let heard = false;
+				const started = (index: number) => {
+					heard = true;
+					running.push(index);
+					tell();
+				};
 				const starting: Promise<unknown>[] = [];
 				for (let index = jobs.length; index < Math.min(count, jobWorkers); index++) {
 					if (Atomics.load(slots, Slot.Running) === 0) break;
-					const job = startJobWorker(index, slots, events, noteStarted);
+					const job = startJobWorker(index, slots, events, started);
 					if (!job) break;
 					jobs.push(job);
 					const port = (taskPorts[index] as MessageChannel).port1;
 					job.send({ type: 'init', ...handoff, index, taskPort: port }, [port]);
 					starting.push(job.ready());
 				}
-				// The sketch thread hears which of a batch of job workers run once the whole batch has
-				// settled, so it never takes a worker for running before the batch is known. A batch
-				// that started no worker, because the browser refused them or the engine is stopping,
-				// stays unheard: the thread then uses the workers it asked for. A sketch on this page
-				// reads the news itself, since no sketch worker carries it.
 				if (starting.length === 0) return;
 				void Promise.allSettled(starting).then(() => {
-					running.sort((a, b) => a - b);
-					threads?.sketch?.send({ type: 'job-workers', running: [...running] });
-					if (jobTaskHost) jobTaskHost.running = [...running];
+					if (!heard) tell();
 				});
 			};
 			return taskPorts.map((tasks) => tasks.port2);
@@ -2805,11 +2850,8 @@ async function startEngine(
 					reportSketchError: (message) => events.sketchError(new Error(message)),
 					// What the sketch's module loaded before the runner existed, then each later load.
 					...(DEV && {
-						hearAddons: (heard: (name: string) => void) => {
-							stopEarlyAddons?.();
-							for (const name of earlyAddons ?? []) heard(name);
-							return onAddonChecked(heard);
-						},
+						hearAddons: (heard: (name: string) => void) =>
+							earlyAddons?.hand(heard) ?? onAddonChecked(heard),
 					}),
 				},
 				hold,
@@ -2818,9 +2860,9 @@ async function startEngine(
 				record,
 				switches.view,
 			);
-			// In hold mode the sketch module loads only now, after the runner seeded the random
-			// numbers. The renderer starts before the setup, so a warm-up in the setup has a renderer
-			// to build its pipelines.
+			// In hold mode, a replay and a recording the sketch module loads only now, after the runner
+			// seeded the random numbers. The renderer starts before the setup, so a warm-up in the
+			// setup has a renderer to build its pipelines.
 			const sketchLoad = sketchModule ?? awaitLater(loadSketch(sketchUrl));
 			if (!render)
 				localDrawing = await abortable(
@@ -3110,7 +3152,15 @@ async function startEngine(
 			return engine;
 		}
 		try {
-			held = await abortable(holdFrame(capture, failureHandlers), signal);
+			held = await abortable(
+				holdFrame(capture, (end) => {
+					endHold = end;
+					return () => {
+						endHold = undefined;
+					};
+				}),
+				signal,
+			);
 			// The held frame built every pipeline that the scene draws with, so its words are
 			// complete here, before the page publishes the frame the tool waits on.
 			stopRecording();
@@ -3158,18 +3208,19 @@ async function startEngine(
 
 /**
  * Draws the held frame and reads it back through `capture`. The first failure that the engine
- * reports meanwhile, such as a lost GPU, ends the hold instead. A failure without a code becomes
+ * reports meanwhile to the function that `listen` registers, such as a lost GPU, ends the hold
+ * instead. `listen` returns the function that ends the listening. A failure without a code becomes
  * E1408.
  */
 async function holdFrame<T>(
 	capture: () => Promise<T>,
-	failureHandlers: Set<(error: EngineError) => void>,
+	listen: (fail: (error: EngineError) => void) => () => void,
 ): Promise<T> {
 	let fail: (error: EngineError) => void = () => {};
 	const failed = new Promise<never>((_, reject) => {
 		fail = reject;
 	});
-	failureHandlers.add(fail);
+	const stopListening = listen(fail);
 	try {
 		return await Promise.race([capture(), failed]);
 	} catch (error) {
@@ -3179,6 +3230,6 @@ async function holdFrame<T>(
 			`hold mode stopped before it read the held frame back: ${messageOf(error)}.`,
 		);
 	} finally {
-		failureHandlers.delete(fail);
+		stopListening();
 	}
 }

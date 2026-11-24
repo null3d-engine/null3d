@@ -233,6 +233,12 @@ export type SketchWorkerMessage =
 	| SketchWorkerInit
 	/** Sent before the core in low-latency mode, where the sketch worker draws: load the renderer. */
 	| { type: 'load-renderer' }
+	/**
+	 * Sent as the worker starts, for a live sketch: import the sketch module at `url` now, while the
+	 * core downloads. Hold mode, a replay and a recording send none, since their sketch module loads
+	 * only after the runner has seeded the thread's random numbers.
+	 */
+	| { type: 'load-sketch'; url: string }
 	| ShaderPreload
 	| RendererRequest
 	| { type: 'post'; name: string; data: unknown }

@@ -6,12 +6,13 @@
 // It compiles each WebAssembly module once per page with WebAssembly.compileStreaming, and posts
 // the compiled module to each worker that runs it, which only instantiates it. Tasks run in the
 // engine's job workers: a job worker leaves the job loop between frame jobs to run its tasks, and
-// with two or more job workers the first never takes tasks, so one always serves frames. The page
-// says which job workers run. A worker whose script or its core did not load is left out of the
-// tasks, because it would never answer, and where no job worker is left to take them the loader
-// starts one task worker with its first task. The glTF worker takes compiled modules from the
-// loader too (scene/gltf.ts). When the engine on this thread stops, the loader stops its task
-// worker and fails the tasks that wait, and the next engine's tasks start afresh.
+// with two or more job workers the first takes no new task, so one always serves frames. The page
+// says which job workers run, each as soon as it is ready, and the first task runs on the first
+// that is. A worker whose script or its core did not load is left out of the tasks, because it
+// would never answer, and where no job worker is left to take them the loader starts one task
+// worker with its first task. The glTF worker takes compiled modules from the loader too
+// (scene/gltf.ts). When the engine on this thread stops, the loader stops its task worker and fails
+// the tasks that wait, and the next engine's tasks start afresh.
 //
 // A thread can hold two copies of this module: in a production build, the sketch worker runs the
 // engine's worker code, and the sketch's bundle, the add-ons' tasks among it, imports the engine
@@ -32,8 +33,8 @@ import { bootstrapFailure, spawnWorker, watchWorkerError } from './worker-start'
 
 /**
  * How long the first task waits for the page's word on which job workers run, in ms. The word comes
- * once the workers that the thread asked for have started, so it follows their downloads. A page
- * that never says gives the workers the thread asked for, as before the page could say at all.
+ * as soon as the first worker that the thread asked for has started, so it follows its download. A
+ * page that never says gives the workers the thread asked for, as before the page could say at all.
  */
 const ANNOUNCE_WAIT_MS = 10_000;
 
@@ -189,6 +190,13 @@ class Runners {
 	private runners: Runner[] | undefined;
 	/** The job workers' ports that `runners` were made from. */
 	private host: JobTaskHost | undefined;
+	/** The page's word on which job workers run that `runners` were made from. */
+	private heard: readonly number[] | undefined;
+	/**
+	 * The runner of each job worker that has taken tasks, by its index, which keeps the worker's
+	 * modules and its count of tasks while the workers that take tasks change.
+	 */
+	private readonly jobs: Runner[] = [];
 	/** The task worker, once a task has started it on a thread without job workers. */
 	private worker: Worker | undefined;
 	/** True once the engine on this thread has stopped. */
@@ -213,6 +221,8 @@ class Runners {
 		// must fall however that call ends.
 		taskStarted();
 		try {
+			// The first job workers start while the task's WebAssembly files download and compile.
+			const starting = this.starting();
 			const aloneModule =
 				alone === undefined
 					? undefined
@@ -224,7 +234,6 @@ class Runners {
 						? await Promise.all(files.map((file) => compileOnce(file, error)))
 						: NO_MODULES;
 			if (this.ended) throw new TaskFailure('stopped', 'the engine stopped');
-			const starting = this.starting();
 			if (starting) await starting;
 			if (this.ended) throw new TaskFailure('stopped', 'the engine stopped');
 			const runner = this.leastBusy(error);
@@ -299,6 +308,8 @@ class Runners {
 		if (host !== this.host) {
 			this.host = host;
 			this.runners = undefined;
+			this.heard = undefined;
+			this.jobs.length = 0;
 		}
 		if (this.runners || !host) return undefined;
 		host.want(2);
@@ -314,6 +325,10 @@ class Runners {
 	}
 
 	private leastBusy(error: WasmError): Runner {
+		const host = this.host;
+		// The page's word is a new list each time, so a task in every frame compares, and allocates
+		// nothing, until the job workers that run change.
+		if (host && this.runners && host.running !== this.heard) this.retake(host);
 		this.runners ??= this.start(error);
 		const runners = this.runners;
 		let best = runners[0] as Runner;
@@ -328,34 +343,53 @@ class Runners {
 	}
 
 	/**
-	 * Asks for twice the job workers that take tasks, and adds a runner for each new one. Returns
-	 * the first new runner, or undefined when the engine has no more job workers to start.
+	 * Asks for twice the job workers that take tasks, and takes the new ones that run. Returns the
+	 * first new runner, or undefined when no more job workers run yet.
 	 */
 	private addJobRunners(host: JobTaskHost): Runner | undefined {
 		const runners = this.runners as Runner[];
 		const takers = taskTakers(host.running, host.want(2 * (runners.length + 1)));
-		const added = this.jobRunners(host, takers, runners.length);
-		runners.push(...added);
-		return added[0];
+		const next = this.jobRunners(host, takers);
+		const added = next.find((runner) => !runners.includes(runner));
+		if (added) this.runners = next;
+		return added;
 	}
 
 	/**
-	 * Runners for the job workers that take tasks, from position `from` in `takers` on. A job worker
-	 * that the page says did not start is left out of `takers`, so it takes no task.
+	 * Takes the job workers that the page's newest word says run, once tasks go to some already: a
+	 * worker that has just started takes tasks from the next one on, and the first of two or more
+	 * takes no new task. A word that leaves no job worker keeps the runners there are, such as the
+	 * task worker. A task already sent to a worker answers there, whichever workers take the next.
 	 */
-	private jobRunners(host: JobTaskHost, takers: readonly number[], from: number): Runner[] {
-		return takers.slice(from).map((index) => {
-			const port = host.ports[index] as MessagePort;
-			port.onmessage = (event: MessageEvent<TaskAnswer>) => this.answer(event.data);
-			return {
-				modules: new Set(),
-				running: 0,
-				send(request, transfer) {
-					// The call comes first, so the count covers the request by the time it arrives.
-					host.call(index);
-					port.postMessage(request, transfer);
-				},
-			};
+	private retake(host: JobTaskHost): void {
+		this.heard = host.running;
+		// Asking for none returns how many the thread has asked for.
+		const runners = this.jobRunners(host, taskTakers(host.running, host.want(0)));
+		if (runners.length > 0) this.runners = runners;
+	}
+
+	/**
+	 * The runners of the job workers in `takers`. A job worker that the page says did not start is
+	 * left out of `takers`, so it takes no task.
+	 */
+	private jobRunners(host: JobTaskHost, takers: readonly number[]): Runner[] {
+		return takers.map((index) => {
+			let runner = this.jobs[index];
+			if (!runner) {
+				const port = host.ports[index] as MessagePort;
+				port.onmessage = (event: MessageEvent<TaskAnswer>) => this.answer(event.data);
+				runner = {
+					modules: new Set(),
+					running: 0,
+					send(request, transfer) {
+						// The call comes first, so the count covers the request by the time it arrives.
+						host.call(index);
+						port.postMessage(request, transfer);
+					},
+				};
+				this.jobs[index] = runner;
+			}
+			return runner;
 		});
 	}
 
@@ -364,7 +398,8 @@ class Runners {
 		const host = this.host;
 		// The tasks start on the first job workers, and ask for more as they pile up.
 		if (host) {
-			const runners = this.jobRunners(host, taskTakers(host.running, host.want(2)), 0);
+			this.heard = host.running;
+			const runners = this.jobRunners(host, taskTakers(host.running, host.want(2)));
 			// No job worker takes this thread's tasks, because none started: a task worker answers them
 			// instead, as on a thread without job workers. The frames keep the workers they have.
 			if (runners.length > 0) return runners;
@@ -433,6 +468,8 @@ class Runners {
 		}
 		this.host = undefined;
 		this.runners = undefined;
+		this.heard = undefined;
+		this.jobs.length = 0;
 		this.end(new TaskFailure('stopped', 'the engine stopped'));
 	}
 

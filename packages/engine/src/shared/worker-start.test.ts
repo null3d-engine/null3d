@@ -1,9 +1,10 @@
 // The engine's worker starter wraps the thread's `Worker` for the length of one start, so that the
 // worker's script goes through the bootstrap module where the script's origin needs it. A thread can
-// change its `Worker` between starts, and each start then reaches the class the thread holds.
+// change its `Worker` between starts, and each start then reaches the class the thread holds. A
+// thread can also read the script of a worker that it starts later, without starting one.
 import { describe, expect, test } from 'bun:test';
 import type { WasmError } from './wasm';
-import { spawnWorker, watchWorkerError } from './worker-start';
+import { spawnWorker, watchWorkerError, workerScriptOf } from './worker-start';
 
 const error: WasmError = (code, message) => new Error(`${code}: ${message}`) as never;
 
@@ -27,6 +28,35 @@ describe('spawnWorker', () => {
 			globalThis.Worker = Native;
 		}
 		expect(made).toEqual(['first file:///first.js', 'second file:///second.js']);
+	});
+});
+
+describe('workerScriptOf', () => {
+	test('reads the script of a start without starting a worker, and gives the thread its Worker back', () => {
+		const Native = globalThis.Worker;
+		let started = 0;
+		try {
+			globalThis.Worker = class {
+				constructor() {
+					started++;
+				}
+			} as unknown as typeof Worker;
+			const Own = globalThis.Worker;
+			const script = workerScriptOf(
+				() => new Worker(new URL('file:///workers/job.js'), { type: 'module', name: 'job' }),
+			);
+			expect(script?.href).toBe('file:///workers/job.js');
+			expect(started).toBe(0);
+			expect(globalThis.Worker).toBe(Own);
+			expect(
+				workerScriptOf(() => {
+					throw new Error('no worker here');
+				}),
+			).toBeUndefined();
+			expect(globalThis.Worker).toBe(Own);
+		} finally {
+			globalThis.Worker = Native;
+		}
 	});
 });
 

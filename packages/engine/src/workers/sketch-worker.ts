@@ -1,10 +1,12 @@
 // The sketch worker: runs the sketch's code and the engine core. In pipelined mode it computes frame
 // N+1 while the render worker draws frame N, and waits for the render worker's signal without
 // blocking, so its event loop stays alive for promises and messages. In low-latency mode it
-// also owns the canvas and draws each frame itself; only then does it load the renderer. When the
-// engine stops, the sketch's onDestroy runs here. A worker that drew keeps the canvas, which cannot
-// go back to the page: it frees its GPU device and lets go of the engine's core, and the next
-// engine on the same canvas starts it again.
+// also owns the canvas and draws each frame itself; only then does it load the renderer. A live
+// sketch's module loads as soon as the page names it, while the core downloads, so the module's own
+// imports and its top-level code do not wait for the core. When the engine stops, the sketch's
+// onDestroy runs here. A worker that drew keeps the canvas, which cannot go back to the page: it
+// frees its GPU device and lets go of the engine's core, and the next engine on the same canvas
+// starts it again.
 
 import { DEV } from '../errors/checks';
 import { messageOf } from '../errors/message';
@@ -16,9 +18,9 @@ import { controlViews } from '../shared/control';
 import type { CoreGlue } from '../shared/core';
 import { drawingSenders, ImageTable } from '../shared/images';
 import { clearJobTasks, type JobTaskHost, jobAsker, setJobTasks } from '../shared/task-host';
-import { onAddonChecked } from '../shared/version';
+import { type EarlyAddons, hearAddonsEarly, onAddonChecked } from '../shared/version';
 import { setWakeByMessage, wakeWaiters } from '../shared/wake';
-import { loadSketch } from '../sketch/define-sketch';
+import { loadSketch, type SketchDefinition } from '../sketch/define-sketch';
 import { runPipelined, SketchRunner } from '../sketch/runner';
 import { DrawingHost } from './drawing-host';
 import {
@@ -41,6 +43,10 @@ let canvas: OffscreenCanvas | undefined;
 let core: CoreGlue | undefined;
 /** The job workers' task ports that this worker's on-demand loader uses while the engine runs. */
 let jobTaskHost: JobTaskHost | undefined;
+/** The import of a live sketch's module that started before the core arrived, with its address. */
+let earlySketch: { url: string; sketch: Promise<SketchDefinition> } | undefined;
+/** In a development build, the add-ons that the sketch's module loaded before the runner existed. */
+let earlyAddons: EarlyAddons | undefined;
 
 const step = startSteps('sketch');
 
@@ -54,7 +60,23 @@ startWorker('sketch', step, async (event: MessageEvent<SketchWorkerMessage>) => 
 	} else if (message.type === 'load-shaders') {
 		drawLoad ??= loadDrawModule();
 		preloadDeviceFiles(drawLoad, message.tier, message.bits);
+	} else if (message.type === 'load-sketch') {
+		// A development build hears each add-on that the module loads from before its import begins,
+		// and hands them to the runner once it exists.
+		if (DEV) {
+			endEarlyAddons();
+			earlyAddons = hearAddonsEarly();
+		}
+		earlySketch = { url: message.url, sketch: awaitLater(loadSketch(message.url, { step })) };
+		step('sketch import started');
 	} else if (message.type === 'init') {
+		// Only a live start takes the module that loaded early: hold mode, a replay and a recording
+		// load it once the runner has seeded the thread's random numbers.
+		const live = message.hold === undefined && message.replay === undefined && !message.record;
+		const loadedSketch =
+			live && earlySketch?.url === message.sketchUrl ? earlySketch.sketch : undefined;
+		earlySketch = undefined;
+		if (DEV && !loadedSketch) endEarlyAddons();
 		try {
 			// The renderer loads while the core and the sketch start, if the page did not ask for it
 			// sooner.
@@ -109,8 +131,14 @@ startWorker('sketch', step, async (event: MessageEvent<SketchWorkerMessage>) => 
 					sendLabelSlot: (id, table, slot, generation) =>
 						replyToPage({ type: 'label', id, table, slot, generation }),
 					reportSketchError: (message) => replyToPage({ type: 'sketch-error', message }),
-					// The worker exists before its sketch's module loads, so this hears the module's imports.
-					...(DEV && { hearAddons: onAddonChecked }),
+					// What the sketch's module loaded before the runner existed, then each later load.
+					...(DEV && {
+						hearAddons: (heard: (name: string) => void) => {
+							const before = earlyAddons;
+							earlyAddons = undefined;
+							return before?.hand(heard) ?? onAddonChecked(heard);
+						},
+					}),
 				},
 				message.hold,
 				message.holdScript,
@@ -118,10 +146,13 @@ startWorker('sketch', step, async (event: MessageEvent<SketchWorkerMessage>) => 
 				message.record,
 				message.debugView,
 			);
+			// A runner that hears no add-ons leaves the early hearing to end here.
+			if (DEV) endEarlyAddons();
 			step('engine created');
-			// The sketch downloads while the renderer starts. The renderer starts before the setup,
-			// so a warm-up in the setup has a renderer to build its pipelines.
-			const sketch = awaitLater(loadSketch(message.sketchUrl, { step }));
+			// The sketch downloads while the renderer starts, unless it loaded while the core did. The
+			// renderer starts before the setup, so a warm-up in the setup has a renderer to build its
+			// pipelines.
+			const sketch = loadedSketch ?? awaitLater(loadSketch(message.sketchUrl, { step }));
 			/** The GPU path that this worker draws with, in low-latency mode. */
 			let tier: Tier | undefined;
 			if (message.renderer && drawModule) {
@@ -174,6 +205,7 @@ startWorker('sketch', step, async (event: MessageEvent<SketchWorkerMessage>) => 
 				tier,
 			});
 		} catch (e) {
+			if (DEV) endEarlyAddons();
 			await host.release();
 			replyToPage({
 				type: 'error',
@@ -209,6 +241,12 @@ startWorker('sketch', step, async (event: MessageEvent<SketchWorkerMessage>) => 
 		core = undefined;
 	}
 });
+
+/** Ends a development build's hearing of add-ons for a runner that did not exist yet. */
+function endEarlyAddons(): void {
+	earlyAddons?.stop();
+	earlyAddons = undefined;
+}
 
 /** Tells the page that the sketch's frame loop, or the drawing in low-latency mode, failed. */
 function fault(error: unknown): void {

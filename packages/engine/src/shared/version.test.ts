@@ -4,6 +4,7 @@ import { ERROR_FIXES } from '../errors/fixes';
 import {
 	checkAddonVersion,
 	checkPluginInterface,
+	hearAddonsEarly,
 	PLUGIN_INTERFACE_VERSION,
 	VERSION,
 } from './version';
@@ -105,5 +106,27 @@ describe('checkPluginInterface', () => {
 			expect(error?.code).toBe('E1433');
 			expect(error?.message).toStartWith('E1433: @acme/splats declares plugin interface versions');
 		}
+	});
+});
+
+describe('hearAddonsEarly', () => {
+	it('hands a runner the add-ons that loaded before it, then each later one, and none after it stops', () => {
+		const early = hearAddonsEarly();
+		checkAddonVersion('@null3d/controls', VERSION);
+		const heard: string[] = [];
+		const stop = early.hand((name) => heard.push(name));
+		checkAddonVersion('@null3d/water', VERSION);
+		stop();
+		checkAddonVersion('@null3d/wind', VERSION);
+		expect(heard).toEqual(['@null3d/controls', '@null3d/water']);
+	});
+
+	it('hears nothing more once it stops, for a runner that never asks', () => {
+		const early = hearAddonsEarly();
+		early.stop();
+		checkAddonVersion('@null3d/controls', VERSION);
+		const heard: string[] = [];
+		early.hand((name) => heard.push(name))();
+		expect(heard).toEqual([]);
 	});
 });
