@@ -10,7 +10,8 @@ import { reportLoading } from '../lib/progress';
 import { sampleUrl } from '../lib/samples';
 import { courtyard, flicker } from './courtyard';
 
-/** The Knight's accessories that it leaves behind: it carries one sword and one round shield. */
+/** The Knight's file, and the accessories it hides: it carries one sword and one round shield. */
+const KNIGHT = sampleUrl('sources/characters/kaykit-knight/Knight.glb');
 const HIDDEN = ['1H_Sword_Offhand', '2H_Sword', 'Badge_Shield', 'Rectangle_Shield', 'Spike_Shield'];
 const KNIGHTS = 7;
 /** The ring's radius, in meters. */
@@ -34,7 +35,6 @@ export default defineSketch(async (ctx) => {
 	const day = timeOfDay(19.1, { heading: 2.6 });
 	const sky = { intensity: day.skyIntensity };
 	scene.setBackground({ sky: { ...day.sky, cloudCoverage: 0.35 } }, sky);
-	scene.setEnvironment(await assets.skyEnvironment(), sky);
 	scene.createDirectionalLight({ ...day.light, castShadows: true, shadow: { distance: 25 } });
 	scene.createHemisphereLight({ skyColor: '#8fa6d6', groundColor: '#5a4632', intensity: 0.8 });
 	scene.setFog({
@@ -92,8 +92,11 @@ export default defineSketch(async (ctx) => {
 		castShadows: true,
 	});
 
+	// The sky's light and the knights' file load together, once everything that needs neither is made.
+	const [skyLight, knight] = await Promise.all([assets.skyEnvironment(), assets.loadGltf(KNIGHT)]);
+	scene.setEnvironment(skyLight, sky);
+
 	// The knights face the middle of the ring. The guards raise their shields, the others idle.
-	const knight = await assets.loadGltf(sampleUrl('sources/characters/kaykit-knight/Knight.glb'));
 	const place = vec3.create();
 	const animators = Array.from({ length: KNIGHTS }, (_, k) => {
 		const angle = (k / KNIGHTS) * Math.PI * 2 + 0.2;

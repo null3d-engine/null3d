@@ -1892,7 +1892,9 @@ export function splatsPlan(): PlanItem<Check>[] {
 				`splats-scan-${tier}`,
 				'demo-frames',
 				{ kind: 'probe', tier },
-				{ switches: [`gpu=${tier}`, 'demo=splats', 'seconds=5'], timeoutSeconds: 300 },
+				// The demo draws before the whole scan has arrived; `grown` waits for it, so the frames
+				// sample the whole scan.
+				{ switches: [`gpu=${tier}`, 'demo=splats', 'grown', 'seconds=5'], timeoutSeconds: 300 },
 			),
 		]),
 	];
