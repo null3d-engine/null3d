@@ -3769,7 +3769,6 @@ impl FrameGraph {
         if self.dof_declared {
             self.declare_dof();
         }
-        self.declare_accumulate();
         // The anti-aliasing steps read the scene's color as the passes before them leave it, so
         // they take the name of that output before the later passes read their own.
         self.moment_smaa_declared = false;
@@ -3779,6 +3778,9 @@ impl FrameGraph {
             self.moment_smaa_source = aliased;
             self.declare_moment_smaa(views, aliased);
         }
+        // The still accumulation blends the color that the final pass would show, so it follows
+        // every step that writes that color, the moment layer's anti-aliasing among them.
+        self.declare_accumulate();
         let resolve = Pass::new("Resolve", PassKind::Resolve)
             .reads(SCENE_COLOR)
             .writes(CANVAS);
@@ -5404,8 +5406,8 @@ impl FrameGraph {
             .prepare_present(list, arena, &second, made, two_step)
     }
 
-    /// The texture that the accumulation's blend reads, the scene color as the effects and depth of
-    /// field leave it, and the history, which the still build reads, found once for each compile.
+    /// The texture that the accumulation's blend reads, the scene color that the final pass reads,
+    /// and the history, which the still build reads, found once for each compile.
     fn accumulate_textures(&mut self) -> [u32; 2] {
         let mut found = self.accumulate_textures;
         let textures = found.get_or(self.graph.compiles(), || {
@@ -8783,6 +8785,50 @@ mod tests {
             assert!(!frames.still_eligible());
             frames.set_still_enabled(false);
             assert!(frames.graph().find_pass("Accumulate").is_none());
+        }
+    }
+
+    #[test]
+    fn the_still_blend_follows_the_moment_layers_anti_aliasing_through_every_declaration() {
+        let canvas = (320, 180);
+        for antialias in [Antialias::Msaa, Antialias::Fxaa] {
+            let mut frames = frame_graph(format::RGBA16_FLOAT, antialias, true, false);
+            frames.set_still_enabled(true);
+            frames.sync(&[View::default(), shown()]);
+            frames.set_transparent(true);
+            frames.set_moment(true);
+            let mut list = DrawList::with_capacity(65536);
+            let mut pipelines = PipelineCache::default();
+            frames.request_pipelines(&mut pipelines, 1);
+            pipelines.create_new(&mut list, 2).unwrap();
+            frames.request_pipelines(&mut pipelines, 2);
+            assert!(frames.moment_draws());
+            // The first declaration with the layer, then the declarations again that a step to a
+            // lighter preset makes: a render scale below the canvas's, and a setting that
+            // declares the passes again. Each compiles only when every texture that a pass
+            // reads has a pass before it that makes it.
+            for step in 0..3 {
+                match step {
+                    1 => frames.set_scaling(true),
+                    2 => frames.declared = false,
+                    _ => {}
+                }
+                frames.sync(&[View::default(), shown()]);
+                frames
+                    .prepare(&mut list, canvas, RenderScale::FULL)
+                    .unwrap_or_else(|error| panic!("step {step} with {antialias:?}: {error:?}"));
+                assert!(frames.moment_declared() && frames.still_declared);
+                let order: Vec<String> = steps(&frames).into_iter().flatten().collect();
+                let at = |name: &str| order.iter().position(|pass| pass == name);
+                assert!(
+                    at(MOMENT_SMAA_RESOLVE_PASS) < at("Accumulate") && at("Accumulate").is_some(),
+                    "the blend reads the anti-aliased color: {order:?}"
+                );
+                assert_eq!(
+                    frames.accumulate_textures()[0],
+                    frames.sampled_id(MOMENT_RESOLVED).unwrap()
+                );
+            }
         }
     }
 
