@@ -114,11 +114,17 @@ export class StartMarker {
 		globalThis.addEventListener?.('pagehide', this.onPageHide);
 	}
 
-	/** Removes the note once the engine has drawn for `playMs` after `firstFrame`. */
+	/**
+	 * Removes the note once the engine has drawn for `playMs` after `firstFrame`. A first frame that
+	 * never comes leaves the note to the stop, which removes it.
+	 */
 	endAfter(firstFrame: Promise<void>, playMs = STABLE_PLAY_MS): void {
-		void firstFrame.then(() => {
-			if (!this.ended) this.timer = setTimeout(() => this.end(), playMs);
-		});
+		void firstFrame.then(
+			() => {
+				if (!this.ended) this.timer = setTimeout(() => this.end(), playMs);
+			},
+			() => {},
+		);
 	}
 
 	/** Removes the note, if this page load wrote it. Later calls do nothing. */

@@ -119,7 +119,7 @@ export const ERROR_FIXES = {
 	E1419:
 		"Wait for the other engine's destroy() promise before you start a new engine on its canvas. In React, call destroy() in the effect's cleanup. When the message says that no engine can draw on the canvas again, put a new canvas element in its place.",
 	E1420:
-		"Remove the sketch's timers, event listeners and message handlers in its onDestroy callback, which runs when the engine stops.",
+		"Remove the sketch's timers, event listeners and message handlers in its onDestroy callback, which runs when the engine stops. A page that destroys an engine before its first frame stops waiting for engine.firstFrame, or catches its rejection.",
 	E1421:
 		'Name each feature as the message lists it. Leave a feature out to let its shaders download the first time the sketch uses it.',
 	E1422:

@@ -449,7 +449,7 @@ const DOCS = {
 	E1420: {
 		title: 'Engine stopped',
 		cause:
-			'Sketch code called the engine after the engine stopped, from a timer, a promise or an event handler that outlived destroy(). The call did nothing.',
+			'Sketch code called the engine after the engine stopped, from a timer, a promise or an event handler that outlived destroy(). The call did nothing. engine.firstFrame rejects with it too when the page destroys the engine before its first frame.',
 		example: 'E1420: a call reached the engine after it stopped.',
 		since: '0.2',
 	},

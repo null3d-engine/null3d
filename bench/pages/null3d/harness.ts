@@ -347,7 +347,7 @@ function firstFrameOrFailure(engine: Engine): Promise<void> {
 		void Promise.all([engine.firstFrame, engine.presetChecked]).then(() => {
 			stopWatching();
 			resolve();
-		});
+		}, reject);
 	});
 }
 

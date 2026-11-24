@@ -163,6 +163,26 @@ describe('the crash marker', () => {
 		expect(storage.length).toBe(1);
 	});
 
+	it('keeps the note when the first frame never comes, and leaves no unhandled rejection', async () => {
+		const storage = new MemoryStorage();
+		const marker = new StartMarker(SKETCH, 1, storage);
+		marker.begin(marker.read(), 'webgpu');
+		const unhandled: unknown[] = [];
+		const listen = (reason: unknown) => unhandled.push(reason);
+		process.on('unhandledRejection', listen);
+		try {
+			marker.endAfter(Promise.reject(new Error('the engine stopped')), 1);
+			await new Promise((resolve) => setTimeout(resolve, 20));
+			expect(storage.length).toBe(1);
+			expect(unhandled).toEqual([]);
+		} finally {
+			process.off('unhandledRejection', listen);
+		}
+		// The stop removes it.
+		marker.end();
+		expect(storage.length).toBe(0);
+	});
+
 	it('removes the note when the page leaves before the first seconds of play', () => {
 		const storage = new MemoryStorage();
 		const marker = new StartMarker(SKETCH, 1, storage);

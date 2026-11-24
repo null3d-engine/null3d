@@ -93,6 +93,7 @@ import {
 } from './capabilities';
 import { CheckStore, checkConditions } from './check-store';
 import { watchDisplay } from './display';
+import { FirstFrame } from './first-frame';
 import type { FrameMetrics, MeasureOptions } from './frame-stats';
 import {
 	type HoldScript,
@@ -693,8 +694,11 @@ export interface Engine {
 	/** How the engine runs on this device. */
 	readonly mode: EngineMode;
 	/**
-	 * Resolves once the GPU has finished the first frame, so it is on screen: the moment to remove
-	 * a loading screen. It never resolves when the engine is destroyed first.
+	 * Resolves once the GPU has finished the first frame after the setup, so it is on screen: the
+	 * moment to remove a loading screen. It rejects when the engine stops drawing first, with the
+	 * failure that ended its frames, such as E1404 when the thread that draws fails at its first
+	 * frame. A destroy before the first frame rejects it with E1420. A page that never waits for it
+	 * gets no unhandled rejection.
 	 */
 	readonly firstFrame: Promise<void>;
 	/**
@@ -1989,6 +1993,11 @@ async function startEngine(
 	const presetChecked = new Promise<void>((resolve) => {
 		endCheck = resolve;
 	});
+	const firstFrame = new FirstFrame();
+	/** The metrics' header, where the thread that draws writes when the GPU finished the first frame. */
+	let header: MetricsReader | undefined;
+	/** True once the GPU has finished the first frame. */
+	const firstFrameDone = () => (header?.firstFrameDoneTime ?? 0) > 0;
 	/** True once the engine draws no new frames, which each stop handler hears once. */
 	let drawingEnded = false;
 	/** Runs a stop handler. One that throws is the page's error, which the console shows. */
@@ -1999,10 +2008,15 @@ async function startEngine(
 			console.error(error);
 		}
 	};
-	const endDrawing = () => {
+	/**
+	 * Ends the engine's frames: with the failure that ended them, which `engine.firstFrame` then
+	 * rejects with when the GPU has not finished the first frame, or with none for a stop.
+	 */
+	const endDrawing = (failure?: EngineError) => {
 		if (drawingEnded) return;
 		drawingEnded = true;
 		endCheck();
+		firstFrame.stopped(firstFrameDone(), failure);
 		const handlers = [...stopHandlers];
 		stopHandlers.clear();
 		// The other handlers and the stop go on past one that throws.
@@ -2051,7 +2065,7 @@ async function startEngine(
 				}
 			} else for (const handler of failureHandlers) handler(error);
 		} finally {
-			if (FAILURES_THAT_END_DRAWING.has(error.code)) endDrawing();
+			if (FAILURES_THAT_END_DRAWING.has(error.code)) endDrawing(error);
 		}
 	};
 	// The GPU path, the mode and the threads, which the start sets once the probe has run. The
@@ -2119,6 +2133,7 @@ async function startEngine(
 	);
 	const expectedObjects = expectedObjectCount(options.expectedObjects);
 	const metrics = createMetricsBuffer(threaded, jobWorkers);
+	header = new MetricsReader(metrics);
 	// The frame figures go on the page as the start makes them, so a test tool can time a start
 	// that stalls before it publishes anything, and read the sketch's growth, the first draw's
 	// pipelines and the first frame beside the steps it has noted.
@@ -3005,24 +3020,25 @@ async function startEngine(
 		const engineStartMs = performance.now() - startedAt;
 		onProgress('sketch');
 		// The thread that draws writes the time the GPU finished the first frame; the page checks for
-		// it once per animation frame until it appears.
-		const header = new MetricsReader(metrics);
-		const firstFrame = new Promise<void>((resolve) => {
-			const check = () => {
-				if (Atomics.load(slots, Slot.Running) === 0) return;
-				if (header.firstFrameDoneTime > 0) {
-					onProgress('first-frame');
-					resolve();
-					return;
-				}
-				requestAnimationFrame(check);
-			};
+		// it once per animation frame until it appears, or until the engine stops drawing.
+		const check = () => {
+			if (Atomics.load(slots, Slot.Running) === 0) return;
+			if (firstFrameDone()) {
+				onProgress('first-frame');
+				firstFrame.drawn();
+				return;
+			}
 			requestAnimationFrame(check);
-		});
+		};
+		requestAnimationFrame(check);
 		// The note covers the preset check as well as the first seconds of play, so a start whose
 		// check ends in a crash counts as one.
-		marker?.endAfter(Promise.all([firstFrame, presetChecked]).then(() => undefined));
-		if (DEV && switches.twoStep) void firstFrame.then(() => logTwoStep(slots, false));
+		marker?.endAfter(Promise.all([firstFrame.promise, presetChecked]).then(() => undefined));
+		if (DEV && switches.twoStep)
+			void firstFrame.promise.then(
+				() => logTwoStep(slots, false),
+				() => {},
+			);
 		/** Hold mode's frame, read back once. */
 		let held: CapturedFrame | undefined;
 		/** The error of a thread that draws when it could not capture a frame. */
@@ -3060,7 +3076,7 @@ async function startEngine(
 			capabilities,
 			report,
 			mode,
-			firstFrame,
+			firstFrame: firstFrame.promise,
 			presetChecked,
 			labels,
 			postToSketch: sendToSketch,
