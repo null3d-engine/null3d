@@ -8,9 +8,13 @@ import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { ERRORS, type ErrorEntry } from '../../packages/engine/src/errors/codes.ts';
 import {
+	CHECK_FAR_SHARE,
 	CHECK_GRACE_MS,
 	CHECK_HOLD_SHARE,
 	CHECK_MAX_FPS,
+	CHECK_SETTLE_FRAMES,
+	CHECK_SETTLE_INTERVAL_MS,
+	CHECK_SETTLE_WAIT_MS,
 	CHECK_UPLOAD_WAIT_MS,
 	CHECK_WINDOW_MS,
 } from '../../packages/engine/src/quality/check.ts';
@@ -243,6 +247,14 @@ export function presetCheckTable(): string {
 			`The display's refresh rate, at most ${CHECK_MAX_FPS} frames per second unless \`targetFps\` asks for more`,
 		],
 		['A preset holds its target', `At ${CHECK_HOLD_SHARE * 100}% of the target or more`],
+		[
+			'A preset is far below its target',
+			`Under ${CHECK_FAR_SHARE * 100}% of the target: the check lowers it straight to Low, and Low takes the lowest quality tier`,
+		],
+		[
+			'Wait before the first measurement and after each lowering',
+			`Until the pipelines are built, then until the GPU has finished ${CHECK_SETTLE_FRAMES} frames within ${CHECK_SETTLE_INTERVAL_MS} ms each, for ${CHECK_SETTLE_WAIT_MS} ms at most`,
+		],
 		[
 			'Frames drawn before each measurement',
 			`${CHECK_GRACE_MS} ms, and up to ${CHECK_UPLOAD_WAIT_MS} ms more while textures upload`,

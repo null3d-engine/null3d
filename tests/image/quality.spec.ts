@@ -262,10 +262,11 @@ test('a start goes on from the rounds of a check that never ended, at the preset
 	const measured = await openQuality(page, 'gpu=webgpu');
 	const from = measured.mode.presetCheck?.from;
 	if (!from) throw new Error('the engine did not check the preset');
-	// The page closed after the check's first round missed the target and lowered the preset: the
-	// store holds that round alone. The round is written here, so the test does not depend on the
-	// speed of the GPU.
-	const missed = { preset: from, presentedFps: 10, completedFps: 10 };
+	// The page closed after the check's first round missed the target and lowered the preset by
+	// one: the store holds that round alone. The round is written here, so the test does not depend
+	// on the speed of the GPU. Its rate misses the target, but not by the share that goes straight
+	// to Low.
+	const missed = { preset: from, presentedFps: 40, completedFps: 40 };
 	await page.evaluate((round) => {
 		const key = Object.keys(localStorage).find((name) => name.startsWith('null3d.check:'));
 		if (!key) throw new Error('the page stored no check');

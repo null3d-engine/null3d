@@ -537,15 +537,15 @@ export class SketchQuality implements Quality {
 	}
 
 	/**
-	 * The preset check's step to the next lighter preset. The settings that the page's options give,
-	 * and those that the sketch chose itself, keep their values. A device can move to a lighter
+	 * The preset check's step to a lighter preset: `next`, or the next lighter one without it. The
+	 * settings that the page's options give, and those that the sketch chose itself, keep their
+	 * values. A device can move to a lighter
 	 * anti-aliasing mode while it runs, so the lower preset gives that too: the check lowers a
 	 * tablet from Medium to Low, whose FXAA costs half of MSAA's draws. A heavier mode stays as the
 	 * device started with it. `check` is the check's rounds so far, which the page hears of with
 	 * the lower preset.
 	 */
-	lower(check?: PresetCheck): Promise<void> {
-		const next = lowered(this.preset, 1);
+	lower(check?: PresetCheck, next: QualityPreset = lowered(this.preset, 1)): Promise<void> {
 		const kept: Record<string, unknown> = { ...this.options };
 		const current = this.settings as unknown as Record<string, unknown>;
 		for (const name of this.owned) kept[name] = current[name];

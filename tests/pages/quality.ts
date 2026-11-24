@@ -2,11 +2,11 @@
 // with the engine's mode, its GPU path, the device hints of its capability report, and the crash
 // notes in localStorage once the first frame is on screen. ?option= passes createEngine's preset
 // option, and ?antialias= its anti-aliasing option. ?spheres=<n> starts the GPU-bound page's scene
-// with n spheres instead, for the preset check to measure. ?budget= has the sketch set its own
-// texture upload budget in bytes first. ?set= sends the sketch settings to change, as JSON, and
-// reports the change it hears of, or the error that refused it. ?wait=<ms> waits that long after
-// the first frame and reports the notes again. The page waits for the preset check to end, and
-// reports what the check had measured when createEngine resolved.
+// with n spheres instead, without levels of detail, for the preset check to measure. ?budget= has
+// the sketch set its own texture upload budget in bytes first. ?set= sends the sketch settings to
+// change, as JSON, and reports the change it hears of, or the error that refused it. ?wait=<ms>
+// waits that long after the first frame and reports the notes again. The page waits for the
+// preset check to end, and reports what the check had measured when createEngine resolved.
 import { createEngine, type EngineOptions, type QualityPreset } from '@null3d/engine';
 import { run } from './lib/result';
 
@@ -38,6 +38,9 @@ run('quality', async () => {
 	const spheres = params.get('spheres');
 	const heavy = new URL('./sketches/overload-sketch.ts', import.meta.url);
 	heavy.searchParams.set('spheres', spheres ?? '0');
+	// The check measures play after the first frame's finish, so the spheres plan no levels of
+	// detail, which would lighten them by then.
+	heavy.searchParams.set('levels', 'off');
 	const engine = await createEngine({
 		canvas,
 		sketch: spheres === null ? new URL('./sketches/quality-sketch.ts', import.meta.url) : heavy,

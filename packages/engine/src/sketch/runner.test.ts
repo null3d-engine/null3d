@@ -1479,6 +1479,38 @@ describe('SketchRunner and quality presets', () => {
 		scaledBudget(10_000),
 	);
 
+	it(
+		'takes the lowest quality tier when Low too draws far below the target, where the page allows it',
+		async () => {
+			// Eleven frames a second: under a quarter of the target, on Medium and then on Low.
+			const drawing = { presentedMs: 16, completedMs: 90 };
+			const tiered = await start(() => ({}), undefined, {
+				quality: { ...MEDIUM, check: 'before-play' },
+				drawing,
+			});
+			tiered.stopDrawing();
+			const check = tiered.updates.at(-1)?.check;
+			expect(check?.rounds.map((round) => round.preset)).toEqual(['medium', 'low']);
+			expect(check?.lowest).toBe(true);
+			const { settings } = tiered.context.quality;
+			expect([settings.maxRenderScale, settings.castShadows, settings.bloom]).toEqual([
+				LOWEST_TIER_SCALE,
+				false,
+				false,
+			]);
+			const closed = await start(() => ({}), undefined, {
+				quality: { ...MEDIUM, check: 'before-play', lowestAllowed: false },
+				drawing,
+			});
+			closed.stopDrawing();
+			expect(closed.updates.at(-1)?.check?.lowest).toBeUndefined();
+			expect(closed.context.quality.settings.maxRenderScale).toBe(
+				presetSettings('low').maxRenderScale,
+			);
+		},
+		scaledBudget(10_000),
+	);
+
 	it('starts the target at the refresh rate read before the check, which its load cannot lower', async () => {
 		// A GPU that falls behind slows the frame callbacks, which then read as a slower display.
 		const { context, updates, stopDrawing } = await start(() => ({}), undefined, {

@@ -151,6 +151,31 @@ describe('a check that has not ended', () => {
 		expect(store(storage).read(NOW + 3000)).toEqual({ ...CHECK, reused: true });
 	});
 
+	it('keeps a check that took the lowest quality tier after Low', () => {
+		const { storage } = memoryStorage();
+		const tier: PresetCheck = {
+			from: 'medium',
+			targetFps: 60,
+			rounds: [
+				{ preset: 'medium', presentedFps: 4, completedFps: 4 },
+				{ preset: 'low', presentedFps: 9, completedFps: 9 },
+			],
+			lowest: true,
+			reused: false,
+		};
+		store(storage).save(tier, 60, NOW);
+		expect(store(storage).read(NOW)).toEqual({ ...tier, reused: true });
+		expect(checkEnded(tier)).toBe(true);
+	});
+
+	it('leaves the engine at Low after a round far below the target', () => {
+		const far: PresetCheck = {
+			...SO_FAR,
+			rounds: [{ preset: 'high', presentedFps: 9, completedFps: 9 }],
+		};
+		expect(checkedPreset(far)).toBe('low');
+	});
+
 	it('keeps no rounds measured against a lowered target', () => {
 		const { items, storage } = memoryStorage();
 		store(storage).save({ ...SO_FAR, targetFps: 30 }, 60, NOW);

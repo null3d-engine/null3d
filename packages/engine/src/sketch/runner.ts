@@ -53,6 +53,7 @@ import type { PresetCheck } from '../quality/check';
 import { Governor, GovernorLoop } from '../quality/governor';
 import {
 	lowestTierCuts,
+	lowestTierSettings,
 	presetSettings,
 	presetValue,
 	type QualitySettings,
@@ -675,6 +676,12 @@ export class SketchRunner {
 	 * the check measures each preset at the full render scale.
 	 */
 	private checking = false;
+	/**
+	 * The refresh rate that the thread that draws measured when the sketch's setup returned, before
+	 * the frames of play loaded the GPU, or 0 before it measured one. The preset check's target and
+	 * the governor's start from it.
+	 */
+	private setupRefreshHz = 0;
 	readonly context: SketchContext;
 
 	/**
@@ -1036,6 +1043,8 @@ export class SketchRunner {
 			this.callbacks = (await sketch.setup(this.context)) ?? {};
 			if (DEV) this.watchesLoads = false;
 			this.record.markSetupDone(performance.now() - growing);
+			this.setupRefreshHz = refreshRate(this.metrics);
+			this.governorLoop?.startTarget(this.setupRefreshHz);
 			const check = this.holdsFrames ? undefined : this.sketch.quality.check;
 			if (check === 'before-play') await this.checkPreset(() => this.drawSetupFrame());
 			// Warm-ups that the setup started without waiting for them publish their frames first, so
@@ -1110,11 +1119,12 @@ export class SketchRunner {
 		}
 	}
 
-	/** Runs the preset check with `drawFrame`, as `checkPreset` says; undefined when it stopped. */
+	/**
+	 * Runs the preset check with `drawFrame`, as `checkPreset` says, once the thread that draws has
+	 * built the pipelines that the scene needs; undefined when it stopped.
+	 */
 	private async measurePreset(drawFrame: () => Promise<boolean>): Promise<PresetCheck | undefined> {
-		// The display's rate before the check's frames load the GPU, whose frame callbacks slow down
-		// when it falls behind.
-		const refreshHz = refreshRate(this.metrics);
+		await this.warmUp();
 		if (!(await drawFrame())) return undefined;
 		const loading = import('./preset-check');
 		let loaded = false;
@@ -1122,7 +1132,6 @@ export class SketchRunner {
 			loaded = true;
 		};
 		loading.then(settled, settled);
-		const graceStart = performance.now();
 		while (!loaded) if (!(await drawFrame())) return undefined;
 		const { glue, maxTargetFps } = this.sketch;
 		const { quality } = this;
@@ -1133,15 +1142,35 @@ export class SketchRunner {
 				get preset() {
 					return quality.preset;
 				},
-				lower: (check) => quality.lower(check),
+				lower: (check, to) => quality.lower(check, to),
+				enterLowest: () => this.enterLowestTier(),
 				drawFrame,
 				uploading: () => glue.textureStat(TEXTURE_STAT_WAITING, 0) > 0,
 				maxTargetFps,
 				resumes: () => Atomics.load(this.sketch.control.slots, Slot.Resumes),
 			},
-			graceStart,
-			checkStart(quality.preset, refreshHz, maxTargetFps, this.sketch.quality.resume),
+			checkStart(quality.preset, this.setupRefreshHz, maxTargetFps, this.sketch.quality.resume),
 		);
+	}
+
+	/**
+	 * Takes the lowest quality tier for the preset check, with the settings that a start in the
+	 * tier has, where the page and the sketch allow the tier. The governor gives the settings back
+	 * when the frames have room for its window. Resolves once the tier's first frame is on screen:
+	 * with true when the engine took the tier and still runs.
+	 */
+	private async enterLowestTier(): Promise<boolean> {
+		const { governor, quality } = this;
+		if (!governor.lowestAllowed || governor.lowest) return false;
+		const { settings } = quality;
+		governor.startLowest(
+			thousandths(settings.minRenderScale),
+			thousandths(settings.maxRenderScale),
+		);
+		this.tierRestore = tierRestoreSettings(settings);
+		this.tierChanges = governor.tierChanges;
+		await quality.setGoverned(lowestTierSettings(this.sketch.capabilities.tier));
+		return Atomics.load(this.sketch.control.slots, Slot.Running) !== 0;
 	}
 
 	/** Resolves the sketch's `engine.firstFrame`, once. */

@@ -23,7 +23,7 @@ import {
 	type PresetCheck,
 	type PresetCheckRound,
 } from '../quality/check';
-import { lowered, QUALITY_PRESETS, type QualityPreset } from '../quality/presets';
+import { presetAfterMiss, QUALITY_PRESETS, type QualityPreset } from '../quality/presets';
 import type { Tier } from '../shared/tier';
 import type { CapabilityReport } from './capabilities';
 import { pageStorage } from './start-marker';
@@ -61,15 +61,14 @@ export function checkEnded(check: Pick<PresetCheck, 'targetFps' | 'rounds'>): bo
 
 /**
  * The preset that a check's rounds leave the engine at: the last round's preset when the check
- * ended there, or else the next lighter one, to which the check lowered the preset after the last
- * round missed its target.
+ * ended there, or else the one that the check lowered to after the last round missed its target.
  */
 export function checkedPreset(
 	check: Pick<PresetCheck, 'from' | 'targetFps' | 'rounds'>,
 ): QualityPreset {
 	const last = check.rounds.at(-1);
 	if (!last) return check.from;
-	return checkEnded(check) ? last.preset : lowered(last.preset, 1);
+	return checkEnded(check) ? last.preset : presetAfterMiss(last, check.targetFps);
 }
 
 const isPreset = (value: unknown): value is QualityPreset =>
@@ -96,7 +95,8 @@ function parseStored(text: string | null): StoredCheck | undefined {
 			typeof check.targetFps === 'number' &&
 			Array.isArray(check.rounds) &&
 			check.rounds.length > 0 &&
-			check.rounds.every(isRound)
+			check.rounds.every(isRound) &&
+			(check.lowest === undefined || check.lowest === true)
 			? (stored as StoredCheck)
 			: undefined;
 	} catch {
@@ -160,8 +160,8 @@ export function reusableCheck(
 	if (!(age >= 0 && age < STORED_CHECK_MS)) return undefined;
 	if (!(Math.max(area, stored.area) <= Math.min(area, stored.area) * STORED_CHECK_AREA_RATIO))
 		return undefined;
-	const { from, targetFps, rounds } = stored.check;
-	return { from, targetFps, rounds, reused: true };
+	const { from, targetFps, rounds, lowest } = stored.check;
+	return { from, targetFps, rounds, ...(lowest && { lowest }), reused: true };
 }
 
 /** The stored preset check of one sketch, for one start of it. */
@@ -204,12 +204,12 @@ export class CheckStore {
 	save(check: PresetCheck, maxTargetFps: number, now = Date.now()): void {
 		if (check.reused || !(this.area > 0) || check.targetFps < checkTargetFps(0, maxTargetFps))
 			return;
-		const { from, targetFps, rounds } = check;
+		const { from, targetFps, rounds, lowest } = check;
 		const stored: StoredCheck = {
 			conditions: this.conditions,
 			area: this.area,
 			savedAt: now,
-			check: { from, targetFps, rounds, reused: false },
+			check: { from, targetFps, rounds, ...(lowest && { lowest }), reused: false },
 		};
 		try {
 			this.storage?.setItem(this.key, JSON.stringify(stored));

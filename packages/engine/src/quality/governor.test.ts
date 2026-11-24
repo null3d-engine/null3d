@@ -899,8 +899,28 @@ describe('the governor in the frame loop', () => {
 			}
 			return resolution.governor.scale;
 		};
-		return { run, resolution, scene };
+		return { run, resolution, scene, setRefresh: (hz: number) => render.setRefreshHz(hz) };
 	}
+
+	it('keeps its target when the GPU falls behind and the frame callbacks slow with it', () => {
+		// The display ran at 60 hertz before the load. Under it, the GPU takes longer than a refresh
+		// over each frame, so the callbacks come every second refresh and read as 30 hertz.
+		const { run, resolution, setRefresh } = loop();
+		resolution.startTarget(60);
+		setRefresh(30);
+		const gpuMs = 1.2 * BUDGET;
+		expect(run(2 * BUDGET, gpuMs, GRACE_MS)).toBe(FULL_SCALE);
+		expect(run(2 * BUDGET, gpuMs, DROP_AFTER_MS + WINDOW_MS)).toBe(FULL_SCALE - SCALE_STEP);
+	});
+
+	it('follows a display that slows down to save power, where the GPU keeps up', () => {
+		const { run, resolution, setRefresh } = loop();
+		resolution.startTarget(60);
+		run(BUDGET, BUDGET / 2, GRACE_MS);
+		// The display drops to 30 hertz; the GPU finishes each frame in a quarter of its period.
+		setRefresh(30);
+		expect(run(2 * BUDGET, BUDGET / 2, 4000)).toBe(FULL_SCALE);
+	});
 
 	it('takes no step in the first seconds of play', () => {
 		const { run } = loop();

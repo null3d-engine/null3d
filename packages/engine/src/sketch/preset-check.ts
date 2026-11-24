@@ -1,13 +1,16 @@
 // The preset check, which the sketch runner loads after the first frame when the engine chose the
-// preset itself. It draws the scene as the setup built it, first for a grace time, then for a
-// measured window, and reads the rates at which the thread that draws presented frames and the GPU
-// finished them. When the lower rate misses the target, it lowers the preset by one, waits for the
-// new preset's first frame, and measures again, down to Low. A round during which the page was
-// hidden or paused measures again: a hidden page draws no frames, and the first frame after it
-// carries the hidden time as its interval. The target starts at the refresh rate that the meter
-// read before the check's frames began: a GPU that falls behind slows the frame callbacks, which
-// then read as a slower display. A check can go on from the rounds that an earlier start measured
-// before its check ended. The rules and the thresholds live in quality/check.ts.
+// preset itself. Once the first frame's pipelines are built and the GPU draws at play's rate, it
+// draws the scene for a grace time, then for a measured window, and reads the rates at which the
+// thread that draws presented frames and the GPU finished them. When the lower rate misses the
+// target, it lowers the preset by one, or straight to Low when the rate is far below the target,
+// waits for the new preset's first frame, and measures again. It ends at a preset that holds the
+// target, or at Low, after which a Low far below the target takes the lowest quality tier. So the
+// engine runs only a preset that the check measured. A round during which the page was hidden or
+// paused measures again: a hidden page draws no frames, and the first frame after it carries the
+// hidden time as its interval. The target starts at the refresh rate that the meter read before
+// the check's frames began: a GPU that falls behind slows the frame callbacks, which then read as
+// a slower display. A check can go on from the rounds that an earlier start measured before its
+// check ended. The rules and the thresholds live in quality/check.ts.
 
 import {
 	CHECK_GRACE_MS,
@@ -16,13 +19,14 @@ import {
 	CHECK_SETTLE_WAIT_MS,
 	CHECK_UPLOAD_WAIT_MS,
 	CHECK_WINDOW_MS,
+	farBelowTarget,
 	frameRate,
 	holdsTarget,
 	type PresetCheck,
 	type PresetCheckRound,
 	raiseTarget,
 } from '../quality/check';
-import type { QualityPreset } from '../quality/presets';
+import { presetAfterMiss, type QualityPreset } from '../quality/presets';
 import { RingSums, Role, refreshRate, SUM_INTERVAL_MS, SUM_RECORDS } from '../shared/metrics';
 
 /** What the check needs from the sketch runner. */
@@ -32,10 +36,15 @@ export interface CheckHost {
 	/** The preset that runs. */
 	readonly preset: QualityPreset;
 	/**
-	 * Switches to the next lighter preset, and resolves once its first frame is on screen. `check`
+	 * Switches to the lighter preset `to`, and resolves once its first frame is on screen. `check`
 	 * is the check's rounds so far, whose last missed its target, for the page to keep.
 	 */
-	lower(check: PresetCheck): Promise<void>;
+	lower(check: PresetCheck, to: QualityPreset): Promise<void>;
+	/**
+	 * Takes the lowest quality tier, where the page and the sketch allow it, and resolves once its
+	 * first frame is on screen: with true when it took the tier.
+	 */
+	enterLowest(): Promise<boolean>;
 	/**
 	 * Draws a frame of the scene as it stands, and resolves once the thread that draws has taken
 	 * it: with false when the engine stopped.
@@ -56,9 +65,10 @@ async function drawWhile(host: CheckHost, until: () => boolean): Promise<boolean
 }
 
 /**
- * Draws frames after a lowering until the GPU has finished enough frames at play's rate, so the
- * frame that carries the new preset's pipelines and remade shadow map does not fall inside the
- * next measured window. Resolves false when the engine stopped.
+ * Draws frames after the first frame, and after a lowering, until the GPU has finished enough
+ * frames at play's rate. So the frame that carries the first frame's long finish, or the new
+ * preset's pipelines and remade shadow map, does not fall inside the next measured window.
+ * Resolves false when the engine stopped.
  */
 async function settle(host: CheckHost): Promise<boolean> {
 	const completed = new RingSums(host.metrics, Role.Completion);
@@ -111,20 +121,21 @@ export function checkStart(
 
 /**
  * Measures the preset that runs, and lowers it until one holds the target or the preset is Low.
- * The first grace counts from `graceStart`, when the scene started drawing for the check.
- * `begin` is where the check starts, as `checkStart` gives it; without it, the check starts from
- * the preset that runs, with no target until the meter reads one. Resolves with what the check
- * measured, or undefined when the engine stopped first.
+ * Each round starts once the GPU draws at play's rate. `begin` is where the check starts, as
+ * `checkStart` gives it; without it, the check starts from the preset that runs, with no target
+ * until the meter reads one. Resolves with what the check measured, or undefined when the engine
+ * stopped first.
  */
 export async function checkPreset(
 	host: CheckHost,
-	graceStart: number,
 	begin: CheckStart = { from: host.preset, targetFps: 0, rounds: [] },
 ): Promise<PresetCheck | undefined> {
 	const { from } = begin;
 	const rounds: PresetCheckRound[] = [...begin.rounds];
 	let targetFps = begin.targetFps;
-	let start = graceStart;
+	let lowest = false;
+	if (!(await settle(host))) return undefined;
+	let start = performance.now();
 	for (;;) {
 		const resumes = host.resumes();
 		const graceEnd = start + CHECK_GRACE_MS;
@@ -151,10 +162,17 @@ export async function checkPreset(
 			completedFps: rateOf(completed),
 		};
 		rounds.push(round);
-		if (host.preset === 'low' || holdsTarget(round, targetFps)) break;
-		await host.lower({ from, targetFps, rounds: [...rounds], reused: false });
+		if (holdsTarget(round, targetFps)) break;
+		if (host.preset === 'low') {
+			lowest = farBelowTarget(round, targetFps) && (await host.enterLowest());
+			break;
+		}
+		await host.lower(
+			{ from, targetFps, rounds: [...rounds], reused: false },
+			presetAfterMiss(round, targetFps),
+		);
 		if (!(await settle(host))) return undefined;
 		start = performance.now();
 	}
-	return { from, targetFps, rounds, reused: false };
+	return { from, targetFps, rounds, ...(lowest && { lowest: true as const }), reused: false };
 }

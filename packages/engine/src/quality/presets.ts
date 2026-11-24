@@ -9,7 +9,13 @@
 
 import { EngineError } from '../errors/engine-error';
 import type { Tier } from '../shared/tier';
-import { PRESET_CHECK_TIMINGS, type PresetCheckTiming, type TargetFps } from './check';
+import {
+	farBelowTarget,
+	PRESET_CHECK_TIMINGS,
+	type PresetCheckRound,
+	type PresetCheckTiming,
+	type TargetFps,
+} from './check';
 
 /** Bytes in a mebibyte. */
 export const MIB = 1024 * 1024;
@@ -889,6 +895,14 @@ export function presetIndex(preset: QualityPreset): number {
 /** `preset` lowered by `steps`, down to Low at most. */
 export function lowered(preset: QualityPreset, steps: number): QualityPreset {
 	return QUALITY_PRESETS[Math.max(0, presetIndex(preset) - steps)] ?? 'low';
+}
+
+/**
+ * The preset that the preset check lowers to after `round` missed `targetFps`: Low when the round
+ * fell far below the target, or else the next lighter preset.
+ */
+export function presetAfterMiss(round: PresetCheckRound, targetFps: number): QualityPreset {
+	return farBelowTarget(round, targetFps) ? 'low' : lowered(round.preset, 1);
 }
 
 /** A setting's value on a preset, on the GPU path `tier`, or on WebGPU without it. */
