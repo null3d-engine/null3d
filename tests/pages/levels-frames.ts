@@ -18,6 +18,7 @@ run('levels-frames', async () => {
 	const events: { name: string; data: unknown; at: number }[] = [];
 	engine.onSketchMessage((name, data) => events.push({ name, data, at: performance.now() }));
 	await engine.firstFrame;
+	await engine.presetChecked;
 	const start = performance.now();
 	const windows = [];
 	for (let k = 0; k < seconds; k++) {

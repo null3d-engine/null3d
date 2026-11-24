@@ -19,6 +19,7 @@ run('pick-uv', async () => {
 		maxPixelRatio: 1,
 	});
 	await engine.firstFrame;
+	await engine.presetChecked;
 	window.pickUv = () =>
 		new Promise((resolve) => {
 			const off = engine.onSketchMessage((name, data) => {

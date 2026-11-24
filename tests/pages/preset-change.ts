@@ -37,6 +37,7 @@ run('preset-change', async () => {
 		maxPixelRatio: 1,
 	});
 	await engine.firstFrame;
+	await engine.presetChecked;
 	const started = engine.mode.preset;
 	const before = await engine.captureFrame();
 	const answered = new Promise<unknown>((resolve) => {

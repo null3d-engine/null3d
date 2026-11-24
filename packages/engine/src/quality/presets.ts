@@ -9,7 +9,7 @@
 
 import { EngineError } from '../errors/engine-error';
 import type { Tier } from '../shared/tier';
-import type { TargetFps } from './check';
+import { PRESET_CHECK_TIMINGS, type PresetCheckTiming, type TargetFps } from './check';
 
 /** Bytes in a mebibyte. */
 export const MIB = 1024 * 1024;
@@ -1124,6 +1124,19 @@ export function targetFpsOption(value: unknown): TargetFps | undefined {
 	throw new EngineError(
 		'E1213',
 		`createEngine() got ${quoted(value)} for targetFps, which is not 'display' or a whole number from 1 up.`,
+	);
+}
+
+/**
+ * When the preset check measures, as `createEngine`'s `presetCheck` option names it, or undefined
+ * for no choice. Throws E1213 for a value that names no timing.
+ */
+export function presetCheckOption(value: unknown): PresetCheckTiming | undefined {
+	if (value === undefined || (PRESET_CHECK_TIMINGS as readonly unknown[]).includes(value))
+		return value as PresetCheckTiming | undefined;
+	throw new EngineError(
+		'E1213',
+		`createEngine() got ${quoted(value)} for presetCheck, which is not ${listOf(PRESET_CHECK_TIMINGS.map((name) => `'${name}'`))}.`,
 	);
 }
 

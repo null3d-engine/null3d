@@ -65,6 +65,7 @@ run('card-pair', async (): Promise<Record<string, unknown>> => {
 		maxPixelRatio: 1,
 	});
 	await engine.firstFrame;
+	await engine.presetChecked;
 	await new Promise((resolve) => setTimeout(resolve, 2500));
 	const frame = await engine.captureFrame();
 	const metrics = crown(frame.pixels as unknown as Uint8ClampedArray, frame.width, frame.height);

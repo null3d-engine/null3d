@@ -49,6 +49,7 @@ import type {
 } from '../page/hold';
 import { type CoreDevice, cellTableWarning } from '../page/limits';
 import { FULL_SCALE, thousandths } from '../quality/budget';
+import type { PresetCheck } from '../quality/check';
 import { Governor, GovernorLoop } from '../quality/governor';
 import {
 	lowestTierCuts,
@@ -556,6 +557,11 @@ export class SketchRunner {
 	 * time, or a replay, which steps through a recording.
 	 */
 	private readonly holdsFrames: boolean;
+	/**
+	 * True while the preset check measures the frames of play. The governor waits until it ends, so
+	 * the check measures each preset at the full render scale.
+	 */
+	private checking = false;
 	readonly context: SketchContext;
 
 	/**
@@ -871,8 +877,10 @@ export class SketchRunner {
 
 	/**
 	 * Runs the sketch's setup function, which returns the sketch's callbacks. When the page asks for
-	 * it, the preset check follows. In hold mode, it then steps the sketch to the held time (see
-	 * `hold`). Options out of range fail with E1214 before the setup function runs.
+	 * the preset check before play, the check follows, and the setup resolves after it. When it asks
+	 * for the check during play, the check starts as the setup resolves, and measures the frames
+	 * that the frame loop draws from then on. In hold mode, it then steps the sketch to the held time
+	 * (see `hold`). Options out of range fail with E1214 before the setup function runs.
 	 */
 	async setup(sketch: SketchDefinition): Promise<void> {
 		try {
@@ -885,8 +893,8 @@ export class SketchRunner {
 			const growing = performance.now();
 			this.callbacks = (await sketch.setup(this.context)) ?? {};
 			this.record.markSetupDone(performance.now() - growing);
-			const { check } = this.sketch.quality;
-			if (check && !this.holdsFrames) await this.checkPreset();
+			const check = this.holdsFrames ? undefined : this.sketch.quality.check;
+			if (check === 'before-play') await this.checkPreset(() => this.drawSetupFrame());
 			// Warm-ups that the setup started without waiting for them publish their frames first, so
 			// the frame loop never records while a setup frame does.
 			await this.setupFrames;
@@ -898,6 +906,7 @@ export class SketchRunner {
 				this.input.recorder = this.recorder;
 			}
 			this.setUp = true;
+			if (check === 'during-play') void this.checkDuringPlay();
 			if (this.holdSeconds !== undefined) await this.hold(this.holdSeconds);
 			else if (this.replayProgram !== undefined) await this.replay(this.replayProgram);
 		} catch (error) {
@@ -909,13 +918,54 @@ export class SketchRunner {
 	}
 
 	/**
-	 * The preset check, after the setup: the first frame draws with every pipeline built, then the
-	 * check measures the scene as the setup built it, and lowers the preset where the device cannot
-	 * hold its frame rate. Its code loads after the first frame, while the scene keeps drawing. A
-	 * check that cannot load leaves the preset as it is.
+	 * The preset check during play: the frame loop draws the scene and runs the sketch, and the
+	 * check measures its frames. The governor waits until the check ends. A preset that the sketch
+	 * asks for itself ends the check, which then reports no result: the sketch chose its preset.
 	 */
-	private async checkPreset(): Promise<void> {
-		if (!(await this.drawSetupFrame())) return;
+	private async checkDuringPlay(): Promise<void> {
+		const { slots } = this.sketch.control;
+		const { quality } = this;
+		const requests = quality.presetRequests;
+		this.checking = true;
+		try {
+			await this.checkPreset(async () => {
+				if (Atomics.load(slots, Slot.Running) === 0) return false;
+				await reached(slots, Slot.FramesTaken, nextFrame(Atomics.load(slots, Slot.FramesTaken)));
+				return Atomics.load(slots, Slot.Running) !== 0 && quality.presetRequests === requests;
+			});
+		} finally {
+			this.checking = false;
+		}
+	}
+
+	/**
+	 * The preset check, after the setup: the first frame draws with every pipeline built, then the
+	 * check measures the scene, and lowers the preset where the device cannot hold its frame rate.
+	 * `drawFrame` resolves once the thread that draws has taken one more frame: a frame that it
+	 * publishes of the scene as the setup built it, before play, or the frame loop's next frame,
+	 * during play. It resolves with false when the check must stop. The check's code loads after the
+	 * first frame, while the scene keeps drawing. A check that cannot load leaves the preset as it
+	 * is. While the engine runs, the page hears that the check ended, with its result when it
+	 * measured one.
+	 */
+	private async checkPreset(drawFrame: () => Promise<boolean>): Promise<void> {
+		let check: PresetCheck | undefined;
+		try {
+			check = await this.measurePreset(drawFrame);
+		} catch (error) {
+			console.warn(`null3D could not check the quality preset: ${messageOf(error)}`);
+		}
+		if (this.core.stopped || Atomics.load(this.sketch.control.slots, Slot.Running) === 0) return;
+		try {
+			this.quality.report(check);
+		} catch (error) {
+			console.warn(`null3D could not report the quality preset check: ${messageOf(error)}`);
+		}
+	}
+
+	/** Runs the preset check with `drawFrame`, as `checkPreset` says; undefined when it stopped. */
+	private async measurePreset(drawFrame: () => Promise<boolean>): Promise<PresetCheck | undefined> {
+		if (!(await drawFrame())) return undefined;
 		const loading = import('./preset-check');
 		let loaded = false;
 		const settled = () => {
@@ -923,28 +973,23 @@ export class SketchRunner {
 		};
 		loading.then(settled, settled);
 		const graceStart = performance.now();
-		while (!loaded) if (!(await this.drawSetupFrame())) return;
+		while (!loaded) if (!(await drawFrame())) return undefined;
 		const { glue } = this.sketch;
 		const { quality } = this;
-		try {
-			const check = await (await loading).checkPreset(
-				{
-					metrics: this.metrics,
-					get preset() {
-						return quality.preset;
-					},
-					lower: () => quality.lower(),
-					drawFrame: () => this.drawSetupFrame(),
-					uploading: () => glue.textureStat(TEXTURE_STAT_WAITING, 0) > 0,
-					maxTargetFps: this.sketch.maxTargetFps,
-					resumes: () => Atomics.load(this.sketch.control.slots, Slot.Resumes),
+		return (await loading).checkPreset(
+			{
+				metrics: this.metrics,
+				get preset() {
+					return quality.preset;
 				},
-				graceStart,
-			);
-			if (check) this.quality.report(check);
-		} catch (error) {
-			console.warn(`null3D could not check the quality preset: ${messageOf(error)}`);
-		}
+				lower: () => quality.lower(),
+				drawFrame,
+				uploading: () => glue.textureStat(TEXTURE_STAT_WAITING, 0) > 0,
+				maxTargetFps: this.sketch.maxTargetFps,
+				resumes: () => Atomics.load(this.sketch.control.slots, Slot.Resumes),
+			},
+			graceStart,
+		);
 	}
 
 	/** True once the setup function has returned, so the frame loop may step the sketch. */
@@ -1939,7 +1984,7 @@ export class SketchRunner {
 		this.readViewport();
 		// The governor judges the frames so far before the sketch's update, which then sees the
 		// render scale of this frame, and whose change handlers hear of a shadow step.
-		if (play && this.governorLoop) {
+		if (play && this.governorLoop && !this.checking) {
 			this.governorLoop.now[0] = start;
 			this.governorLoop.frame(this.resumed);
 			this.resumed = false;

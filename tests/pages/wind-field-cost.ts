@@ -94,6 +94,7 @@ run('wind-field-cost', async () => {
 	const failures: string[] = [];
 	engine.onFailure((error) => failures.push(error.message));
 	await engine.firstFrame;
+	await engine.presetChecked;
 
 	const settle = (command: Config): Promise<void> =>
 		new Promise((resolve) => {

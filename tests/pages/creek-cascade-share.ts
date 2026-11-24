@@ -49,6 +49,7 @@ run('creek-cascade-share', async (): Promise<Record<string, unknown>> => {
 	const engine = await createEngine({ canvas, sketch, stats: false, maxPixelRatio: 1 });
 	progress('the engine started');
 	await engine.firstFrame;
+	await engine.presetChecked;
 	progress('the first frame drew');
 	await new Promise((resolve) => setTimeout(resolve, SETTLE_SECONDS * 1000));
 	const measure: FrameMetrics = await engine.measure(SECONDS);

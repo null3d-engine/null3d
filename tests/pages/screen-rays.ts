@@ -19,6 +19,7 @@ run('screen-rays', async () => {
 		maxPixelRatio: 1,
 	});
 	await engine.firstFrame;
+	await engine.presetChecked;
 	window.screenRays = () =>
 		new Promise((resolve) => {
 			const off = engine.onSketchMessage((name, data) => {

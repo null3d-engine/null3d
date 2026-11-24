@@ -37,6 +37,7 @@ describe('parseSwitches', () => {
 			derivedCache: true,
 			fps: undefined,
 			targetFps: undefined,
+			presetCheck: undefined,
 			queue: undefined,
 			jobs: undefined,
 			join: true,
@@ -264,6 +265,13 @@ describe('parseSwitches', () => {
 		expect(parseSwitches('?target-fps=120').targetFps).toBe(120);
 		for (const value of ['0', '59.94', 'max', ''])
 			expect(parseSwitches(`?target-fps=${value}`).targetFps).toBeUndefined();
+	});
+
+	it('reads when the preset check measures, and ignores a timing it does not know', () => {
+		expect(parseSwitches('?preset-check=during-play').presetCheck).toBe('during-play');
+		expect(parseSwitches('?preset-check=before-play').presetCheck).toBe('before-play');
+		for (const value of ['', 'off', 'before'])
+			expect(parseSwitches(`?preset-check=${value}`).presetCheck).toBeUndefined();
 	});
 
 	it('reads the thread that runs the sketch, and ignores a thread it does not know', () => {

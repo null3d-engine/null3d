@@ -67,6 +67,7 @@ run('limits', async () => {
 	};
 
 	await engine.firstFrame;
+	await engine.presetChecked;
 	const { maxInstances } = engine.capabilities;
 	const pastPortable = await batch(PAST_PORTABLE);
 	const pastPortableShown = pastPortable.ok ? await drawnPixelsSoon() : { drawn: 0, waitedMs: 0 };

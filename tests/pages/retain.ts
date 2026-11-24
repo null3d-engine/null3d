@@ -37,6 +37,7 @@ run('retain', async () => {
 		});
 
 	await engine.firstFrame;
+	await engine.presetChecked;
 	await sleep(WAIT_MS);
 	const beforeDetach = await frame();
 	engine.detach();

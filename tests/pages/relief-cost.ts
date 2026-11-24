@@ -18,6 +18,7 @@ run('relief-cost', async () => {
 	const failures: string[] = [];
 	engine.onFailure((error) => failures.push(error.code));
 	await engine.firstFrame;
+	await engine.presetChecked;
 	const { off, on } = await featureCost(engine, async (on) => {
 		const settled = new Promise<void>((resolve) => {
 			const stop = engine.onSketchMessage((name) => {

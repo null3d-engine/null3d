@@ -52,6 +52,7 @@ run('mesh-churn-cost', async () => {
 	const failures: string[] = [];
 	engine.onFailure((error) => failures.push(error.code));
 	await engine.firstFrame;
+	await engine.presetChecked;
 	const phase = async (name: 'idle' | 'repack' | 'tail') => {
 		engine.postToSketch(name, null);
 		return side(await engine.measure(WINDOW));

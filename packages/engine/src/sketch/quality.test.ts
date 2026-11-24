@@ -453,8 +453,16 @@ describe('SketchQuality.setPreset', () => {
 			reused: false,
 		};
 		quality.report(check);
-		expect(applied).toEqual([{ preset: 'medium', settings: MEDIUM, check }]);
+		expect(applied).toEqual([{ preset: 'medium', settings: MEDIUM, check, checked: true }]);
 		expect(changes).toEqual([[]]);
+	});
+
+	it('tells the page that a check ended without a result, and counts the presets that the sketch asks for', async () => {
+		const { quality, applied } = medium();
+		await quality.setPreset('low');
+		expect(quality.presetRequests).toBe(1);
+		quality.report(undefined);
+		expect(applied.at(-1)).toEqual({ preset: 'low', settings: quality.settings, checked: true });
 	});
 });
 

@@ -63,6 +63,7 @@ run('moving-shadow', async () => {
 	if (params.has('preset')) sketch.searchParams.set('follow', 'preset');
 	const engine = await createEngine({ canvas, sketch, maxPixelRatio: 1 });
 	await engine.firstFrame;
+	await engine.presetChecked;
 	const offsets: (number | null)[] = [];
 	for (let read = 0; read < READS; read++) {
 		for (let k = 0; k < GAP_FRAMES; k++) await nextFrame();

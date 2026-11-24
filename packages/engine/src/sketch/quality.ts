@@ -11,7 +11,7 @@
 
 import { EngineError } from '../errors/engine-error';
 import { budgetScale, budgetSteps } from '../quality/budget';
-import type { PresetCheck } from '../quality/check';
+import type { PresetCheck, PresetCheckTiming } from '../quality/check';
 import {
 	antialiasRank,
 	capTextureMemory,
@@ -48,8 +48,11 @@ export interface QualityStart {
 	 * page turns it on for phones and tablets, and a page option can turn it off (D-164).
 	 */
 	keepCopies?: boolean;
-	/** True when the engine checks the preset after its first frame. */
-	check?: boolean;
+	/**
+	 * When the engine checks the preset after its first frame: during play, or before it, as the
+	 * page chose. Without it, the engine checks no preset.
+	 */
+	check?: PresetCheckTiming;
 	/**
 	 * True when the page started in the lowest quality tier, through its start switch. The
 	 * governor then gives the tier's settings back when the frames have room for its window.
@@ -75,11 +78,16 @@ const NO_TEXTURE_MEMORY: TextureMemory = {
 	droppedTextures: 0,
 };
 
-/** What the page learns after each change: the preset, the settings, and the check's result. */
+/**
+ * What the page learns after each change: the preset, the settings, and the check's result.
+ * `checked` marks the one update that ends the preset check, which carries the check's result
+ * when it measured one.
+ */
 export interface QualityUpdate {
 	preset: QualityPreset;
 	settings: QualitySettings;
 	check?: PresetCheck;
+	checked?: true;
 }
 
 /**
@@ -408,6 +416,8 @@ export class SketchQuality implements Quality {
 	private readonly antialiasFixed: boolean;
 	readonly highest: QualityPreset;
 	private readonly textureCapMiB: number;
+	/** How many times the sketch asked for a preset, which ends a preset check that runs. */
+	private requests = 0;
 
 	readonly governor: QualityGovernor;
 	/** The sketch's budgets for its own systems. */
@@ -491,9 +501,15 @@ export class SketchQuality implements Quality {
 		return this.update(this.preset, settings);
 	}
 
+	/** How many times the sketch asked for a preset with `setPreset`. */
+	get presetRequests(): number {
+		return this.requests;
+	}
+
 	setPreset(preset: QualityPreset): Promise<void> {
 		const wanted = presetArgument(preset);
 		const next = presetIndex(wanted) > presetIndex(this.highest) ? this.highest : wanted;
+		this.requests++;
 		this.owned.clear();
 		return this.update(next, this.presetValues(next, this.options));
 	}
@@ -564,9 +580,20 @@ export class SketchQuality implements Quality {
 		this.change = Math.max(this.change, LIVE_CHANGE);
 	}
 
-	/** Tells the page of the preset and the settings, with the check's result when given. */
-	report(check?: PresetCheck): void {
-		this.apply({ preset: this.preset, settings: { ...this.settings }, check }, []);
+	/**
+	 * Tells the page that the preset check has ended, with the preset and the settings, and with
+	 * the check's result when it measured one.
+	 */
+	report(check: PresetCheck | undefined): void {
+		this.apply(
+			{
+				preset: this.preset,
+				settings: { ...this.settings },
+				...(check && { check }),
+				checked: true,
+			},
+			[],
+		);
 	}
 
 	/**

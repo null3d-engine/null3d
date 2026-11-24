@@ -18,13 +18,14 @@
 // thread that draws wait before it replays each frame's list, for a test of memory that the sketch
 // thread frees while the list may still point at it. ?hold starts hold mode for image tests, ?preset= fixes the quality preset,
 // ?tier=lowest starts in the lowest quality tier, ?target-fps= sets the frame rate that the
-// engine defends, ?bench publishes the running engine
+// engine defends, ?preset-check= says whether the preset check measures during play or before it,
+// ?bench publishes the running engine
 // for benchmark tools, ?gl-timing times each WebGL call for benchmark pages, ?stats shows the
 // stats overlay, and ?view picks a debug view, one of the engine's own or one that an add-on's
 // feature registers.
 
 import type { StatsRequest } from '../debug/stats-options';
-import type { TargetFps } from '../quality/check';
+import { PRESET_CHECK_TIMINGS, type PresetCheckTiming, type TargetFps } from '../quality/check';
 import { QUALITY_PRESETS, QUALITY_SETTINGS, type QualityPreset } from '../quality/presets';
 
 export type GpuSwitch = 'auto' | 'webgpu' | 'compat' | 'webgl2';
@@ -280,6 +281,12 @@ export interface Switches {
 	 */
 	targetFps: TargetFps | undefined;
 	/**
+	 * When the preset check measures, from ?preset-check=: `during-play` or `before-play`, which
+	 * wins over the page's `presetCheck` option, or undefined without the switch or with another
+	 * value.
+	 */
+	presetCheck: PresetCheckTiming | undefined;
+	/**
 	 * The most job workers that ?jobs= lets the engine start, or undefined for the count from the
 	 * device's cores. The engine starts them as the work grows, and no more than the device has
 	 * logical cores (`jobWorkerCount`).
@@ -470,6 +477,7 @@ export function parseSwitches(search: string): Switches {
 		derivedCache: params.get('derived-cache') !== 'off',
 		fps: positive(params.get('fps')),
 		targetFps: params.get('target-fps') === 'display' ? 'display' : whole(params.get('target-fps')),
+		presetCheck: oneOf(params.get('preset-check'), PRESET_CHECK_TIMINGS),
 		jobs: whole(params.get('jobs'), MAX_JOB_WORKERS),
 		queue: params.get('queue') === 'off' ? Number.POSITIVE_INFINITY : whole(params.get('queue')),
 		memoryMiB: within(whole(params.get('memory')), MEMORY_MIB.min, MEMORY_MIB.max),

@@ -5,7 +5,8 @@
 // with n spheres instead, for the preset check to measure. ?budget= has the sketch set its own
 // texture upload budget in bytes first. ?set= sends the sketch settings to change, as JSON, and
 // reports the change it hears of, or the error that refused it. ?wait=<ms> waits that long after
-// the first frame and reports the notes again.
+// the first frame and reports the notes again. The page waits for the preset check to end, and
+// reports what the check had measured when createEngine resolved.
 import { createEngine, type EngineOptions, type QualityPreset } from '@null3d/engine';
 import { run } from './lib/result';
 
@@ -47,8 +48,13 @@ run('quality', async () => {
 			waiters.get(name)?.(data);
 		},
 	});
+	// What the preset check had measured when createEngine resolved: nothing yet, when the check
+	// measures during play.
+	const presetCheckAtStart = engine.mode.presetCheck;
 	await engine.firstFrame;
 	const notesAtFirstFrame = crashNotes();
+	// The page reports the preset that the check chose.
+	await engine.presetChecked;
 	const sketch = spheres === null ? await message('quality') : undefined;
 	let changed: unknown;
 	let refused: unknown;
@@ -64,6 +70,7 @@ run('quality', async () => {
 	const { coarsePointer, screenMinEdge, deviceMemoryGB } = engine.report;
 	return {
 		mode: engine.mode,
+		presetCheckAtStart,
 		tier: engine.capabilities.tier,
 		hints: { coarsePointer, screenMinEdge, deviceMemoryGB },
 		sketch,

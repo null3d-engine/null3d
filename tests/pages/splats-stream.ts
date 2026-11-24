@@ -73,6 +73,7 @@ run('splats-stream', async () => {
 		if (name === 'splats') figures = data as SplatFigures;
 	});
 	await engine.firstFrame;
+	await engine.presetChecked;
 	const first = await reported(() => figures, 180_000);
 	progress(
 		`the first report drew ${first.drawn} of ${first.total} splats, with ${first.loadedBytes} of ${first.bytes} bytes of the cloud`,

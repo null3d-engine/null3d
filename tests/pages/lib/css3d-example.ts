@@ -137,6 +137,7 @@ export function runPort(port: Css3dPort): void {
 		});
 		const elements = port.markup(layer, (id, element) => engine.labels.bind(id, element));
 		await engine.firstFrame;
+		await engine.presetChecked;
 		// The thread that draws places the elements through its own frame callback, so wait for the
 		// labels of the held frame to reach the page. A software GPU draws few frames a second.
 		for (let count = 0; count < 240 && !elements.some(placed); count++) await frames(1);

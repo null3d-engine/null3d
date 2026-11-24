@@ -11,7 +11,12 @@ import { FORMAT_CANVAS, PERMUTATION_HALF } from '../generated/gpu';
 import { SHADER_FEATURES, type ShaderFeature } from '../generated/shader-features';
 import { recordPermutations, stopRecordingPermutations } from '../gpu/variants';
 import type { DrawPathReason } from '../gpu/webgpu/draw-path-probe';
-import { maxTargetFps, type PresetCheck, type TargetFps } from '../quality/check';
+import {
+	maxTargetFps,
+	type PresetCheck,
+	type PresetCheckTiming,
+	type TargetFps,
+} from '../quality/check';
 import {
 	choosePreset,
 	crashLowest,
@@ -29,6 +34,7 @@ import {
 	checkedSettings,
 	checkSettings,
 	lowestTierSettings,
+	presetCheckOption,
 	presetOption,
 	presetValue,
 	type QualityPreset,
@@ -173,6 +179,18 @@ export interface EngineOptions {
 	 * E1213.
 	 */
 	targetFps?: TargetFps;
+	/**
+	 * When the preset check measures, on a start where the engine checks the preset that it chose.
+	 * With `during-play`, the default, the scene shows at its first frame: `createEngine` resolves
+	 * once the setup has run, and `engine.firstFrame` once the GPU has finished the first frame. The
+	 * check then measures the first frames of play, a lighter preset applies in front of the viewer,
+	 * and `engine.presetChecked` resolves once the check has ended. With `before-play`, the check
+	 * measures the scene that the setup built before the sketch's update runs, and `createEngine`
+	 * resolves after it, so a loading screen hides the check and any change of preset. A start that
+	 * takes the stored result of an earlier check, or that runs no check, plays at once either way.
+	 * Another value fails with E1213. The `?preset-check=` switch wins over it.
+	 */
+	presetCheck?: PresetCheckTiming;
 	/**
 	 * Cap for the device pixel ratio, a number from 0.5 up. Without it, the quality preset sets the
 	 * cap. `ctx.quality.set` changes it during play.
@@ -371,7 +389,9 @@ export interface EngineOptions {
 	 * Called as the start reaches each stage, in this order: `core-download` as the engine core's
 	 * file downloads, with the bytes that have arrived; `core` once the engine core is compiled and
 	 * the GPU paths are tested; `sketch` once the sketch's setup has run; and `first-frame` once the
-	 * GPU has finished the first frame. Before `core`, `core-download` reports the core file's bytes,
+	 * GPU has finished the first frame after the setup. The preset check does not hold up either
+	 * stage, unless the `presetCheck` option is `before-play`: `sketch` then comes after the check
+	 * too. Before `core`, `core-download` reports the core file's bytes,
 	 * and `memory-wait` comes when the browser has refused the engine's memory for 10 seconds. The
 	 * engine then tries for about 35 seconds more before it fails with E1109. `progress` gives a
 	 * stage's figures while it has some: the bytes of a download, measured against the length that
@@ -587,16 +607,18 @@ export interface EngineMode {
 	/** The sketch time in seconds that hold mode holds the sketch at, or null for a live engine. */
 	hold: number | null;
 	/**
-	 * The quality preset that the engine runs. The preset check can lower it before `createEngine`
-	 * resolves, and `ctx.quality.setPreset` in the sketch changes it later.
+	 * The quality preset that the engine runs now. The preset check can lower it while it runs:
+	 * during the first frames of play, or before `createEngine` resolves with the `presetCheck`
+	 * option's `before-play`. `ctx.quality.setPreset` in the sketch changes it later. Once
+	 * `engine.presetChecked` has resolved, it holds the preset that the check chose.
 	 */
 	preset: QualityPreset;
 	/**
-	 * What the preset check measured, or null when no check ran. The engine checks the preset when
-	 * it chose it from the device: after the first frame, it measures the frame rate of the scene
-	 * that the setup built, and lowers the preset until one holds the target. A later start of the
-	 * sketch in the same browser on the same device takes the stored result instead, and starts at
-	 * its preset. `reused` is then true.
+	 * What the preset check measured, or null while the check runs, and when no check ran or the
+	 * sketch chose its own preset first. The engine checks the preset when it chose it from the
+	 * device: after the first frame, it measures the frame rate of the scene, and lowers the preset
+	 * until one holds the target. A later start of the sketch in the same browser on the same
+	 * device takes the stored result instead, and starts at its preset. `reused` is then true.
 	 */
 	presetCheck: PresetCheck | null;
 	/**
@@ -675,6 +697,14 @@ export interface Engine {
 	 * a loading screen. It never resolves when the engine is destroyed first.
 	 */
 	readonly firstFrame: Promise<void>;
+	/**
+	 * Resolves once the preset check has ended, so `mode.preset` holds the preset that the check
+	 * chose and `mode.presetCheck` what it measured. It has resolved when `createEngine` resolves
+	 * where no check runs: for a preset that the page names, a stored result, Low, and hold mode,
+	 * and with the `presetCheck` option's `before-play`. When the engine stops drawing first, it
+	 * resolves then, and `mode.presetCheck` stays null.
+	 */
+	readonly presetChecked: Promise<void>;
 	/** The HTML elements that follow the labels the sketch tracks with `ui.trackLabel`. */
 	readonly labels: EngineLabels;
 	/**
@@ -1841,6 +1871,8 @@ async function startEngine(
 	// The highest frame rate that the preset check, the governor and the stats overlay aim for.
 	const optionTarget = targetFpsOption(options.targetFps);
 	const maxTarget = maxTargetFps(switches.targetFps ?? optionTarget, switches.fps);
+	const optionCheck = presetCheckOption(options.presetCheck);
+	const checkTiming = switches.presetCheck ?? optionCheck ?? 'during-play';
 	const pageSettings = {
 		maxPixelRatio: options.maxPixelRatio,
 		antialias: options.antialias,
@@ -1949,6 +1981,14 @@ async function startEngine(
 	/** Ends hold mode's read-back of its frame, while it reads the frame back. */
 	let endHold: ((error: EngineError) => void) | undefined;
 	const stopHandlers = new Set<() => void>();
+	/**
+	 * Resolves `engine.presetChecked`: once the check ends, at once where none runs, and once the
+	 * engine draws no new frames, which ends a check that measures them.
+	 */
+	let endCheck: () => void = () => {};
+	const presetChecked = new Promise<void>((resolve) => {
+		endCheck = resolve;
+	});
 	/** True once the engine draws no new frames, which each stop handler hears once. */
 	let drawingEnded = false;
 	/** Runs a stop handler. One that throws is the page's error, which the console shows. */
@@ -1962,6 +2002,7 @@ async function startEngine(
 	const endDrawing = () => {
 		if (drawingEnded) return;
 		drawingEnded = true;
+		endCheck();
 		const handlers = [...stopHandlers];
 		stopHandlers.clear();
 		// The other handlers and the stop go on past one that throws.
@@ -2034,9 +2075,11 @@ async function startEngine(
 		quality: (update) => {
 			canvasWatch?.setMaxPixelRatio(update.settings.maxPixelRatio);
 			mode.preset = update.preset;
-			if (!update.check) return;
-			mode.presetCheck = update.check;
-			checkStore?.save(update.check, maxTarget);
+			if (update.check) {
+				mode.presetCheck = update.check;
+				checkStore?.save(update.check, maxTarget);
+			}
+			if (update.checked) endCheck();
 		},
 		stats: (show) => statsSwitch.show(show),
 		labelSlot: (id, table, slot, generation) => pageLabels?.setSlot(id, table, slot, generation),
@@ -2496,7 +2539,8 @@ async function startEngine(
 			textureCapMiB,
 			keepCopies: keepTextureCopies,
 			highest: withinTier('ultra', tier),
-			check: checks && !storedCheck,
+			// A replay steps through its recording, which leaves no frames of play to measure.
+			check: checks && !storedCheck && replay === undefined ? checkTiming : undefined,
 			lowest: startLowest,
 			lowestAllowed,
 			tier,
@@ -2515,6 +2559,7 @@ async function startEngine(
 			renderFallback,
 			keepTextureCopies,
 		};
+		if (quality.check === undefined) endCheck();
 		/**
 		 * The preset that the first frame draws at: the one the engine starts with, because its own
 		 * preset check draws that frame before it can step down. The page can end on a lighter preset,
@@ -2974,7 +3019,9 @@ async function startEngine(
 			};
 			requestAnimationFrame(check);
 		});
-		marker?.endAfter(firstFrame);
+		// The note covers the preset check as well as the first seconds of play, so a start whose
+		// check ends in a crash counts as one.
+		marker?.endAfter(Promise.all([firstFrame, presetChecked]).then(() => undefined));
 		if (DEV && switches.twoStep) void firstFrame.then(() => logTwoStep(slots, false));
 		/** Hold mode's frame, read back once. */
 		let held: CapturedFrame | undefined;
@@ -3014,6 +3061,7 @@ async function startEngine(
 			report,
 			mode,
 			firstFrame,
+			presetChecked,
 			labels,
 			postToSketch: sendToSketch,
 			registerVideo: (video, videoOptions) =>

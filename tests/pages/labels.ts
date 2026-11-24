@@ -73,6 +73,7 @@ run('labels', async () => {
 		};
 	}
 	await engine.firstFrame;
+	await engine.presetChecked;
 	const samples: number[] = [];
 	const until = performance.now() + SAMPLE_SECONDS * 1000;
 	await new Promise<void>((resolve) => {

@@ -22,6 +22,7 @@ run('reupload', async () => {
 	const failures: string[] = [];
 	engine.onFailure((error) => failures.push(`${error.code}: ${error.message}`));
 	await engine.firstFrame;
+	await engine.presetChecked;
 	progress('the first frame drew');
 	if (SETTLE > 0) {
 		await new Promise((resolve) => setTimeout(resolve, SETTLE * 1000));

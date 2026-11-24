@@ -1,10 +1,11 @@
 // The preset check's rules, apart from the code that runs it (sketch/preset-check.ts). When the
 // engine chooses the preset itself, the device hints only suggest it, so after the first frame the
-// engine draws the loading scene for a moment and measures the frame rate. It reads the lower of
-// the presented and completed rates, so frames that queue on the GPU cannot pass for a healthy
-// rate. A preset holds when that rate reaches most of the target. Otherwise the engine lowers the
-// preset by one and measures again, down to Low. These functions are pure, so tests call them with
-// any rates, and the docs generator reads the constants.
+// engine measures the frame rate for a moment: of play, or of the scene that the setup built
+// before play starts, as the page's choice of timing says. It reads the lower of the presented and
+// completed rates, so frames that queue on the GPU cannot pass for a healthy rate. A preset holds
+// when that rate reaches most of the target. Otherwise the engine lowers the preset by one and
+// measures again, down to Low. These functions are pure, so tests call them with any rates, and
+// the docs generator reads the constants.
 
 import type { QualityPreset } from './presets';
 
@@ -78,6 +79,19 @@ export interface PresetCheck {
 	 */
 	reused: boolean;
 }
+
+/**
+ * When the preset check measures, as `createEngine`'s `presetCheck` option and the
+ * `?preset-check=` switch name it. With `during-play`, the default, the scene plays from its first
+ * frame, and the check measures the first frames of play. With `before-play`, the check measures
+ * before the sketch's update runs, and the start waits for it.
+ *
+ * @category api/engine
+ */
+export type PresetCheckTiming = 'during-play' | 'before-play';
+
+/** The values of `PresetCheckTiming`, for the option's and the switch's checks. */
+export const PRESET_CHECK_TIMINGS: readonly PresetCheckTiming[] = ['during-play', 'before-play'];
 
 /**
  * The frame rate that the engine defends, as `createEngine`'s `targetFps` option and the

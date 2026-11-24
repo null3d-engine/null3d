@@ -51,6 +51,7 @@ run('input', async () => {
 		},
 	});
 	await engine.firstFrame;
+	await engine.presetChecked;
 	window.inputState = () =>
 		new Promise((resolve) => {
 			const off = engine.onSketchMessage((name, data) => {

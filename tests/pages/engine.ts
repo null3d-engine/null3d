@@ -106,6 +106,7 @@ run('engine', async () => {
 		memory: memoryOption === undefined ? undefined : { maximumMiB: memoryOption },
 	});
 	await engine.firstFrame;
+	await engine.presetChecked;
 	const stats = params.has('nomeasure') ? undefined : await measureDrawing(engine, seconds);
 	const pause = params.has('pause') ? await pauseAndCount(engine) : undefined;
 	const messages: string[] = [];

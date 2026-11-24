@@ -187,6 +187,7 @@ async function startEngine(
 		},
 	});
 	await engine.firstFrame;
+	await engine.presetChecked;
 	engine.onFailure(({ code }) => failures.push(code));
 	const deadline = performance.now() + 120_000;
 	while ((heard.at(-1) ?? 0) < start) {

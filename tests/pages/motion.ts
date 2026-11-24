@@ -24,6 +24,7 @@ run('motion', async () => {
 		maxPixelRatio: 1,
 	});
 	await engine.firstFrame;
+	await engine.presetChecked;
 	window.motionState = () =>
 		new Promise((resolve) => {
 			const off = engine.onSketchMessage((name, data) => {

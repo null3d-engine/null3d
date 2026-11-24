@@ -154,6 +154,7 @@ run('stats', async (): Promise<StatsResult> => {
 		...(bySwitch ? {} : { stats: true }),
 	});
 	await engine.firstFrame;
+	await engine.presetChecked;
 	window.showStats = (show) => engine.postToSketch('show', show);
 	window.showPageStats = (show) => engine.stats(show);
 	window.readOverlay = () => readOverlay(canvas);

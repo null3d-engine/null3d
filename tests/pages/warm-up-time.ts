@@ -26,6 +26,7 @@ run('warm-up-time', async () => {
 	const failures: string[] = [];
 	engine.onFailure((error) => failures.push(`${error.code}: ${error.message}`));
 	await engine.firstFrame;
+	await engine.presetChecked;
 	const metrics = await engine.measure(MEASURE_SECONDS);
 	// The engine notes when the GPU finished the first frame, which can come long before
 	// createEngine resolves. Both clocks count from the page's time origin.
