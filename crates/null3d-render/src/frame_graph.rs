@@ -586,6 +586,8 @@ const SHADOW_ATLAS: &str = "shadowAtlas";
 const LAYER_VIEWS: u32 = 128;
 /// No views of layers: a texture that no pass draws into by layer.
 const NO_VIEWS: u32 = u32::MAX;
+/// The slot of no texture: a view whose target the draw lists have not made.
+const NO_SLOT: u32 = u32::MAX;
 
 /// The shadow passes of a directional light: its cascades, the texels on each side of each
 /// cascade's layer, and the light's layer mask, which selects the casters.
@@ -1035,8 +1037,7 @@ pub(crate) struct FrameGraph {
     /// The full-screen passes' GPU objects.
     fullscreen_ids: FullscreenIds,
     fullscreen: FullscreenPasses,
-    /// The compute passes' GPU objects.
-    compute_ids: ComputePassIds,
+    /// The compute passes' GPU objects and states.
     compute: ComputePasses,
     /// The states that each fragment form of a compute pass keeps, by view place: the one that its
     /// next run writes, the one that its last run wrote, the one that its next frame starts from,
@@ -1301,11 +1302,34 @@ pub(crate) struct FrameGraph {
     /// passes and before the camera's first render pass, or `None` in a frame that captures no
     /// probe (see [`crate::probes`]).
     probe_filter: Option<[u32; 10]>,
-    /// The id of the texture that holds the plan's first texture. The others follow it.
+    /// The id of the texture in the draw lists' first slot. The other slots follow it.
     first_texture: u32,
-    /// Each texture of the plan that the draw lists made, with the size it was made at and, for a
-    /// multisampled target, whether it resolved into the canvas.
-    made: Vec<(PlannedTexture, (u32, u32), bool)>,
+    /// The texture that the draw lists made in each slot, with the size it was made at and, for a
+    /// multisampled target, whether it resolved into the canvas, or `None` for a free slot.
+    made: Vec<Option<MadeTexture>>,
+    /// The slot that holds each texture of the plan, by the plan's index. A view's target keeps
+    /// its slot while its shape and size stay, wherever a new plan lists it, so a view keeps its
+    /// image when targets before it come and go, as a preset change makes them.
+    slots: Vec<u32>,
+    /// The slot that each view's target held after the textures were last made, by view place,
+    /// or [`NO_SLOT`].
+    view_slots: Vec<u32>,
+    /// The slots that the textures being made take, and the slots made anew among them.
+    slot_taken: Vec<bool>,
+    slot_new: Vec<bool>,
+    /// For each texture of the plan, the slot that the views of its layers were made for.
+    layer_slots: Vec<u32>,
+    /// The views, as a mask of places, whose target the frame made anew at the size it had,
+    /// after the view drew: a new format or usage leaves the texture empty. Each draws into it in
+    /// this frame, as a view draws into a texture of a new size, though it rests or waits for its
+    /// turn. A full-screen pass whose pipeline for the new format is still building draws again in
+    /// each frame until it is built.
+    refill: u32,
+    /// The views of `refill` that draw with built pipelines in this frame, which the next frame
+    /// leaves out.
+    refill_served: u32,
+    /// The views, as a mask of places, whose full-screen pass has its pipeline built.
+    fullscreen_built: u32,
     /// True when the frame being recorded made or released a texture of the plan.
     textures_made: bool,
     /// The canvas size the draw lists set last, or `(0, 0)` before any.
@@ -1427,7 +1451,6 @@ impl FrameGraph {
                 fullscreen_target_format(scene_color),
                 gpu_culling && antialias.samples() > 1,
             ),
-            compute_ids: ids.compute,
             compute: ComputePasses::new(ids.compute),
             fallback_state: [0; MAX_VIEWS],
             fallback_newest: [0; MAX_VIEWS],
@@ -1553,6 +1576,14 @@ impl FrameGraph {
             canvas: (0, 0),
             layer_views: Vec::new(),
             made_views: 0,
+            slots: Vec::new(),
+            view_slots: Vec::new(),
+            slot_taken: Vec::new(),
+            slot_new: Vec::new(),
+            layer_slots: Vec::new(),
+            refill: 0,
+            refill_served: 0,
+            fullscreen_built: 0,
             shadow_map: false,
             cascade_format: CascadeDepth::default().format(),
             shadows: None,
@@ -1596,7 +1627,9 @@ impl FrameGraph {
             fullscreen_target_format(scene_color),
             self.gpu_culling && self.samples > 1,
         );
-        self.compute = ComputePasses::new(self.compute_ids);
+        // The compute passes keep their objects and states: they draw into textures of their own
+        // format, which the scene color does not choose, so a pass with history goes on from the
+        // state that its last run wrote.
         self.effect_count = 0;
         self.effect_depths = 0;
         self.effect_blooms = [0; MAX_EFFECTS];
@@ -1856,6 +1889,7 @@ impl FrameGraph {
         self.made
             .get(id.checked_sub(self.first_texture)? as usize)
             .copied()
+            .flatten()
     }
 
     /// True while ambient occlusion's steps draw: the sketch turned ambient occlusion or the
@@ -3156,9 +3190,40 @@ impl FrameGraph {
         self.resting[pass.index()] = resting;
     }
 
-    /// True when the frame skips a pass that the plan holds, because its view rests.
+    /// True when the frame skips a pass that the plan holds, because its view rests. A view that
+    /// refills a texture made anew draws in this frame all the same.
     fn rests(&self, pass: PassId) -> bool {
         self.resting.get(pass.index()).copied().unwrap_or(false)
+            && !role_view_of(self.roles[pass.index()])
+                .is_some_and(|view| self.refills(view.index()))
+    }
+
+    /// True when the view at `place` draws in this frame only to refill its target, which the
+    /// frame made anew after the view drew (see [`FrameGraph::refill`]).
+    fn refills(&self, place: usize) -> bool {
+        place < MAX_VIEWS && self.refill & (1 << place) != 0
+    }
+
+    /// True when the view at `place` draws in this frame only to refill its target, and its own
+    /// turn has not come. A pass with history then runs no step: on WebGPU it copies the states
+    /// that it holds into the new target, and on WebGL2 its states, which the old target held,
+    /// start again from empty.
+    fn refills_only(&self, place: usize) -> bool {
+        self.refills(place)
+            && self
+                .declared_views
+                .get(place)
+                .is_some_and(|view| !view.target().draws())
+    }
+
+    /// True when the view at `place` draws in this frame: its turn has come, or it refills its
+    /// target.
+    fn view_draws(&self, place: usize) -> bool {
+        self.refills(place)
+            || self
+                .declared_views
+                .get(place)
+                .is_none_or(|view| view.target().draws())
     }
 
     /// True when a view culls in two phases against its depth pyramid: with occlusion culling,
@@ -4789,7 +4854,9 @@ impl FrameGraph {
             list.push(Op::ResizeCanvas, &[canvas.0, canvas.1])?;
             self.canvas = canvas;
         }
+        self.refill &= !std::mem::take(&mut self.refill_served);
         self.textures_made = (compiled || resized || rescaled) && self.make_textures(list)?;
+        self.refill_served = self.refill & !(self.fullscreen_views & !self.fullscreen_built);
         self.begin_compute_frame(list)?;
         Ok(())
     }
@@ -4817,7 +4884,12 @@ impl FrameGraph {
             let ready = !pass.maps.any() || pass.maps.group != 0;
             let runs = ready && target.is_some() && self.compute_runs(place);
             let drawn = view_size(&self.declared_views[place]).made(self.canvas, self.scale);
-            self.compute.begin_frame(place, pass, runs, drawn);
+            let steps = runs && !(pass.history && self.refills_only(place));
+            self.compute.begin_frame(place, pass, steps, drawn);
+            // A target made anew holds no state, so the states that the pass holds reach it.
+            if runs && pass.history && self.refills(place) {
+                self.compute.refill(place, pass, drawn);
+            }
         }
         // The fragment form of a compute pass on WebGL2 keeps its states in the full-screen pass.
         for place in 1..self.declared_views.len() {
@@ -4851,11 +4923,20 @@ impl FrameGraph {
                 self.fallback_state[place] = 0;
                 self.fallback_newest[place] = 0;
             }
+            // The states were the layers of a target that the frame made anew, so they start again
+            // from empty, as they do after a lost device.
+            if pass.history && self.refills(place) {
+                self.fallback_state[place] = 0;
+                self.fallback_newest[place] = 0;
+            }
             self.fallback_sized[place] = drawn;
             self.fallback_layers[place] = layers;
             self.fallback_seen[place] = Some(seen);
             let ready = !pass.maps.any() || pass.maps.group != 0;
-            let runs = ready && target.is_some() && self.fullscreen_runs(place);
+            let runs = ready
+                && target.is_some()
+                && self.fullscreen_runs(place)
+                && !(pass.history && self.refills_only(place));
             self.fallback_draw[place] = self.fallback_state[place];
             if pass.history && runs && pass.steps > 0 {
                 self.fallback_newest[place] =
@@ -5189,9 +5270,17 @@ impl FrameGraph {
         pipelines_built: u32,
         views: &[View],
     ) {
+        self.fullscreen_built = 0;
         for (place, view) in views.iter().enumerate() {
             if let Some(pass) = view.fullscreen_pass().filter(|_| !view.is_removed()) {
                 self.fullscreen.request_pipeline(pipelines, place, pass);
+                let built = self
+                    .fullscreen
+                    .pipeline(place)
+                    .is_some_and(|id| pipelines.built(id, pipelines_built));
+                if place < MAX_VIEWS {
+                    self.fullscreen_built |= u32::from(built) << place;
+                }
             }
         }
         // The views that this frame declares, not the ones declared last frame: a view that appears
@@ -5684,11 +5773,7 @@ impl FrameGraph {
     fn fullscreen_runs(&self, place: usize) -> bool {
         // A cadence skips the frames between its turns, and the pass records and advances its
         // history state only in the frames that it draws.
-        if self
-            .declared_views
-            .get(place)
-            .is_some_and(|view| !view.target().draws())
-        {
+        if !self.view_draws(place) {
             return false;
         }
         let Some(plan) = self.graph.plan() else {
@@ -5750,11 +5835,7 @@ impl FrameGraph {
     fn compute_runs(&self, place: usize) -> bool {
         // A cadence skips the frames between its turns, and the pass records and advances its
         // history state only in the frames that it draws.
-        if self
-            .declared_views
-            .get(place)
-            .is_some_and(|view| !view.target().draws())
-        {
+        if !self.view_draws(place) {
             return false;
         }
         let Some(plan) = self.graph.plan() else {
@@ -6226,59 +6307,141 @@ impl FrameGraph {
     fn make_textures(&mut self, list: &mut DrawList) -> Result<bool, RecordError> {
         let start = list.len();
         let into_canvas = !self.final_runs();
-        let textures = self
+        let plan = self
             .graph
             .plan()
-            .expect("the graph compiled before its textures are made")
-            .textures();
-        let mut views = 0;
-        for (index, texture) in textures.iter().enumerate() {
-            let target = texture.target;
-            let made = (
-                *texture,
-                texture.size.made(self.canvas, self.scale),
-                into_canvas && target.samples > 1,
-            );
-            let by_layer =
-                target.is_array() && texture.usage & texture_usage::RENDER_ATTACHMENT != 0;
-            let first_view = if by_layer { views } else { NO_VIEWS };
-            if by_layer {
-                views += target.layers;
+            .expect("the graph compiled before its textures are made");
+        let textures = plan.textures();
+        let (canvas, scale) = (self.canvas, self.scale);
+        let wanted = |index: usize| -> MadeTexture {
+            let texture = textures[index];
+            (
+                texture,
+                texture.size.made(canvas, scale),
+                into_canvas && texture.target.samples > 1,
+            )
+        };
+        let count = textures.len();
+        let capacity = count.max(self.made.len());
+        self.slots.clear();
+        self.slots.resize(count, NO_SLOT);
+        self.slot_taken.clear();
+        self.slot_taken.resize(capacity, false);
+        self.slot_new.clear();
+        self.slot_new.resize(capacity, false);
+        // A view's target keeps the slot that it held while its texture stays as it was, so the
+        // image it drew survives a plan that lists it elsewhere. One made anew at its old size
+        // holds no image, and a view that has drawn draws into it once.
+        let views = self.view_colors.len().min(MAX_VIEWS);
+        for place in 1..views {
+            let Some(resource) = self.view_colors[place] else {
+                continue;
+            };
+            let Some(Surface::Texture(index)) = plan.texture_of(resource) else {
+                continue;
+            };
+            let index = usize::from(index);
+            let held = self.view_slots.get(place).copied().unwrap_or(NO_SLOT);
+            let Some(old) = self.made.get(held as usize).copied().flatten() else {
+                continue;
+            };
+            let new = wanted(index);
+            if old == new && self.slots[index] == NO_SLOT && !self.slot_taken[held as usize] {
+                self.slots[index] = held;
+                self.slot_taken[held as usize] = true;
+            } else if old.1 == new.1 && self.view_drew.get(place).copied().unwrap_or(false) {
+                self.refill |= 1 << place;
             }
-            let moved = self.layer_views.get(index) != Some(&first_view);
+        }
+        // Every other texture keeps its own place where the slot there holds what it needs.
+        for index in 0..count {
+            if self.slots[index] == NO_SLOT
+                && !self.slot_taken[index]
+                && self.made.get(index).copied().flatten() == Some(wanted(index))
+            {
+                self.slots[index] = index as u32;
+                self.slot_taken[index] = true;
+            }
+        }
+        // The rest are made in a free slot: their own place where it is free, or the first free.
+        let mut free = 0;
+        for index in 0..count {
+            if self.slots[index] != NO_SLOT {
+                continue;
+            }
+            let slot = if self.slot_taken[index] {
+                while self.slot_taken[free] {
+                    free += 1;
+                }
+                free
+            } else {
+                index
+            };
+            self.slots[index] = slot as u32;
+            self.slot_taken[slot] = true;
+            self.slot_new[slot] = true;
+            let made = wanted(index);
+            create_texture(list, self.first_texture + slot as u32, (made.0, made.1))?;
+            if self.made.len() <= slot {
+                self.made.resize(slot + 1, None);
+            }
+            self.made[slot] = Some(made);
+        }
+        let mut layers = 0;
+        for index in 0..count {
+            let target = textures[index].target;
+            let slot = self.slots[index];
+            let by_layer =
+                target.is_array() && textures[index].usage & texture_usage::RENDER_ATTACHMENT != 0;
+            let first_view = if by_layer { layers } else { NO_VIEWS };
+            if by_layer {
+                layers += target.layers;
+            }
+            let moved = self.layer_views.get(index) != Some(&first_view)
+                || self.layer_slots.get(index) != Some(&slot);
             match self.layer_views.get_mut(index) {
-                Some(slot) => *slot = first_view,
+                Some(views) => *views = first_view,
                 None => self.layer_views.push(first_view),
             }
-            let remade = self.made.get(index) != Some(&made);
-            if remade {
-                create_texture(list, self.first_texture + index as u32, (made.0, made.1))?;
-                match self.made.get_mut(index) {
-                    Some(slot) => *slot = made,
-                    None => self.made.push(made),
-                }
+            match self.layer_slots.get_mut(index) {
+                Some(held) => *held = slot,
+                None => self.layer_slots.push(slot),
             }
-            if by_layer && (remade || moved) {
-                let texture_id = self.first_texture + index as u32;
+            if by_layer && (self.slot_new[slot as usize] || moved) {
+                let texture_id = self.first_texture + slot;
                 for layer in 0..target.layers {
-                    let view_id = self.view_id(first_view, layer);
+                    let view_id = self.first_texture + LAYER_VIEWS + first_view + layer;
                     list.push(Op::CreateTextureView, &[view_id, texture_id, 0, layer])?;
                 }
             }
         }
         debug_assert!(
-            textures.len() as u32 <= LAYER_VIEWS && views <= LAYER_VIEWS,
+            self.made.len() as u32 <= LAYER_VIEWS && layers <= LAYER_VIEWS,
             "the plan's textures and views fit the ids the graph has"
         );
-        for view in views..self.made_views {
+        for view in layers..self.made_views {
             list.push(Op::DestroyTexture, &[self.view_id(view, 0)])?;
         }
-        self.made_views = views;
-        self.layer_views.truncate(textures.len());
-        for index in textures.len()..self.made.len() {
-            list.push(Op::DestroyTexture, &[self.first_texture + index as u32])?;
+        self.made_views = layers;
+        self.layer_views.truncate(count);
+        self.layer_slots.truncate(count);
+        for slot in 0..self.made.len() {
+            if !self.slot_taken[slot] && self.made[slot].take().is_some() {
+                list.push(Op::DestroyTexture, &[self.first_texture + slot as u32])?;
+            }
         }
-        self.made.truncate(textures.len());
+        while self.made.last() == Some(&None) {
+            self.made.pop();
+        }
+        self.view_slots.clear();
+        self.view_slots.resize(views, NO_SLOT);
+        for place in 1..views {
+            if let Some(resource) = self.view_colors[place]
+                && let Some(Surface::Texture(index)) = plan.texture_of(resource)
+            {
+                self.view_slots[place] = self.slots[usize::from(index)];
+            }
+        }
         Ok(list.len() != start)
     }
 
@@ -6403,7 +6566,7 @@ impl FrameGraph {
                             let Some(content) = self.declared_views[place].fullscreen_pass() else {
                                 continue;
                             };
-                            if !content.fallback {
+                            if !content.fallback || (content.history && self.refills_only(place)) {
                                 continue;
                             }
                             if let Some(target) = self.view_target(view) {
@@ -6445,7 +6608,9 @@ impl FrameGraph {
                                     let before = list.len();
                                     let drawn = view_size(&self.declared_views[place])
                                         .made(self.canvas, self.scale);
-                                    self.compute.record(list, place, pass, drawn)?;
+                                    if !(pass.history && self.refills_only(place)) {
+                                        self.compute.record(list, place, pass, drawn)?;
+                                    }
                                     wrote |= list.len() > before;
                                     if pass.history {
                                         // A reader later in this step samples the target, so the
@@ -6701,8 +6866,7 @@ impl FrameGraph {
         // A view records its work only in a frame that is its turn: a cadence waits out the frames
         // between its turns, and the graph keeps its passes in the plan throughout.
         if let Some(view) = role_view_of(role)
-            && let Some(declared) = self.declared_views.get(view.index())
-            && !declared.target().draws()
+            && !self.view_draws(view.index())
         {
             return false;
         }
@@ -6940,7 +7104,10 @@ impl FrameGraph {
     fn texture_id(&self, surface: Surface) -> u32 {
         match surface {
             Surface::Canvas => 0,
-            Surface::Texture(index) => self.first_texture + u32::from(index),
+            Surface::Texture(index) => {
+                let index = usize::from(index);
+                self.first_texture + self.slots.get(index).copied().unwrap_or(index as u32)
+            }
         }
     }
 
@@ -7019,8 +7186,13 @@ impl FrameGraph {
     /// GPU.
     pub(crate) fn reset_gpu(&mut self) {
         self.made.clear();
+        self.slots.clear();
+        self.view_slots.clear();
         self.layer_views.clear();
+        self.layer_slots.clear();
         self.made_views = 0;
+        self.refill = 0;
+        self.refill_served = 0;
         self.fallback_state = [0; MAX_VIEWS];
         self.fallback_newest = [0; MAX_VIEWS];
         self.fallback_draw = [0; MAX_VIEWS];
@@ -7416,7 +7588,14 @@ mod tests {
         frames.request_pipelines(&mut PipelineCache::default(), 0);
         let mut list = DrawList::with_capacity(256);
         let half = RenderScale::from_thousandths(500);
-        let made = |frames: &FrameGraph| frames.made.iter().map(|made| made.1).collect::<Vec<_>>();
+        let made = |frames: &FrameGraph| {
+            frames
+                .made
+                .iter()
+                .flatten()
+                .map(|made| made.1)
+                .collect::<Vec<_>>()
+        };
         frames.prepare(&mut list, (64, 48), half).unwrap();
         assert!(frames.textures_made());
         assert!(
@@ -12438,6 +12617,39 @@ mod tests {
         (prepared, uploaded, recorded)
     }
 
+    /// One frame, as [`probe_frame`] draws it, with its render steps recorded too: the graph's own
+    /// draws, such as a full-screen pass's and the final pass's.
+    fn drawn_frame(frames: &mut FrameGraph, canvas: (u32, u32)) -> (DrawList, DrawList) {
+        let mut prepared = DrawList::with_capacity(65536);
+        frames
+            .prepare(&mut prepared, canvas, RenderScale::FULL)
+            .unwrap();
+        let mut arena = UploadArena::default();
+        arena.begin_frame().unwrap();
+        let mut uploaded = DrawList::with_capacity(65536);
+        frames
+            .upload(
+                &mut uploaded,
+                &mut arena,
+                Output::default(),
+                Grading::default(),
+            )
+            .unwrap();
+        let mut recorded = DrawList::with_capacity(65536);
+        frames
+            .record(
+                &mut recorded,
+                |_| [0.0; 4],
+                |_| false,
+                |_: &mut DrawList, _: Role| Ok(()),
+                |_| Ok(()),
+                |_| Ok(()),
+                |_| Ok(()),
+            )
+            .unwrap();
+        (prepared, recorded)
+    }
+
     #[test]
     fn a_compute_reader_in_the_same_step_samples_the_copied_state() {
         let mut frames = frame_graph(format::RGBA16_FLOAT, Antialias::Fxaa, true, false);
@@ -12677,6 +12889,173 @@ mod tests {
                 "frame {frame}: the run reads an older state, not the one that the frame before left"
             );
         }
+    }
+
+    /// Draws `view` at view place 1 for two frames, then stops it, and returns the view as stopped,
+    /// with the stopped view's frame drawn.
+    fn stopped_pass(frames: &mut FrameGraph, view: View) -> View {
+        frames.sync(&[View::default(), view]);
+        frames.request_fullscreen_pipelines(
+            &mut PipelineCache::default(),
+            0,
+            &[View::default(), view],
+        );
+        probe_frame(frames, (64, 48));
+        probe_frame(frames, (64, 48));
+        let mut stopped = view;
+        stopped.target_mut().enabled = false;
+        frames.sync(&[View::default(), stopped]);
+        probe_frame(frames, (64, 48));
+        stopped
+    }
+
+    /// The commands of a recorded list that draw or dispatch, or copy into `target`.
+    fn drawn_into(recorded: &DrawList, target: u32) -> usize {
+        operands(recorded, Op::Dispatch).len()
+            + operands(recorded, Op::Draw).len()
+            + operands(recorded, Op::CopyTextureToTexture)
+                .iter()
+                .filter(|copy| copy[5] == target)
+                .count()
+    }
+
+    /// A stopped pass's texture keeps its last image, and a preset change must not take it. A
+    /// shadow map that a preset adds, or the color copy that a lighter preset drops, comes before
+    /// the views' targets in the plan, and moved each target to another texture, which held
+    /// nothing.
+    #[test]
+    fn a_stopped_pass_keeps_its_texture_when_a_target_before_it_comes() {
+        for gpu in [true, false] {
+            let views = if gpu {
+                vec![
+                    compute(true),
+                    fullscreen(PassSource::None, true),
+                    history_compute(true, 1, 1),
+                ]
+            } else {
+                vec![fallback(1), fullscreen(PassSource::None, true)]
+            };
+            for view in views {
+                let mut frames = frame_graph(format::RGBA16_FLOAT, Antialias::Msaa, gpu, false);
+                let stopped = stopped_pass(&mut frames, view);
+                let target = frames.view_target(ViewId::from_index(1)).unwrap();
+                let newest = frames.read_layer(1, u32::MAX);
+                frames.bind_shadow_map(CascadeDepth::Unorm16);
+                frames.sync(&[View::default(), stopped]);
+                let (prepared, _u, recorded) = probe_frame(&mut frames, (64, 48));
+                assert!(
+                    frames.graph().find_resource(SHADOW_MAP).is_some(),
+                    "the shadow map joins the plan"
+                );
+                let now = frames.view_target(ViewId::from_index(1)).unwrap();
+                let remade = operands(&prepared, Op::CreateTexture)
+                    .iter()
+                    .any(|texture| texture[0] == now);
+                assert_eq!(
+                    now, target,
+                    "gpu {gpu}: the stopped pass's target keeps its texture"
+                );
+                assert!(
+                    !remade,
+                    "gpu {gpu}: the stopped pass's texture is not made again"
+                );
+                assert_eq!(
+                    drawn_into(&recorded, now),
+                    0,
+                    "gpu {gpu}: a stopped pass whose texture stays draws nothing"
+                );
+                assert_eq!(
+                    frames.refill, 0,
+                    "gpu {gpu}: nothing refills a kept texture"
+                );
+                assert_eq!(
+                    frames.read_layer(1, u32::MAX),
+                    newest,
+                    "gpu {gpu}: readers keep the newest state"
+                );
+            }
+        }
+    }
+
+    /// A move to the 8-bit path makes a full-screen pass's target again in the new format, which
+    /// holds no image: the stopped pass draws into it once, and then rests again.
+    #[test]
+    fn a_stopped_pass_draws_once_into_a_target_made_in_a_new_format() {
+        let mut frames = frame_graph(format::RGBA16_FLOAT, Antialias::Msaa, true, false);
+        let stopped = stopped_pass(&mut frames, fullscreen(PassSource::None, true));
+        frames.set_canvas(CanvasOutput {
+            scene_color: SceneColor::from_format(format::CANVAS),
+            antialias: Antialias::Fxaa,
+            transparent: false,
+        });
+        frames.sync(&[View::default(), stopped]);
+        frames.request_fullscreen_pipelines(
+            &mut PipelineCache::default(),
+            0,
+            &[View::default(), stopped],
+        );
+        frames.request_pipelines(&mut PipelineCache::default(), 0);
+        let (prepared, refilled) = drawn_frame(&mut frames, (64, 48));
+        let target = frames.view_target(ViewId::from_index(1)).unwrap();
+        assert!(
+            operands(&prepared, Op::CreateTexture)
+                .iter()
+                .any(|texture| texture[0] == target),
+            "the 8-bit path makes the pass's target again"
+        );
+        let (_p, rested) = drawn_frame(&mut frames, (64, 48));
+        let (_p, still) = drawn_frame(&mut frames, (64, 48));
+        assert_eq!(
+            operands(&refilled, Op::Draw).len(),
+            operands(&rested, Op::Draw).len() + 1,
+            "the stopped pass draws its image into the new target once"
+        );
+        assert_eq!(
+            operands(&rested, Op::Draw).len(),
+            operands(&still, Op::Draw).len(),
+            "then it rests again"
+        );
+    }
+
+    /// A move between MSAA and FXAA, as a preset change to Low makes, keeps a history pass's
+    /// states on WebGPU: a stopped pass's readers keep the newest state, and a running pass goes on
+    /// from it rather than from empty.
+    #[test]
+    fn a_canvas_mode_change_keeps_a_history_pass_s_states() {
+        let mut frames = frame_graph(format::RGBA16_FLOAT, Antialias::Msaa, true, false);
+        let view = history_compute(true, 1, 1);
+        let stopped = stopped_pass(&mut frames, view);
+        let newest = frames.read_layer(1, u32::MAX);
+        frames.set_canvas(CanvasOutput {
+            scene_color: SceneColor::from_format(format::RGBA16_FLOAT),
+            antialias: Antialias::Fxaa,
+            transparent: false,
+        });
+        frames.sync(&[View::default(), stopped]);
+        probe_frame(&mut frames, (64, 48));
+        assert_eq!(
+            frames.read_layer(1, u32::MAX),
+            newest,
+            "a stopped pass's readers keep the newest state"
+        );
+        frames.sync(&[View::default(), view]);
+        let (_p, uploaded, recorded) = probe_frame(&mut frames, (64, 48));
+        assert!(
+            operands(&uploaded, Op::CreateTexture)
+                .iter()
+                .all(|texture| texture[0] != 602 && texture[0] != 603),
+            "the pass keeps its state textures"
+        );
+        assert_eq!(
+            operands(&recorded, Op::Dispatch).len(),
+            1,
+            "the pass runs on"
+        );
+        assert_ne!(
+            frames.read_layer(1, u32::MAX),
+            newest,
+            "its run reads the newest state and writes the other"
+        );
     }
 
     /// The builders ask for a frame's pipelines before they sync its views, so a view that appears

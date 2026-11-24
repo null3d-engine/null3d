@@ -198,6 +198,15 @@ impl FullscreenPasses {
         }
     }
 
+    /// The id of the pipeline that the pass at view place `place` draws with, once asked for.
+    pub(crate) fn pipeline(&self, place: usize) -> Option<u32> {
+        self.pipelines
+            .get(place)
+            .copied()
+            .flatten()
+            .map(|(_, _, _, id)| id)
+    }
+
     /// The output's sizes that the last block of the pass at view place `place` gave its shader.
     #[cfg(test)]
     pub(crate) fn drawn(&self, place: usize) -> Option<[f32; 4]> {
