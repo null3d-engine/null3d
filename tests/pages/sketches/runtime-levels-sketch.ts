@@ -18,7 +18,11 @@ const SCALE = 20;
 /** How far to the side the grid in parts draws, and the same grid without pieces to the other. */
 const PIECED_X = 500;
 
-/** The planner's task, run straight from the sketch with meshoptimizer's modules. */
+/**
+ * The planner's task, run straight from the sketch with meshoptimizer's modules. A worker starts
+ * all three modules at its first plan, so the task names each of them: a worker that takes this
+ * task before any mesh's plan has none of them otherwise.
+ */
 const PLANNER = {
 	name: 'levels',
 	wasm: [
@@ -34,6 +38,14 @@ const PLANNER = {
 			name: 'meshopt-encoder',
 			url: new URL('../../../packages/engine/vendor/meshopt/meshopt_encoder.wasm', import.meta.url),
 			what: "meshoptimizer's vertex cache order",
+		},
+		{
+			name: 'meshopt-clusterizer',
+			url: new URL(
+				'../../../packages/engine/vendor/meshopt/meshopt_clusterizer.wasm',
+				import.meta.url,
+			),
+			what: "meshoptimizer's clusterizer",
 		},
 	],
 };
