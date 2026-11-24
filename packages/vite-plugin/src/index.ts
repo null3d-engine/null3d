@@ -21,6 +21,7 @@ import {
 	optimizedModel,
 } from './assets.ts';
 import { CompilerPool } from './compile-pool.ts';
+import { compressAnswers, compressedFiles, fromLoopback } from './compress.ts';
 import { writeWgslDeclaration } from './declarations.ts';
 import {
 	ENGINE_SHADERS_ENV,
@@ -84,6 +85,13 @@ export interface Null3dPluginOptions {
 	 * mkcert. Phones and tablets reached over the network need HTTPS for shared memory and WebGPU.
 	 */
 	https?: boolean;
+	/**
+	 * Serve the `https` server over HTTP/2, which sends every request at once on one connection,
+	 * where HTTP/1.1 sends six at a time. The dev server sends each module as its own file, and every
+	 * engine thread loads its own copies, so a page asks for hundreds. The default is false, because
+	 * Safari on an iPad sometimes stops while a worker loads its modules over HTTP/2.
+	 */
+	http2?: boolean;
 	/** Directory that holds `cert.pem` and `key.pem`; the default is `target/dev-cert` under the project root. */
 	certDir?: string;
 	/**
@@ -127,12 +135,33 @@ export const immutableAssetsMiddleware: Connect.NextHandleFunction = (req, res, 
 };
 
 /**
- * The HTTPS server's settings: the certificate, and HTTP/1.1 only. Vite serves HTTPS over HTTP/2,
- * where Safari on iPad sometimes stalls while a worker loads its modules: a development server
- * sends each module as its own file, and every engine thread loads its own copies.
+ * Takes `Origin` out of the Vary header of an answer to a request from the page's own origin, with
+ * the CORS header that the origin chose. Vite's CORS step marks every answer as varying by the
+ * request's Origin. The engine's page downloads the sketch module early with `fetch`, which sends no
+ * Origin, and the worker's import of it sends one. Without this, the browser cannot use the early
+ * copy and asks the server again, one round trip per such file. A request from the same origin needs
+ * no CORS header, and the browser names such a request in its Sec-Fetch-Site header.
  */
-function httpsOptions(certificate: { cert: Buffer; key: Buffer }) {
-	return { ...certificate, ALPNCallback: () => 'http/1.1' };
+export const sameOriginMiddleware: Connect.NextHandleFunction = (req, res, next) => {
+	if (req.headers['sec-fetch-site'] !== 'same-origin') return next();
+	const vary = String(res.getHeader('Vary') ?? '')
+		.split(',')
+		.map((field) => field.trim())
+		.filter((field) => field !== '' && field.toLowerCase() !== 'origin');
+	if (vary.length > 0) res.setHeader('Vary', vary.join(', '));
+	else res.removeHeader('Vary');
+	res.removeHeader('Access-Control-Allow-Origin');
+	next();
+};
+
+/**
+ * The HTTPS server's settings: the certificate, and HTTP/1.1 only unless `http2` asks for HTTP/2.
+ * Vite serves HTTPS over HTTP/2, where Safari on iPad sometimes stalls while a worker loads its
+ * modules: a development server sends each module as its own file, and every engine thread loads
+ * its own copies.
+ */
+function httpsOptions(certificate: { cert: Buffer; key: Buffer }, http2: boolean) {
+	return http2 ? certificate : { ...certificate, ALPNCallback: () => 'http/1.1' };
 }
 
 function readCertificate(root: string, certDir: string): { cert: Buffer; key: Buffer } {
@@ -529,7 +558,7 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin[] {
 		config(config, { mode }) {
 			const root = config.root ?? process.cwd();
 			const https = options.https
-				? httpsOptions(readCertificate(root, options.certDir ?? DEV_CERT_DIR))
+				? httpsOptions(readCertificate(root, options.certDir ?? DEV_CERT_DIR), !!options.http2)
 				: undefined;
 			return {
 				// Development checks stay in dev builds; release builds drop them as dead code.
@@ -963,6 +992,8 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin[] {
 			},
 		},
 		configureServer(server) {
+			// Ahead of every other step, so it sees each answer of the server and its plugins.
+			server.middlewares.use(compressAnswers((req) => !fromLoopback(req)));
 			server.middlewares.use(queryExtensionMiddleware());
 			// The engine's shader modules sit outside the project, in the machine's cache or in the
 			// folder that names a set, and the page and its workers reach them from there.
@@ -980,9 +1011,21 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin[] {
 			});
 		},
 		configurePreviewServer(server) {
+			const { config } = server;
+			// Every visitor gets compressed answers, as from a host: the build's own files from the
+			// step below, and the answers of other plugins' routes, such as model files, from this one.
+			server.middlewares.use(compressAnswers(() => true));
 			server.middlewares.use(queryExtensionMiddleware());
 			server.middlewares.use(isolationMiddleware);
 			server.middlewares.use(immutableAssetsMiddleware);
+			server.middlewares.use(sameOriginMiddleware);
+			server.middlewares.use(
+				compressedFiles(
+					resolve(config.root, config.build.outDir),
+					config.base,
+					config.preview.headers,
+				),
+			);
 		},
 	};
 

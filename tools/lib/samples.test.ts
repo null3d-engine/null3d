@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'bun:test';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
+import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import {
 	copyNamedSamples,
 	LOCK_PATH,
@@ -12,10 +14,13 @@ import {
 	readLock,
 	readSampleManifest,
 	repositoryRoot,
+	SAMPLE_HASHES_CONSTANT,
 	type SampleManifest,
 	sampleFileFor,
+	sampleHashes,
 	sampleProblems,
 	samplesCacheRoot,
+	samplesServer,
 	sha256,
 	verifyFiles,
 } from './samples';
@@ -326,6 +331,75 @@ describe('copyNamedSamples', () => {
 			else process.env.NULL3D_SAMPLES_DIR = before;
 			rmSync(cache, { recursive: true, force: true });
 			rmSync(out, { recursive: true, force: true });
+		}
+	});
+});
+
+describe('sampleHashes', () => {
+	it("gives each sample file that a demo names the start of its manifest's SHA-256", () => {
+		const hashes = sampleHashes(repoRoot);
+		const pinned = new Map(
+			readSampleManifest(repoRoot).assets.flatMap((a) => a.files.map((f) => [f.path, f] as const)),
+		);
+		const named = namedSamples(repoRoot, ['examples']).map((sample) => sample.path);
+		expect(Object.keys(hashes).sort()).toEqual([...new Set(named)].sort() as string[]);
+		for (const [path, hash] of Object.entries(hashes))
+			expect(hash).toBe(pinned.get(path)?.sha256.slice(0, 16) ?? '');
+	});
+
+	it('reaches the demos through the build constant that examples/lib/samples.ts reads', () => {
+		const config = samplesServer(repoRoot).config as () => { define: Record<string, string> };
+		expect(JSON.parse(config().define[SAMPLE_HASHES_CONSTANT] ?? '')).toEqual(
+			sampleHashes(repoRoot),
+		);
+		const page = readFileSync(join(repoRoot, 'examples/lib/samples.ts'), 'utf8');
+		expect(page).toContain(SAMPLE_HASHES_CONSTANT);
+	});
+});
+
+describe('samplesServer', () => {
+	it('lets the browser keep a file whose address carries its hash, and checks any other', async () => {
+		// The smallest pinned file, with a stand-in of its length in a cache of the test's own.
+		const [file] = readSampleManifest(repoRoot)
+			.assets.flatMap((asset) => asset.files)
+			.sort((a, b) => a.bytes - b.bytes);
+		expect(file).toBeDefined();
+		if (!file) return;
+		const cache = mkdtempSync(join(tmpdir(), 'null3d-samples-server-'));
+		const cached = join(cache, readLock(repoRoot).commit, file.path);
+		mkdirSync(dirname(cached), { recursive: true });
+		writeFileSync(cached, Buffer.alloc(file.bytes, 1));
+		const previous = process.env.NULL3D_SAMPLES_DIR;
+		process.env.NULL3D_SAMPLES_DIR = cache;
+		type Step = (req: IncomingMessage, res: ServerResponse, next: () => void) => void;
+		let serve: Step | undefined;
+		const configure = samplesServer(repoRoot).configureServer as (server: unknown) => void;
+		configure({ middlewares: { use: (step: Step) => (serve = step) } });
+		const server = createServer((req, res) =>
+			serve?.(req, res, () => {
+				res.statusCode = 404;
+				res.end();
+			}),
+		);
+		try {
+			await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+			const port = (server.address() as AddressInfo).port;
+			const address = `http://127.0.0.1:${port}/samples/${file.path}`;
+			const caching = async (query: string) => {
+				const answer = await fetch(`${address}${query}`);
+				await answer.arrayBuffer();
+				return answer.headers.get('cache-control');
+			};
+			expect(await caching(`?h=${file.sha256.slice(0, 16)}`)).toBe(
+				'public, max-age=31536000, immutable',
+			);
+			expect(await caching('')).toBe('no-cache');
+			expect(await caching('?h=0000000000000000')).toBe('no-cache');
+		} finally {
+			server.close();
+			if (previous === undefined) delete process.env.NULL3D_SAMPLES_DIR;
+			else process.env.NULL3D_SAMPLES_DIR = previous;
+			rmSync(cache, { recursive: true, force: true });
 		}
 	});
 });
