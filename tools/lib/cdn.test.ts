@@ -97,10 +97,6 @@ describe('package imports in the add-ons', () => {
 		expect(entries['@null3d/engine/levels-planner']).toBe('levels/planner.js');
 	});
 
-	it('leaves out a private package, which ships nowhere', () => {
-		expect(entries['@null3d/vegetation']).toBeUndefined();
-	});
-
 	it('makes the engine and other add-ons relative, and leaves other text alone', () => {
 		// A worker reads no import map, so an add-on that imports another by name must reach it by
 		// its place in the build.
@@ -110,9 +106,7 @@ describe('package imports in the add-ons', () => {
 			"throw new Error('@null3d/water: a band needs a tile above 0 meters');",
 			"import { compile } from '@null3d/vite-plugin';",
 		].join('\n');
-		expect(
-			packageImportsMadeRelative(text, 'addons/vegetation/lib/render/material.js', entries),
-		).toBe(
+		expect(packageImportsMadeRelative(text, 'addons/water/lib/render/material.js', entries)).toBe(
 			[
 				"import { createEngine } from '../../../../lib/index.js';",
 				"import { bakeImpostorAtlas } from '../../../impostors/lib/index.js';",

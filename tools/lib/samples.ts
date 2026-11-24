@@ -29,7 +29,6 @@ import type { ReadableStream } from 'node:stream/web';
 import type { Connect, Plugin } from 'vite';
 import { cacheRoot } from './build-cache';
 import { SAMPLES_URL } from './sample-url';
-import { isVegetationFile, vegetationOn } from './vegetation-switch';
 
 export { SAMPLES_URL, sampleUrl } from './sample-url';
 
@@ -285,8 +284,6 @@ export function namedSamples(root: string, folders = SCANNED): NamedSample[] {
 	const visit = (rel: string) => {
 		for (const entry of readdirSync(join(root, rel), { withFileTypes: true })) {
 			const path = posix.join(rel, entry.name);
-			// The vegetation add-on is a work in progress that no CI job reads (D-378).
-			if (!vegetationOn() && isVegetationFile(entry.isDirectory() ? `${path}/` : path)) continue;
 			if (entry.isDirectory()) {
 				if (!SKIPPED_FOLDERS.has(entry.name)) visit(path);
 			} else if (CODE.test(entry.name) && !SKIPPED_FILES.has(path)) {

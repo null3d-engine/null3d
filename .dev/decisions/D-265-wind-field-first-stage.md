@@ -63,9 +63,8 @@ the one before. A wake lasts after the body that made it has gone. The grid, the
 the sampling function and every reader stay as they are.
 
 **The projection runs.** The advected core injects the pushes and the gust, which add divergence, so
-each cycle ends with the pressure's slope taken out of the air. The solve stays as it is until the
-vegetation add-on's grid of canopy cover gives the wind its drag input (M3-V17); drag adds more
-divergence, not a new step.
+each cycle ends with the pressure's slope taken out of the air. A drag input, such as a grid of
+canopy cover, would add more divergence, not a new step.
 
 ## Consequences
 

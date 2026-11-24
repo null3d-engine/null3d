@@ -65,7 +65,7 @@ One function decides the verdict and the status, `sizeOutcome` in `packages/cli/
 
 **The measurement.** `buildAddon` builds the entry twice. The first build is the shaders gate's own. The second answers each `.wgsl` import with an empty module. It holds the add-on's own code alone and compiles no shader. The difference between the two, in each column, is the shader data that the plugin inlined in the file. Each part answers its own budget, and the two parts add up to the file's size in every column. A file that the second build did not write keeps its whole size against the budget that its name gives. Such a file is a set of builds that the plugin writes apart.
 
-**A foundation that builds on another.** The build keeps every null3D package external, as it keeps the engine. A foundation add-on may build on another foundation. A page loads that package as a dependency of its own, so the sizes measure the add-on's own files alone. Vegetation builds on impostors for its far trees. The build stopped resolving that package while only the engine stayed external. `ADDON_EXTERNALS` holds the pattern in `packages/cli/src/check-addon.js`. A test holds it to every null3D package and to no other package. Another builds the fixture whose entry imports `@null3d/impostors` and reads the built file: the package's name survives there. With the engine-only pattern back, that build fails to resolve the import.
+**A foundation that builds on another.** The build keeps every null3D package external, as it keeps the engine. A foundation add-on may build on another foundation. A page loads that package as a dependency of its own, so the sizes measure the add-on's own files alone. The grass builds on the wind add-on. A build that keeps only the engine external cannot resolve such a package. `ADDON_EXTERNALS` holds the pattern in `packages/cli/src/check-addon.js`. A test holds it to every null3D package and to no other package. Another builds the fixture whose entry imports `@null3d/impostors` and reads the built file: the package's name survives there. With the engine-only pattern back, that build fails to resolve the import.
 
 **The two budgets.** A file of code answers `ADDON_FILE_BUDGET`: 64 KB uncompressed, 24 KB after gzip and 18 KB after Brotli. Those are the engine's figures for a file that loads after the start, `LATER_BUDGET`, which [D-14](D-14-js-budget.md) records. The shader data answers `ADDON_SHADER_BUDGET`: 8,192 KB uncompressed, 1,536 KB after gzip and 128 KB after Brotli. Those are the engine's `FIRST_USE_SHADER_BUDGET` for a first-use shader file, and a test keeps the two equal. The shader figures are far looser than the code budget's, because shader text shrinks more under compression than code does. The Brotli figure holds the water add-on, whose surface function rides every build of the standard material: its largest set measured 53.3 KB after Brotli when the budget was set and has since grown to 79.5 KB, so the check now warns on the water add-on rather than refusing it. The uncompressed figure holds the coat and sheen builds. [D-14](D-14-js-budget.md) holds the figures. Only the owner changes a figure, in writing.
 
@@ -108,7 +108,7 @@ A custom effect that reads the scene's depth cannot join the effect before it, s
 
 ## Recorded run of the foundation add-ons
 
-The command ran over every foundation add-on that holds a package: the twelve of [D-173](D-173-addon-hooks.md) ruling 4 and vegetation ([D-241](D-241-vegetation-foundation.md)), less physics and MSDF text, which hold no package. The worktree was fresh, after `bun install` and the pages-only build, and every run went through the job queue. Each run exited 0, and the whole job took 647 seconds with a memory peak of 2.6 GB. The run belongs to commit `dc1e9d557`, and this table is its only record.
+The command ran over every foundation add-on that held a package at the run's commit, less physics and MSDF text, which hold no package. That set held the vegetation add-on, which the repository no longer holds ([D-378](D-378-vegetation-add-on-removed.md)), so the table and the lines below leave its row out. The worktree was fresh, after `bun install` and the pages-only build, and every run went through the job queue. Each run exited 0, and the whole job took 647 seconds with a memory peak of 2.6 GB. The run belongs to commit `dc1e9d557`, and this table is its only record.
 
 | Add-on | package | public API | interface | shaders | sizes | page | cost | allocation |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -119,13 +119,10 @@ The command ran over every foundation add-on that holds a package: the twelve of
 | `@null3d/splats` | PASS | PASS | PASS | PASS | PASS | SKIP | SKIP | SKIP |
 | `@null3d/terrain` | PASS | PASS | PASS | PASS | PASS | SKIP | SKIP | SKIP |
 | `@null3d/three-compat` | PASS | PASS | PASS | PASS | PASS | SKIP | SKIP | SKIP |
-| `@null3d/vegetation` | PASS | PASS | PASS | PASS | PASS | SKIP | SKIP | SKIP |
 | `@null3d/water` | PASS | PASS | PASS | PASS | PASS | PASS | PASS | PASS |
 | `@null3d/wind` | PASS | PASS | PASS | PASS | PASS | PASS | PASS | PASS |
 
-The eight packages without a `null3d.json` skipped the page, cost and allocation gates with the command's own reason: a foundation add-on's page is a demo in `examples/`. Water and wind carry a page of their own, so all three gates ran on them: the page started from another origin under the strict policy, and the cost and allocation gates measured each preset.
-
-Vegetation's row in that table predates its import of the impostors foundation. A run on `feat/m3-v4-budgets` passes the package, public API, interface and shaders gates. The page, cost and allocation gates skip because the package has no `null3d.json`. Its sizes gate warns on sixteen material files. The largest, `material-glsl-0-2cd74cc659e5601c-CBpzT5X0.js`, is 64.6 KB after Brotli against the 56 KB budget.
+The packages without a `null3d.json` skipped the page, cost and allocation gates with the command's own reason: a foundation add-on's page is a demo in `examples/`. Water and wind carry a page of their own, so all three gates ran on them: the page started from another origin under the strict policy, and the cost and allocation gates measured each preset.
 
 The shader and size gates ran on every add-on, which the run's own lines show:
 
@@ -157,10 +154,6 @@ PASS  sizes: 14 files within budget, the largest code file at 26.8 KB raw, 7.6 K
 three-compat
 PASS  shaders: 12 files built with WGSL for WebGPU and WebGL2
 PASS  sizes: 12 files within budget, the largest code file at 26.8 KB raw, 7.6 KB gzip, 6.0 KB brotli, the largest shader build at 32.4 KB raw, 5.8 KB gzip, 5.0 KB brotli, 23.9 KB of shader data inlined in 1 code file, within the shader budget
-
-vegetation
-PASS  shaders: 16 files built with WGSL for WebGPU and WebGL2
-PASS  sizes: 16 files within budget, the largest code file at 52.6 KB raw, 14.7 KB gzip, 12.6 KB brotli, the largest shader build at 729.5 KB raw, 138.4 KB gzip, 36.2 KB brotli, 2.5 KB of shader data inlined in 1 code file, within the shader budget
 
 water
 PASS  shaders: 16 files built with WGSL for WebGPU and WebGL2

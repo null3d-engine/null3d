@@ -123,7 +123,7 @@ direct path, and the draw reaches the indirect entry and its count copy.
 
 ### The shadow views take the GPU's count
 
-A shadow view draws the instances that the GPU counts. The vegetation add-on's GPU grass is such a
+A shadow view draws the instances that the GPU counts. The grass add-on's GPU grass is such a
 caster: near grass casts shadows, and its shadows must follow the count that the GPU wrote. No
 shadow view falls back to the page's count for a draw that the copy reaches.
 

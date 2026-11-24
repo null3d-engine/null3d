@@ -97,7 +97,7 @@ freeze in the engine's API at 1.0, and its code would join every page's start, f
   picture would show the ground that the tasks had not yet written. A task counts from its call,
   before its WebAssembly file compiles. A count that starts after the compile misses the terrain's
   first build while it compiles. That happens when an earlier task has already loaded the task
-  code, as the plant core's tasks in the Island's setup do. The hold then took its frame with no ground,
+  code, as another add-on's tasks in a scene's setup can. The hold then took its frame with no ground,
   and the sea showed through the island. A unit test holds the count at one through a slow compile.
 
 ## Consequences

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'bun:test';
 import { execFileSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { PROJECTS, recordOf, VEGETATION_PROJECTS } from './typecheck';
+import { PROJECTS, recordOf } from './typecheck';
 
 const ROOT = join(import.meta.dirname, '..');
 
@@ -27,17 +27,16 @@ describe('the TypeScript check', () => {
 		})
 			.split('\n')
 			.filter((path) => path !== '');
-		const checked = new Set([...PROJECTS, ...VEGETATION_PROJECTS].map(configOf));
+		const checked = new Set(PROJECTS.map(configOf));
 		expect(configs.filter((path) => !checked.has(path) && !(path in NOT_CHECKED))).toEqual([]);
-		for (const project of [...PROJECTS, ...VEGETATION_PROJECTS])
+		for (const project of PROJECTS)
 			expect(existsSync(join(ROOT, configOf(project))), project).toBe(true);
 		for (const path of Object.keys(NOT_CHECKED)) expect(configs, path).toContain(path);
 	});
 
 	it("keeps each project's incremental record in a file of its own", () => {
-		const all = [...new Set([...PROJECTS, ...VEGETATION_PROJECTS])];
-		const records = all.map(recordOf);
-		expect(new Set(records).size).toBe(all.length);
+		const records = PROJECTS.map(recordOf);
+		expect(new Set(records).size).toBe(PROJECTS.length);
 		for (const record of records) expect(dirname(record)).toBe(join(ROOT, 'target/typecheck'));
 	});
 });

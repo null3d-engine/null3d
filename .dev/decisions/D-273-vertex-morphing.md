@@ -1,17 +1,15 @@
 # D-273: Vertex morphing for generated shapes
 
 Status: decided by the owner, on the rule below. Built: the terrain morphs each block toward its
-parent's surface. The leaf-card morph was built with the first generator and removed with it, under
-[D-323](D-323-plant-core-three-scales.md)'s ruling. The plant core hands its levels over with the
-dither, so decision 4 below describes the removed generator. Task: M3-L4.
+parent's surface. No plant morphs: the leaf-card morph lived in the vegetation add-on, which the
+repository no longer holds ([D-378](D-378-vegetation-add-on-removed.md)). Task: M3-L4.
 
-Summary: Both add-ons write a four-number vertex record and read it in their own custom material's
+Summary: An add-on writes a four-number vertex record and reads it in its own custom material's
 vertex offset. The terrain stores the parent grid's height, the block's size and the block's height
 box, and reproduces the selection's exact distance, so a block has its parent's surface at the
-switch. The vegetation add-on stores each leaf vertex's place at the next level and that level's
-error, so the cards the next level drops shrink and the kept ones grow before the switch. The record
-fills the vertex slot that morph targets use, so the engine gains one public input and no vertex
-location. Skirts stay, because the quadtree lets neighbours differ by more than one level.
+switch. The record fills the vertex slot that morph targets use, so the engine gains one public
+input and no vertex location. Skirts stay, because the quadtree lets neighbours differ by more than
+one level.
 
 ## Question
 
@@ -36,21 +34,15 @@ band? Which kinds of shape should morph, in which layer, and what is out of scop
 | Vertices of one block | 353: a 17 by 17 grid and a 64-vertex skirt | `chunk.ts`, a grid of 16 faces |
 | A block's vertex bytes without the record | 11,296: positions, normals and one texture coordinate | 32 bytes a vertex |
 | A block's vertex record | 5,648 bytes a block, 50% more vertex bytes for the ground | 16 bytes a vertex, four floats |
-| A leaf vertex's target record | 16 bytes: the target position and the level's error | four floats |
-| The built-in vegetation set's arrays | 26,899,530 bytes, 5,995,680 of them target records | `generateVariantSet`, 374,730 leaf vertices |
 | A block's switch in a picture | morph off moves 0.026% of the frame, morph on 0.000%, on WebGPU and compatibility mode; 0.035% against 0.000% on WebGL2 | `tests/image/terrain-morph.spec.ts` on the Mac's GPU, three GPU paths |
-| A leaf-card level's switch in a picture | morph off moves 0.634% of the frame, morph on 0.036%: the morph removes 94% of the change | `tests/image/leaf-switch.spec.ts` on the Mac's GPU |
-| The leaf morph on the other paths | 0.321% to 0.023% on compatibility mode, 0.528% to 0.030% on WebGL2 | the same test |
 | The block morph's frame cost | no difference that this method resolves: WebGPU 2.99 against 3.30 ms of GPU time, compatibility 2.68 against 2.36, WebGL2 4.17 against 4.45, with both signs across three runs; the same build's frame read 2.7 to 4.3 ms from one run to the next, and the frame interval stayed at the display's 16.67 ms | the cost page in a quiet window, below |
 | The record's bytes in a frame of the terrain demo | Low: about 134,000 triangles over every pass are about 232 block draws, 82,000 vertices and 1.31 MB of record a frame, 39 MB a second at 30 frames. Medium: about 481,000 triangles are about 834 block draws, 295,000 vertices and 4.71 MB a frame, 141 MB a second | arithmetic from the S25 pairs' triangles, `chunk.ts`'s 576 triangles and 353 vertices a block, and 16 bytes a vertex |
-| The leaf and bark material's frame | Galaxy S25: 27.20 ms of GPU time at Low on WebGPU, 469.70 at Medium, 604.44 at High and 565.97 at Ultra, with 27.13 and 512.62 at Low and Medium on compatibility mode; its display ran at 30 Hz, so the Low frames keep its rate and the rest do not. Galaxy S24, whose WebGL2 has no GPU timer: 66.64 ms at Low and 66.66 at Medium, twice the display's 33.3 ms refresh. MacBook Pro M3 Max at 120 Hz: 5.44, 11.40, 16.71 and 17.10 ms on WebGPU from Low to Ultra, with 7.21 and 15.20 on compatibility mode, and 18.00 and 30.14 ms on WebGL2 at Low and Medium, whose interval reaches 16.82 ms there | the `vegetation-wind` plan, runs `20261030-091921-vegetation-wind`, `20261030-092652-vegetation-wind` and `20261030-094633-vegetation-wind`, with the page from `feat/m3-v7-leaf-bark` at `9a2cd433c` and `559089789`, below |
 | The block morph on the demo, the camera held | MacBook Pro M3 Max at 120 Hz: at every preset and path the pair draws the same calls and triangles, and objects within one, being 1,566 against 1,567 at High; the GPU times with the morph on against off are 2.62 against 2.69 ms at Low on WebGPU, 2.62 against 2.75 on compatibility mode, 2.97 against 2.60 on WebGL2, 3.41 against 3.87 at Medium on WebGPU, 3.60 against 3.60 on compatibility mode, 6.33 against 6.52 on WebGL2, 4.06 against 3.87 at High and 4.13 against 3.87 at Ultra, with both signs and a timer step of 0.0655 ms, so the offset's cost is under the machine's own difference; every interval is the display's 8.33 ms. Galaxy S25: 10.09 against 10.09 ms at Low and 19.07 against 19.07 at Medium, 311 and 2,067 calls, at the display's 33.3 ms. Galaxy S24: 33.33 ms on both sides at Low and Medium, 176 and 632 calls | the `terrain` plan's morph pair, runs `20261030-114047-terrain`, `20261030-115301-terrain` and `20261030-114759-terrain` |
 | The shadow redraw of the still terrain at High | MacBook Pro M3 Max, WebGPU: the morph on and off draw 2,585 calls and 4.194 ms a frame, with all three cascades in every frame; keeping the far cascades to their turns draws 2,072 calls and reads 3.670 ms, 513 calls fewer, one cascade's casters. Each cascade's pass costs 0.07 to 0.13 ms under the frame's 3.67 ms ambient occlusion pass. Galaxy S25: the morph on and off draw 2,583 calls in 14.61 and 14.55 ms with all three cascades; its follow-off page reads 21.82 ms, which must not be set against them because its timer captured a different pass set | the `terrain-shadow` plan, runs `20261030-114417-terrain-shadow` and `20261030-115037-terrain-shadow` |
 
-How the data was produced: the byte counts are arithmetic from the add-on's arrays. Both switch
-figures come from the split pages, which hold the camera still and move the level switch across it,
-so the only change between two frames is the hand-over: the terrain's by its allowed error, the
-leaves' by the level threshold. The corner distance first measured 0.469% against 0.495%, worse with
+How the data was produced: the byte counts are arithmetic from the add-on's arrays. The switch
+figure comes from the split page, which holds the camera still and moves the level switch across it.
+The only change between two frames is then the hand-over, by the terrain's allowed error. The corner distance first measured 0.469% against 0.495%, worse with
 the morph on, because it over-morphs the block at its own split; that run is what showed the record
 slot must carry the block's height box. The frame figures come from
 `QUIET_OK=1 zsh heavy.sh env NULL3D_TERRAIN_MORPH_COST=1 NULL3D_PORT=6182 NULL3D_PRODUCTION_PAGES=skip
@@ -70,26 +62,18 @@ the orbit. Both sides carry the record's 16 bytes a vertex, so the pairs measure
 work. The record's byte rate is arithmetic, not a measurement: it comes from the overlay's
 triangles, a block's 576 triangles and 353 vertices. On the S25 the overlay's triangle and
 object estimates differ by up to 7% between the sides while the draw calls and GPU times agree:
-WebGPU returns those counts from its culling sample, not from the timed frames. The leaf figures
-come from the `vegetation-wind` plan on `feat/m3-v7-leaf-bark` at `9a2cd433c`, whose page reports the
-frame's GPU time, per-pass breakdown, interval and CPU time; `559089789` adds the interval and the
-engine's display rate, which the S24 needs in place of a GPU time.
+WebGPU returns those counts from its culling sample, not from the timed frames.
 
 ## Look
 
 The terrain split page frames one hill whose block changes level between 34 and 37 pixels of
 allowed error from a still camera. With the morph off, the block's own surface gives way to the
 coarser surface at once. With the morph on, the block's vertices move to the parent grid's heights
-over the last part of the approach, and the two frames match: the hill does not move at all. The
-leaf switch page holds the camera still and moves the level threshold either side of the switch,
-with the dither off: the cards that the next level drops shrink to their middles and the kept ones
-grow, so the crown's silhouette holds across the switch.
+over the last part of the approach, and the two frames match: the hill does not move at all.
 
 The terrain image reference draws the ground at a camera where some blocks are partly morphed: it
 moved by 0.215 to 0.292 per cent of its pixels, and both sets were redrawn. The `demo-terrain`
-picture did not move, because its camera leaves every block outside its band. The vegetation
-pictures stay as they are, because a plant drawn at its base level draws no coarser level and writes
-no target.
+picture did not move, because its camera leaves every block outside its band.
 
 ## Decision
 
@@ -113,17 +97,8 @@ no target.
    Removing the skirt needs a neighbour-restricted selection, which moves every switch, or a target
    for each edge in every frame. Neither is worth its cost now.
 
-4. The leaf-card morph lives in `@null3d/vegetation`. `cardLevel` keeps every second card from one
-   order, so the generator knows which cards the next level drops and how far each kept card grows.
-   For each leaf vertex it writes the position that the vertex takes at the next coarser level, then
-   that level's error. The card material's vertex offset moves the vertex toward that position over
-   the last 8% of the switch distance, which is the band that a level fade covers. The switch
-   distance is the level's error times the copy's world scale times the engine's factor: the render
-   height times the projection's `P[1][1]`, over twice the threshold, as `levels.rs` computes it.
-   The shader reads the render height and the projection from the frame, the threshold and the
-   crown's radius from the material, and the plant's world position from the object. The distance is
-   to the nearest point of the plant's bounding sphere about its origin, as the engine measures it,
-   so the add-on gives the object or batch the same radius. A plant's leaves alone morph.
+4. No plant morphs. A plant's levels switch with the engine's dither, as a file mesh's levels do
+   (decision 6).
 
 5. The engine gains one public input: a four-number vertex record that `VertexInput` reads as
    `vertexRecord`. It fills the vertex slot that a morphed mesh uses for its morph data, so a mesh takes
@@ -139,12 +114,9 @@ no target.
    file needs the morph yet.
 
 7. The engine's own threshold is private. The frame-budget governor multiplies the level threshold
-   when frames run long, and the core applies the raised value while a material holds the one it was
-   given. Under that pressure the engine switches before the mix ends, so a leaf card can pop; a page
-   that lets the governor step calls `material.set({ lodThreshold })` with the raised value. Hold
-   mode, which the pictures and the cost runs use, takes no such step, so the measured mixing is the
-   material's own. The terrain does not have this gap: its morph reads the selection's scale from the
-   add-on, which the add-on computes from the error it was given.
+   when frames run long, and the core applies the raised value. The terrain's morph keeps in step
+   under that pressure. It reads the selection's scale from the add-on, which computes it from the
+   error it was given.
 
 ## Ruled out
 
@@ -166,22 +138,11 @@ no target.
 - Removing the skirt in this task.
 - A material for each block, and a uniform write for each block in each frame. The record and the
   built-in positions remove both.
-- A second WGSL file's surface, drawn for the morph, on a trunk or a flower. A material's shader
-  declares the record for every mesh that draws with it, so the card-tree leaves have their own
-  material, and the plain material draws the bark, the fronds and the flowers.
-- A shared library module for the plant surface. A custom material's `#import` reaches only the
-  engine's `null3d::` modules, a package cannot add one, and the compiler refuses a shader built by
-  joining two files; the guide says so and prescribes the copy with a test that reads both files.
-  The card material therefore holds the surface copy, `packages/vegetation/src/atlas.test.ts` fails
-  when the two surfaces differ, and the two materials differ by the vertex offset alone. A
-  vegetation module inside the engine's library would put an add-on's surface into the engine, which
-  the design rule against it forbids.
 
 ## What a machine run would settle
 
 - The split pages are measured on the Mac's three GPU paths; a SwiftShader run and a filmstrip
   across the switch at High and Low would still show the look at the other end of the range.
-- The leaf vertex count and bytes per preset, from the generator's stats.
 
 ## Consequences
 
@@ -192,22 +153,18 @@ no target.
   what holds two rows that are many times their noise at "same": the four changes are 0.22, 0.02,
   0.10 and 0.17 ms.
 - Code: `packages/terrain/src/chunk.ts`, `terrain.ts`, `material.ts` and `terrain.wgsl` gain the
-  parent heights, the height box, the record and the offset. `packages/vegetation/src/levels.ts`,
-  `generate.ts`, `builder.ts`, `leaves.ts`, `atlas.ts` and the new `plant-cards.wgsl` gain the
-  target records, the card material and the mix; `plant.wgsl` itself is unchanged, and a test holds
-  the two surfaces equal. The engine's vertex record, its array staging, the shader compiler's def
-  and `VertexInput` gain the input.
+  parent heights, the height box, the record and the offset. The engine's vertex record, its array
+  staging, the shader compiler's def and `VertexInput` gain the input.
 - The terrain's casters count as moving casters, so a shadow view that a caster touches draws again
   in every frame, with the morph on or off: three cascades draw a frame at High, each at 0.2 to
   0.39 ms on the S25, under the frame's ambient occlusion pass.
-- Docs: `docs/api/terrain.md` states the morph and its option. `packages/vegetation/docs/api.md` states the
-  leaf-card morph and the material's settings. `docs/concepts/lod.md` states which shapes morph and
+- Docs: `docs/api/terrain.md` states the morph and its option. `docs/concepts/lod.md` states which shapes morph and
   which switch. `docs/shaders/surface-functions.md`, `docs/shaders/builtins.md` and
   `docs/api/geometry.md` state the record and its cost.
 - Skills: the develop skill's terrain recipe and API quick reference state the terrain morph and
   the `targets` array. The porting skill needs no change: a ported scene has no generated terrain
-  or generated plant to morph.
-- Tests: the terrain split page and the leaf switch page on all three GPU paths, and the `terrain`
+  to morph.
+- Tests: the terrain split page on all three GPU paths, and the `terrain`
   reference in both sets, which the morph moved.
 - A custom material that reads the record gains a shader def and a vertex attribute. A material that
   reads none pays nothing, as D-138's defs do.

@@ -10,11 +10,9 @@
 // Each process gets a memory ceiling of its own, which is the peak its check measured with room for
 // a busier machine, so a check that grows past its need stops with a message that names the ceiling
 // rather than taking the machine's memory. Split a check that reaches its ceiling; the guide says
-// how. `--vegetation` runs the vegetation add-on's checks alone, which `bun run test:vegetation`
-// asks for with the add-on's switch on.
+// how.
 import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
-import { isVegetationFile } from '../tools/lib/vegetation-switch.ts';
 import { HEAVY_CHECKS } from './lib/heavy-checks.ts';
 import { budgetNote, checkTimeoutMs, LOAD_FACTOR_ENV, loadFactor } from './lib/run-budget.ts';
 import { exactTestPath } from './lib/test-paths.ts';
@@ -25,10 +23,7 @@ const ROOT = join(import.meta.dirname, '..');
 const CEILING = './tests/lib/memory-ceiling.ts';
 
 let failed = 0;
-const checks = process.argv.includes('--vegetation')
-	? HEAVY_CHECKS.filter(({ file }) => isVegetationFile(file))
-	: HEAVY_CHECKS;
-for (const { file, ceilingMiB, env } of checks) {
+for (const { file, ceilingMiB, env } of HEAVY_CHECKS) {
 	const started = Date.now();
 	const factor = loadFactor();
 	const timeout = checkTimeoutMs(factor);

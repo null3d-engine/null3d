@@ -147,7 +147,7 @@ const STEP_MS = [0, 33, 33, 16] as const;
 const STEP_MS_WEBGL2 = [0, 66, 66, 66] as const;
 /** The pressure iterations of one cycle at each preset. */
 const PRESSURE_ROW = [0, 16, 24, 40] as const;
-/** The trees that keep branch springs at each preset. The vegetation add-on reads it. */
+/** The trees that keep branch springs at each preset. */
 const SPRING_ROW = [0, 8, 32, 64] as const;
 /**
  * The grid's texels across each way at each preset. Low keeps no grid and reads the steady field,

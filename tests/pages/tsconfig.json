@@ -4,19 +4,5 @@
 		"types": ["@webgpu/types", "vite/client", "@null3d/vite-plugin/client"],
 		"allowJs": true
 	},
-	"include": ["**/*.ts"],
-	// The vegetation add-on's own pages, which tsconfig.vegetation.json checks with the add-on's
-	// switch on (tools/lib/vegetation-switch.ts lists them).
-	"exclude": [
-		"plant-*",
-		"leaves-wind-cost.*",
-		"tree-generation.*",
-		"vegetation-scatter.*",
-		"sketches/plant-*",
-		"sketches/leaves-wind-cost-sketch.ts",
-		"lib/plant-*",
-		"lib/plant-review/**",
-		"lib/tree-generation-worker.ts",
-		"lib/creek-rules.ts"
-	]
+	"include": ["**/*.ts"]
 }

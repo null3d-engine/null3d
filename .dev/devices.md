@@ -5,7 +5,7 @@ This guide covers the checks and benchmarks on phones, tablets and the Mac's bro
 ## The runner
 
 - The device runner, `tests/real-browsers.ts`, runs a plan of test or benchmark pages in browsers that Playwright cannot drive. Each browser loads the runner page, which opens each page of the plan in a frame and posts its result.
-- The plans are `checks` (the default), `smoke`, `parity`, `bench`, `showcase`, `bloom`, `ao`, `contact`, `dof`, `effects`, `effects-joined`, `sharpen`, `physical-sky`, `clouds`, `probe-cost`, `occlusion`, `gpu-occlusion`, `occlusion-s6`, `sky`, `splats`, `reflection`, `shimmer`, `memory`, `depth`, `governor`, `overload`, `scale`, `skinning`, `skinning-webgpu`, `animation`, `startup`, `tab-memory`, `soak`, `warm-up-time`, `texture-cache`, `storage-speed`, `alpha-mask-cost`, `car-paint-cost`, `car-paint-loop`, `impostor-cost`, `impostor-frame`, `canvas-cost`, `object-growth`, `cluster-cost`, `lod-cost`, `wind-field-cost`, `wind-stress`, `two-step`, `demos`, `showroom-fps`, `skyway`, `skyway-stall`, `skyway-soak`, `vegetation`, `vegetation-scatter`, `terrain`, `terrain-shadow` and `island-phones`. `bun run devices` runs the checks in Chrome on the phone and in Safari on the iPad.
+- The plans are `checks` (the default), `smoke`, `parity`, `bench`, `showcase`, `bloom`, `ao`, `contact`, `dof`, `effects`, `effects-joined`, `sharpen`, `physical-sky`, `clouds`, `probe-cost`, `occlusion`, `gpu-occlusion`, `occlusion-s6`, `sky`, `splats`, `reflection`, `shimmer`, `memory`, `depth`, `governor`, `overload`, `scale`, `skinning`, `skinning-webgpu`, `animation`, `startup`, `tab-memory`, `soak`, `warm-up-time`, `texture-cache`, `storage-speed`, `alpha-mask-cost`, `car-paint-cost`, `car-paint-loop`, `impostor-cost`, `impostor-frame`, `canvas-cost`, `object-growth`, `cluster-cost`, `lod-cost`, `wind-field-cost`, `wind-stress`, `two-step`, `demos`, `showroom-fps`, `skyway`, `skyway-stall`, `skyway-soak`, `vegetation`, `terrain`, `terrain-shadow` and `island-phones`. `bun run devices` runs the checks in Chrome on the phone and in Safari on the iPad.
 - The runner page's top line counts the pages that passed, failed and are left, and names the page that runs. Below it, the runner page shows a grid with one cell per page of the run. A cell is gray while its page waits, yellow while it runs, green when it passes and red when it fails. It is blue-gray when the runner page skips its page, because the device lacks the page's GPU path. Tap or hover a cell to see its page and its error. Under the grid are the failures with their errors, then a line for each result, newest first. Scroll for the older lines.
 - The report covers each page's frame in the plans that only check results: `checks`, `parity`, `memory` and `depth`. The frame stays full size and on screen underneath, so its canvas keeps the size that the references expect. Browsers slow or stop the animation frames of a frame that is hidden, tiny or off screen. Without the cover, the screen would flash between the report and each page. In the plans that time pages, each page's frame covers the report, so the browser composites nothing over a measured page. The list of covered plans is `REPORT_ON_TOP_PLANS` in `tests/lib/plans.ts`.
 - The runner page fills in its run and its own name where a plan item's address has `{run}` and `{runner}`. The startup, bench and scale plans use them, so each browser loads under addresses of its own.
@@ -423,10 +423,10 @@ The `physical-sky` plan measures what the physical sky costs, for [D-143](decisi
 - Read the preset, the frame rate and the budget together. The budget's count differs by GPU path, and the governor can lower the render scale under load.
 - Run it one session at a time on a cloud phone and the cloud iPad: `bun run devices:cloud --only bsgalaxys24-chrome --plan splats` and `bun run devices:cloud --only bsipadpro13-safari --plan splats`. The Galaxy S24 has no WebGPU, so the command lets it lack that path and the engine picks WebGL2.
 
-## The vegetation plans
+## The vegetation plan
 
 - The `vegetation` plan times Creek and the forest demo at every preset on each GPU path, for the
-  vegetation add-on's budgets ([D-241](decisions/D-241-vegetation-foundation.md)). Each page fixes
+  vegetation budgets ([D-241](decisions/D-241-vegetation-foundation.md)). Each page fixes
   its path and its preset with `?gpu=` and `?preset=`, so the start-up check cannot lower either.
 - The page starts the demo live and waits for its first frame. It then measures five seconds.
   `engine.measure()` gives the frame interval and the CPU time per frame of each thread and phase.
@@ -447,16 +447,8 @@ The `physical-sky` plan measures what the physical sky costs, for [D-143](decisi
   figures mix the preset with the scale it chose.
 - Creek at Low on WebGPU stalls an Apple device's page after its first frame. Those pages are left
   out of runs on the iPhone and the iPad ([Driver bug reports](driver-bugs.md)).
-- The `vegetation-scatter` plan places Creek's valley with the vegetation add-on's ecological rules,
-  once on each GPU path. The page builds the ground maps from Creek's own height function, scatters
-  the valley, and compares the points against the checksum that another device recorded. It fails
-  when a device places other plants, and it also fails when the tiles arrive in the reverse order or
-  at another size and the points change. It reports the placement time, which is the figure that the
-  vegetation budgets take for a valley of that size. The placement reads no GPU, so both paths must
-  give the same number.
-- Run the vegetation and scatter plans on the cloud iPhone, the iPad, an S24-class phone and a low-end Android tablet:
-  `bun run devices:cloud --only bsiphone17-safari,bsipadpro13-safari,bsgalaxys24-chrome,bsgalaxytaba9plus-chrome --plan vegetation`,
-  and the same with `--plan vegetation-scatter`.
+- Run the vegetation plan on the cloud iPhone, the iPad, an S24-class phone and a low-end Android tablet:
+  `bun run devices:cloud --only bsiphone17-safari,bsipadpro13-safari,bsgalaxys24-chrome,bsgalaxytaba9plus-chrome --plan vegetation`.
 - The `splats` plan also runs each GPU path at a quarter of the cloud's splat count, at the same
   pixel count. A pair of rows then shows whether the cost follows the count or the screen's fill.
 

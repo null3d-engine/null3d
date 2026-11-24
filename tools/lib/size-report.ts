@@ -1147,10 +1147,9 @@ function overBudget(what: string, size: SizeEntry, budget: Budget): string[] {
  * on their own. The cost is the number of variants the family emits, not waste inside one. The next
  * feature that needs room here is a decision about which variants to emit, not a further raise.
  *
- * The owner then raised all three figures for the vegetation add-on's compiled material files: its
- * largest reaches 115.9 KB after Brotli, 1,366.9 KB after gzip and 7,227.5 KB uncompressed, and the
- * figures of 128 KB, 1,536 KB and 8,192 KB hold it with about thirteen per cent of headroom. The
- * add-on check warns rather than refuses over a figure (D-225).
+ * The owner then raised all three figures to 128 KB, 1,536 KB and 8,192 KB, for the compiled
+ * material files of the vegetation add-on, which the repository no longer holds. The add-on check
+ * warns rather than refuses over a figure (D-225).
  */
 export const FIRST_USE_SHADER_BUDGET: Budget = {
 	raw: 8_192 * 1024,

@@ -1,6 +1,6 @@
 # D-311: Cache of derived data across visits
 
-Status: decided and built. The engine keeps derived data in the origin private file system, and the KTX2 loader's cache of transcoded textures ([D-24](D-24-transcode-cache.md)) is its first namespace. Add-ons register their own through `assets.cache`, and the vegetation add-on's `cache` option takes one. Task: none.
+Status: decided and built. The engine keeps derived data in the origin private file system, and the KTX2 loader's cache of transcoded textures ([D-24](D-24-transcode-cache.md)) is its first namespace. Add-ons register their own through `assets.cache`. Task: none.
 
 Summary: One cache keeps the derived data of every producer, by name, version and content key, as files of the origin private file system. A worker reads them through sync handles. On the Apple devices it reads 120 MiB in 17 to 36 ms, against 59 to 98 ms for Cache Storage. One budget, a tenth of the browser's allowance, replaces D-24's 256 MiB, and repeat visits keep D-24's gains.
 
@@ -149,6 +149,6 @@ Options rejected:
 ## Consequences
 
 - `packages/engine/src/scene/derived-cache.ts` holds the cache, and `scene/ktx2-cache.ts` is its namespace of transcoded textures, `null3d-ktx2` at `basis-2.50-1`. The module loads in the assets loader's file with the first call that reads a file, so no page's start grows.
-- `assets.cache(name, version)` gives a namespace to a sketch or an add-on, with `get(key)` and `put(key, bytes)`. Its type, `DerivedCache`, fits the vegetation add-on's `PlantByteCache`.
+- `assets.cache(name, version)` gives a namespace to a sketch or an add-on, with `get(key)` and `put(key, bytes)`. Its type is `DerivedCache`.
 - The storage speed page and the device runner's `storage-speed` plan repeat the measurement.
 - Docs: `api/assets` ("Caching"), `concepts/assets`, `guides/performance`, `guides/content-pages` and `guides/testing` (the switch). `getting-started/hosting` holds the overview of the caches between visits, which the other pages link to. The develop skill's testing, performance, content pages and API references.

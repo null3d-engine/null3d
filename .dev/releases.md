@@ -54,7 +54,7 @@ The note under a page's title opens with its page's step and release, such as "R
 
 ## The npm packages
 
-Fourteen packages are public. The vegetation add-on and its textures package are private: they stay in the repository for work on the add-on, and no release packs, builds or publishes them ([D-378](decisions/D-378-vegetation-add-on-unpublished.md)). Each one's `prepack` script runs `bun tools/build-package.ts <folder>`, which makes what its tarball holds besides the files that git keeps (`tools/lib/pack.ts`). Every tarball also holds both license files. The WebAssembly files come from `bun run build`, which runs first.
+Fourteen packages are public, and no package is private. Each one's `prepack` script runs `bun tools/build-package.ts <folder>`, which makes what its tarball holds besides the files that git keeps (`tools/lib/pack.ts`). Every tarball also holds both license files. The WebAssembly files come from `bun run build`, which runs first.
 
 | Package | What its tarball holds | What its pack step makes |
 | --- | --- | --- |

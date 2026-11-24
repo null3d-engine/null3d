@@ -99,8 +99,6 @@
 //                       island-phones, which times the Island's town view on a phone with each
 //                       part of the scene hidden in turn and with trial changes, from the
 //                       phones study's page (bench/research/island-phones), or
-//                       vegetation-scatter, which places Creek's valley by the vegetation add-on's
-//                       ecological rules and checks the placement against the reference, or
 //                       history-cost, which times a compute pass that keeps its state between frames,
 //                       with the pass off and on
 //   --allow-no-webgpu   a browser without WebGPU skips the WebGPU pages instead of failing them
@@ -1159,7 +1157,6 @@ export const TIMED_PLANS: ReadonlySet<string> = new Set([
 	'impostor-cost',
 	'impostor-frame',
 	'wind-reader-cost',
-	'leaves-wind-cost',
 	'canvas-cost',
 	'cluster-cost',
 	'lod-cost',
@@ -1172,7 +1169,6 @@ export const TIMED_PLANS: ReadonlySet<string> = new Set([
 	'terrain',
 	'terrain-shadow',
 	'island-phones',
-	'vegetation-scatter',
 	'webgpu-stall',
 ]);
 

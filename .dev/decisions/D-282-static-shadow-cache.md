@@ -37,8 +37,8 @@ the bookkeeping that tells when its layer is stale.
 ## Vegetation
 
 - A swaying plant's shadow redraws in every frame while the plant is in a cascade, because its
-  material moves its vertices. The vegetation materials give a plant a sway distance of 8, 16, 24
-  or 32 m by preset, and a plant beyond it stands still.
+  material moves its vertices. A swaying material takes a sway distance, and a plant beyond it
+  stands still. `@null3d/grass` gives each preset one, 8, 16, 24 or 32 m (`swayDistanceFor`).
 - Far tree cards are impostors that cast still by default, so a far cascade that holds only them
   keeps its layer.
 - In Creek the only caster that moves in the sun's view is the grass at the water's edge. Its
@@ -180,7 +180,7 @@ measured here. A finer step lowers the keep rate. At an eighth of a degree, 120 
 keep 3 frames in 4. At a sixteenth they keep 1 in 2. Each of those still clears the rule.
 
 The cheaper alternative changes the picture. Giving the far grass a sway distance would let the far
-cascade rest with no second atlas. The vegetation materials already work that way. The far grass's
+cascade rest with no second atlas. The demos' plant material already works that way. The far grass's
 shadow would then stop swinging. The cache keeps that movement, so it is the option to choose where
 the look matters.
 

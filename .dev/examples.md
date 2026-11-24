@@ -698,7 +698,7 @@ The showcase tier holds a few large scenes that show the engine at its best, as 
 
 - **No line limit:** a showcase scene is not a feature demo, so the 150-line limit does not apply. It lives in `examples/showcase/<name>/`, and its code link points to the folder.
 - **Shared code:** the showcase scenes share a stage (`examples/lib/stage.ts`: moods and times of day) and generators of detail (`examples/lib/procedural.ts`: textures made in code, terrain and rocks).
-- **Models:** terrain, stones, grass and water are made in code. Trees, plants and other organic hero models are built by script in Blender (`tools/samples/blender/`), and live in the sample-assets repository. No demo draws the vegetation add-on's plants, which ships nowhere ([D-378](decisions/D-378-vegetation-add-on-unpublished.md)). A showcase scene's `assets` field says so.
+- **Models:** terrain, stones, grass and water are made in code. Trees, plants and other organic hero models are built by script in Blender (`tools/samples/blender/`), and live in the sample-assets repository. A showcase scene's `assets` field says so.
 - **Interaction:** a showcase scene takes the user's input while it runs. Its camera is the cinematic route above, and `c` hands the camera to the user, who then flies with the keys, the mouse or a touch drag, without a run from the scripted pose.
 - **The look:** each scene must look very beautiful, with shaders, effects, particles and complex geometry ([D-132](decisions/D-132-showcase-look-and-features.md)).
 - **Engine features first:** each scene waits for the engine features it needs. The owner put them before 1.0, in [D-117](decisions/D-117-showcase-features-before-1-0.md), [D-132](decisions/D-132-showcase-look-and-features.md) and [D-142](decisions/D-142-more-techniques-before-1-0.md). The table below lists them.
@@ -1071,7 +1071,7 @@ Creek is a small stream in a grassy valley (M2-EX8). Its trees, bank plants and 
 
 **Creek's air is the wind add-on's.** `createWind` makes one field for the valley. The trees, the plants, the grass, the falling leaves and the water surface read it, and G sends a gust from the camera's place. The field's box follows the camera, so the leaves and the air fill the part of the valley that the view shows. The field's Low preset takes the analytic field; Medium and above take the grid ([D-283](decisions/D-283-fluid-wind-cost.md)).
 
-**The valley is Creek's own.** The trees and bank plants are models built by script in Blender, loaded from the sample content ([D-378](decisions/D-378-vegetation-add-on-unpublished.md)). A live page draws the valley first, and the models appear as they land; a held picture waits for them. The floating leaves and the fireflies are the scene's own code too (the owner's ruling, [D-241](decisions/D-241-vegetation-foundation.md)). The cave mouth comes from the same script. The reference scene has a cave, and the route was made to pass its mouth. Without it, the far bank reads as a flat lawn of trees.
+**The valley is Creek's own.** The trees and bank plants are models built by script in Blender, loaded from the sample content ([D-378](decisions/D-378-vegetation-add-on-removed.md)). A live page draws the valley first, and the models appear as they land; a held picture waits for them. The floating leaves and the fireflies are the scene's own code too. The cave mouth comes from the same script. The reference scene has a cave, and the route was made to pass its mouth. Without it, the far bank reads as a flat lawn of trees.
 
 The choices, and why:
 
@@ -1103,7 +1103,7 @@ On Creek's held frame, the mean luminance of the whole picture is 24 of 255 at D
 
 #### Frame rates of the Creek on the Mac
 
-The figures below belong to the scene before M3-V11 grew its plants: its 17 trees were model files, and the add-on's 2,216 plants are not in these readings. They stay as the record of that scene.
+The figures below belong to an earlier form of the scene, whose 17 trees were model files. They stay as the record of that scene.
 
 The figures come from Chrome on a Mac with an Apple M5 Max, with the display at 120 Hz. Each figure is five readings of the stats overlay, a second apart, after each mood ran for 8 seconds. The engine chose the preset, with the governor on.
 

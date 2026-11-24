@@ -27,16 +27,19 @@ other options that this record set out. Ultra does not skip the field, and the p
 down there, which D-241 calls a failure. The tablet's field row holds at the budget's edge, and its
 canopy drag takes it over, so the governor must step that row too. Built: the wind add-on's field
 and its state-keeping solver
-(M3-V13, M3-V15). Built too: the plant material's vertex reader (M3-V7) and the cost pages that
-time them. Not built: the preset rows and budgets (M3-V16), branch poses (M3-V10, measured on its own branch),
-and Creek's and the forest's plants on the add-on (M3-V11, M3-V12). M3-V17 built the canopy drag and
-the falling leaves, with the open clauses that its addendum lists. Task: M3-V14.
+(M3-V13, M3-V15). Built too: the cost pages that time the field's readers, and the demos' plant
+material, which reads the field (`examples/lib/sway.ts`). Not built: the preset rows and budgets
+(M3-V16) and branch poses (M3-V10, measured on its own branch). M3-V17 built the flag and water
+readers, with the open clauses that its addendum lists. The canopy drag and the falling leaves that
+it built for the vegetation add-on left the repository with that add-on
+([D-378](D-378-vegetation-add-on-removed.md)). Task: M3-V14.
 
 Summary: On the Mac's WebGPU path the field costs 0.10 ms a frame at the Medium row and 0.73 ms at
 the Ultra row, which is the volume's shape; the flat 256x256 grid that stands in until it is built
 costs 0.58. The grid's size moves the cost far less than the pressure count and the field rate do.
 WebGL2 pays a fixed cost per solver run, so its row sets the field rate. The owner accepted budgets
-of 0.5, 1.2, 4.9 and 6.25 ms from Low to Ultra, one tenth of the vegetation add-on's own budget.
+of 0.5, 1.2, 4.9 and 6.25 ms from Low to Ultra. Each is one tenth of D-241's budget for the
+vegetation's own GPU time.
 
 ## Question
 
@@ -48,7 +51,8 @@ each preset?
 
 - The wind's budget is its own, and D-241's vegetation budget stands beside it.
 - A preset's row must hold on every path and on every device that draws it.
-- The planning ceiling for the field alone is one tenth of the vegetation add-on's budget. That is
+- The planning ceiling for the field alone is one tenth of the vegetation's own GPU time that D-241
+  budgets. That is
   0.5 ms at Low, 1.2 at Medium, 4.9 at High and 6.25 at Ultra on the Apple devices. It is a
   planning figure, not a frame ceiling.
 - The better look wins where it fits ([hard rule 40](../../AGENTS.md#hard-rules)). A cheaper form of
@@ -390,8 +394,8 @@ The WebGL2 figure is therefore a bound that mixes the pass and the reader. It al
 governor must fix: a row at 15 cycles a second keeps WebGL2 inside its budget, and M3-V16 gives the
 add-on that setting.
 
-Reflections have no reader on this tree. Creek's and the forest's plants are not on the add-on yet,
-so their passes and the reflections wait on M3-V11 and M3-V12.
+Reflections have no reader on this tree, and Creek's and the forest's plants read no field there.
+So this section does not measure their passes or the reflections.
 
 ### Branch poses with springs
 
@@ -400,15 +404,6 @@ sweep. It gives the frame and the vertex view with per-vertex wind and with bran
 methods ran in turns at each preset and path on the Mac, the iPad Pro 13 and the Galaxy S25, with
 the spring's figures and the pose pictures. This task does not repeat them. The count of trees that
 carry springs at each preset is the governor's setting, which M3-V16 declares.
-
-### The leaves
-
-The two ways for leaves to ride the wind are not measured. Falling and drifting leaves are M3-V17's
-work, and no page on this tree draws a leaf with a place and a speed of its own. The plan's first
-form is an offset from the field on the closed-form particle path. It costs one texture read and
-cannot carry a leaf along a gust. The second form is a compute pass with history that steps each
-leaf, which M3-V13 now makes possible. The comparison at 500, 2,000 and 10,000 leaves waits on that
-build.
 
 ## Look
 
@@ -469,7 +464,7 @@ case as its test.
   and 0.73 ms at their rows on WebGPU, well inside their budgets, so the better look wins when it is
   built (hard rule 40). Until the solver builds them, the flat 128x128 and 256x256 grids stand in,
   at 0.14 and 0.58 ms.
-- The budgets are one tenth of the vegetation add-on's own: 0.5, 1.2, 4.9 and 6.25 ms. Every
+- The budgets are one tenth of the vegetation's own GPU time in D-241: 0.5, 1.2, 4.9 and 6.25 ms. Every
   measured row is far inside them on WebGPU, and the phones hold their intervals. The owner accepted
   them as they stand.
 
@@ -479,19 +474,13 @@ case as its test.
   like the water's. Its `windSpringTrees` value has no reader until M3-V10 lands.
 - The drag is measured as one more read a cell a step, not as the scatter's grid. When M3-V17 gives
   the wind that grid, its cost is a read a cell a step. That is what this record measured.
-- The readers are measured on the grove. It is the only dressed plant scene the add-on draws on this
-  tree. Creek's and the forest's readers, and the reflections, follow M3-V11 and M3-V12.
-- The two leaf forms are still uncompared, and the comparison has no owner. This record defers it to
-  M3-V17, while M3-V17's line takes "the form that M3-V14's comparison picks". The loop must be
-  broken: either the plan's V17 line names who runs the comparison, or this task does. A leaf with
-  its own speed needs the step that M3-V13 gives.
+- The readers are measured on the grove, the only dressed plant scene that read the field on the
+  measured tree. Creek's and the forest's readers, and the reflections, are not measured here.
 - The spring tree sweep is covered by M3-V10's record, which measured branch poses with springs
   beside per-vertex wind. This record does not repeat it.
 - The flag and the water surface read the field through one texture. Their vertex read is not
-  measured, and no task owns that measurement, though the plan asks this task to time it. The plant
-  material uses four of its six texture slots, so two are free for the field's
-  two states and the branch poses. The water material uses three of six, so three are free for a
-  flag or a ripple.
+  measured, and no task owns that measurement, though the plan asks this task to time it. The water
+  material uses three of six texture slots, so three are free for a flag or a ripple.
 - The device rows are measured on this Mac's Apple M3 Max, the iPhone 17, the Galaxy S24, the iPad
   Pro 13, the Galaxy S25 and the Galaxy Tab A9 Plus. The owner dropped the M5 Max row this task
   once named: no M5 Max ran the plan, and the M3 Max rows are the ones the task is judged on.
@@ -555,8 +544,9 @@ the figure and the budget, not for the governor's input.
 - Unit tests show that each preset moves each setting. They show that each of the governor's steps
   moves the interval, the pressure count and the spring trees, and that the budget's floor holds.
   They show too that a preset change that changes the grid makes a pass of the new size.
-- `windSpringTrees` has no reader yet. Branch poses are M3-V10's work, so the setting waits for
-  them. The vegetation add-on reads it when they land.
+- `windSpringTrees` has no reader. Branch poses were measured and removed
+  ([D-241](D-241-vegetation-foundation.md#wind-by-branch-poses-built-and-measured)), so no code reads
+  the setting.
 - The stress page drives the governor down and back up with a load of cards that read the field. It
   ran on this Mac at 2,097,152 cards. It ran on the cloud iPad Pro 13 and Galaxy S25 at 500,000.
   Every preset with a field stepped at least one step on every device, and every one came back.
@@ -610,70 +600,11 @@ the figure and the budget, not for the governor's input.
   belongs to its own run. The run recorded no machine load, so no clean-window claim is made for its
   figures.
 
-## Addendum: the leaves' two forms, and the flag and water readers
+## Addendum: the flag and water readers
 
-M3-V17 builds the falling and floating leaves in the vegetation add-on. It builds the two forms
-that the leaf section above left unmeasured. It also builds the flag and the water readers that the
-readers section named, and it measures one more texture read for each.
-
-### The leaves' two forms
-
-`createFloatingLeaves(ctx, { wind, camera, count, area, ride })` draws leaves in a box that follows
-the camera. Each leaf falls from the box's top to its ground and starts again. Both forms draw the
-same leaf card and the same fall.
-
-- `ride: 'offset'` pushes a closed-form fall by the air at the leaf's place. It reads the field once
-  for each leaf, and it keeps no state between frames. A gust moves a leaf only while the leaf
-  stands in it.
-- `ride: 'state'` keeps a place and a speed for each leaf in a pass that keeps its state. The pass
-  samples the field, drags each leaf toward the air at its place, and wraps the leaf inside the
-  box. A gust carries a leaf along its path, and the leaf keeps its speed after the gust passes.
-  The state texture holds four numbers for each leaf. On WebGL2 the pass runs as its fragment
-  form, which steps the same state, so a leaf moves the same way on every path.
-
-The state form is the default. It is the form that carries a gust, which is why the leaves moved
-from the CPU.
-
-### The leaves' cost
-
-The `leaves-wind-cost` plan draws one form at one count on one GPU path. Each page holds the camera
-still and measures three seconds after a warm-up. The counts are 500, 2,000 and 10,000. The pages ran on the cloud iPad Pro 13 at Safari 26.6.1, in
-[its leaves run](../tested-devices/ipad-pro-13-safari/20261101-074423-leaves-wind-cost.md).
-
-WebGPU, median GPU milliseconds at High:
-
-| Leaves | Offset, the field's pass | State, the field's and the leaves' passes | The state pass alone |
-| --- | --- | --- | --- |
-| 500 | 0.018 | 0.375 | 0.357 |
-| 2,000 | 0.027 | 0.379 | 0.352 |
-| 10,000 | 0.246 | 0.379 | 0.133 |
-
-Compatibility mode, median GPU milliseconds at High:
-
-| Leaves | Offset, the opaque pass | State, the opaque pass | Offset, the field's pass | State, both passes |
-| --- | --- | --- | --- | --- |
-| 500 | 1.085 | 1.101 | 0.091 | 0.166 |
-| 2,000 | 1.096 | 1.097 | 0.116 | 0.165 |
-| 10,000 | 1.101 | 1.099 | 0.170 | 0.092 |
-
-The compatibility figures at 10,000 are lower than at 2,000 because the field's pass runs fewer
-cycles when a frame is shorter. The opaque pass draws the leaves, and it moves 0.016 ms from 500 to
-10,000 offset leaves, so the per-leaf read is cheap there. The state form's pass adds 0.05 to
-0.08 ms.
-
-On WebGPU the state pass alone is about 0.36 ms at 500 and 2,000 leaves. At 10,000 the offset
-page's field pass is inflated by the extra cycles that its slow frames ran, so the difference there
-is not the state pass's own cost.
-
-Every page updated its sketch about 190 times in its 3 s, so neither form lost the page's update
-rate at 10,000 leaves. The GPU timer's whole-frame median includes idle gaps of 0.7 to 23.6 s
-between passes on several pages, so those medians do not compare the forms. The pass medians are
-the figures above.
-
-WebGL2 reports no GPU timer. Its pages updated their sketch 71, 63 and 63 times a second at 500,
-2,000 and 10,000 offset leaves, with CPU medians of 1.82, 1.82 and 1.88 ms. The state pages updated
-72, 63 and 63 times a second, with CPU medians of 1.88, 1.85 and 1.82 ms. Both forms therefore hold
-the page's update rate at every count on that path.
+M3-V17 builds the flag and the water readers that the readers section named, and it measures one
+more texture read for each. Its falling and floating leaves were the vegetation add-on's, and the
+repository no longer holds them ([D-378](D-378-vegetation-add-on-removed.md)).
 
 ### The flag and the water
 
@@ -713,13 +644,10 @@ grid's edge and a device without float targets need.
 | --- | --- | --- |
 | Water surface | mirror, foam, junction, field, steady settings | 1 |
 | Flag sketch | field, steady settings | 4 |
-| Leaves, offset form | leaf atlas, field, steady settings | 3 |
-| Leaves, state form's material | state texture, leaf atlas | 4 |
-| Plants (M3-V7) | bark colour, bark surface, leaf colour, leaf surface, branch records, field | 0 |
 | Grass | field, steady settings | 4 |
 
-M3-V14 asked for the readers that have a slot free. They are the water surface, the flag, the grass
-and the leaves. The plant material keeps none.
+M3-V14 asked for the readers that have a slot free. They are the water surface, the flag and the
+grass.
 
 ### Creek and the forest at the ceilings
 
@@ -773,7 +701,7 @@ The figure in that column is the scene's first fill, at the preset's upload budg
 frame: 2.2 MB is Low's 2 MiB budget and 4.3 MB is Medium's 4 MiB. A scene uploads each texel once,
 so the measurement of the seconds after the start reads the fill that the slow frames spread.
 
-Creek now keeps the leaves' state form and its preset's grid on every path. A reader without a grid,
+With the render graph's fix a scene keeps its preset's grid on every path. A reader without a grid,
 such as one on a device whose float targets fail the probe, works the air out of the steady field.
 The owner ruled that the gust must work on the WebGL2 path, so the steady field carries a gust that
 a page sends: `gust()` writes its place, its strength and the time it was sent into the field's
@@ -784,9 +712,8 @@ What this record proves is the air, not a person watching the demo. A probe samp
 the readers carry, on a line across the ground with no grid, and the gust moved 6 m in the 1 s
 between two reads against the field's own 6 m/s
 ([the run](../tested-devices/macbook-pro-m3-max-chrome/20261101-1915-gust-crossing.md)). The
-readers take the fourth vector that carries it, and the vegetation add-on's copy test holds their
-blocks, the cost page's and the probe's steady block equal to the canonical text; the probe keeps
-only the reading function of the other block, since it samples no grid. Owed, and not taken: a held picture of Creek on the WebGL2 path with a
+readers take the fourth vector that carries it, and the wind add-on's own test holds the readers'
+blocks equal to the canonical text. Owed, and not taken: a held picture of Creek on the WebGL2 path with a
 gust sent, which would show the grass, the water and the leaves moving. The machine barred image
 runs when this landed.
 
@@ -843,9 +770,8 @@ close view moves most, and three times as far on WebGL2 as on WebGPU, where Cree
 leaf form.
 
 The same run measured the forest, and `demo-forest` passes on all three tiers, so its sway does not
-reach its held picture and it is not redrawn. `vegetation-versus-creek` passed too. M3-V11 then
-deleted the painted oak that the picture drew beside the generated one, and removed the test with
-it ([D-241](D-241-vegetation-foundation.md)). `creek-band` keeps no picture: it reads the route
+reach its held picture and it is not redrawn. `vegetation-versus-creek` passed too; the repository
+no longer holds that test. `creek-band` keeps no picture: it reads the route
 picture's frame, so it re-runs after the references are drawn. `creek-lod` also kept no picture, and
 M3-V11 removed it with the model files that it measured, so nothing re-runs there.
 
@@ -857,9 +783,9 @@ images, and `bun run images:review --ci <run> --accept <name>` accepts them, as
 
 ### What the task's clauses stand at
 
-M3-V17 delivers the readers, the two leaf forms and their comparison, the flag's and the water's
-extra read, the gust on every path, and the Creek and forest rows that match the head on the iPad,
-the S25 and the tablet. It is a partial delivery. These clauses stay open:
+M3-V17 delivers the readers, the flag's and the water's extra read, and the gust on every path. It
+also delivers the Creek and forest rows that match the head on the iPad, the S25 and the tablet. It
+is a partial delivery. These clauses stay open:
 
 - **The particles add-on's wind input.** The task's bullet asks for a field texture and its box, so
   dust, motes, smoke and rain take an offset from the field. The add-on takes a constant vector

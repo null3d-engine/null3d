@@ -6,7 +6,7 @@
 
 The owner rebuilds Creek from the ground up (D-363). This garden is that rebuild. It replaces today's valley in place. It is not a second scene.
 
-The garden shows the engine's water, wind, weather, particles and grass, and the hero models generated with Tripo3D and finished in Blender. No part of the garden uses the vegetation add-on (D-378).
+The garden shows the engine's water, wind, weather, particles and grass, and the hero models generated with Tripo3D and finished in Blender. The repository holds no vegetation add-on, so the garden's plants are models (D-378).
 
 The owner's setting:
 
@@ -47,16 +47,16 @@ These rulings widen the model rule of `.dev/examples.md` and D-378, which today 
 
 | The 2 November plan said | Main now | Effect on this plan |
 | --- | --- | --- |
-| Creek becomes the vegetation add-on's full demo, with rocks and species added to the add-on | D-378: the add-on is private, ships nowhere and is off CI, and no demo draws its plants. Creek loads trees, bank plants and a cave that `creek.py` builds | Models come from Tripo3D and the Blender script. Small stones stay in code |
+| Creek becomes the vegetation add-on's full demo, with rocks and species added to the add-on | D-378: the repository holds no vegetation add-on. Creek loads trees, bank plants and a cave that `creek.py` builds | Models come from Tripo3D and the Blender script. Small stones stay in code |
 | Close M3 on today's valley first, and correct the status text in `tools/pr-status.ts` | M3 is complete: every task closed before the 0.2 release work (#549) merged. D-363 keeps today's Creek figures as a stated limit, with no further cost work. D-364 closes the vegetation cost tasks | Step dropped |
 | Add a task in `tools/hooks/task-ids.txt` | D-379: the task list, the `Task:` footer and the status tool are gone. Each piece of work lands as its own pull request against main | Order of work and branch rewritten |
 | The cave went with Blender | The cave is back, built in Blender from metaballs (`cave.glb`) | The garden leaves it out (owner's answer) |
 | Levels of detail start off, so set `lod: true` | Since #549 the shared showcase code turns levels on unless a scene says `lod: false`. Mesh levels switch or fade with a dither. Only the terrain add-on morphs | Step dropped. "Morphing levels" now reads "dithered levels" |
-| Falling leaves come from `createFloatingLeaves` | That call is in the private add-on only. Creek's falling and floating leaves are `@null3d/particles` systems with a tint for each mood (`air.ts`, `flora.ts`) | Autumn colors are new tints |
+| Falling leaves come from `createFloatingLeaves` | No package in the repository has that call. Creek's falling and floating leaves are `@null3d/particles` systems with a tint for each mood (`air.ts`, `flora.ts`) | Autumn colors are new tints |
 | Grass from the add-on, with `where` and `color` | `@null3d/grass`: `createGrass` with a mask function, and `swayDistanceFor`. Creek draws 34,000 bank tufts and 18,000 land tufts at High | Keep |
 | Plants sway only within 8 to 32 m | That is the grass alone. Trees and plants sway through `examples/lib/sway.ts` out to 120 m at every preset | The wind-reach question is about grass only |
-| Memory: the add-on's set takes 29.75 MiB of a 30 MB ceiling | Gone: that ceiling budgets the add-on's generated plants. Today's three Creek model files total about 5.45 MB. D-12's memory budgets and the sample-file limits apply | Measure the model files and the page's memory |
-| Placement checksum 3358570449 | No test binds Creek. The add-on's scatter page runs by hand only | Dropped |
+| Memory: the add-on's set takes 29.75 MiB of a 30 MB ceiling | Gone: the repository holds no generated plants for that ceiling to budget. Today's three Creek model files total about 5.45 MB. D-12's memory budgets and the sample-file limits apply | Measure the model files and the page's memory |
+| Placement checksum 3358570449 | No test binds Creek, and the repository holds no scatter page | Dropped |
 | Baseline: iPad Low 30.98 ms, iPad Medium 78.82 ms, S25 33.3 ms | Measured on 1 November, on an older Creek. No frame time exists for today's Creek on any device. The only figure is the first frame, in 2.9 to 4.5 s on the Mac | Today's Creek is timed once before the build, and the garden is held to D-241's ceilings (owner's answer) |
 | "Creek Medium takes 166 ms on the S25, now fixed" | The WebGL2 row was the reflection stall that D-286 fixed, and it reads 33.3 ms now. The WebGPU Medium row of 166.6 ms in D-241 is the old scene's own cost, and it is still the Medium ceiling for S24-class phones | Corrected |
 | The terrain gains a `wet` option and a new `wet.test.ts` | The weather add-on (`examples/addons/weather`) holds the wet block (`wet.wgsl`), its values (`createWetSurface`) and `wet.test.ts`, which holds the Skyway ground's and the night town street's copies to it. The terrain's material has no free texture slot | The garden's ground copies the block. The terrain does not change |
@@ -237,7 +237,7 @@ What changes:
   - `examples/demos.ts`: Creek's title and summary.
   - `.dev/examples.md`: the Creek section; the ring bullet, which goes; the camera-bounds bullet, reworded as in section 2; the island's and Skyway's ring exemptions, which lose their reason to exist; and the model rule, which gains Tripo3D.
   - `.dev/sample-content.md`: Creek's model files, and the Tripo3D raw results with their `task.json` records.
-  - D-170 (the ring rule retires), D-378's model rule, and D-241's summary, which still says that Creek drops its Blender plants for the add-on.
+  - D-170 (the ring rule retires) and D-378's model rule.
   - `docs/api/water.md`: the waterfall and the rain rings.
   - `examples/addons/weather/README.md`: the rain.
   - `tests/lib/plans.ts`: Creek joins the live showcase device plan.
@@ -246,7 +246,7 @@ What changes:
 ## Considered and not adopted
 
 - **A separate new scene beside Creek.** The owner rebuilds Creek in place (D-363).
-- **Rocks and species in the vegetation add-on.** D-378 bars every demo from it.
+- **Rocks and species in a vegetation add-on.** The repository holds no vegetation add-on (D-378).
 - **The old `tripo-mcp` server** (`Tripo-Developer/tripo-mcp`). It was installed and removed on 2026-11-19: it crashes on start unless an older MCP library is pinned, and it talks to an old Tripo Blender add-on, not the current Tripo Bridge. The official `tripo-cli` replaces it, as a command and as an MCP server.
 - **A homemade tool that calls Tripo3D's web service.** `tripo make` already uploads, waits, retries, checks parameters, downloads before the links expire and records each run.
 - **Tripo3D through fal.ai.** The owner chose the direct connection.
@@ -266,7 +266,7 @@ This plan stays on `plan/creek-cliff-garden` (pull request #561). The work itsel
 
 ## Risks
 
-- **Frame time.** Today's Creek has no figure. With the add-on's plants, it ran 7.8 to 11 times over its ceilings on the iPad Pro (D-363). Its Blender models are far cheaper, but the garden has far more plants, two waterfalls and layers of cloud. If density and a ceiling conflict, report the figures for an owner ruling.
+- **Frame time.** Today's Creek has no figure. With the vegetation add-on's plants, it ran 7.8 to 11 times over its ceilings on the iPad Pro (D-363). Its Blender models are far cheaper, but the garden has far more plants, two waterfalls and layers of cloud. If density and a ceiling conflict, report the figures for an owner ruling.
 - **Statue look,** the largest single risk, tested first. A generated statue can carry soft detail or odd hands. The metaball fallback stands behind it.
 - **Generated models:** one request cannot be repeated exactly, which is why the raw results are kept. Their style may differ from the code-made rocks and the scripted plants; the Blender repaint keeps them in one palette.
 - **Tripo3D's terms** allow publishing for a paid account, and this account is paid (read on 2026-11-20). If the account ever runs on a free plan, its outputs belong to Tripo, so generate only with bought credits.

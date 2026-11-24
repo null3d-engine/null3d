@@ -94,7 +94,7 @@ planting level would be the next lever, and it waits for the owner.
 ## Alternatives rejected
 
 - **A fifth preset.** Its rows would ripple through every setting. They would also ripple through the
-  add-ons' preset rows, such as the water's reflection cadence and the vegetation's. The docs and the
+  add-ons' preset rows, such as the water's reflection cadence and the grass's share. The docs and the
   tests would change too. A preset also cannot be entered or left by the governor's rules. The tier
   is conditional and reversible by nature.
 - **A device list.** The chooser's facts can start a weak class in the tier. The tier's activation

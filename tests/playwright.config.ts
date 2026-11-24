@@ -3,7 +3,6 @@ import { defineConfig } from '@playwright/test';
 import { defaultEnvironment } from '../packages/cli/src/browser.js';
 import { refuseInQuietWindow } from '../tools/lib/quiet-window.ts';
 import { ensureShaderModules } from '../tools/lib/shader-modules.ts';
-import { VEGETATION_FILES, vegetationOn } from '../tools/lib/vegetation-switch.ts';
 import { ALONE_PROJECT_SUFFIX, RUNS_ALONE } from './lib/alone.ts';
 import { repoBrowserOptions } from './lib/chrome-for-testing.ts';
 import {
@@ -40,23 +39,9 @@ const environment = defaultEnvironment();
 const launchOptions = repoBrowserOptions(environment);
 /** Device pixels per CSS pixel on the screen of the resize tests, as on most phones and laptops. */
 const HIGH_DENSITY_RATIO = 2;
-/**
- * The vegetation add-on's test files, which run only with the add-on's switch on: the add-on is a
- * work in progress that no CI job tests (D-378).
- */
-const VEGETATION_SPECS = vegetationOn()
-	? []
-	: VEGETATION_FILES.filter((glob) => glob.startsWith('tests/image/')).map((glob) =>
-			glob.slice('tests/image/'.length),
-		);
 /** The main project's tests: every test file but those that only the other projects run. */
 const MAIN_PROJECT = {
-	testIgnore: [
-		'resize.spec.ts',
-		'content-security-policy.spec.ts',
-		'cdn.spec.ts',
-		...VEGETATION_SPECS,
-	],
+	testIgnore: ['resize.spec.ts', 'content-security-policy.spec.ts', 'cdn.spec.ts'],
 };
 /**
  * How this run treats the production build ([`PRODUCTION_PAGES_SWITCH`]). The build takes minutes,

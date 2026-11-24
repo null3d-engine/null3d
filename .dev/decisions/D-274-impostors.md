@@ -4,7 +4,7 @@ Status: decided. The owner ruled the record stands, on the auditor's reading tha
 responsibility is the right one. Built for this record: the cards' three-view blend and
 their relight from stored normals (`3a75764e5`), the two atlases and `encodeImpostorSurface`, the
 per-copy turn with the card's upright frame, and the bake helper that fills both atlases. Built by
-the far-tree task beside it: the per-variant bake and the hand-over band, in the vegetation add-on.
+the far-tree task beside it: the hand-over band, `handOverToCards`, in the impostors add-on.
 Built with this record's shadow method: a custom material's caster tests the coverage that its WGSL
 names, a masked card cuts its crown out of its shadow, and a card that receives shadows reads them
 at the surface that its stored depth shows. Task: M3-L4, M3-V9.
@@ -13,13 +13,13 @@ Summary: A far tree draws as a card from two octahedral atlases: color, and a li
 normal, depth and coverage. The card stands upright, turns to the eye, blends the three cells
 nearest the direction and lights from the stored normal. This record keeps that layout and stores
 the normal in the object's local frame, so a turned copy lights correctly. The impostors add-on owns
-the card and the bake helper, and the vegetation add-on owns the bake of each variant and the
-hand-over. The card's shadow is cut to its crown and holds still while the light does.
+the card, the bake helper and the hand-over, and the code that makes a tree bakes it with the
+helper. The card's shadow is cut to its crown and holds still while the light does.
 
 ## Question
 
-What should the far-vegetation impostors be, and does the engine's impostor support or the vegetation
-add-on own them? What do the three-view blend and the relight still need?
+What should the far-vegetation impostors be, and which package owns them? What do the three-view
+blend and the relight still need?
 
 ## Rule
 
@@ -27,8 +27,8 @@ add-on own them? What do the three-view blend and the relight still need?
   between options that differ in the picture (hard rule 40).
 - The card's blend costs texture reads for every far tree's pixels. The blend stays only because the
   owner ruled it in and the look needs it.
-- Each feature lives in one place. The card, its atlases and its blend are the impostors add-on. The
-  bake of a plant, its turn and its hand-over are the vegetation add-on.
+- Each feature lives in one place. The card, its atlases, its blend, the bake helper and the
+  hand-over are the impostors add-on. The code that makes a tree chooses what the helper bakes.
 - Both GPU paths draw the same card.
 - The far band draws past the shadow's reach, as the demo's cards do.
 
@@ -49,7 +49,7 @@ add-on own them? What do the three-view blend and the relight still need?
 | The bake at each preset on the iPad Pro 13 | Low 112, 39 and 41 ms; Medium 221, 54 and 77; High 303, 87 and 124; Ultra 535, 155 and 217. The page took 1.96 s | `impostor-bake` plan, run `20261030-071952-impostor-bake`, Safari 26.6.1 on WebGPU |
 | The bake at each preset on the Galaxy S25 | Low 150, 36 and 50 ms; Medium 245, 66 and 94; High 411, 111 and 157; Ultra 740, 200 and 283. The page took 2.54 s | the same run, Chrome 152 on WebGPU |
 | The bake at each preset on the Galaxy S24 | Low 293, 54 and 72 ms; Medium 384, 99 and 141; High 643, 164 and 234; Ultra 1,158, 297 and 426. The page took 3.97 s | `impostor-bake` plan, run `20261030-072140-impostor-bake`, Chrome 152 on WebGL2 |
-| The first use of a three-species scene at Ultra | 1.51 s on the Mac, 0.91 s on the iPad Pro 13, 1.22 s on the Galaxy S25 and 1.88 s on the Galaxy S24, in one blocked main thread: one synchronous block a species, and nothing hides it | the four rows above, summed. The bake runs on the CPU, so the display rate and any GPU timer do not touch these figures |
+| The first use of a scene of three tree kinds at Ultra | 1.51 s on the Mac, 0.91 s on the iPad Pro 13, 1.22 s on the Galaxy S25 and 1.88 s on the Galaxy S24, in one blocked main thread: one synchronous block a tree kind, and nothing hides it | the four rows above, summed. The bake runs on the CPU, so the display rate and any GPU timer do not touch these figures |
 | A turned copy's light | matches its mesh within the atlas's resolution | `impostor-turn`, `impostor-turn-sun-back` |
 | The card field's GPU cost, 152 cards at 1600 x 900 on the Mac, preset High | WebGPU 1.02 ms, compatibility mode 1.02 ms, WebGL2 1.34 ms a frame | `NULL3D_IMPOSTOR_COST=1 bun run test:browser -- impostor-cost.spec.ts` through the heavy queue, from the driver's own timestamps |
 | The whole frame with the cards, the same run | 1.22 to 2.51 ms of GPU time with the cards against 0.20 to 1.17 ms with them hidden; 16.67 ms interval, 0.12 to 0.16 ms CPU. The interval is the headless display's cap, so it is not a figure | the same |
@@ -137,10 +137,9 @@ that darkens itself.
    direction before it picks the cells, and it turns the stored normal by the same value. The turn is
    this record's card work, with the light kept in step.
 5. Ownership: the impostors add-on owns the card, the two atlases, the blend, the normal's frame, the
-   depth's meaning, the turn, and the bake helper that fills the two atlases. The vegetation add-on
-   owns the bake of each variant at first use and the hand-over band. The plant's `impostorSource`
-   names the level, the bounds, the pivot and the tint. Vegetation takes the impostors add-on as a
-   peer at the exact version. D-241 already makes vegetation reuse the impostor foundation.
+   depth's meaning, the turn, the bake helper that fills the two atlases, and the hand-over band.
+   The code that makes a tree bakes each of its variants with the helper, which takes the variant's
+   mesh parts and bounds.
 6. The depth stays in the surface atlas. The far-tree task reads it for the receiver offset of its
    shadow method. This record does not read it for parallax. A parallax shift would move texels across
    cell edges, and no picture shows a parallax fault at the distances the cards draw.
@@ -155,11 +154,11 @@ that darkens itself.
    light must undo them. This record stores the colour unlit and relights in the card's shader, so
    the bake needs no scene light at all. The work runs once at first use, which hard rule 42 leaves
    in TypeScript because it is not a frame loop. That first use is a stall a visitor meets: the bake
-   is one synchronous block a species on the main thread, and nothing in the add-on hides it, with
-   no progress line and no placeholder. At the Ultra grid the three species take 1.5 s on the Mac,
-   0.9 s on the iPad Pro 13, 1.2 s on the Galaxy S25 and 1.9 s on the Galaxy S24. A scene that cannot
-   afford the S24's stall bakes one species a frame, or holds its far band as meshes until the bake
-   ends; the add-on offers no help for either.
+   is one synchronous block a tree kind on the main thread, and nothing in the impostors add-on
+   hides it, with no progress line and no placeholder. At the Ultra grid the three kinds take 1.5 s
+   on the Mac and 0.9 s on the iPad Pro 13. They take 1.2 s on the Galaxy S25 and 1.9 s on the
+   Galaxy S24. A scene that cannot afford the S24's stall bakes one kind a frame, or holds its far
+   band as meshes until the bake ends. The add-on offers no help for either.
 9. The card's shadow method is built, as decisions 6 and 7 leave it to the far-tree task. A card
    that casts draws as a cast-only caster, inside the reach, and faces the light. The engine
    capability that the caster needed is built: a custom material may declare
@@ -222,8 +221,8 @@ that darkens itself.
 - A view-frame normal. It belongs to a cell's view, so it is off by up to half a cell's angle, and it
   cannot follow a copy's turn.
 - A single view for each card. It hops, and the owner ruled the blend in.
-- A separate card material in the vegetation add-on. It would copy the octahedral encoder and the
-  blend.
+- A separate card material in the code that makes the trees. It would copy the octahedral encoder
+  and the blend.
 - Parallax from the stored depth in this task.
 - Cards that receive the sun's shadows at their own plane. Their world position is the plane, not
   the tree's surface, so the lookup reads the card's own cast: part of the card darkens, by a line
@@ -246,8 +245,8 @@ that darkens itself.
   `impostor-handover-strip.spec.ts` walks the camera through the band and compares each card with
   the crown of its mesh: the card that shows the tree's own turn sits closer to the mesh than a card
   turned 60 degrees further, and the two card pictures differ. The unit test
-  `draws the cards from far enough before the switch that their fade ends first` in
-  `packages/vegetation/src/impostor.test.ts` holds the arithmetic of the lead against the engine's
+  `the cards' faded edge ends before the meshes' edge begins to thin` in
+  `packages/impostors/src/hand-over.test.ts` holds the arithmetic of the lead against the engine's
   fade band. The Rust test `a_custom_material_fades_its_own_levels_and_a_handed_over_card_dithers`
   holds the fact that makes the lead necessary: a custom material's distance-band edge fades, so
   the card would dither at the same time as the mesh.
@@ -256,9 +255,6 @@ that darkens itself.
   still draws it exactly as often as a caster that never moves, and a card that does not claim it
   draws it in every frame. The material test `passes a card's still-caster claim to the core, and
   its withdrawal` holds that the public `castsStill` option sets the core's still-caster flag.
-- The image test `impostor-plant` draws a grown birch as its level-0 mesh beside the card that
-  `bakeFarTree` makes from it. The two crowns match in colour, which settles the bake, the leaf
-  coverage and the per-part tints.
 - The `impostor-cost` page draws a full view of 152 cards with the whole batch hidden and shown in
   turns, so the difference is the card batch's frame cost, and then draws the three-view blend
   against one view. On the Mac's GPU at High the field costs 1.02 ms on WebGPU, 1.02 ms in
@@ -286,33 +282,31 @@ that darkens itself.
   moves its sun lookup to the surface that the stored depth shows. `packages/impostors/src/batch.ts`
   creates the batch with row values, takes the turns, and takes the depth that scales the stored one,
   the two shadow flags and the view count. `packages/impostors/src/bake.ts` fills the two atlases and
-  returns the card's size and depth. `packages/vegetation/src/impostor.ts` bakes a plant's level and
-  sets the hand-over band. The engine's `crates/null3d-shaders/src/material.rs` builds a custom
+  returns the card's size and depth. `packages/impostors/src/hand-over.ts` sets the hand-over band.
+  The engine's `crates/null3d-shaders/src/material.rs` builds a custom
   material's caster from its `coverage` function, and `crates/null3d-render/src/frame.rs` routes a
   masked caster through it and keeps a still caster out of the moving list.
 - Docs: `docs/api/impostors.md` states the local frame, the turn, the bake, the depth's use and the
   two shadow flags. `docs/api/materials.md` and `docs/shaders/surface-functions.md` state the
-  `coverage` function, `Surface.shadowOffset` and `castsStill`. `packages/vegetation/docs/api.md` states the
-  far tree and the hand-over. `docs/concepts/lod.md` states that the card is lit by the scene's sun
+  `coverage` function, `Surface.shadowOffset` and `castsStill`. `docs/concepts/lod.md` states that the card is lit by the scene's sun
   and casts its crown. The three.js mapping gains nothing, because three.js has no impostor
   counterpart.
-- Skills: the develop skill's impostor, vegetation and shader notes.
+- Skills: the develop skill's impostor and shader notes.
 - Two things keep the split honest as it grows. The distance hand-over, `handOverToCards`, lives
-  in the impostors add-on, so the impostors demo and any other caller use it without the vegetation
-  add-on, which re-exports it under the same name ([D-378](D-378-vegetation-add-on-unpublished.md)).
-  And the bake helper's public shape stays plant-neutral. The four `impostorSource` fields are the guard that
-  keeps a caller from passing a plant's own nouns through it.
+  in the impostors add-on, so the impostors demo and any other caller use it with no plant package.
+  And the bake helper's public shape stays plant-neutral: it takes mesh parts and bounds, so a
+  caller passes no plant's own nouns through it.
 - Tests: `impostor-turn` and `impostor-turn-sun-back` draw a turned tree beside its card,
-  `impostor-plant` draws a grown plant beside its card, and `impostor-shadow` draws a row of cards
+  and `impostor-shadow` draws a row of cards
   beside their cut-out shadows. A Rust test holds a coverage material's caster to its own builds and
   a still caster out of the moving list, and the material build's test holds the coverage function's
-  caster builds. The impostor, plant, turn and hand-over pictures are redrawn for the upright frame,
+  caster builds. The impostor, turn and hand-over pictures are redrawn for the upright frame,
   the bake, the shadow offset and the hand-over's turned trees. The `impostor-frame` plan times the
   demo that draws the cards at each preset a GPU path draws, so the frame check repeats on each
   device. The Rust test `a_still_card_in_a_far_cascade_leaves_its_layer_cached` counts the far
   cascade's draws on both builders, the material test holds the still-caster option's core flag, and
   the strip's turned-band test runs on a computer with a GPU of its own.
-- The far-tree task builds the per-variant bake, the hand-over band and the shadow method. This
+- The far-tree task builds the hand-over band and the shadow method. This
   record builds the card, the blend, the normal's frame, the turn and the bake helper, and the two
   tasks do not split the same work twice. The shadow method is M3-V9's, and this record's decision 9
   states the engine capability that it builds.

@@ -71,8 +71,8 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     # The unit suite is this job's longest step. The slowest runner measured took 22m20s of test
-    # time beside four minutes of doc checks, a minute inside twenty-five, when the suite held the
-    # vegetation add-on's groups; those run by hand now, with `bun run test:vegetation` (D-378).
+    # time beside four minutes of doc checks, a minute inside twenty-five, on a larger suite than
+    # the current one.
     # The limit gives a slow runner room for a slower day, and a suite whose work grows again is a
     # cut to make in the work rather than a ceiling to keep raising: a red or hanging job still ends.
     timeout-minutes: 30
@@ -352,7 +352,7 @@ jobs:
           echo "rust-shaders=${{ hashFiles('crates/null3d-shaders/**', 'crates/null3d-shaders-wasm/**', 'crates/null3d-gpu/**', 'Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', '.config/nextest.toml') }}" >> "$GITHUB_OUTPUT"
           echo "rust-workspace=${{ hashFiles('crates/**', 'Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', '.config/nextest.toml', 'packages/engine/src/generated/gpu.ts', 'packages/engine/src/generated/core.ts', 'packages/engine/src/errors/codes.ts', 'tests/fixtures/light-clusters.bin', 'tests/pages/lib/dfg-table.ts', 'packages/splats/src/pack-growth.fixture', 'tests/pages/assets/environments/**', 'examples/addons/aurora/aurora.wgsl', 'examples/addons/car-paint/paint.wgsl', 'tools/shader-compiler.ts') }}" >> "$GITHUB_OUTPUT"
           echo "shader-compiler=${{ hashFiles('crates/null3d-shaders/**', 'crates/null3d-shaders-wasm/**', 'crates/null3d-gpu/**', 'Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', 'tools/build-wasm.ts', 'tools/shader-compiler.ts', 'packages/vite-plugin/src/compiler-calls.js', 'packages/vite-plugin/src/shader-compiler.ts', 'packages/vite-plugin/src/shader-types.ts', 'package.json') }}" >> "$GITHUB_OUTPUT"
-          echo "plugin=${{ hashFiles('crates/null3d-shaders/**', 'crates/null3d-shaders-wasm/**', 'crates/null3d-gpu/**', 'Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', 'tools/build-wasm.ts', 'tools/shaders.ts', 'tools/lib/shader-modules.ts', 'tools/lib/fixture.ts', 'tools/lib/wgsl-modules.ts', 'tools/lib/walk.ts', 'tools/lib/vegetation-switch.ts', 'tools/lib/build-cache.ts', 'tests/lib/run-budget.ts', 'packages/vite-plugin/**', 'package.json', 'bun.lock') }}" >> "$GITHUB_OUTPUT"
+          echo "plugin=${{ hashFiles('crates/null3d-shaders/**', 'crates/null3d-shaders-wasm/**', 'crates/null3d-gpu/**', 'Cargo.toml', 'Cargo.lock', 'rust-toolchain.toml', 'tools/build-wasm.ts', 'tools/shaders.ts', 'tools/lib/shader-modules.ts', 'tools/lib/fixture.ts', 'tools/lib/wgsl-modules.ts', 'tools/lib/walk.ts', 'tools/lib/build-cache.ts', 'tests/lib/run-budget.ts', 'packages/vite-plugin/**', 'package.json', 'bun.lock') }}" >> "$GITHUB_OUTPUT"
           echo "plugin-tests=${{ hashFiles('tests/fixtures/typed-uniforms/**', 'tests/pages/sketches/shaders/**', 'examples/showroom/**', 'examples/splat-garden/**') }}" >> "$GITHUB_OUTPUT"
       - name: The parts' keys, and the jobs whose every part passed
         id: passes
@@ -720,8 +720,8 @@ jobs:
     # The WGSL that the test pages load, compiled into the Vite plugin's cache with the requests that
     # the dev server makes, each part a share of the compiles. A custom material builds into every
     # variant of the standard material, and a browser job that compiled the add-ons' materials
-    # itself spent minutes before the first page of them could start: the Island's sketch, the
-    # vegetation recipe and the water pages waited out their limits in runs 41974284283 and
+    # itself spent minutes before the first page of them could start: the Island's sketch, a plant
+    # page and the water pages waited out their limits in runs 41974284283 and
     # 41980121555. Every job that serves or builds the pages joins the parts' archives. Each part
     # keeps its entries in the Actions cache under the compiler's version, so a run compiles only the
     # modules that changed, and the tool keeps only the current entries.
@@ -1318,8 +1318,8 @@ jobs:
       - name: Browser tests on SwiftShader, WebGPU and WebGL2
         env:
           # One weight for each shard of the matrix, in its order: `bun run test:browser-weights
-          # --target 12` over runs 44236971608, 44232061872, 44198085348 and 44118741287, with the
-          # vegetation add-on's tests out. Each shard models at 12 minutes or less at the median
+          # --target 12` over runs 44236971608, 44232061872, 44198085348 and 44118741287. Each
+          # shard models at 12 minutes or less at the median
           # times, and 13.4 to 15.8 at the slowest of each run, where one slow group holds a shard.
           # Those runs cut five shards each, so 43 tests had no time and took their file's mean.
           PWTEST_SHARD_WEIGHTS: "64:33:80:12:25:10:14:2:156:31:61:61:70:103:116:32:175:181:177:130:106:114:80:76:101:34:18:31:113:2:82:50:44:76:4:77:52:28:63:54:16:86:29:299:55:52:51:49:52:53:58:58:54"
