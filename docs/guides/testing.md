@@ -186,10 +186,12 @@ A live engine logs an error in `onUpdate` and carries on. Hold mode stops instea
 - Move things with `time.now`, the frame's step (`dt` or `time.dt`), or in `onFixedUpdate`. `Date.now()` and `performance.now()` change from run to run.
 - Use `math.random` or `Math.random`: hold mode seeds both. Random numbers from another source, such as `crypto.getRandomValues`, are not seeded.
 - Expect no input, unless the test gives a timed script. A plain hold reads none: every key and button stays up, and the pointer stays at the canvas's top-left corner. A script's key and pointer steps reach the sketch at their times.
-- Finish loading in the setup. Await every asset there, because the hold starts when the setup's promise resolves.
+- Finish loading in the setup. Await every asset there, because the hold starts when the setup's promise resolves. A sketch that adds large models after the first frame on a live page waits for them when `engine.held` is true ([A fast start](start-time.md#draw-the-first-frame-before-the-large-models)).
 - Pass test settings in the sketch module's address, such as `new URL('./sketch.ts?view=harbor', import.meta.url)`, and read them in the sketch with `new URL(import.meta.url).searchParams`. The page's messages reach the sketch only after the hold, because `createEngine` resolves after it.
 - Keep a reference image per GPU tier, and force the tier with `?gpu=webgpu`, `?gpu=compat` or `?gpu=webgl2`. The tiers can differ slightly at edges.
 - Compare with a small tolerance. A software GPU in CI and a real GPU differ at object edges. three.js's own rule counts a pixel as different past 10% of the color range. It fails an image when 0.1% or more of its pixels differ.
+
+<!-- TODO(picture-flake helper): a held scene that loads many files can draw a slightly different picture on each run, because the engine makes each file's content in the order that the loads finish. Say what holds, and what a sketch does about it, once that work ends. -->
 
 The [hold mode demo](https://github.com/null3d-engine/null3d/tree/main/examples/hold-mode) drops 400 balls from random places, and moves them by each frame's step. Every live run differs. With `?hold=3`, every run draws the same frame.
 
@@ -224,4 +226,5 @@ The engine reads these switches from the page's address in development builds. T
 | `?still-camera=off` | Draw every frame of a view that holds still, without the [still-camera accumulation](../concepts/post-processing.md#still-camera-accumulation): the view neither blends nor rests. Hold mode draws without it too |
 | `?preset=low`, `?preset=medium`, `?preset=high`, `?preset=ultra` | Fix the quality preset, within the GPU path's highest; the engine then ignores starts that crashed before |
 | `?target-fps=display`, `?target-fps=90` | Set the frame rate that the preset check and the governor defend, in place of the `targetFps` option: the display's full rate, or at most that many frames per second ([The target frame rate](../concepts/quality-presets.md#the-target-frame-rate)) |
+| `?preset-check=during-play`, `?preset-check=before-play` | Set when the preset check measures, in place of the `presetCheck` option: in the first frames of play, or before play, with `createEngine` waiting for it ([The preset check](../concepts/quality-presets.md#the-preset-check)) |
 | `?view=levels` | Draw a debug view, here the levels of detail, with no code change ([Debug views](../api/debug.md#the-view-from-the-address)). The switch takes any view name that `debug.view` takes |

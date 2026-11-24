@@ -36,6 +36,7 @@ const engine = await createEngine({
   sketch: new URL('./sketch.ts', import.meta.url),   // the sketch module
   preset: 'auto',        // 'auto' | 'low' | 'medium' | 'high' | 'ultra'; WebGL2 runs at most 'medium'
   targetFps: 'display',  // (0.2) the frame rate that the preset check and governor defend: 'display' for 120 or 144 Hz games, or a whole number; default the display's rate, at most 60
+  presetCheck: 'during-play',  // (0.3) the default: the preset check measures the first frames of play; 'before-play' makes createEngine wait for it behind the loading screen
   maxPixelRatio: 2,      // cap for devicePixelRatio in place of the preset's cap
   antialias: 'msaa',     // 'msaa' | 'fxaa' | 'none' in place of the preset's mode (FXAA on Low, MSAA above)
   depthPrepass: false,   // true draws opaque depth first, so each pixel shades once; presets: on for WebGL2, off for WebGPU
@@ -51,7 +52,7 @@ const engine = await createEngine({
   maxLabels: 4096,                       // (0.2) the default; labels that ui.trackLabel holds at once, 1 to 65,536
   maxLabels3d: 256,                      // (0.2) the default; labels that are planes of the scene, 0 to 65,536
   expectedObjects: 22000,                // (0.2) the scene starts with room for this many objects (default 1,023) and never grows in play; it grows on its own past it
-  onProgress: (stage) => {},             // 'core', then 'sketch' after the setup and any preset check, then 'first-frame'; 'memory-wait' first if the browser refuses memory for 10 s (0.2)
+  onProgress: (stage) => {},             // 'core', then 'sketch' after the setup (and the preset check with presetCheck: 'before-play'), then 'first-frame'; 'memory-wait' first if the browser refuses memory for 10 s (0.2)
   onSketchMessage: (type, data) => {},     // sketch messages from the start of setup, such as load progress
   onSketchError: (error) => {},            // (0.2) each distinct error the sketch's own code threw in a frame; the engine keeps drawing
   onWorkerRetry: (worker, script) => {},   // (0.2) a worker's script did not load and the engine started a second copy; the console warns too
@@ -755,10 +756,11 @@ const PARTICLES = { low: 500, medium: 2000, high: 5000, ultra: 10000 };  // your
 quality.onChange(() => { particles.setActiveCount(PARTICLES[quality.preset]); });
 const ai = quality.setBudget({ name: 'ai', ms: 2, min: 0.25, onScale: (scale) => { aiRate = scale; } });  // (0.2) the governor lowers it in steps of 0.25 before each render-scale step; ai.ms = 2 x scale; ai.remove()
 engine.mode.preset;                     // on the page: the preset, crashedStarts and memoryMaximumMiB
-engine.mode.presetCheck;                // what the preset check measured: { from, targetFps, rounds, reused }, or null
+await engine.presetChecked;             // (0.3) the preset check has ended: engine.mode.preset holds its choice
+engine.mode.presetCheck;                // what the preset check measured: { from, targetFps, rounds, reused }, or null (also while a check during play runs)
 ```
 
-The page's `?preset=low` switch fixes the preset for tests. After a start that crashed the tab, the engine starts one preset lower. When the engine chose the preset itself, it checks it with the scene that the setup built. It lowers the preset until the GPU holds the frame rate, before `createEngine` resolves, and keeps the settings that the setup changed with `quality.set`. The `setPreset` call keeps the last frame on screen until the new preset's pipelines are built. So call it from a menu or a loading screen. Dynamic resolution lowers the render scale by 0.05 after about a second over budget, and raises it after 5 seconds with time to spare. Hold mode draws at `maxRenderScale`. When the scale reaches `minRenderScale` and frames still run long, the frame-budget governor makes far shadow cascades draw less often, then uses the lighter shadow filter. It raises them again in the reverse order after a stable period.
+The page's `?preset=low` switch fixes the preset for tests. After a start that crashed the tab, the engine starts one preset lower. When the engine chose the preset itself, it checks it in the first frames of play, while the sketch runs. It lowers the preset until the GPU holds the frame rate, and keeps the settings that the sketch changed with `quality.set`. `engine.presetChecked` resolves once the check ends. With `presetCheck: 'before-play'`, the check measures the setup's scene before play, and `createEngine` waits for it. The `setPreset` call keeps the last frame on screen until the new preset's pipelines are built. So call it from a menu or a loading screen. Dynamic resolution lowers the render scale by 0.05 after about a second over budget, and raises it after 5 seconds with time to spare. Hold mode draws at `maxRenderScale`. When the scale reaches `minRenderScale` and frames still run long, the frame-budget governor makes far shadow cascades draw less often, then uses the lighter shadow filter. It raises them again in the reverse order after a stable period.
 
 ## 18. Messages and UI (`api/page`, `api/ui`)
 

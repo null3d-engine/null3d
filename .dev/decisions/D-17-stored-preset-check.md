@@ -1,12 +1,12 @@
 # D-17: The preset check on repeat visits
 
-Status: decided and built. Task: M1-K5, for T-28.
+Status: decided and built. Task: M1-K5, for T-28. The stored result holds for both timings of the check. [D-386](D-386-preset-check-during-play.md) settles when a first visit's check runs: by the owner's ruling, during play by default, which replaces this record's rejection of design (a). The check before play, which this record measured, stays as the `presetCheck` option's `before-play`.
 
-Summary: Store each sketch's preset check result in `localStorage` for a week, and skip the check on a matching repeat visit: about 1 s saved per preset measured on the iPad. A check during play would show the switch and fight the governor; a shorter check for known GPUs needs GPU names.
+Summary: Store each sketch's preset check result in `localStorage` for a week, and skip the check on a matching repeat visit. With the check before play, that saves about 1 s per preset measured on the iPad. A shorter check for known GPUs needs GPU names. By the owner's ruling in D-386, a first visit's check runs during play by default.
 
 ## Question
 
-When the page leaves the quality preset to the engine, the preset check measures the scene after the setup, and `createEngine` waits for it. On the 11-inch iPad Pro it takes about 1 s for each preset that it measures. How can the first frame of play come sooner without losing what the check decides?
+When the page leaves the quality preset to the engine, the preset check measures the scene after the setup. Before play, `createEngine` waits for it. On the 11-inch iPad Pro it takes about 1 s for each preset that it measures. How can the first frame of play come sooner without losing what the check decides?
 
 ## Rule
 
@@ -16,7 +16,7 @@ The engine must run the preset that the check would choose, with the same settin
 
 ### What the check costs
 
-The check draws the first frames behind the loading screen. For each preset it measures, it draws for 250 ms, then measures for 500 ms, so each preset costs at least 0.75 s. It draws up to 2 s more while textures upload. A lower preset adds the wait for its pipelines. In practice one preset took about 0.8 s on the MacBook Pro, in [D-11](D-11-frames-in-flight.md#the-preset-checks-thresholds-m1-g3) and in the table below. On the iPad it took about 1 s.
+Before play, the check draws the first frames behind the loading screen, and every figure in this record measures that timing. For each preset it measures, it draws for 250 ms, then measures for 500 ms, so each preset costs at least 0.75 s. It draws up to 2 s more while textures upload. A lower preset adds the wait for its pipelines. In practice one preset took about 0.8 s on the MacBook Pro, in [D-11](D-11-frames-in-flight.md#the-preset-checks-thresholds-m1-g3) and in the table below. On the iPad it took about 1 s.
 
 From [D-13](D-13-shader-variants.md)'s warm-up time runs, the time from `createEngine` until the first frame was on screen:
 
@@ -57,7 +57,7 @@ On a repeat visit the first view comes 0.7 to 2.1 s sooner. What remains is the 
 
 ### The designs
 
-(a) Draw at once and check during play. `createEngine` resolves after the setup, and the check runs while the sketch plays. Rejected:
+(a) Draw at once and check during play. `createEngine` resolves after the setup, and the check runs while the sketch plays. This record's rule, which keeps the switch out of the player's view, rejects it for the reasons below. The owner's ruling in [D-386](D-386-preset-check-during-play.md) makes it the default, and keeps the check before play as the `presetCheck` option's `before-play`. D-386 answers each reason. The player sees the switch by the owner's choice, and the governor waits until the check ends. The check measures the load of play, which is the load that the preset must hold. The reasons:
 
 - The player sees the switch. A lower preset changes the pixel ratio and the shadows. Its first frame waits for its pipelines, and the last frame stays on screen meanwhile: 21 to 412 ms on the iPad, by D-13's figures.
 - The frame-budget governor runs during play. It lowers the render scale when frames are slow. A check during play would then measure the lowered scale, and keep a preset that misses the target. Turning the governor off during the check leaves the first second of play unguarded.
@@ -105,7 +105,7 @@ three.js has no preset check. Apps choose a quality level themselves, or adapt d
 
 ## Decision
 
-(c): store the check's result per sketch, browser and device, for a week. It keeps the check's decision exactly, shows no switch, and needs no GPU names. A repeat visit on the iPad showed its first view after 0.25 to 0.52 s, against 1.0 to 2.4 s on a first visit. The first visit still waits for the check.
+(c): store the check's result per sketch, browser and device, for a week. It keeps the check's decision exactly, shows no switch, and needs no GPU names. With the check before play, a repeat visit on the iPad showed its first view after 0.25 to 0.52 s. A first visit took 1.0 to 2.4 s. A first visit still runs the check: during play by default ([D-386](D-386-preset-check-during-play.md)), or before play, where the first view waits for it.
 
 ## Consequences
 

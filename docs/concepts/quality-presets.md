@@ -8,7 +8,7 @@ summary: "Low to Ultra; pixel-ratio caps; the preset check; switching presets; t
 
 # Quality presets, dynamic resolution and frame budgets
 
-> Roadmap step 0.1, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. The engine chooses a preset and checks it after the first frame. It applies the preset's pixel ratio cap, render scale range, shadow, texture and anti-aliasing settings, depth prepass, occlusion culling and memory maximum. During play, the frame-budget governor moves a sketch's budgets and the render scale in turn, a budget's step first, then the live shadow settings, and a sketch can switch presets with `quality.setPreset`. The settings that the [table of settings](quality-preset-tables.md#settings-of-each-preset) marks as planned are not built yet. Coding agents must not use them.
+> Roadmap step 0.1, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. The engine chooses a preset and checks it in the first frames of play, or before play when the page asks. It applies the preset's pixel ratio cap, render scale range, shadow, texture and anti-aliasing settings, depth prepass, occlusion culling and memory maximum. During play, the frame-budget governor moves a sketch's budgets and the render scale in turn, a budget's step first, then the live shadow settings. A sketch can switch presets with `quality.setPreset`. The settings that the [table of settings](quality-preset-tables.md#settings-of-each-preset) marks as planned are not built yet. Coding agents must not use them.
 
 ```mermaid
 flowchart TD
@@ -22,9 +22,10 @@ flowchart TD
     crashes -- "two: Low" --> preset
     preset --> settings["Settings: the preset's values,<br/>then the page's options"]
     settings --> sketch["ctx.quality in the sketch"]
-    sketch --> check{"Preset check after the setup:<br/>does the scene hold its frame rate?"}
+    sketch --> play["Play from the first frame"]
+    play --> check{"Preset check in the first frames:<br/>does the scene hold its frame rate?"}
     check -- "no: one preset lower,<br/>then measure again" --> check
-    check -- "yes, or Low" --> play["Play"]
+    check -- "yes, or Low" --> governor["The governor starts"]
     play -- "quality.setPreset" --> play
 ```
 
@@ -87,11 +88,23 @@ This also applies to a preset that the page names, so a device that crashed at t
 
 Device hints only suggest a preset. A laptop with a weak GPU and a desktop with a strong one both have a fine pointer. So when the engine chooses the preset itself, it checks the choice with the scene that the sketch built:
 
-1. The sketch's setup runs at the chosen preset and builds its scene.
-2. The engine draws the first frame, with every pipeline built, and then draws the scene for a moment more. The sketch's `onUpdate` does not run yet.
-3. The engine measures two rates: the frames that it presented, and the frames that the GPU finished. It reads the lower one, so frames that wait in a queue on the GPU cannot pass for a healthy rate.
-4. When that rate misses the target, the engine lowers the preset by one, waits for the new preset's first frame, and measures again. It stops at a preset that holds the target, or at Low. A setting that the setup changed with `quality.set` keeps its value on the lighter preset. The lighter preset also gives the anti-aliasing mode, which the device moves its canvas to before it draws that preset's first frame. Every other setting that a device fixes at start keeps the value it started with.
-5. `createEngine` resolves after the check. The sketch's `quality.onChange` handlers then hear of the new preset at the start of the first frame of play.
+1. The sketch's setup runs at the chosen preset and builds its scene. `createEngine` resolves.
+2. The engine draws the first frame, with every pipeline built, and play starts: the sketch's `onUpdate`, its input and its animations run as usual.
+3. For a moment, the engine measures two rates: the frames that it presented, and the frames that the GPU finished. It reads the lower one, so frames that wait in a queue on the GPU cannot pass for a healthy rate.
+4. When that rate misses the target, the engine lowers the preset by one, waits for the new preset's first frame, and measures again. It stops at a preset that holds the target, or at Low. The sketch's `quality.onChange` handlers hear of each lighter preset in the next frame. A setting that the sketch changed with `quality.set` keeps its value on the lighter preset. The lighter preset also gives the anti-aliasing mode, which the device moves its canvas to before it draws that preset's first frame. Every other setting that a device fixes at start keeps the value it started with.
+5. The check ends, and `engine.presetChecked` resolves. The [frame-budget governor](#the-frame-budget-governor) waits until then, so the check measures each preset at the full render scale.
+
+The viewer sees the scene from its first frame, so a lighter preset applies in front of the viewer. A sketch that asks for a preset itself with `quality.setPreset` while the check runs ends the check. The sketch's choice then stands, and `engine.mode.presetCheck` stays null.
+
+<!-- TODO(stored-check helper): on a Galaxy Tab A9 Plus, the check during play measured while the first frame's pipelines were still building and read the frame rate too low; one skyway repeat visit also ran the check again. State the rule that holds once that work ends, here and under Repeat visits. -->
+
+A page that would rather hide a change of preset behind its loading screen asks for the check before play:
+
+```ts
+const engine = await createEngine({ canvas, sketch, presetCheck: 'before-play' });
+```
+
+The engine then draws the first frame and measures the scene that the setup built, before the sketch's `onUpdate` runs. `createEngine` resolves after the check. The sketch's `quality.onChange` handlers hear of the new preset at the start of the first frame of play. The `?preset-check=before-play` or `?preset-check=during-play` switch sets the timing from the page's address, and wins over the option.
 
 The [rules of the preset check](quality-preset-tables.md#rules-of-the-preset-check) give its target frame rate, the share of the target that passes, and its times.
 
@@ -108,11 +121,11 @@ const engine = await createEngine({ canvas, sketch, targetFps: 'display' });
 
 A whole number, such as `targetFps: 90`, caps the target at that rate. The target never goes above the display's rate. A higher target costs quality: the check picks a lighter preset where the GPU cannot hold it, and the governor lowers the render scale sooner. The `?target-fps=display` or `?target-fps=90` switch sets the target from the page's address, and wins over the option. Until the engine has measured the display's rate, the target is 60, or the option's rate when that is lower. The [stats overlay](../api/debug.md#stats-overlay-and-frame-figures) shows the display's rate beside the target.
 
-The engine checks only a preset that it chose itself, when a lighter preset exists. A preset that the page names, the `?preset=` switch, and hold mode skip the check. So does Low, as on phones. The first frame does not wait for the check, but `createEngine` does. The check takes at least three quarters of a second for each preset that it measures. That was about 0.8 seconds on a MacBook Pro, and about 1 second on an 11-inch iPad Pro. So keep the loading screen until `createEngine` has resolved and `engine.firstFrame` has too.
+The engine checks only a preset that it chose itself, when a lighter preset exists. A preset that the page names, the `?preset=` switch, and hold mode skip the check. So does Low, as on phones. The check takes at least three quarters of a second for each preset that it measures. That was about 0.8 seconds on a MacBook Pro, and about 1 second on an 11-inch iPad Pro. During play, neither `createEngine` nor the first frame waits for it. Before play, `createEngine` waits for it, so keep the loading screen until `createEngine` has resolved and `engine.firstFrame` has too.
 
 ### Repeat visits
 
-The engine stores the check's result in the page's `localStorage`, one for each sketch module. A later start of the sketch in the same browser on the same device takes that result and skips the check. [Caches between visits](../getting-started/hosting.md#caches-between-visits) shows the other caches that a repeat visit uses. Its setup already runs at the preset that the check chose, so `createEngine` resolves as soon as the setup ends. On an 11-inch iPad Pro, the check took about a second for each preset that it measured. There the benchmark scenes and demos showed their first frame after 1 to 2.4 seconds on a first visit. A repeat visit took 0.25 to 0.52 seconds.
+The engine stores the check's result in the page's `localStorage`, one for each sketch module. A later start of the sketch in the same browser on the same device takes that result and skips the check. [Caches between visits](../getting-started/hosting.md#caches-between-visits) shows the other caches that a repeat visit uses. Its setup already runs at the preset that the check chose, so it plays at that preset from its first frame, and `engine.presetChecked` resolves with `createEngine`. On an 11-inch iPad Pro, the check took about a second for each preset that it measured. With the check before play, the benchmark scenes and demos there showed their first frame after 1 to 2.4 seconds on a first visit. A repeat visit took 0.25 to 0.52 seconds.
 
 A stored result applies only while the start matches the one that the check measured:
 
@@ -123,12 +136,13 @@ A stored result applies only while the start matches the one that the check meas
 
 Otherwise the engine measures again and stores the new result. It stores no result that it measured against a target below 60 frames per second, or below the lower target that the page set. A display that saves power with a lower refresh rate gives such a target. The settings fixed at the start keep the values of the preset that the check started from, as they do after the check's own steps. When the browser refuses the storage, each start measures. The `?check=fresh` switch makes the engine measure again too.
 
-The check measures the scene as the setup left it. So build the scene in the setup, and load its textures there: the check waits while textures upload. A scene that the setup leaves empty passes the check on any GPU.
+The check measures the scene from its first frame. So build the first view in the setup, and load its textures there: the check waits while textures upload. A scene that the setup leaves empty passes the check on any GPU.
 
-`engine.mode.presetCheck` reports what the check measured:
+`engine.mode.presetCheck` reports what the check measured, once `engine.presetChecked` has resolved:
 
 ```ts
 const engine = await createEngine({ canvas, sketch });
+await engine.presetChecked;
 const check = engine.mode.presetCheck;
 if (check && check.from !== engine.mode.preset)
   console.log(`${check.from} missed ${check.targetFps} fps; the engine runs ${engine.mode.preset}`);
@@ -201,7 +215,7 @@ In the S1 benchmark with its smoke switch, at High on this computer's GPU in Chr
 
 With the depth prepass, the engine first draws the depth of the opaque objects, with no color. The opaque pass then shades each pixel once, for its nearest surface. Without the prepass, a pixel can be shaded for several surfaces before the nearest one covers them. The prepass costs a second pass over the objects' vertices. So it saves GPU time where objects hide many others and their shading costs much, such as in a lit street of buildings. It costs time where a scene has many vertices and little overdraw.
 
-Some objects stay out of the prepass and shade as they would without it. These are blended objects, line batches, and objects whose material has an alpha cutoff or skips depth writes or the depth test. On WebGL2, every preset turns the prepass on. On WebGPU and in its compatibility mode, every preset leaves it off. Ambient occlusion and the directional light's [contact shadows](shadows.md#contact-shadows) turn it on while they draw, because they read the prepass's depth ([post-processing](post-processing.md#ambient-occlusion)). So High and Ultra draw it on WebGPU while the directional light casts shadows. The `depthPrepass` option of `createEngine` replaces the preset's choice. Compare the scene's GPU time with `?prepass=on` and `?prepass=off`. The prepass is fixed while the engine runs, because the scene's pipelines depend on it.
+Some objects stay out of the prepass and shade as they would without it. These are blended objects, line batches, and objects whose material has an alpha cutoff or skips depth writes or the depth test. On WebGL2, every preset turns the prepass on. On WebGPU and in its compatibility mode, every preset leaves it off. Ambient occlusion, the directional light's [contact shadows](shadows.md#contact-shadows), screen-space bounce light and screen-space reflections turn it on while they draw. They read the prepass's depth ([post-processing](post-processing.md#ambient-occlusion)). So High and Ultra draw it on WebGPU outside compatibility mode, where the bounce light runs. The [lowest quality tier](#the-lowest-quality-tier) turns it off on WebGL2. Each opaque object then has a depth pipeline beside its own, which the first frame and a warm-up build too. The `depthPrepass` option of `createEngine` replaces the preset's choice. Compare the scene's GPU time with `?prepass=on` and `?prepass=off`. The prepass is fixed while the engine runs, because the scene's pipelines depend on it.
 
 WebGL2 draws the prepass because of Apple GPUs. On them, a depth prepass restores early rejection of hidden pixels in WebGL2, so each pixel is shaded about once. In the S4 benchmark on an iPad, WebGL2 went from 38 to 60 frames per second on Low. On Medium it went from 17 to 37 frames per second. The images stay the same. On Android phones that ran S4, WebGL2 kept its frame rate with the prepass, and its CPU time did not change. On WebGPU the GPU removes hidden surfaces itself, so the prepass only adds work. On the same iPad it added about 4 ms per frame to S4 on Medium.
 

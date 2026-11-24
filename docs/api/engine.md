@@ -32,15 +32,15 @@ try {
 
 ## The start
 
-`createEngine` tests what the browser offers, and picks the build and the GPU path from those tests, never from browser or GPU names. It starts the engine's threads, loads the sketch module and runs the sketch's setup. It resolves once the setup has run, and `engine.firstFrame` resolves once the GPU has finished the first frame. When the engine chose the preset itself, `createEngine` also waits for the [preset check](../concepts/quality-presets.md#the-preset-check). The check draws the first frames, so the first frame is then on the screen before `createEngine` resolves. On a repeat visit, the engine takes the check's stored result instead, and `createEngine` resolves after the setup.
+`createEngine` tests what the browser offers, and picks the build and the GPU path from those tests, never from browser or GPU names. It starts the engine's threads, loads the sketch module and runs the sketch's setup. It resolves once the setup has run, and `engine.firstFrame` resolves once the GPU has finished the first frame. When the engine chose the preset itself, its [preset check](../concepts/quality-presets.md#the-preset-check) measures the first frames of play, and `engine.presetChecked` resolves once the check has ended. With the `presetCheck` option's `before-play`, the check runs before play, and `createEngine` waits for it. The first frame is then on the screen before `createEngine` resolves. On a repeat visit, the engine takes the check's stored result instead, and runs no check.
 
 `onProgress` reports each stage of the start, in this order:
 
 - `core-download`, as the engine core's file downloads, with the bytes that have arrived and the
   length that the server announced;
 - `core`, once the engine core is compiled and the GPU paths are tested;
-- `sketch`, after the sketch's setup, and after the preset check when one runs;
-- `first-frame`, once the GPU has finished the first frame.
+- `sketch`, after the sketch's setup, and after the preset check when the `presetCheck` option is `before-play`;
+- `first-frame`, once the GPU has finished the first frame after the setup. It does not wait for a preset check during play.
 
 The handler's second argument carries a stage's figures: `done` and `total`, in bytes, for
 `core-download`. The handler gets it only while the stage has figures. The total is 0 when the
@@ -89,6 +89,7 @@ The canvas takes its size from CSS. The engine sizes the canvas's drawing buffer
 | Option | Default | What it does |
 | --- | --- | --- |
 | `preset` | `'auto'` | The quality preset, which the engine chooses for the device unless the page names one: [Quality presets](../concepts/quality-presets.md). The `?preset=` switch wins over it. |
+| `presetCheck` | `'during-play'` | When the engine checks a preset that it chose: in the first frames of play, while the loading screen is gone, or `'before-play'`, with `createEngine` waiting for it. `engine.presetChecked` resolves once the check has ended: [The preset check](../concepts/quality-presets.md#the-preset-check). The `?preset-check=` switch wins over it. |
 | `targetFps` | The display's rate, at most 60 | The frame rate that the engine defends. `'display'` defends the display's full rate, such as 120 or 144 for a game. A whole number caps the target at that rate: [Quality presets](../concepts/quality-presets.md#the-target-frame-rate). The `?target-fps=` switch wins over it. Another value fails with [E1213](../errors/E1213.md). |
 | `maxPixelRatio` | The preset's cap | Caps the screen's pixel ratio that the engine draws at, in place of the preset's cap |
 | `antialias` | The preset's mode | `'msaa'`, `'fxaa'` or `'none'`, in place of the preset's anti-aliasing mode: [GPU tiers and backends](../concepts/backends.md#color-and-anti-aliasing-on-each-tier) |
@@ -99,7 +100,7 @@ The canvas takes its size from CSS. The engine sizes the canvas's drawing buffer
 | `depthPrepass` | `true` on WebGL2 and `false` on WebGPU, on every preset | `true` draws the depth of the opaque objects before they are shaded: [The depth prepass](../concepts/quality-presets.md#the-depth-prepass). The `?prepass=` switch wins over it. |
 | `keepTextureCopies` | `true` on phones and tablets, `false` on desktops | `true` keeps the engine's copy of each texture's texels after their upload, so a texture draws with its map again after the browser takes the GPU away. It costs about one more copy of each image in memory: [When the GPU goes away](../concepts/backends.md#when-the-gpu-goes-away). |
 | `gpu` | `'auto'` | Forces a GPU path, for tests only. The `?gpu=` switch in the page's address wins over it, and also takes `compat` for WebGPU's compatibility mode. |
-| `powerPreference` | `'high-performance'` | Picks the GPU on a device that has two. `'low-power'` saves battery. |
+| `powerPreference` | `'high-performance'` | Picks the GPU on a device that has two. `'low-power'` saves battery. The engine's start-up tests of the GPU run on the GPU that it picks. |
 | `latency` | `'pipelined'` | The latency mode, `'pipelined'` or `'low'`: [Architecture](../concepts/architecture.md#latency-modes). The `?latency=` switch wins over it, and the single-threaded build ignores it. Where no worker can draw, the engine runs pipelined. |
 | `transparent` | false | Makes a see-through canvas: [A transparent canvas](#a-transparent-canvas) |
 | `largeWorld` | false | Keeps the positions of objects exact at any distance from the origin, for scenes the size of a planet: [Large worlds and precision](../concepts/large-worlds.md#large-world-mode) |
@@ -150,7 +151,7 @@ The single-threaded build's memory is not shared. It grows as the scene needs, s
 ## What the engine reports
 
 - `engine.capabilities` gives the GPU path (`tier`), whether the engine runs threaded, and the optional features and limits of the GPU path. It also gives whether the scene draws HDR color (`hdr`), the depth mode, and the most objects and instance rows that the device draws (`maxInstances`). The `directDraws` field says whether the device draws buckets directly. A start-up measurement picks that path only on an Apple GPU in Safari, or in any browser on iPhone and iPad. The `drawPath` field says why the engine took its path, such as `not-apple-gpu-in-webkit`. The `halfPrecision` field says whether the scene shaders do their color math at half precision, which only the `?half=on` switch turns on. [GPU tiers and backends](../concepts/backends.md) explains each.
-- `engine.mode` gives the build, the latency mode, the thread that runs the sketch and the thread that draws. It also gives the most job workers that the engine may start, and the held time in hold mode. The job workers start as the work grows ([Architecture](../concepts/architecture.md#when-the-job-workers-start)). It gives the quality preset, what the preset check measured, the starts that crashed the tab before this one, and the memory maximum. The `keepTextureCopies` field says whether the engine keeps each texture's copy. It restores a map after a GPU loss ([When the GPU goes away](../concepts/backends.md#when-the-gpu-goes-away)). `renderFallback` says why the page draws where a worker was meant to, or is null.
+- `engine.mode` gives the build, the latency mode, the thread that runs the sketch and the thread that draws. It also gives the most job workers that the engine may start, and the held time in hold mode. The job workers start as the work grows ([Architecture](../concepts/architecture.md#when-the-job-workers-start)). It gives the quality preset that runs now and what the preset check measured. It also gives the starts that crashed the tab before this one, and the memory maximum. While a check runs during play, `presetCheck` is null and the preset can still drop. `engine.presetChecked` resolves once both hold the check's choice. The `keepTextureCopies` field says whether the engine keeps each texture's copy. It restores a map after a GPU loss ([When the GPU goes away](../concepts/backends.md#when-the-gpu-goes-away)). The `renderFallback` field says why the page draws where a worker was meant to, or is null.
 - `engine.report` holds every result of the start's tests, as plain JSON.
 
 ## The running engine

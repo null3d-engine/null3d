@@ -108,6 +108,7 @@ The lower of `presentedFps` and `completedFps` is the rate users see. The engine
 ## 5. Phones and tablets
 
 - Test on a real phone. Desktop browsers with device emulation do not show phone GPU or heat behavior.
+- The first frame's pipeline builds are a phone's largest start cost. They took 1.8 to 5.4 s for 46 to 62 pipelines on a Galaxy S25. A Galaxy Tab A9 Plus took 23.5 s for 63. A MacBook Pro took 0.3 to 1.3 s. Keep the first view's pipelines few (section 11, "A slow first load").
 - Many phones run the WebGL2 path (for example Samsung Exynos phones in Chrome 154). Budget for it.
 - On the WebGL2 path (0.2), job workers hide objects that sit behind blocker meshes. The asset tool's `assets optimize` gives one to each mesh that encloses space, and checks that it lies inside the mesh. It skips blended, alpha-masked, skinned and flat meshes. To keep a mesh from blocking, put `"occluder": false` in its glTF extras. In the scene, use `instantiate(model, { occluder: false })` or `setOccluder(false)`. Blockers on small props cost job worker time and hide little (`guides/assets-pipeline`).
 - The asset tool stores positions in 16,384 steps across each mesh. A mesh that spreads small parts over hundreds of meters, such as a city's buildings merged by material, then moves their corners by centimeters. Put `"quantizePositions": false` in that mesh's glTF extras to keep its positions as floats (`guides/assets-pipeline`).
@@ -117,7 +118,7 @@ The lower of `presentedFps` and `completedFps` is the rate users see. The engine
 - A page that draws different content on a phone or a tablet than on a desktop asks the engine rather than testing screen width again: `readDeviceHints()` reads the page's hints and `deviceKind()` turns them into `'phone'`, `'tablet'` or `'desktop'`, the same answer the preset chooser used at the start.
 - Tablets start at Medium, but a warm tablet can run Medium or High below 60 fps. S4 fell to about 45 fps at Medium on an iPad Pro. At Low it held 60 fps after 5 minutes of warm-up. When a steady rate matters more than sharp shadows, pass `preset: 'low'` to `createEngine`.
 - After a start that crashed the tab, the engine starts one preset lower, and at Low after two. A phone that ran out of memory shows it in `engine.mode.crashedStarts`.
-- The preset check measures the scene that the setup built, then lowers the preset where the GPU misses the frame rate. Build the first view and load its textures in the setup, or the check measures an empty scene. `engine.mode.presetCheck` shows what it measured (`concepts/quality-presets`). A repeat visit in the same browser takes the stored result and skips the check, unless the page has `?check=fresh`.
+- The preset check measures the first frames of play, then lowers the preset where the GPU misses the frame rate. Build the first view and load its textures in the setup, or the check measures an empty scene. `engine.mode.presetCheck` shows what it measured once `engine.presetChecked` resolves (`concepts/quality-presets`). To hide a lowering behind the loading screen, pass `presetCheck: 'before-play'`, at the cost of the check's time before the first view. A repeat visit in the same browser takes the stored result and skips the check, unless the page has `?check=fresh`.
 - A player's preset choice goes through `quality.setPreset`. It waits for the new preset's pipelines behind the last frame, so call it from a menu or a loading screen. The `skippedDraws` figure of `engine.measure()` counts draws that a building pipeline kept from drawing. It stays at 0 when warm-ups come first.
 - Shadows: leave `cascades` and `mapSize` out of a light's `shadow` options, so the preset sets them: two cascades of 1,024 texels on Low, for phones. Keep `distance` no longer than the scene needs. Far cascades draw every few frames by preset. On every preset they draw every frame while a dynamic object touches them, so moving shadows never trail. Set `followMovingCasters: false` to keep their turns where moving objects stay far and small; their shadows then trail by up to the interval less one frame. Raise `farCascadeInterval` to draw them less often, and set `shadowFilter: 3` for cheaper edges. A shadowed spot light draws its casters into one tile of the shadow atlas, and a point light into six. Low and Medium turn point light shadows off and give the atlas fewer tiles, so avoid shadowed point lights on phones.
 - Transparent and additive effects covering the screen (smoke, glass) cost the most on phone GPUs.
@@ -265,9 +266,12 @@ Performance advice for three.js and other engines assumes things that do not hol
 
 ## 11. Start-up and staged loading
 
-The visitor waits for the setup. `createEngine` resolves after it and after the preset check, and the first frame waits for its pipelines (`guides/loading-screens`). So what the setup builds decides when anything shows.
+The visitor waits for the setup. `createEngine` resolves after it, and the first frame waits for its pipelines (`guides/loading-screens`). The preset check runs in the first frames of play, unless the page passes `presetCheck: 'before-play'`, which adds it to the wait. So what the setup builds decides when anything shows.
 
-- Build the first view in the setup, with its textures, and leave the rest for later. The preset check measures what the setup built, so include everything that the first view shows, far scenery in view too.
+- Build the first view in the setup, with its textures, and leave the rest for later. The preset check measures the first frames, so include everything that the first view shows, far scenery in view too.
+- Start every download of the first view at the top of the setup, before its first `await`, or list them in `assets.preload`. Each `await` between two loads adds a round trip.
+- Start the files of later stages after the first frame, not in the setup. A page has six connections to an HTTP/1.1 server. Large files that the setup starts can hold all six while the first frame's shader files wait.
+- The engine loads the sketch module while it downloads its core. So the module's imports and the code at its top level run in that time. Work for the first view that reads nothing from the engine can run there, not in the setup. A height grid or a placement table is such work. Create no engine object at the top of the module: every such call goes through the setup's context. Hold mode, replays and recordings run that code after the engine starts, with seeded random numbers.
 - Add each later stage whole, in the order the visitor reaches them: create its objects hidden, `await scene.warmUp()`, then show them. A stage that appears piece by piece looks broken, and an object whose pipeline is still building draws nothing.
 - Size each batch for the rows of the finished scene, and reveal rows with `setActiveCount`. Destroying an earlier stage's batch to make a larger one rebuilds the draw tables and uploads every matrix again.
 - Swap in one run of code. Put no `await` between hiding the old objects and showing the new ones, or a frame can show neither.
@@ -303,9 +307,9 @@ A plain function over a range of indexes serves tests and frames alike. A genera
 
 Measure the start:
 
-- A first visit and a repeat visit take different paths. A repeat visit takes the stored preset check, the transcoded textures, the browser's compiled shaders and your own cache (section 12). Time both from navigation, with the production build on Chrome's Slow 4G profile.
+- A first visit and a repeat visit take different paths. A repeat visit takes the stored preset check, the transcoded textures, the browser's compiled shaders, Chrome's compiled engine core and your own cache (section 12). Time both from navigation, with the production build on Chrome's Slow 4G profile.
 - Reproduce a first visit in a new browser profile, or with `?check=fresh&shaders=fresh&derived-cache=off` (`references/testing-and-debugging.md`, section 4). Never plan a start that holds only when the browser's caches hit.
-- `engine.measure()` gives the start's times in `load`, and the page thread's long tasks in `mainThread`. Also click a page control while the engine starts, and time its answer: a page with no long tasks can still answer slowly.
+- `engine.measure()` gives the start's times in `load`, and the page thread's long tasks in `mainThread`. The figure `load.drawingStart` says when the thread that draws had its GPU device, its shader file, the core and its renderer. A slow GPU start then shows apart from a slow download. Also click a page control while the engine starts, and time its answer: a page with no long tasks can still answer slowly.
 
 Keep the network clear for the engine. Profile the whole page first, because the page's own downloads share the connection with the engine's:
 
@@ -314,6 +318,53 @@ Keep the network clear for the engine. Profile the whole page first, because the
 - Add a `<link rel="preconnect">` for each other origin that the start contacts, such as a CDN for models.
 - Start no engine on pages without a scene. In a framework app, check in the network panel when the core's `.wasm` download starts: code that waits for hydration starts it late.
 
+### A slow first load
+
+For "the app is slow to load" or "make it start faster on phones", measure first. Time a production build, served as the user's host serves it, cold and then warm, on Chrome's Slow 4G profile. Never time a start on the Vite dev server. On a simulated phone link it took 27 to 85 s, where the production build took 4.6 to 25.7 s. Never time one in Chrome on a device that accepted the page's certificate after a warning: Chrome then keeps no file in its cache. Then read the network panel and `engine.measure()`'s `load` against this table (`guides/start-time`):
+
+| What you see | Cause | Fix |
+| --- | --- | --- |
+| The core's `.wasm` transfers about 2 MB | The host sends `.wasm` uncompressed | Brotli or gzip for every file, `.wasm` and the shader files included: 0.6 MB with Brotli (`getting-started/hosting`). The plugin's own `vite preview` and dev server already compress |
+| A repeat visit asks for build files again, with `304` answers | `no-cache` on hashed files, or `Vary: Origin` on same-origin files | `immutable` for `assets/` and for hashed or versioned addresses of your own, `no-cache` for the HTML and every other address |
+| In Chrome, a repeat visit's `load.coreMs` stays as long as a first visit's | No compiled core kept: a `.wasm` type other than plain `application/wasm`, `no-store`, a first visit of under a few seconds, or Chrome 156 or earlier | `Content-Type: application/wasm` with nothing after it, and cacheable headers (`references/testing-and-debugging.md`, section 8) |
+| Protocol `http/1.1`, with long Queueing or Stalled times | Six connections shared by the page, every worker and every download | A host or CDN with HTTP/2 or HTTP/3. The plugin's `http2: true` option (0.3) serves the dev server and `vite preview` over HTTP/2, off by default because Safari on an iPad can stall on it |
+| The core's download starts only after the page's scripts ran | No early core script: a CDN page, or an HTML step that dropped the plugin's tag | Keep the plugin's tag first in the head. A CDN page adds `lib/page/early-core.js` itself (`getting-started/cdn`). Never add a `<link rel="preload">` for the core |
+| Downloads start one after another, with idle gaps between them | The setup awaits each file before it starts the next | Start every load of the first view on the setup's first lines, and await each where the scene needs it. `assets.preload([...])` starts the files that later code loads |
+| The first frame's shader files wait behind model downloads | Large files started in the setup hold all six HTTP/1.1 connections. A lower fetch priority does not help | Start the files that the first view does not need when the sketch's `engine.firstFrame` (0.3) resolves. Await them in the setup only when `engine.held` is true |
+| The loading screen waits for large models | The setup awaits files that the first view does not need | Build the first view, and add the models as they land after the first frame |
+| A long task in the sketch worker before the setup starts | Work at the sketch module's top level that outlasts the core's download, or that runs after it in hold mode | Keep its result in `assets.cache` (0.3), make it at build time, or move the loop to `runTask` (0.3). Top-level code must not call the engine (E1403) |
+| A long gap from the setup's end to the first frame on a phone | The first frame's pipelines: 1.8 to 5.4 s for 46 to 62 pipelines on a Galaxy S25, 10.9 s for 55 on a Galaxy Tab A9 Plus | Fewer distinct shading models, vertex formats and material features in the first view, and a warm-up behind the loading screen. Repeat visits of large scenes build no faster: Chrome on Android keeps about 2 MB of a site's compiled GPU code |
+| On a tablet or computer, the preset drops in front of the viewer right after the first frame | The preset check, which runs in the first frames of play on a first visit | Name the preset when the target device is known, or pass `presetCheck: 'before-play'` (0.3) to hide the change behind the loading screen, at about a second per preset measured |
+| The offline cache slows the first visit, and each visit after until it is complete | The service worker downloads its list during the start | Register it after `engine.firstFrame`, and cache only what the game needs |
+
+Start the first view's downloads at the top of the setup, and a live page's large models after its first frame. A held frame or a replay starts and awaits them all in the setup:
+
+```ts
+// sketch.ts, in the setup
+page.post('loading', { text: 'Downloading the garden' });
+const statue = assets.loadGltf(STATUE);                       // the first view's file starts now
+if (engine.held) void assets.preload(FOREST).catch(() => {}); // a held start loads the rest now too
+// ... build the first view here ...
+scene.instantiate(await statue);
+const addForest = async () => {
+  for (const url of FOREST) scene.instantiate(await assets.loadGltf(url));
+};
+if (engine.held) await addForest();                          // the held frame shows the finished scene
+else void engine.firstFrame.then(addForest);                 // a live page starts them once the first frame has drawn
+```
+
+The sketch's `engine.firstFrame` (0.3) resolves once the GPU has finished the first frame. Never await it in the setup, which the first frame waits for. Never use a frame number in its place either. The thread that draws can still be drawing the first frame while the sketch runs the second.
+
+Both GPU paths take the pipelines that a frame after the first adds. On a device without `KHR_parallel_shader_compile`, such as Chrome on some Android phones, each new WebGL2 program holds the frame of its first draw.
+
+<!-- TODO(preload-list helper): once defineSketch's download list and the development warning about loads that wait for each other land, add them to the table. -->
+
+<!-- TODO(stored-check helper): add what holds for the preset check during play on slow tablets, and for stored results that a repeat visit does not reuse. -->
+
+<!-- TODO(pipelines-phones helper): add the engine's changes to first-frame pipeline builds on phones, and the measured cost of each pipeline. -->
+
+Inside the null3D repository, `bun run bench:startup` times the engine's own start on Slow 4G, with the drawing thread's device, shader file and renderer.
+
 ## 12. Caching across visits
 
 Each layer keeps something different, and most are in place already:
@@ -321,6 +372,7 @@ Each layer keeps something different, and most are in place already:
 | Layer | Keeps | Set up by |
 | --- | --- | --- |
 | The HTTP cache | The build's files, models and textures | The host: a long lifetime for hashed files (`getting-started/hosting`) |
+| Chrome's code cache | The machine code that Chrome compiled from the engine core, written once a visit has run a few seconds past its start (Chrome 157 and later) | The host: `.wasm` files sent as `Content-Type: application/wasm`, with nothing after it, and kept by the HTTP cache (`getting-started/hosting`, "Let Chrome keep the compiled core") |
 | The stored preset check | The preset that the check chose, for a week | The engine, in the page's `localStorage` (`concepts/quality-presets`) |
 | The cache of derived data | Data that the engine and add-ons make from files, such as each KTX2 file's transcoded texels, and the arrays that your sketch makes | The engine, with no setup. `assets.cache(name, version)` (0.3) gives your sketch a namespace of its own (`api/assets`, "The cache of derived data") |
 | Compiled shaders | Shaders that the browser compiled before | The browser alone: no page can store or read them |

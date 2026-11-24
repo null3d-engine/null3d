@@ -14,6 +14,8 @@ null3D keeps its own work per frame small, so your sketch code usually decides h
 
 Measure in every rendering mode and preset, over the whole camera path, with repeats: [Testing your sketch](testing.md#check-every-rendering-mode) says how.
 
+This guide covers the frames. [A fast start](start-time.md) covers the wait before the first frame: the host, the downloads and the setup.
+
 ## Where frame time goes
 
 ```mermaid
@@ -326,7 +328,7 @@ For a quick look while the scene runs, add `?stats` to the page's address, or ca
 | `pipelines` | GPU pipelines built, which can stall the frame they happen in |
 | `skippedDraws` | Draws skipped because their pipeline was still building, so their objects were missing from those frames |
 | `memory` | The engine's WebAssembly memory and the JavaScript heap |
-| `load` | The start's times in milliseconds: the GPU probe, the core's download and compile, `createEngine`, and the first frame's submit and finish. It also gives the pipelines that the first frame built, and how long they took |
+| `load` | The start's times in milliseconds: the GPU probe, the core's download and compile, `createEngine`, and the first frame's submit and finish. `load.drawingStart` gives when the thread that draws had its GPU device, its shader file and its renderer. It also gives the pipelines that the first frame built, and how long they took ([A fast start](start-time.md#measure-a-start)) |
 | `downloadBytes` | The size of the engine core's WebAssembly file as the page downloaded it |
 | `gpuLosses` | Times the browser took the GPU away and the engine carried on with a new device |
 | `lostRecords` | Frames that the figures miss, because the page read their records too late. It is 0 in a clean run |
