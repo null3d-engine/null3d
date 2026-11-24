@@ -122,6 +122,7 @@ run('probe-capture', async () => {
 	});
 	progress(`engine started: ${engine.mode.latency} latency, ${engine.mode.renderThread} draws`);
 	await engine.firstFrame;
+	await engine.presetChecked;
 	const slots = engineSlots();
 	if (!slots) throw new Error('the engine handed no control block to a worker');
 	// The probe captures once when the sketch makes it, with the sphere at the left.

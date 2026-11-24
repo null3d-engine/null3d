@@ -30,6 +30,7 @@ run('occlusion-cost', async () => {
 	const failures: string[] = [];
 	engine.onFailure((error) => failures.push(error.code));
 	await engine.firstFrame;
+	await engine.presetChecked;
 	await new Promise((resolve) => setTimeout(resolve, WARM_UP_SECONDS * 1000));
 	/** Whether the engine culls occluded objects on the GPU, as the sketch's last answer says. */
 	let gpuOcclusion = false;

@@ -1322,7 +1322,10 @@ jobs:
           # shard models at 12 minutes or less at the median
           # times, and 13.4 to 15.8 at the slowest of each run, where one slow group holds a shard.
           # Those runs cut five shards each, so 43 tests had no time and took their file's mean.
-          PWTEST_SHARD_WEIGHTS: "64:33:80:12:25:10:14:2:156:31:61:61:70:103:116:32:175:181:177:130:106:114:80:76:101:34:18:31:113:2:82:50:44:76:4:77:52:28:63:54:16:86:29:299:55:52:51:49:52:53:58:58:54"
+          # The island's two harbour tests hold a shard to themselves, since each runs for minutes on
+          # SwiftShader. The shard before theirs gives a few of its groups to the shard after theirs,
+          # so the tests that land before them do not push them into the shard before.
+          PWTEST_SHARD_WEIGHTS: "64:33:80:12:25:10:14:2:156:31:61:61:70:103:116:32:175:181:177:130:106:114:80:76:101:34:18:31:111:2:84:50:44:76:4:77:52:28:63:54:16:86:29:299:55:52:51:49:52:53:58:58:54"
           # Set only by a run started by hand that asked for the drawings.
           NULL3D_TAKE_IMAGES: ${{ inputs['drawn-images'] && '1' || '' }}
         run: bun run test:browser --grep-invert "@alone|$CITY_TESTS|$HEAVY_TESTS" --shard=${{ matrix.shard }}/${{ strategy.job-total }} --workers=1

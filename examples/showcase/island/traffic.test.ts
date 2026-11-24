@@ -6,19 +6,7 @@ import { describe, expect, it } from 'bun:test';
 import type { Material, MeshGeometry, SketchContext } from '@null3d/engine';
 import { QUAY_FROM, QUAY_TO, quayWallZ, SEA_LEVEL, sandAt, TOWN, townShare } from './island';
 import { HOUSE_KINDS } from './kit';
-import {
-	doorOf,
-	FILL_SPOTS,
-	groundHeight,
-	LOTS,
-	ROADS,
-	roadEdge,
-	SHRUBS,
-	STAIRS,
-	slopeAt,
-	TERRACES,
-	TREE_SPOTS,
-} from './plan';
+import { doorOf, groundHeight, LOTS, ROADS, roadEdge, STAIRS, slopeAt } from './plan';
 import { LOUNGER_OFFSETS } from './props';
 import { LANE, PARKS, STREET } from './routes';
 import { parasolSpots } from './town';

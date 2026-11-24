@@ -29,9 +29,12 @@ runNull3dPage('s6', new URL('./s6-sketch.ts', import.meta.url), S6_FULL_COUNT, u
 function watchCity(engine: Engine): Promise<Record<string, unknown>> {
 	const canvas = document.querySelector('canvas') as HTMLCanvasElement;
 	let firstFrameMs = 0;
-	engine.firstFrame.then(() => {
-		firstFrameMs = performance.now();
-	});
+	engine.firstFrame.then(
+		() => {
+			firstFrameMs = performance.now();
+		},
+		() => {},
+	);
 	return new Promise((resolve) => {
 		let picked: HTMLElement | undefined;
 		engine.onSketchMessage((type, data) => {

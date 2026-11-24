@@ -57,16 +57,16 @@ import { HOUSE_KINDS } from './kit';
 import {
 	CHURCH_AT,
 	doorOf,
-	FILL_SPOTS,
+	fillSpots,
 	groundHeight,
 	LOTS,
 	type Lot,
 	ROADS,
-	SHRUBS,
 	SQUARE,
 	STAIRS,
-	TERRACES,
-	TREE_SPOTS,
+	shrubSpots,
+	terraceWalls,
+	treeSpots,
 } from './plan';
 import { LOUNGER_OFFSETS } from './props';
 import type { Road, RoadPoint } from './routes';
@@ -1865,8 +1865,19 @@ const BEACH_ROOM = PERSON_RADIUS + 1.05 + BODY_CLEAR;
 /** The side of a cell of the static bodies' grid, in meters. */
 const BODY_CELL = 8;
 
+/**
+ * The island's standing objects by a coarse grid, each made at its first read, since the trees and
+ * the terraces that they list are grown then too.
+ */
+let bodyCells: Map<string, Body[]> | undefined;
+let runCells: Map<string, BodyRun[]> | undefined;
 /** The trunks, shrubs, poles and loungers of the island, by a coarse grid. */
-const BODY_GRID = (() => {
+const bodyGrid = (): Map<string, Body[]> => (bodyCells ??= gridBodies());
+/** The walls and stairs of the island, by a coarse grid. */
+const runGrid = (): Map<string, BodyRun[]> => (runCells ??= gridRuns());
+
+/** Lists the trunks, shrubs, poles and loungers of the island by a coarse grid. */
+function gridBodies(): Map<string, Body[]> {
 	const grid = new Map<string, Body[]>();
 	const add = (body: Body): void => {
 		const reach = Math.ceil(body.r / BODY_CELL);
@@ -1879,9 +1890,9 @@ const BODY_GRID = (() => {
 				else grid.set(key, [body]);
 			}
 	};
-	for (const spot of [...TREE_SPOTS, ...FILL_SPOTS])
+	for (const spot of [...treeSpots(), ...fillSpots()])
 		add({ x: spot.x, z: spot.z, r: (TRUNK_RADIUS[spot.kind] ?? 0.5) * spot.scale });
-	for (const spot of SHRUBS) add({ x: spot.x, z: spot.z, r: SHRUB_FOOT * spot.scale });
+	for (const spot of shrubSpots()) add({ x: spot.x, z: spot.z, r: SHRUB_FOOT * spot.scale });
 	const parasols = parasolSpots();
 	for (const spot of parasols) add({ x: spot.x, z: spot.z, r: PARASOL_POLE });
 	for (const spot of parasols)
@@ -1894,10 +1905,10 @@ const BODY_GRID = (() => {
 			});
 		}
 	return grid;
-})();
+}
 
-/** The walls and stairs of the island, by a coarse grid. */
-const RUN_GRID = (() => {
+/** Lists the walls and stairs of the island by a coarse grid. */
+function gridRuns(): Map<string, BodyRun[]> {
 	const grid = new Map<string, BodyRun[]>();
 	const add = (run: BodyRun): void => {
 		const steps = Math.ceil(hypot(run.bx - run.ax, run.bz - run.az) / BODY_CELL);
@@ -1914,7 +1925,7 @@ const RUN_GRID = (() => {
 				}
 		}
 	};
-	for (const wall of TERRACES)
+	for (const wall of terraceWalls())
 		add({ ax: wall.ax, az: wall.az, bx: wall.bx, bz: wall.bz, half: TERRACE_HALF });
 	for (const stair of STAIRS)
 		for (let k = 0; k + 1 < stair.length; k++) {
@@ -1923,7 +1934,7 @@ const RUN_GRID = (() => {
 			add({ ax: a.x, az: a.z, bx: b.x, bz: b.z, half: STAIR_HALF });
 		}
 	return grid;
-})();
+}
 
 /** How far a place lies from a body run's own edge, in meters; below zero inside it. */
 function runGap(run: BodyRun, x: number, z: number): number {
@@ -1941,11 +1952,11 @@ function runGap(run: BodyRun, x: number, z: number): number {
 export function staticGap(x: number, z: number): number {
 	const key = `${Math.floor(x / BODY_CELL)},${Math.floor(z / BODY_CELL)}`;
 	let least = Number.POSITIVE_INFINITY;
-	for (const body of BODY_GRID.get(key) ?? []) {
+	for (const body of bodyGrid().get(key) ?? []) {
 		const gap = hypot(x - body.x, z - body.z) - body.r;
 		if (gap < least) least = gap;
 	}
-	for (const run of RUN_GRID.get(key) ?? []) {
+	for (const run of runGrid().get(key) ?? []) {
 		const gap = runGap(run, x, z);
 		if (gap < least) least = gap;
 	}

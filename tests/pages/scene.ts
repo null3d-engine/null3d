@@ -76,7 +76,12 @@ run('scene', async () => {
 	// The first frame builds the pipelines, and a compute pass whose pipeline is still building
 	// records nothing. Measure from the first presented frame, so every sampled frame holds the
 	// engine's own passes.
-	if (live) await engine.firstFrame;
+	if (live) {
+		await engine.firstFrame;
+		// The preset check measures the first frames of play, and a lowering builds the draw tables
+		// again. The page measures the preset that plays, so it starts once the check has ended.
+		await engine.presetChecked;
+	}
 	const stats = live ? await measureFrames(engine) : undefined;
 	const capture = await engine.captureFrame();
 	if (stopAfterMs > 0) await new Promise((resolve) => setTimeout(resolve, stopAfterMs));

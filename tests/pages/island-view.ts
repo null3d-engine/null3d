@@ -22,6 +22,7 @@ run('island-view', async () => {
 	});
 	engine.postToSketch('pose', pose);
 	await engine.firstFrame;
+	await engine.presetChecked;
 	progress('first frame');
 	await new Promise((r) => setTimeout(r, warm * 1000));
 	if (params.has('hide-walls')) {

@@ -11,6 +11,7 @@ import { ReadSink } from '../gpu/readback';
 import { controlViews, frameAfter, frameReached, Slot } from '../shared/control';
 import { MemoryViews } from '../shared/memory-views';
 import { Counter, type FrameRecorder } from '../shared/metrics';
+import type { PipelineLists } from './renderer';
 
 /** How often a capture checks whether the pipelines it waits for are built. */
 const BUILD_POLL_MS = 4;
@@ -57,6 +58,10 @@ interface SceneBackend {
 	readonly joins: JoinedBuilds;
 	/** Where the bytes of the draw lists' reads land, which the frame replay sets. */
 	readSink: ReadSink | undefined;
+	/** Starts to build the pipelines of a pipeline list ahead of their commands. */
+	buildEarly(list: Uint32Array): void;
+	/** Ends the list of the pipelines that the frames before the first one created, and returns it. */
+	takeListing(): Uint32Array | undefined;
 }
 
 /**
@@ -102,16 +107,27 @@ export class FrameReplay {
 	private complete = false;
 	/** The first frame of the last hold that a prepared frame reached. */
 	private held = 0;
+	/** True until the first frame has drawn: the backend lists the pipelines that it builds. */
+	private listing = true;
+	/** Hears the pipelines that the first frame built, once that frame has drawn. */
+	private listBuilds: ((list: Uint32Array) => void) | undefined;
 
+	/**
+	 * `lists` gives the pipeline list of the sketch's last start, whose pipelines the backend starts
+	 * to build at once, and the listener of this start's list.
+	 */
 	constructor(
 		private readonly backend: SceneBackend,
 		memory: WebAssembly.Memory,
 		control: ArrayBufferLike,
+		lists: PipelineLists = {},
 	) {
 		this.views = new MemoryViews(memory);
 		this.slots = controlViews(control).slots;
 		backend.readSink = new ReadSink(this.views, this.slots);
 		backend.joins.onFailed = (template) => Atomics.store(this.slots, Slot.JoinFailed, template);
+		if (lists.earlyBuilds) backend.buildEarly(lists.earlyBuilds);
+		this.listBuilds = lists.listBuilds;
 	}
 
 	/** Starts the builds of a frame's pipelines, once, and returns true when the frame may draw. */
@@ -137,6 +153,18 @@ export class FrameReplay {
 		const words = this.views.heap(Uint32Array);
 		this.backend.replay(words, this.views.heap(Float32Array), from, this.end, words.buffer);
 		if (!this.backend.building) this.complete = true;
+		if (this.listing) this.endListing();
+	}
+
+	/**
+	 * Ends the backend's list of the first frame's pipelines, once that frame has drawn, and gives
+	 * it to its listener.
+	 */
+	private endListing(): void {
+		this.listing = false;
+		const list = this.backend.takeListing();
+		if (this.listBuilds && list) this.listBuilds(list);
+		this.listBuilds = undefined;
 	}
 
 	/** Replays the list that a capture draws for the frame taken last. */

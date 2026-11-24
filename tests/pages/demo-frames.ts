@@ -21,7 +21,7 @@ const SECONDS = Number(params.get('seconds') ?? 5);
  * setting that holds the rate.
  */
 const SETTLE = Number(params.get('settle') ?? 0);
-/** How long the page waits for the preset check's result before it measures anyway. */
+/** How long the page waits for the preset check to end before it measures anyway. */
 const CHECK_WAIT_MS = 30_000;
 /**
  * The shadow shape that the page fixes at the engine's start, for a measurement: the cascade
@@ -114,6 +114,9 @@ run('demo-frames', async () => {
 		'without',
 		'walkers',
 		'shafts',
+		// Holds the first frame until the scene's models stand, so a scene that fills in after its
+		// first frame is measured finished.
+		'grown',
 	])
 		if (params.has(id)) sketch.searchParams.set(id, params.get(id) ?? '');
 	const runDemo = { ...demo, sketch };
@@ -129,14 +132,13 @@ run('demo-frames', async () => {
 	await engine.firstFrame;
 	const bytesBeforeFirstFrame = downloadedBytes();
 	progress('the first frame drew');
-	// The preset check draws its rounds after the first frame, and a lowering rebuilds the scene's
-	// settings. Wait for its result, so the measure covers the preset the session runs rather than
-	// the check's own frames. A page that names its preset checks nothing.
-	if (!params.has('preset')) {
-		const limit = performance.now() + CHECK_WAIT_MS;
-		while (engine.mode.presetCheck === null && performance.now() < limit)
-			await new Promise((resolve) => setTimeout(resolve, 50));
-	}
+	// The preset check measures the first frames of play, and a lowering rebuilds the scene's
+	// settings. Wait for it to end, so the measure covers the preset the session runs rather than
+	// the check's frames. Where no check runs, the wait ends at once.
+	await Promise.race([
+		engine.presetChecked,
+		new Promise((resolve) => setTimeout(resolve, CHECK_WAIT_MS)),
+	]);
 	// The scene draws live for a while before the measure, so the quality governor's steps can
 	// reach the setting that holds the rate and the window covers steady play.
 	if (SETTLE > 0) {

@@ -10,7 +10,7 @@ import type { DrawPathReason } from '../gpu/webgpu/draw-path-probe';
 import type { DeviceHints } from '../quality/chooser';
 import { readDeviceHints } from '../quality/device-hints';
 import { spawnWorker, watchWorkerError } from '../shared/worker-start';
-import type { ProbeMessage, WorkerProbe } from '../workers/probe-worker';
+import type { ProbeMessage, ProbeRequest, WorkerProbe } from '../workers/probe-worker';
 
 /** Limits the engine reads, from its portable WebGPU budget. */
 const WEBGPU_LIMITS = [
@@ -456,14 +456,15 @@ function probeWebGL2(powerPreference?: PowerPreference, multiDraw = true): WebGL
 const WORKER_PROBE_TIMEOUTS_MS = [5000, 10_000] as const;
 
 /**
- * Runs the probe worker, with each of `timeoutsMs` in turn as its time limit while it gives no
- * answer. A worker that fails to start is not tried again.
+ * Runs the probe worker on the GPU that `powerPreference` picks, with each of `timeoutsMs` in turn
+ * as its time limit while it gives no answer. A worker that fails to start is not tried again.
  */
 export async function probeWorker(
 	timeoutsMs: readonly number[] = WORKER_PROBE_TIMEOUTS_MS,
+	powerPreference?: PowerPreference,
 ): Promise<WorkerProbe | WorkerProbeFailure> {
 	for (const timeoutMs of timeoutsMs) {
-		const result = await probeWorkerOnce(timeoutMs);
+		const result = await probeWorkerOnce(timeoutMs, powerPreference);
 		if (!('failure' in result) || result.failure !== 'no-answer') return result;
 	}
 	const limits = timeoutsMs.map((ms) => `${ms / 1000} s`).join(', then ');
@@ -474,37 +475,50 @@ export async function probeWorker(
 }
 
 /**
- * The probe worker's answer that the page's engine starts share. Firefox makes a new WebGL2
- * context wait for the WebGL work that other contexts have queued, such as a shader link. On a
- * software renderer an engine's links take seconds, so a start's probe can outlast its time
- * limits while another engine on the page starts. A worker's abilities hold for the page's life,
- * so one full answer serves every later start. A failure is not kept.
+ * The probe worker's answers that the page's engine starts share, by the power preference that
+ * picked the GPU they tested. Firefox makes a new WebGL2 context wait for the WebGL work that other
+ * contexts have queued, such as a shader link. On a software renderer an engine's links take
+ * seconds, so a start's probe can outlast its time limits while another engine on the page starts.
+ * A worker's abilities hold for the page's life, so one full answer serves every later start on
+ * the same GPU. A failure is not kept.
  */
-let pageProbe: Promise<WorkerProbe | WorkerProbeFailure> | undefined;
+const pageProbes = new Map<
+	PowerPreference | undefined,
+	Promise<WorkerProbe | WorkerProbeFailure>
+>();
 
 /**
- * The probe worker's answer for the page: the kept answer, the answer of a probe that is running,
- * or a new probe's, with `timeoutsMs` as its time limits.
+ * The probe worker's answer for the page on the GPU that `powerPreference` picks: the kept answer,
+ * the answer of a probe that is running, or a new probe's, with `timeoutsMs` as its time limits.
  */
 export function pageWorkerProbe(
 	timeoutsMs: readonly number[] = WORKER_PROBE_TIMEOUTS_MS,
+	powerPreference?: PowerPreference,
 ): Promise<WorkerProbe | WorkerProbeFailure> {
-	if (pageProbe) return pageProbe;
-	const probe = probeWorker(timeoutsMs);
-	pageProbe = probe;
+	const kept = pageProbes.get(powerPreference);
+	if (kept) return kept;
+	const probe = probeWorker(timeoutsMs, powerPreference);
+	pageProbes.set(powerPreference, probe);
 	void probe.then((result) => {
-		if ('failure' in result && pageProbe === probe) pageProbe = undefined;
+		if ('failure' in result && pageProbes.get(powerPreference) === probe)
+			pageProbes.delete(powerPreference);
 	});
 	return probe;
 }
 
-/** Drops the kept answer, as after a lost GPU, so that the next start probes again. */
+/** Drops the kept answers, as after a lost GPU, so that the next start probes again. */
 export function forgetWorkerProbe(): void {
-	pageProbe = undefined;
+	pageProbes.clear();
 }
 
-/** Runs one probe worker, which must answer within `timeoutMs` of its script's start. */
-function probeWorkerOnce(timeoutMs: number): Promise<WorkerProbe | WorkerProbeFailure> {
+/**
+ * Runs one probe worker on the GPU that `powerPreference` picks, which must answer within
+ * `timeoutMs` of its script's start.
+ */
+function probeWorkerOnce(
+	timeoutMs: number,
+	powerPreference: PowerPreference | undefined,
+): Promise<WorkerProbe | WorkerProbeFailure> {
 	return new Promise((resolve) => {
 		let worker: Worker;
 		try {
@@ -539,6 +553,8 @@ function probeWorkerOnce(timeoutMs: number): Promise<WorkerProbe | WorkerProbeFa
 				error: message || 'the probe worker failed to start',
 			}),
 		);
+		// The worker reads this once its script runs, and probes then.
+		worker.postMessage({ powerPreference } satisfies ProbeRequest);
 	});
 }
 
@@ -558,7 +574,14 @@ export async function probeCapabilities(
 	hints: DeviceHints = readDeviceHints(),
 	multiDraw = true,
 ): Promise<CapabilityReport> {
-	const [webgpu, worker] = await Promise.all([probeWebGPU(powerPreference), pageWorkerProbe()]);
+	const pending = Promise.all([
+		probeWebGPU(powerPreference),
+		pageWorkerProbe(WORKER_PROBE_TIMEOUTS_MS, powerPreference),
+	]);
+	// The WebGL2 test blocks this thread, so it runs while the adapter request and the probe worker
+	// are under way.
+	const webgl2 = probeWebGL2(powerPreference, multiDraw);
+	const [webgpu, worker] = await pending;
 	// The probe worker measures the draw paths on a device of its own, which the render worker's
 	// device answers the same way for the browser and the driver.
 	const probed = 'directDraws' in worker && webgpu.available;
@@ -576,7 +599,7 @@ export async function probeCapabilities(
 			typeof HTMLCanvasElement === 'function' &&
 			'transferControlToOffscreen' in HTMLCanvasElement.prototype,
 		webgpu: { ...webgpu, directDraws, drawPath },
-		webgl2: probeWebGL2(powerPreference, multiDraw),
+		webgl2,
 		worker,
 	};
 }

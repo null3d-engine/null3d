@@ -141,6 +141,7 @@ run('staged-levels', async () => {
 			list.push(waiter);
 		});
 	await engine.firstFrame;
+	await engine.presetChecked;
 	const loaded = (await message('loaded')) as { levels: number };
 	// The picture that the file draws, before any stage arrives: the spec holds them back.
 	const coarse = await engine.captureFrame();

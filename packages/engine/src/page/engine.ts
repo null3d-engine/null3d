@@ -11,7 +11,12 @@ import { FORMAT_CANVAS, PERMUTATION_HALF } from '../generated/gpu';
 import { SHADER_FEATURES, type ShaderFeature } from '../generated/shader-features';
 import { recordPermutations, stopRecordingPermutations } from '../gpu/variants';
 import type { DrawPathReason } from '../gpu/webgpu/draw-path-probe';
-import { maxTargetFps, type PresetCheck, type TargetFps } from '../quality/check';
+import {
+	maxTargetFps,
+	type PresetCheck,
+	type PresetCheckTiming,
+	type TargetFps,
+} from '../quality/check';
 import {
 	choosePreset,
 	crashLowest,
@@ -29,15 +34,17 @@ import {
 	checkedSettings,
 	checkSettings,
 	lowestTierSettings,
+	presetCheckOption,
 	presetOption,
 	presetValue,
 	type QualityPreset,
 	targetFpsOption,
 } from '../quality/presets';
 import type { DrawingSetup } from '../render/draw';
-import { type DrawModule, loadDrawModule, preloadDeviceFiles } from '../render/load-draw';
+import { type DrawModule, loadDrawModule, preloadDrawing } from '../render/load-draw';
+import type { GpuErrorKind } from '../render/loss';
 import type { Drawing } from '../render/recovery';
-import type { Renderer, Tier } from '../render/renderer';
+import type { DrawingPreload, EarlyStart, Renderer, Tier } from '../render/renderer';
 import type { FeatureStats } from '../scene/features';
 import { awaitLater } from '../shared/await-later';
 import { controlViews, createControlBuffer, Slot } from '../shared/control';
@@ -52,14 +59,19 @@ import { createMetricsBuffer, MetricsReader, threadRoles } from '../shared/metri
 import { addMeasurementRelease } from '../shared/page-measurement';
 import type { ReplayProgram, ReplayResult } from '../shared/recording';
 import { clearJobTasks, type JobTaskHost, jobAsker, setJobTasks } from '../shared/task-host';
-import { onAddonChecked } from '../shared/version';
+import { hearAddonsEarly, onAddonChecked } from '../shared/version';
 import { VIDEO_FOLLOW, type VideoFollowMessage } from '../shared/videos';
 import { notifySlot, setWakeByMessage } from '../shared/wake';
 import { WGSL_UPDATE_EVENT, type WgslUpdate } from '../shared/wgsl-updates';
-import { spawnWorker, startedWorkerScript, watchWorkerError } from '../shared/worker-start';
+import {
+	spawnWorker,
+	startedWorkerScript,
+	watchWorkerError,
+	workerScriptOf,
+} from '../shared/worker-start';
 import { loadSketch } from '../sketch/define-sketch';
 import type { QualityStart, QualityUpdate } from '../sketch/quality';
-import type { SketchRunner } from '../sketch/runner';
+import type { ListedFiles, SketchRunner } from '../sketch/runner';
 import type { LabelSlotSender } from '../sketch/ui';
 import type {
 	CapturedFrame,
@@ -80,8 +92,9 @@ import {
 	probeCapabilities,
 	type WorkerProbeFailure,
 } from './capabilities';
-import { CheckStore, checkConditions } from './check-store';
+import { CheckStore, checkConditions, checkEnded, checkedPreset } from './check-store';
 import { watchDisplay } from './display';
+import { FirstFrame } from './first-frame';
 import type { FrameMetrics, MeasureOptions } from './frame-stats';
 import {
 	type HoldScript,
@@ -114,6 +127,7 @@ import {
 	takeWhenFree,
 } from './ownership';
 import { PermutationRecording } from './permutation-recording';
+import { PipelineStore, pipelineConditions } from './pipeline-store';
 import { type PointerLockOptions, requestPointerLock } from './pointer-lock';
 import { watchPreferences } from './preferences';
 import { NO_HISTORY, StartMarker } from './start-marker';
@@ -168,6 +182,18 @@ export interface EngineOptions {
 	 * E1213.
 	 */
 	targetFps?: TargetFps;
+	/**
+	 * When the preset check measures, on a start where the engine checks the preset that it chose.
+	 * With `during-play`, the default, the scene shows at its first frame: `createEngine` resolves
+	 * once the setup has run, and `engine.firstFrame` once the GPU has finished the first frame. The
+	 * check then measures the first frames of play, a lighter preset applies in front of the viewer,
+	 * and `engine.presetChecked` resolves once the check has ended. With `before-play`, the check
+	 * measures the scene that the setup built before the sketch's update runs, and `createEngine`
+	 * resolves after it, so a loading screen hides the check and any change of preset. A start that
+	 * takes the stored result of an earlier check, or that runs no check, plays at once either way.
+	 * Another value fails with E1213. The `?preset-check=` switch wins over it.
+	 */
+	presetCheck?: PresetCheckTiming;
 	/**
 	 * Cap for the device pixel ratio, a number from 0.5 up. Without it, the quality preset sets the
 	 * cap. `ctx.quality.set` changes it during play.
@@ -295,7 +321,8 @@ export interface EngineOptions {
 	 * one more copy of each image in memory. False frees each copy once no frame reads it, and such
 	 * a texture draws with its color alone until the sketch gives it texels again. Without this
 	 * option, a phone and a tablet keep copies and a desktop does not, because a phone or a tablet
-	 * is likeliest to lose its GPU.
+	 * is likeliest to lose its GPU. With copies, the engine also gives its GPU back while the browser
+	 * keeps the page in its back/forward cache, and starts a new device when the page shows again.
 	 */
 	keepTextureCopies?: boolean;
 	/**
@@ -366,7 +393,9 @@ export interface EngineOptions {
 	 * Called as the start reaches each stage, in this order: `core-download` as the engine core's
 	 * file downloads, with the bytes that have arrived; `core` once the engine core is compiled and
 	 * the GPU paths are tested; `sketch` once the sketch's setup has run; and `first-frame` once the
-	 * GPU has finished the first frame. Before `core`, `core-download` reports the core file's bytes,
+	 * GPU has finished the first frame after the setup. The preset check does not hold up either
+	 * stage, unless the `presetCheck` option is `before-play`: `sketch` then comes after the check
+	 * too. Before `core`, `core-download` reports the core file's bytes,
 	 * and `memory-wait` comes when the browser has refused the engine's memory for 10 seconds. The
 	 * engine then tries for about 35 seconds more before it fails with E1109. `progress` gives a
 	 * stage's figures while it has some: the bytes of a download, measured against the length that
@@ -441,8 +470,8 @@ export interface EngineOptions {
 	 * lets light through to its other side,
 	 * `'subsurface'` with the first material with a `subsurfaceRadius` while the subsurface blur has
 	 * taps, `'coat_sheen'` with the first material with a clear coat or a sheen, `'weighted'` with
-	 * the first material of the `weighted` blending, and `'occlusion'` with the first opaque object that
-	 * may hide others while GPU occlusion culling runs on WebGPU. WebGPU morphs in the skinning pass, so there
+	 * the first material of the `weighted` blending, and `'occlusion'` with the first opaque
+	 * material while GPU occlusion culling runs on WebGPU. WebGPU morphs in the skinning pass, so there
 	 * `'morph'` loads the skinning shaders, and WebGL2 has no `'occlusion'` shaders to load. Listed
 	 * features download beside the engine's own
 	 * shaders, so the start waits only for the largest. The shaders that two or more listed features
@@ -582,16 +611,20 @@ export interface EngineMode {
 	/** The sketch time in seconds that hold mode holds the sketch at, or null for a live engine. */
 	hold: number | null;
 	/**
-	 * The quality preset that the engine runs. The preset check can lower it before `createEngine`
-	 * resolves, and `ctx.quality.setPreset` in the sketch changes it later.
+	 * The quality preset that the engine runs now. The preset check can lower it while it runs:
+	 * during the first frames of play, or before `createEngine` resolves with the `presetCheck`
+	 * option's `before-play`. `ctx.quality.setPreset` in the sketch changes it later. Once
+	 * `engine.presetChecked` has resolved, it holds the preset that the check chose.
 	 */
 	preset: QualityPreset;
 	/**
-	 * What the preset check measured, or null when no check ran. The engine checks the preset when
-	 * it chose it from the device: after the first frame, it measures the frame rate of the scene
-	 * that the setup built, and lowers the preset until one holds the target. A later start of the
-	 * sketch in the same browser on the same device takes the stored result instead, and starts at
-	 * its preset. `reused` is then true.
+	 * What the preset check measured, or null while the check runs, and when no check ran or the
+	 * sketch chose its own preset first. The engine checks the preset when it chose it from the
+	 * device: after the first frame, it measures the frame rate of the scene, and lowers the preset
+	 * until one holds the target. A later start of the sketch in the same browser on the same
+	 * device takes the stored result instead, and starts at its preset. `reused` is then true. A
+	 * start after a check that never ended starts at the preset that the check had lowered to, and
+	 * its own check goes on from there, with the earlier rounds first.
 	 */
 	presetCheck: PresetCheck | null;
 	/**
@@ -666,10 +699,21 @@ export interface Engine {
 	/** How the engine runs on this device. */
 	readonly mode: EngineMode;
 	/**
-	 * Resolves once the GPU has finished the first frame, so it is on screen: the moment to remove
-	 * a loading screen. It never resolves when the engine is destroyed first.
+	 * Resolves once the GPU has finished the first frame after the setup, so it is on screen: the
+	 * moment to remove a loading screen. It rejects when the engine stops drawing first, with the
+	 * failure that ended its frames, such as E1404 when the thread that draws fails at its first
+	 * frame. A destroy before the first frame rejects it with E1420. A page that never waits for it
+	 * gets no unhandled rejection.
 	 */
 	readonly firstFrame: Promise<void>;
+	/**
+	 * Resolves once the preset check has ended, so `mode.preset` holds the preset that the check
+	 * chose and `mode.presetCheck` what it measured. It has resolved when `createEngine` resolves
+	 * where no check runs: for a preset that the page names, a stored result, Low, and hold mode,
+	 * and with the `presetCheck` option's `before-play`. When the engine stops drawing first, it
+	 * resolves then, and `mode.presetCheck` stays null.
+	 */
+	readonly presetChecked: Promise<void>;
 	/** The HTML elements that follow the labels the sketch tracks with `ui.trackLabel`. */
 	readonly labels: EngineLabels;
 	/**
@@ -696,11 +740,12 @@ export interface Engine {
 	 * not carry on with a new device (E1302), or an engine thread failed (E1404). A custom shader's
 	 * builds that a pipeline needs and that did not download fail the thread that draws with E1424.
 	 * After E1404 or E1424 the engine draws no new frames: destroy it and start a new one. On WebGPU,
-	 * the GPU can also run out of memory (E1304) or reject the engine's work (E1305), and the engine
-	 * draws on without the objects that failed. The engine reports each failure once. A failure that
-	 * no handler listened for when the engine reported it reaches the first handler that listens, so
-	 * a failure that the app could not hear yet still arrives, and the engine also logs it to the
-	 * console. A failure that ends the frames reaches these handlers before `onStop`'s. Returns a
+	 * the GPU can also run out of memory (E1304) or reject the engine's work (E1305). On either GPU
+	 * path, its driver can refuse to build a pipeline that draws objects of the scene twice (E1307).
+	 * After these three the engine draws on without the objects that failed. The engine reports each
+	 * failure once. A failure that no handler listened for when the engine reported it reaches the
+	 * first handler that listens, so a failure that the app could not hear yet still arrives, and the
+	 * engine also logs it to the console. A failure that ends the frames reaches these handlers before `onStop`'s. Returns a
 	 * function that removes the handler.
 	 */
 	onFailure(handler: (error: EngineError) => void): () => void;
@@ -949,9 +994,11 @@ interface WorkerEvents {
 	sketchError(error: Error): void;
 	/**
 	 * A failure of a thread. It ends a start that is still under way, unless `endsStart` is false:
-	 * the engine then runs on without the thread.
+	 * the engine then runs on without the thread. It ends hold mode's read-back of its frame too,
+	 * unless `endsHold` is false: the frames never needed the thread, such as a job worker that did
+	 * not start.
 	 */
-	failure(error: EngineError, endsStart?: boolean): void;
+	failure(error: EngineError, endsStart?: boolean, endsHold?: boolean): void;
 	/** The quality preset and settings after a change, and the preset check's result. */
 	quality(update: QualityUpdate): void;
 	/** The sketch asked to show or hide the stats overlay, or to change its options. */
@@ -968,16 +1015,27 @@ interface WorkerEvents {
 	recording?(bytes: Uint8Array): void;
 	/** What a replay gave, after the sketch thread ran the recording's frames. */
 	replay?(result: ReplayResult): void;
+	/** The pipeline list of the pipelines that the first frame built, which the page stores. */
+	pipelineList?(list: Uint32Array): void;
 }
 
 /**
- * The error of a GPU that ran out of memory (E1304) or rejected a command (E1305), on `thread`, such
- * as "the render worker".
+ * The error of a GPU that ran out of memory (E1304), rejected a command (E1305), or whose driver
+ * could not build a pipeline of the scene's objects (E1307), on `thread`, such as "the render
+ * worker". `message` names the pipeline for E1307.
  */
-export function gpuFailure(thread: string, outOfMemory: boolean, message: string): EngineError {
-	return outOfMemory
-		? new EngineError('E1304', `${thread}'s GPU ran out of memory: ${message}.`)
-		: new EngineError('E1305', `${thread}'s GPU rejected a command: ${message}.`);
+export function gpuFailure(thread: string, kind: GpuErrorKind, message: string): EngineError {
+	switch (kind) {
+		case 'memory':
+			return new EngineError('E1304', `${thread}'s GPU ran out of memory: ${message}.`);
+		case 'rejected':
+			return new EngineError('E1305', `${thread}'s GPU rejected a command: ${message}.`);
+		case 'pipeline':
+			return new EngineError(
+				'E1307',
+				`${thread}'s GPU driver could not build the pipeline of ${message}.`,
+			);
+	}
 }
 
 /**
@@ -1101,7 +1159,7 @@ export class EngineWorker {
 						return;
 					case 'gpu-error':
 						events.failure(
-							gpuFailure(`the ${reply.role} worker`, reply.outOfMemory, reply.message),
+							gpuFailure(`the ${reply.role} worker`, reply.kind, reply.message),
 							false,
 						);
 						return;
@@ -1109,6 +1167,9 @@ export class EngineWorker {
 						// A job worker that failed has left the job system, so a stop need not wait for it.
 						if (reply.role === 'job') markStopped();
 						failed(reply.message);
+						return;
+					case 'pipeline-list':
+						events.pipelineList?.(reply.list);
 						return;
 					case 'progress':
 						// The first step says that the worker's script and the files that it imports
@@ -1457,13 +1518,10 @@ function startJobWorker(
 			events.failure(
 				error instanceof EngineError ? error : startError(`job ${index}`, messageOf(error)),
 				false,
+				false,
 			);
 	};
-	const start = () =>
-		new Worker(new URL('../workers/job-worker.ts', import.meta.url), {
-			type: 'module',
-			name: `null3d-job-${index}`,
-		});
+	const start = () => newJobWorker(index);
 	try {
 		const first = startEngineWorker(start);
 		const job = new EngineWorker(
@@ -1482,6 +1540,14 @@ function startJobWorker(
 		failed(thrown);
 		return undefined;
 	}
+}
+
+/** Constructs job worker `index`, in the form that bundlers read. */
+function newJobWorker(index: number): Worker {
+	return new Worker(new URL('../workers/job-worker.ts', import.meta.url), {
+		type: 'module',
+		name: `null3d-job-${index}`,
+	});
 }
 
 /**
@@ -1813,6 +1879,10 @@ async function startEngine(
 	const replay = modes.replay === undefined ? undefined : await readReplay(modes.replay, sketchUrl);
 	// A replay records nothing of its own: it runs a file that already holds the frames and input.
 	const record = modes.record && replay === undefined;
+	// A live start loads the sketch's module while the core downloads, so the module's imports and
+	// its top-level code run meanwhile. Hold mode, a replay and a recording load it once the runner
+	// has seeded the thread's random numbers, so that code draws the same numbers on every run.
+	const moduleFirst = hold === undefined && replay === undefined && !record;
 	// The quality preset follows the device hints and the crash marker, which the page has at once,
 	// so its memory maximum is known before the core loads. Hold mode and the ?preset= switch fix
 	// the preset for tests, so they neither read nor write the marker.
@@ -1825,6 +1895,8 @@ async function startEngine(
 	// The highest frame rate that the preset check, the governor and the stats overlay aim for.
 	const optionTarget = targetFpsOption(options.targetFps);
 	const maxTarget = maxTargetFps(switches.targetFps ?? optionTarget, switches.fps);
+	const optionCheck = presetCheckOption(options.presetCheck);
+	const checkTiming = switches.presetCheck ?? optionCheck ?? 'during-play';
 	const pageSettings = {
 		maxPixelRatio: options.maxPixelRatio,
 		antialias: options.antialias,
@@ -1885,26 +1957,31 @@ async function startEngine(
 	);
 	// A page that runs the sketch itself needs the core's loader, the sketch runner and the sketch
 	// module right after the core, so they download while the core does: each later start delays the
-	// first frame by a round trip on a slow network. The sketch module's top-level code then runs when
-	// the module arrives. Hold mode loads the module once the runner has seeded the thread's random
-	// numbers, so that code draws the same numbers on every run.
+	// first frame by a round trip on a slow network. A live sketch module's top-level code then runs
+	// when the module arrives.
 	if (sketchOnPage) void awaitLater(loadGlue(build));
 	const runnerModule = sketchOnPage ? loadRunnerModule() : undefined;
 	// A development build with input off hears each add-on that the sketch's module loads, such as
 	// @null3d/controls, from before the load begins, and hands them to the runner once it exists.
-	let earlyAddons: string[] | undefined;
-	if (DEV && sketchOnPage && hold === undefined && options.input === false) {
-		const heard: string[] = [];
-		earlyAddons = heard;
-		stopEarlyAddons = onAddonChecked((name) => heard.push(name));
+	const earlyAddons =
+		DEV && sketchOnPage && moduleFirst && options.input === false ? hearAddonsEarly() : undefined;
+	if (earlyAddons) {
+		stopEarlyAddons = earlyAddons.stop;
 		// The start runs on with no wait to the try below, whose failure stops the engine and this
 		// hearing with it. A start that throws before that try ends the hearing here.
 		queueMicrotask(() => {
 			if (!startTried) stopEarlyAddons?.();
 		});
 	}
-	const sketchModule =
-		sketchOnPage && hold === undefined ? awaitLater(loadSketch(sketchUrl)) : undefined;
+	const sketchModule = sketchOnPage && moduleFirst ? awaitLater(loadSketch(sketchUrl)) : undefined;
+	// The files that a live sketch lists start downloading once its module and the runner's code
+	// have loaded, unless the runner's setup begins them first.
+	const listed: ListedFiles = {};
+	if (sketchModule && runnerModule)
+		Promise.all([sketchModule, runnerModule]).then(
+			([sketch, runner]) => runner.startListedFiles(listed, sketch, pageUrl ?? sketchUrl),
+			() => {},
+		);
 	const powerPreference = options.powerPreference ?? DEFAULT_POWER_PREFERENCE;
 
 	const messageHandlers = new Set<(name: string, data: unknown) => void>();
@@ -1933,7 +2010,22 @@ async function startEngine(
 		for (const handler of messageHandlers) handler(name, data);
 	};
 	const failureHandlers = new Set<(error: EngineError) => void>();
+	/** Ends hold mode's read-back of its frame, while it reads the frame back. */
+	let endHold: ((error: EngineError) => void) | undefined;
 	const stopHandlers = new Set<() => void>();
+	/**
+	 * Resolves `engine.presetChecked`: once the check ends, at once where none runs, and once the
+	 * engine draws no new frames, which ends a check that measures them.
+	 */
+	let endCheck: () => void = () => {};
+	const presetChecked = new Promise<void>((resolve) => {
+		endCheck = resolve;
+	});
+	const firstFrame = new FirstFrame();
+	/** The metrics' header, where the thread that draws writes when the GPU finished the first frame. */
+	let header: MetricsReader | undefined;
+	/** True once the GPU has finished the first frame. */
+	const firstFrameDone = () => (header?.firstFrameDoneTime ?? 0) > 0;
 	/** True once the engine draws no new frames, which each stop handler hears once. */
 	let drawingEnded = false;
 	/** Runs a stop handler. One that throws is the page's error, which the console shows. */
@@ -1944,9 +2036,15 @@ async function startEngine(
 			console.error(error);
 		}
 	};
-	const endDrawing = () => {
+	/**
+	 * Ends the engine's frames: with the failure that ended them, which `engine.firstFrame` then
+	 * rejects with when the GPU has not finished the first frame, or with none for a stop.
+	 */
+	const endDrawing = (failure?: EngineError) => {
 		if (drawingEnded) return;
 		drawingEnded = true;
+		endCheck();
+		firstFrame.stopped(firstFrameDone(), failure);
 		const handlers = [...stopHandlers];
 		stopHandlers.clear();
 		// The other handlers and the stop go on past one that throws.
@@ -1965,6 +2063,8 @@ async function startEngine(
 	if (options.onSketchError) sketchErrorHandlers.add(options.onSketchError);
 	/** Where a start that checks its preset keeps the check's result for later starts. */
 	let checkStore: CheckStore | undefined;
+	/** The stored list of the first frame's pipelines, on a start that keeps one. */
+	let pipelineStore: PipelineStore | undefined;
 	/**
 	 * Ends the start when the caller cancels it, or when a thread fails before the engine has
 	 * started. A thread that fails then, such as the one that draws, leaves the start waiting for
@@ -1974,22 +2074,28 @@ async function startEngine(
 	let starting = true;
 	const cancelStart = () => start.abort(signal?.reason);
 	signal?.addEventListener('abort', cancelStart, { once: true });
-	const onFailure = (error: EngineError, endsStart = true) => {
+	const onFailure = (error: EngineError, endsStart = true, endsHold = true) => {
 		if (reported.has(error.message)) return;
 		reported.add(error.message);
 		if (starting && endsStart) {
 			start.abort(error);
 			return;
 		}
+		// Hold mode reads its frame back after the start. A failure ends that read-back, which then
+		// reports it, unless the frames never needed the thread that failed.
+		const hold = endsHold ? endHold : undefined;
+		hold?.(error);
 		// The failure reaches its handlers, or the console, before the stop handlers hear that the
 		// frames ended, so a page hears why before it hears that.
 		try {
 			if (failureHandlers.size === 0) {
-				earlyFailures.push(error);
-				console.error(error);
+				if (!hold) {
+					earlyFailures.push(error);
+					console.error(error);
+				}
 			} else for (const handler of failureHandlers) handler(error);
 		} finally {
-			if (FAILURES_THAT_END_DRAWING.has(error.code)) endDrawing();
+			if (FAILURES_THAT_END_DRAWING.has(error.code)) endDrawing(error);
 		}
 	};
 	// The GPU path, the mode and the threads, which the start sets once the probe has run. The
@@ -2008,15 +2114,19 @@ async function startEngine(
 		sketchError: onSketchError,
 		failure: onFailure,
 		// The page applies the settings that it owns: the pixel ratio cap sizes the canvas. The
-		// engine's mode reports the preset and the preset check, which the page stores for later
-		// starts.
+		// engine's mode reports the preset and the preset check's result, which the page stores for
+		// later starts. It also stores the check's rounds at each lowering, so a page that closes
+		// before the check ends keeps them.
 		quality: (update) => {
 			canvasWatch?.setMaxPixelRatio(update.settings.maxPixelRatio);
 			mode.preset = update.preset;
-			if (!update.check) return;
-			mode.presetCheck = update.check;
-			checkStore?.save(update.check, maxTarget);
+			if (update.check) {
+				if (update.checked) mode.presetCheck = update.check;
+				checkStore?.save(update.check, maxTarget);
+			}
+			if (update.checked) endCheck();
 		},
+		pipelineList: (list) => pipelineStore?.save(list),
 		stats: (show) => statsSwitch.show(show),
 		labelSlot: (id, table, slot, generation) => pageLabels?.setSlot(id, table, slot, generation),
 		jobsWanted: (count) => growJobs?.(count),
@@ -2055,6 +2165,7 @@ async function startEngine(
 	);
 	const expectedObjects = expectedObjectCount(options.expectedObjects);
 	const metrics = createMetricsBuffer(threaded, jobWorkers);
+	header = new MetricsReader(metrics);
 	// The frame figures go on the page as the start makes them, so a test tool can time a start
 	// that stalls before it publishes anything, and read the sketch's growth, the first draw's
 	// pipelines and the first frame beside the steps it has noted.
@@ -2129,8 +2240,12 @@ async function startEngine(
 	let drawModule = renderThread === 'main' ? loadDrawModule() : undefined;
 	/** The worker that keeps the canvas from an engine before, which draws for this one. */
 	const keptWorker = movedTo ? takeParkedWorker(options.canvas, canvasHold) : undefined;
-	// With worker threads the page starts the workers now. A sketch worker gets the sketch module
-	// into the browser's cache, and still runs the module only after it has started the core.
+	// With worker threads the page starts the workers now. A live sketch's worker imports the sketch
+	// module as soon as its script runs, while the core downloads. In hold mode, a replay and a
+	// recording it imports the module only after it has started the core and the runner, so the page
+	// gets the module into the browser's cache meanwhile. A live start leaves that download to the
+	// worker's own import, which a second request of the same file would only delay, or double where
+	// the browser does not join two requests of one file.
 	const threads = threaded
 		? startWorkers(
 				!sketchOnPage,
@@ -2140,9 +2255,18 @@ async function startEngine(
 			)
 		: undefined;
 	if (threads?.sketch) {
-		prefetch(sketchUrl);
 		// In low-latency mode the sketch worker draws, so it loads the renderer now too.
 		if (renderThread === 'sketch-worker') threads.sketch.send({ type: 'load-renderer' });
+		if (moduleFirst)
+			threads.sketch.send({ type: 'load-sketch', url: sketchUrl, pageUrl: pageUrl ?? sketchUrl });
+		else prefetch(sketchUrl);
+	}
+	// The job workers start later, as the sketch's tasks and frames ask for them, and a setup that
+	// loads a model asks at once. Their script downloads now, so the first of them start from the
+	// browser's cache.
+	if (jobWorkers > 0) {
+		const jobScript = workerScriptOf(() => newJobWorker(0));
+		if (jobScript) prefetch(jobScript.href);
 	}
 
 	// What the start sets up, which a stop takes down again, from any point of the start.
@@ -2174,6 +2298,8 @@ async function startEngine(
 	/** The worker that holds the canvas, or will once the start moves it there. */
 	let canvasWorker = movedTo === 'render' ? threads?.render : movedTo ? threads?.sketch : undefined;
 	let localDrawing: Drawing<Renderer> | undefined;
+	/** What the page started for its renderer right after the probe, until the renderer takes it. */
+	let pageEarly: Promise<EarlyStart | undefined> | undefined;
 	let localRunner: SketchRunner | undefined;
 	/** Sends the sketch a message, here where the page runs it, or through its worker. */
 	const sendToSketch = (name: string, data: unknown, transfer: Transferable[] = []) => {
@@ -2257,6 +2383,20 @@ async function startEngine(
 		stopJobs();
 		waitForJobWorkersToLeave(slots);
 	};
+	/**
+	 * Gives the GPU back while the browser keeps the page in its back/forward cache, and takes a new
+	 * device when the page shows again, as after a GPU loss. Without it, the cached page holds every
+	 * texture and buffer, and a phone or tablet can lack the memory for the next page: a repeat
+	 * visit of the same page meets the cached one's GPU memory (D-390). The engine listens only where
+	 * it keeps texture copies, which bring every map back on the new device.
+	 */
+	const pageCached = (event: PageTransitionEvent) => {
+		if (!event.persisted) return;
+		const cached = event.type === 'pagehide';
+		if (!localDrawing) rendererHost?.send({ type: 'page-cache', cached });
+		else if (cached) localDrawing.enterPageCache();
+		else void localDrawing.leavePageCache();
+	};
 	/** On the dev server, hands each hot update of WGSL to the thread that runs the sketch. */
 	const updateShaders = (event: Event) => {
 		const updates = (event as CustomEvent<readonly WgslUpdate[]>).detail;
@@ -2281,6 +2421,8 @@ async function startEngine(
 			stopJobs();
 			removeMeasurementRelease();
 			globalThis.removeEventListener?.('pagehide', stopJobsAsPageLeaves);
+			globalThis.removeEventListener?.('pagehide', pageCached);
+			globalThis.removeEventListener?.('pageshow', pageCached);
 			globalThis.removeEventListener?.(WGSL_UPDATE_EVENT, updateShaders);
 			statsSwitch.show(false);
 			for (const slot of [
@@ -2292,6 +2434,8 @@ async function startEngine(
 			])
 				notifySlot(slots, slot, threads?.sketch?.handle);
 			await localDrawing?.stop();
+			// A start that stops before the page's renderer took its early device destroys it.
+			void pageEarly?.then((early) => early?.release());
 			localRunner?.dispose();
 			videos?.dispose();
 			input?.listen(false);
@@ -2415,7 +2559,9 @@ async function startEngine(
 		// The engine checks a preset that it chose itself, when a lighter one exists. A preset that the
 		// page, a switch or hold mode fixes stays as it is. A start after a crash measures again, and
 		// so does one that ?check=fresh asks to. Otherwise the result of an earlier check of the sketch
-		// on this device and browser gives the preset at once, while it applies.
+		// on this device and browser gives the preset at once, while it applies. The rounds of an
+		// earlier check that never ended give the preset that they lowered to, and this start's check
+		// goes on from them.
 		const checks =
 			optionPreset === 'auto' &&
 			switches.preset === undefined &&
@@ -2426,8 +2572,9 @@ async function startEngine(
 			const conditions = checkConditions(report, tier, chosen, switches.fps, maxTarget);
 			checkStore = new CheckStore(sketchUrl, conditions, width * height);
 		}
-		const storedCheck = switches.freshCheck ? undefined : checkStore?.read();
-		const preset = storedCheck?.rounds.at(-1)?.preset ?? chosen;
+		const stored = switches.freshCheck ? undefined : checkStore?.read();
+		const storedCheck = stored && checkEnded(stored) ? stored : undefined;
+		const preset = stored ? checkedPreset(stored) : chosen;
 		// Occlusion culling on the GPU needs WebGPU's compute passes. Phones and tablets run it only
 		// when the page asks.
 		const gpuOcclusion =
@@ -2459,7 +2606,9 @@ async function startEngine(
 			textureCapMiB,
 			keepCopies: keepTextureCopies,
 			highest: withinTier('ultra', tier),
-			check: checks && !storedCheck,
+			// A replay steps through its recording, which leaves no frames of play to measure.
+			check: checks && !storedCheck && replay === undefined ? checkTiming : undefined,
+			resume: storedCheck ? undefined : stored,
 			lowest: startLowest,
 			lowestAllowed,
 			tier,
@@ -2478,6 +2627,7 @@ async function startEngine(
 			renderFallback,
 			keepTextureCopies,
 		};
+		if (quality.check === undefined) endCheck();
 		/**
 		 * The preset that the first frame draws at: the one the engine starts with, because its own
 		 * preset check draws that frame before it can step down. The page can end on a lighter preset,
@@ -2549,12 +2699,36 @@ async function startEngine(
 			expectedObjects,
 			gpuOcclusion: quality.settings.gpuOcclusion,
 		});
-		// The GPU path and the device's fixed bits choose the renderers and the shader file that the
-		// thread that draws loads first, so it starts their downloads now, while the core downloads.
-		const shaderPreload: ShaderPreload = { type: 'load-shaders', tier, bits: device.shaderBits };
+		// A live start keeps the list of its first frame's pipelines, and builds the list that the last
+		// start at the same preset kept as soon as the thread that draws can. A hold, a replay and a
+		// recording of permutation words draw what they hold, so they neither read nor keep one.
+		if (hold === undefined && replay === undefined && !rendererSetup.recordPermutations) {
+			pipelineStore = new PipelineStore(
+				sketchUrl,
+				pipelineConditions(
+					tier,
+					device.shaderBits,
+					preset,
+					tier === 'webgl2' ? undefined : (report.webgpu.preferredCanvasFormat ?? undefined),
+				),
+			);
+			rendererSetup.keepBuilds = true;
+			if (!switches.freshBuilds) rendererSetup.earlyBuilds = pipelineStore.read();
+		}
+		// The GPU path and the device choose the renderers and the shader files that the thread that
+		// draws loads first, and the GPU device that it asks for, so it starts them now, while the core
+		// downloads.
+		const drawingPreload: DrawingPreload = {
+			tier,
+			device,
+			forceCompat,
+			powerPreference,
+			preload: options.preload,
+		};
+		const shaderPreload: ShaderPreload = { type: 'load-shaders', ...drawingPreload };
 		if (renderThread === 'render-worker') threads?.render?.send(shaderPreload);
 		else if (renderThread === 'sketch-worker') threads?.sketch?.send(shaderPreload);
-		else if (drawModule) preloadDeviceFiles(drawModule, tier, device.shaderBits);
+		else if (drawModule) pageEarly = preloadDrawing(drawModule, drawingPreload);
 
 		const core = await abortable(coreLoad, signal);
 		coreMemory = core.memory;
@@ -2645,11 +2819,14 @@ async function startEngine(
 			sketch?: SketchRunner,
 		) => {
 			draw = await (drawModule ?? loadDrawModule());
+			const early = await pageEarly;
+			pageEarly = undefined;
 			// The page's context stays with the canvas: an engine after this one draws on the page too.
 			canvasHold.pageContext = true;
 			return draw.startDrawing({
 				canvas: options.canvas,
 				...rendererSetup,
+				early,
 				metrics,
 				device,
 				scene: memory && { memory, control },
@@ -2657,14 +2834,18 @@ async function startEngine(
 				sketch,
 				...images,
 				presented: () => labels.update(),
+				listBuilds: rendererSetup.keepBuilds ? (list) => pipelineStore?.save(list) : undefined,
 				fail: pageLoss,
 				fault: (error) => onFailure(failureError('the drawing on the page', messageOf(error))),
-				gpuError: (outOfMemory, message) =>
-					onFailure(gpuFailure('the page', outOfMemory, message), false),
+				gpuError: (kind, message) => onFailure(gpuFailure('the page', kind, message), false),
 			});
 		};
 
 		if (threads && jobWorkers > 0) globalThis.addEventListener?.('pagehide', stopJobsAsPageLeaves);
+		if (keepTextureCopies && hold === undefined) {
+			globalThis.addEventListener?.('pagehide', pageCached);
+			globalThis.addEventListener?.('pageshow', pageCached);
+		}
 		if (DEV) globalThis.addEventListener?.(WGSL_UPDATE_EVENT, updateShaders);
 
 		/**
@@ -2680,29 +2861,41 @@ async function startEngine(
 			const taskPorts = Array.from({ length: jobWorkers }, () => channel());
 			/** The job workers that started, by index, which the on-demand loader sends its tasks to. */
 			const running: number[] = [];
-			/** Notes a job worker that started, by its index. */
-			const noteStarted = (index: number) => running.push(index);
+			/**
+			 * Tells the thread that runs the sketch which job workers run, in a new list each time. A
+			 * sketch on this page reads the news itself, since no sketch worker carries it.
+			 */
+			const tell = () => {
+				running.sort((a, b) => a - b);
+				threads?.sketch?.send({ type: 'job-workers', running: [...running] });
+				if (jobTaskHost) jobTaskHost.running = [...running];
+			};
 			growJobs = (count) => {
+				// The sketch thread hears of each job worker as soon as it is ready, so its first task
+				// runs on the first that is, and only on workers that run. A batch none of whose workers
+				// started still says so once it has settled, so a task that waits for them goes to a
+				// task worker instead. A batch that started no worker at all, because the browser
+				// refused them or the engine is stopping, stays unheard: the thread then uses the
+				// workers it asked for.
+				let heard = false;
+				const started = (index: number) => {
+					heard = true;
+					running.push(index);
+					tell();
+				};
 				const starting: Promise<unknown>[] = [];
 				for (let index = jobs.length; index < Math.min(count, jobWorkers); index++) {
 					if (Atomics.load(slots, Slot.Running) === 0) break;
-					const job = startJobWorker(index, slots, events, noteStarted);
+					const job = startJobWorker(index, slots, events, started);
 					if (!job) break;
 					jobs.push(job);
 					const port = (taskPorts[index] as MessageChannel).port1;
 					job.send({ type: 'init', ...handoff, index, taskPort: port }, [port]);
 					starting.push(job.ready());
 				}
-				// The sketch thread hears which of a batch of job workers run once the whole batch has
-				// settled, so it never takes a worker for running before the batch is known. A batch
-				// that started no worker, because the browser refused them or the engine is stopping,
-				// stays unheard: the thread then uses the workers it asked for. A sketch on this page
-				// reads the news itself, since no sketch worker carries it.
 				if (starting.length === 0) return;
 				void Promise.allSettled(starting).then(() => {
-					running.sort((a, b) => a - b);
-					threads?.sketch?.send({ type: 'job-workers', running: [...running] });
-					if (jobTaskHost) jobTaskHost.running = [...running];
+					if (!heard) tell();
 				});
 			};
 			return taskPorts.map((tasks) => tasks.port2);
@@ -2803,13 +2996,11 @@ async function startEngine(
 					wantJobs,
 					sendLabelSlot: events.labelSlot,
 					reportSketchError: (message) => events.sketchError(new Error(message)),
+					listed: sketchModule ? listed : undefined,
 					// What the sketch's module loaded before the runner existed, then each later load.
 					...(DEV && {
-						hearAddons: (heard: (name: string) => void) => {
-							stopEarlyAddons?.();
-							for (const name of earlyAddons ?? []) heard(name);
-							return onAddonChecked(heard);
-						},
+						hearAddons: (heard: (name: string) => void) =>
+							earlyAddons?.hand(heard) ?? onAddonChecked(heard),
 					}),
 				},
 				hold,
@@ -2818,9 +3009,9 @@ async function startEngine(
 				record,
 				switches.view,
 			);
-			// In hold mode the sketch module loads only now, after the runner seeded the random
-			// numbers. The renderer starts before the setup, so a warm-up in the setup has a renderer
-			// to build its pipelines.
+			// In hold mode, a replay and a recording the sketch module loads only now, after the runner
+			// seeded the random numbers. The renderer starts before the setup, so a warm-up in the
+			// setup has a renderer to build its pipelines.
 			const sketchLoad = sketchModule ?? awaitLater(loadSketch(sketchUrl));
 			if (!render)
 				localDrawing = await abortable(
@@ -2903,22 +3094,25 @@ async function startEngine(
 		const engineStartMs = performance.now() - startedAt;
 		onProgress('sketch');
 		// The thread that draws writes the time the GPU finished the first frame; the page checks for
-		// it once per animation frame until it appears.
-		const header = new MetricsReader(metrics);
-		const firstFrame = new Promise<void>((resolve) => {
-			const check = () => {
-				if (Atomics.load(slots, Slot.Running) === 0) return;
-				if (header.firstFrameDoneTime > 0) {
-					onProgress('first-frame');
-					resolve();
-					return;
-				}
-				requestAnimationFrame(check);
-			};
+		// it once per animation frame until it appears, or until the engine stops drawing.
+		const check = () => {
+			if (Atomics.load(slots, Slot.Running) === 0) return;
+			if (firstFrameDone()) {
+				onProgress('first-frame');
+				firstFrame.drawn();
+				return;
+			}
 			requestAnimationFrame(check);
-		});
-		marker?.endAfter(firstFrame);
-		if (DEV && switches.twoStep) void firstFrame.then(() => logTwoStep(slots, false));
+		};
+		requestAnimationFrame(check);
+		// The note covers the preset check as well as the first seconds of play, so a start whose
+		// check ends in a crash counts as one.
+		marker?.endAfter(Promise.all([firstFrame.promise, presetChecked]).then(() => undefined));
+		if (DEV && switches.twoStep)
+			void firstFrame.promise.then(
+				() => logTwoStep(slots, false),
+				() => {},
+			);
 		/** Hold mode's frame, read back once. */
 		let held: CapturedFrame | undefined;
 		/** The error of a thread that draws when it could not capture a frame. */
@@ -2956,7 +3150,8 @@ async function startEngine(
 			capabilities,
 			report,
 			mode,
-			firstFrame,
+			firstFrame: firstFrame.promise,
+			presetChecked,
 			labels,
 			postToSketch: sendToSketch,
 			registerVideo: (video, videoOptions) =>
@@ -3009,8 +3204,14 @@ async function startEngine(
 				// adds an object then builds its pipelines while the figures load.
 				const reader = new MetricsReader(metrics);
 				reader.begin();
-				const { HeapSampler, secondRates, slowFrames, summarizeFrames, wasmDownloadBytes } =
-					await loadFrameStats();
+				const {
+					HeapSampler,
+					drawingStartFigures,
+					secondRates,
+					slowFrames,
+					summarizeFrames,
+					wasmDownloadBytes,
+				} = await loadFrameStats();
 				const mainThread = new MainThreadWatch();
 				const started = performance.now();
 				const heap = new HeapSampler();
@@ -3037,6 +3238,7 @@ async function startEngine(
 						firstDrawMs: reader.firstDrawMs,
 						firstFramePipelines: reader.firstFramePipelines,
 						firstFramePreset,
+						drawingStart: drawingStartFigures(reader),
 					},
 					gpuLosses: Atomics.load(slots, Slot.GpuEpoch),
 					downloadBytes: { wasm: wasmDownloadBytes() },
@@ -3110,7 +3312,15 @@ async function startEngine(
 			return engine;
 		}
 		try {
-			held = await abortable(holdFrame(capture, failureHandlers), signal);
+			held = await abortable(
+				holdFrame(capture, (end) => {
+					endHold = end;
+					return () => {
+						endHold = undefined;
+					};
+				}),
+				signal,
+			);
 			// The held frame built every pipeline that the scene draws with, so its words are
 			// complete here, before the page publishes the frame the tool waits on.
 			stopRecording();
@@ -3158,18 +3368,19 @@ async function startEngine(
 
 /**
  * Draws the held frame and reads it back through `capture`. The first failure that the engine
- * reports meanwhile, such as a lost GPU, ends the hold instead. A failure without a code becomes
+ * reports meanwhile to the function that `listen` registers, such as a lost GPU, ends the hold
+ * instead. `listen` returns the function that ends the listening. A failure without a code becomes
  * E1408.
  */
 async function holdFrame<T>(
 	capture: () => Promise<T>,
-	failureHandlers: Set<(error: EngineError) => void>,
+	listen: (fail: (error: EngineError) => void) => () => void,
 ): Promise<T> {
 	let fail: (error: EngineError) => void = () => {};
 	const failed = new Promise<never>((_, reject) => {
 		fail = reject;
 	});
-	failureHandlers.add(fail);
+	const stopListening = listen(fail);
 	try {
 		return await Promise.race([capture(), failed]);
 	} catch (error) {
@@ -3179,6 +3390,6 @@ async function holdFrame<T>(
 			`hold mode stopped before it read the held frame back: ${messageOf(error)}.`,
 		);
 	} finally {
-		failureHandlers.delete(fail);
+		stopListening();
 	}
 }

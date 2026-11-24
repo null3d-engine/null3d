@@ -99,6 +99,7 @@ run('demo-probe', async () => {
 		else engine.postToSketch('fault');
 	};
 	await engine.firstFrame;
+	await engine.presetChecked;
 	if (demo.pagePart)
 		window.startAbortedPart = async () => {
 			const part = (await import(`../../examples/${demo.name}/page.ts`)) as DemoPage;

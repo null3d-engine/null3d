@@ -1,13 +1,16 @@
 // The stored preset check: the result of each sketch's last preset check, kept in the page's
 // localStorage, so that a later start of the sketch in the same browser on the same device takes
 // the checked preset without measuring again. On a tablet the check takes about a second for each
-// preset that it measures, and the page's loading screen waits for it. A stored result applies only
-// to a start that would check the same preset with the same rules, on a GPU and display that report
-// the same facts, at a canvas size close to the measured one, within a week of the measurement. A
-// result measured against a target below the one that the engine starts from, as on a display in a
-// power-saving mode, is not stored. The highest target that the page allows is one of the facts, so
-// a result never applies to a start that defends another rate. Storage that cannot be read or written counts as empty. The GPU's names only tell
-// one GPU from another here; the engine never decides anything from what they say.
+// preset that it measures. A stored result applies only to a start that would check the same
+// preset with the same rules, on a GPU and display that report the same facts, at a canvas size
+// close to the measured one, within a week of the measurement. The store also keeps the rounds of
+// a check that has not ended yet, each time the check lowers the preset, so a page that closes
+// during the check loses no round: the next start begins at the lighter preset, and its own check
+// goes on from there. A result measured against a target below the one that the engine starts
+// from, as on a display in a power-saving mode, is not stored. The highest target that the page
+// allows is one of the facts, so a result never applies to a start that defends another rate.
+// Storage that cannot be read or written counts as empty. The GPU's names only tell one GPU from
+// another here; the engine never decides anything from what they say.
 
 import {
 	CHECK_GRACE_MS,
@@ -16,10 +19,11 @@ import {
 	CHECK_UPLOAD_WAIT_MS,
 	CHECK_WINDOW_MS,
 	checkTargetFps,
+	holdsTarget,
 	type PresetCheck,
 	type PresetCheckRound,
 } from '../quality/check';
-import { QUALITY_PRESETS, type QualityPreset } from '../quality/presets';
+import { presetAfterMiss, QUALITY_PRESETS, type QualityPreset } from '../quality/presets';
 import type { Tier } from '../shared/tier';
 import type { CapabilityReport } from './capabilities';
 import { pageStorage } from './start-marker';
@@ -40,9 +44,31 @@ interface StoredCheck {
 	conditions: string;
 	/** The canvas's area in CSS pixels when the engine started. */
 	area: number;
-	/** When the check ended, in ms since 1970. */
+	/** When the check measured its last round, in ms since 1970. */
 	savedAt: number;
+	/** The check's rounds so far, which end the check when `checkEnded` says so. */
 	check: PresetCheck;
+}
+
+/**
+ * True when a check's rounds end it: its last round held the target, or measured Low, which has no
+ * lighter preset. A check that lowered the preset after its last round has not ended.
+ */
+export function checkEnded(check: Pick<PresetCheck, 'targetFps' | 'rounds'>): boolean {
+	const last = check.rounds.at(-1);
+	return last !== undefined && (last.preset === 'low' || holdsTarget(last, check.targetFps));
+}
+
+/**
+ * The preset that a check's rounds leave the engine at: the last round's preset when the check
+ * ended there, or else the one that the check lowered to after the last round missed its target.
+ */
+export function checkedPreset(
+	check: Pick<PresetCheck, 'from' | 'targetFps' | 'rounds'>,
+): QualityPreset {
+	const last = check.rounds.at(-1);
+	if (!last) return check.from;
+	return checkEnded(check) ? last.preset : presetAfterMiss(last, check.targetFps);
 }
 
 const isPreset = (value: unknown): value is QualityPreset =>
@@ -118,7 +144,8 @@ export function checkConditions(
 
 /**
  * The stored result that applies to a start under `conditions` with a canvas of `area` CSS
- * pixels at `now`, as a reused check, or undefined when none does.
+ * pixels at `now`, as a reused check, or undefined when none does. A check that has not ended
+ * gives its rounds so far, which the start's own check goes on from (`checkEnded`).
  */
 export function reusableCheck(
 	text: string | null,
@@ -169,7 +196,8 @@ export class CheckStore {
 	}
 
 	/**
-	 * Stores the result of a check that this start measured, when it measured against at least the
+	 * Stores what a check of this start measured: its result once it ended, and its rounds so far
+	 * each time it lowers the preset. It stores them when they were measured against at least the
 	 * target that the check starts from under the highest target `maxTargetFps`.
 	 */
 	save(check: PresetCheck, maxTargetFps: number, now = Date.now()): void {

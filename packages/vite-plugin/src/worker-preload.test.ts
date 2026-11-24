@@ -2,7 +2,7 @@ import { describe, expect, it } from 'bun:test';
 import MagicString from 'magic-string';
 import type { Rollup } from 'vite';
 import { emptyWorkerPreloads } from './index';
-import { preloadImports, staticImports } from './worker-preload';
+import { directImports, preloadImports, staticImports } from './worker-preload';
 
 /** A worker bundle's chunks: the render worker, which loads either GPU path's file on demand. */
 const CHUNKS = {
@@ -83,5 +83,40 @@ describe('emptyWorkerPreloads', () => {
 		expect(code('assets/common.js')).not.toContain('__vite__mapDeps(');
 		// A chunk that no worker imports keeps its lists, so the page still preloads.
 		expect(code('assets/page.js')).toContain('__vite__mapDeps([4])');
+	});
+});
+
+describe('directImports', () => {
+	/** A page build's chunks: a sketch, the chain of chunks it imports, and the page. */
+	const chunks = {
+		'assets/sketch.js': { imports: ['assets/vec3.js', 'assets/define.js'] },
+		'assets/vec3.js': { imports: ['assets/math.js'] },
+		'assets/define.js': { imports: ['assets/math.js', 'assets/lib/error.js', 'external'] },
+		'assets/math.js': { imports: ['assets/lib/core.js'] },
+		'assets/lib/error.js': { imports: [] },
+		'assets/lib/core.js': { imports: [] },
+		'assets/flat.js': { imports: ['assets/lib/core.js'] },
+		'assets/lib/task.js': { imports: ['assets/vec3.js'] },
+	};
+
+	it('names after the code each chunk that the chunk reaches through others', () => {
+		const code = new MagicString('import{a}from"./vec3.js";import{b}from"./define.js";a(b);');
+		expect(directImports(code, 'assets/sketch.js', chunks)).toBe(true);
+		expect(code.toString()).toBe(
+			'import{a}from"./vec3.js";import{b}from"./define.js";a(b);\n' +
+				'import "./math.js";\nimport "./lib/error.js";\nimport "./lib/core.js";\n',
+		);
+	});
+
+	it('names each chunk from the folder of the chunk that imports it', () => {
+		const code = new MagicString('');
+		expect(directImports(code, 'assets/lib/task.js', chunks)).toBe(true);
+		expect(code.toString()).toBe('\nimport "../math.js";\nimport "./core.js";\n');
+	});
+
+	it('leaves a chunk whose imports reach no further chunk as it is', () => {
+		const code = new MagicString('import"./lib/core.js";');
+		expect(directImports(code, 'assets/flat.js', chunks)).toBe(false);
+		expect(code.toString()).toBe('import"./lib/core.js";');
 	});
 });

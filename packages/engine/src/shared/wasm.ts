@@ -1,8 +1,10 @@
 // Downloads WebAssembly files and compiles them as they arrive: the engine core, and the modules
-// that the on-demand loader (shared/tasks.ts) loads on first use. A failure names the file by its
-// role and gives its cause: a download that failed, a file that is not WebAssembly, or a
-// Content-Security-Policy that blocks WebAssembly. A file from another origin, such as a CDN, can
-// also fail because the policy does not allow its origin, or because it came without CORS.
+// that the on-demand loader (shared/tasks.ts) loads on first use. The browser compiles the response
+// that it downloaded, so Chrome can keep the compiled code and a later visit skips the compile.
+// A failure names the file by its role and gives its cause: a download that failed, a file that is
+// not WebAssembly, or a Content-Security-Policy that blocks WebAssembly. A file from another origin,
+// such as a CDN, can also fail because the policy does not allow its origin, or because it came
+// without CORS.
 
 import type { EngineError } from '../errors/engine-error';
 import { isCrossOrigin, violationFor, watchPolicy } from './policy';
@@ -45,33 +47,52 @@ export function shownAddress(url: URL): string {
 
 const reason = (thrown: unknown) => (thrown instanceof Error ? thrown.message : String(thrown));
 
+/** The headers that let the browser compile a response as WebAssembly. */
+const WASM_HEADERS = { 'Content-Type': 'application/wasm' };
+
 /**
- * Calls `report` as each byte range of a body passes through it, with the bytes that have passed
- * and the bytes that the response announced. `total` is 0 when the response gave no length.
+ * True when the browser compiles `response` as it came: its Content-Type is `application/wasm`
+ * alone. Chrome refuses the type with any parameter.
  */
-function counted(
-	body: ReadableStream<Uint8Array<ArrayBufferLike>>,
+function compilesAsSent(response: Response): boolean {
+	return response.headers.get('content-type')?.toLowerCase() === 'application/wasm';
+}
+
+/**
+ * Reads `body` to its end and calls `report` as each byte range arrives, with the bytes that have
+ * arrived and the bytes that the response announced: 0 when it gave no length. A broken download
+ * or `stop` ends the reading quietly, as the compile reports the download's fault.
+ */
+function countBytes(
+	body: ReadableStream<Uint8Array>,
 	total: number,
 	report: (loaded: number, total: number) => void,
-): ReadableStream<Uint8Array<ArrayBufferLike>> {
+	stop: AbortSignal,
+): Promise<void> {
 	let loaded = 0;
-	return body.pipeThrough(
-		new TransformStream<Uint8Array<ArrayBufferLike>, Uint8Array<ArrayBufferLike>>({
-			transform(chunk, controller) {
-				loaded += chunk.byteLength;
-				report(loaded, total);
-				controller.enqueue(chunk);
-			},
-		}),
-	);
+	const counter = new WritableStream<Uint8Array>({
+		write(chunk) {
+			loaded += chunk.byteLength;
+			report(loaded, total);
+		},
+	});
+	return body.pipeTo(counter, { signal: stop }).catch(() => {});
 }
 
 /**
  * Downloads a WebAssembly file and compiles it as it arrives. `name` says what the file is, for
- * errors. `readHead` reads a copy of the download, such as the start of the module, while the
- * browser compiles. `onDownload` hears the bytes as they arrive, with the length that the response
- * announced, or 0 when it gave none. Fails with E1406 when the file does not download whole or is
- * not WebAssembly, and with E1418 when the page's Content-Security-Policy blocks WebAssembly.
+ * errors. `started` is a download of the file that the page has already begun. `readHead` reads a
+ * copy of the download, such as the start of the module, while the browser compiles.
+ * `onDownload` hears the bytes as they arrive, with the length that the response announced, or 0
+ * when it gave none, and hears the last of them before the compile's result returns. Fails with
+ * E1406 when the file does not download whole or is not WebAssembly, and with E1418 when the
+ * page's Content-Security-Policy blocks WebAssembly.
+ *
+ * The browser compiles the downloaded response itself whenever its type allows. Chrome keeps the
+ * code that it compiles from a response that it downloaded, and a later visit that takes the file
+ * from the HTTP cache reads that code rather than compiling again. A file that a host sends with
+ * another type compiles through a response that the engine makes with the right type: it still
+ * compiles as it arrives, but afresh on every visit.
  */
 export async function compileWasm<T>(
 	url: URL,
@@ -103,28 +124,28 @@ export async function compileWasm<T>(
 	}
 	if (!response.ok || !response.body)
 		throw error('E1406', `${name} did not download from ${where}: HTTP ${response.status}.`);
-	let body: ReadableStream<Uint8Array<ArrayBufferLike>> = response.body;
+	const compiled = compilesAsSent(response)
+		? response
+		: new Response(response.body, { headers: WASM_HEADERS });
+	// The readers each take a copy of the download. A copy keeps the browser's cache of the compiled
+	// code, and the browser hands every copy each byte range as it arrives, without waiting for the
+	// slowest reader, so no reader holds up the compile.
+	const copy = () => compiled.clone().body as ReadableStream<Uint8Array>;
+	const stop = new AbortController();
+	let counting: Promise<void> | undefined;
 	if (onDownload) {
 		const length = Number(response.headers.get('content-length'));
 		const total = Number.isFinite(length) && length > 0 ? length : 0;
 		onDownload(0, total);
-		body = counted(body, total, onDownload);
+		counting = countBytes(copy(), total, onDownload, stop.signal);
 	}
-	let head: Promise<T | undefined> = Promise.resolve(undefined);
-	if (readHead) {
-		const [compiled, read] = body.tee();
-		body = compiled;
-		// A broken download also fails the compile, which reports it.
-		head = readHead(read).catch(() => undefined);
-	}
+	// A broken download also fails the compile, which reports it.
+	const head = readHead?.(copy()).catch(() => undefined);
 	let module: WebAssembly.Module;
 	try {
-		// The engine gives the type itself, so a host that sends .wasm files with another type still
-		// compiles them as they arrive.
-		module = await WebAssembly.compileStreaming(
-			new Response(body, { headers: { 'Content-Type': 'application/wasm' } }),
-		);
+		module = await WebAssembly.compileStreaming(compiled);
 	} catch (thrown) {
+		stop.abort();
 		if (!wasmAllowed())
 			throw error(
 				'E1418',
@@ -134,6 +155,7 @@ export async function compileWasm<T>(
 			throw error('E1406', `${name} from ${where} is not a WebAssembly module: ${reason(thrown)}.`);
 		throw error('E1406', `${name} did not download whole from ${where}: ${reason(thrown)}.`);
 	}
+	await counting;
 	return { module, head: await head };
 }
 

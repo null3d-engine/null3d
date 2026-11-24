@@ -25,6 +25,7 @@ run('environment-cost', async () => {
 	const failures: string[] = [];
 	engine.onFailure((error) => failures.push(error.code));
 	await engine.firstFrame;
+	await engine.presetChecked;
 	const { off, on } = await featureCost(engine, async (environment) => {
 		engine.postToSketch(environment ? 'environment' : 'environment-off', null);
 		await new Promise((resolve) => setTimeout(resolve, SETTLE_MS));

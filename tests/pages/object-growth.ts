@@ -21,6 +21,7 @@ async function timeGrowths(canvas: HTMLCanvasElement): Promise<Record<string, un
 	for (const expectedObjects of [undefined, 16_383]) {
 		const engine = await createEngine({ canvas, sketch: TIMING_SKETCH, expectedObjects });
 		await engine.firstFrame;
+		await engine.presetChecked;
 		memory[String(expectedObjects ?? 'default')] = (await engine.measure(0.5)).memory.wasmBytes;
 		await engine.destroy();
 	}
@@ -33,6 +34,7 @@ async function timeGrowths(canvas: HTMLCanvasElement): Promise<Record<string, un
 		}),
 	);
 	await engine.firstFrame;
+	await engine.presetChecked;
 	engine.postToSketch('grow', null);
 	const frames = await timing;
 	await engine.destroy();

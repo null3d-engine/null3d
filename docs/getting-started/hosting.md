@@ -78,6 +78,8 @@ Access-Control-Allow-Origin: *
 
 It may name the page's origin in place of `*`. `Cross-Origin-Resource-Policy` alone does not serve, because the engine imports modules and downloads `.wasm` files in CORS mode. The HTML page still sends the two isolation headers. Without them the engine runs single-threaded, as on any host.
 
+The CDN also sends each `.wasm` file with `Content-Type: application/wasm`, and lets browsers keep it. Chrome then keeps the compiled engine core between visits ([Let Chrome keep the compiled core](#let-chrome-keep-the-compiled-core)).
+
 A worker that starts from a `blob:` address follows the page's policy. Add these parts to the page's policy, with your CDN's origin:
 
 ```http
@@ -203,7 +205,12 @@ The engine's shader text compresses well with Brotli, which finds text that repe
 | gzip at level 6, a common setting for compression on the fly | about 167 KB |
 | Files as they are | 0.6 MB |
 
-Netlify, Cloudflare Pages and Vercel send Brotli to browsers that accept it. GitHub Pages sends gzip only. nginx sends gzip with its own module, and Brotli with the `ngx_brotli` module. With nginx, compress the files once when you deploy them, with `brotli -q 11` on each file in `dist/assets/`, and send the compressed files with `brotli_static on;`.
+The engine core is the start's largest file. Its WebAssembly file takes 2.0 MB as it is, about 0.8 MB with gzip and about 0.6 MB with Brotli. Many servers compress only text, and send `.wasm` files as they are. To check a host, open the browser's network panel and compare the core's transferred size with its size.
+
+Netlify, Cloudflare Pages and Vercel send Brotli to browsers that accept it. GitHub Pages sends gzip only. nginx sends gzip with its own module, and Brotli with the `ngx_brotli` module. With nginx, compress the files once when you deploy them, with `brotli -q 11` on each file in `dist/assets/`, the `.wasm` files included. Then send the compressed files with `brotli_static on;`. nginx's own gzip compresses only the types that `gzip_types` lists, so add `application/wasm` there.
+
+The null3D Vite plugin's own servers compress with Brotli too, as [During development](#during-development) says. [A fast start](../guides/start-time.md) gives the other steps that shorten a start.
+
 
 ## Publish the third-party notices
 
@@ -213,23 +220,27 @@ The engine and some add-ons ship code from other projects, under their licenses.
 
 ## Caches between visits
 
-A repeat visit starts sooner when the browser keeps what the first visit downloaded and made. Five caches do that, and each keeps something else:
+A repeat visit starts sooner when the browser keeps what the first visit downloaded and made. Six caches do that, and each keeps something else:
 
 | Cache | What it keeps | Who sets it up |
 | --- | --- | --- |
 | The HTTP cache | The build's files: the engine, its workers, the shaders and your own files | The host, with the headers below |
+| Chrome's code cache | The machine code that Chrome compiled from the engine core | Chrome, for each `.wasm` file that the host sends as `application/wasm` and that the HTTP cache keeps ([Let Chrome keep the compiled core](#let-chrome-keep-the-compiled-core)) |
 | A service worker's cache | Every file the game needs, so it plays with no network | Your game, as [Offline play](#offline-play) shows |
 | The cache of derived data | Data that the engine and add-ons make from files, such as transcoded KTX2 textures, and data that your sketch makes itself | The engine, with no setup. `assets.cache` gives your sketch its own namespace ([Caching](../api/assets.md#caching)) |
 | The stored preset check | The quality preset that the device held | The engine, in `localStorage` ([Quality presets](../concepts/quality-presets.md#repeat-visits)) |
+| The stored pipeline list | Which GPU pipelines the first frame needed, so the next start builds them while it loads | The engine, in `localStorage` ([Loading screens](../guides/loading-screens.md#repeat-visits)) |
 | The back/forward cache | The whole running page, for the browser's back and forward buttons | The browser ([Content pages](../guides/content-pages.md#second-visits-and-navigation)) |
 
-The first two keep files, so a repeat visit downloads less. The cache of derived data keeps the work done on those files, so a repeat visit skips it. A page whose KTX2 files are all in it never downloads the transcoder. The browser can delete any of them to free space, and the engine then downloads or makes the data again.
+The HTTP cache and a service worker's cache keep files, so a repeat visit downloads less. The code cache and the cache of derived data keep the work done on those files, so a repeat visit skips it. A page whose KTX2 files are all in it never downloads the transcoder. The browser can delete any of them to free space, and the engine then downloads or makes the data again.
 
 ## Let browsers keep the build files
 
 Every engine thread loads its own copy of its script and of the core's loader. When the host lets the browser keep those files, each copy after the first comes from the cache. When the host asks the browser to check each file again, the copies wait for one another, one round trip each. A computer with many cores starts many threads, and on a slow phone connection one round trip can take more than half a second.
 
-With worker threads, the page also downloads the sketch module while the engine core downloads. The sketch worker then takes the module from the cache when it runs it. That saves a round trip only when the host lets the browser keep the file.
+With worker threads, the sketch worker imports the sketch module while the engine core downloads. The page also downloads the job worker's script then, and the job workers that start later take it from the cache. That saves a round trip only when the host lets the browser keep the file.
+
+A sketch that names its files in the `downloads` option of `defineSketch` starts them as soon as its module has loaded ([The download list](../api/sketch.md#the-download-list)). Over HTTP/1.1 a browser opens at most six connections to one server, and each large file holds one until it has arrived. So two listed files download at a time, and four at most while the setup's loads wait for them. The engine's own files, such as the first frame's shaders, then still find a free connection. Over HTTP/2 every request shares one connection. The listed files ask for low priority there, so a server that follows priorities sends the engine's own files first.
 
 Vite names the files in `assets/` with a hash of their content, so a file under a given name never changes. Serve them with a long cache lifetime, and serve the HTML page so that browsers check it each time:
 
@@ -241,6 +252,19 @@ Vite names the files in `assets/` with a hash of their content, so a file under 
 ```
 
 That is the `_headers` form for Netlify and Cloudflare Pages. In nginx, add `add_header Cache-Control "public, max-age=31536000, immutable" always;` inside a `location /assets/` block.
+
+Send no `Vary: Origin` header with the build's files when they come from the page's own origin. A worker's request for a module carries an `Origin` header that the page's own download of the same file does not. With `Vary: Origin`, the browser then checks the file again, one round trip, instead of taking its copy. A CDN that answers with `Access-Control-Allow-Origin: *` needs no `Vary: Origin` either.
+
+### Let Chrome keep the compiled core
+
+The engine core is about 2 MB of WebAssembly, and the browser compiles it as it downloads. Chrome then keeps the machine code that it compiled, beside the file in the HTTP cache. A repeat visit that takes the core from the HTTP cache reads that code and skips most of the compile. The engine loads its other `.wasm` files, such as the KTX2 transcoder, the same way. Chrome keeps the code only when the host does both of these:
+
+- Send each `.wasm` file with `Content-Type: application/wasm`, with nothing after it. Chrome refuses a parameter such as `; charset=utf-8`. Most hosts send this type already. To check, read the headers with `curl -I` and the address of a `.wasm` file in your build's `assets/` folder.
+- Let the HTTP cache keep the file, as the headers above do. A file served with `no-cache` keeps its code too, when the server answers the browser's check with `304 Not Modified`. A file served with `no-store` keeps nothing.
+
+With another type the engine still starts: it compiles the file as it downloads, but Chrome compiles it again on each visit.
+
+Chrome writes the code while the page runs, not when the download ends. It first compiles each function quickly, and optimizes the functions that run most. Once it has new optimized code, it waits until no further function has been optimized for two seconds, and then writes it. With 1 MB of new optimized code, it writes at once. The engine keeps optimizing for its first seconds, so a repeat visit gains only after an earlier visit ran the engine for a while. On the engine's test page in Chrome 158, the write came about 6 seconds after the first frame. A repeat visit that read it compiled none of the core again, and its optimizing work fell from about 110 ms to 30 ms. In the engine's startup benchmark at full speed, a repeat visit that read the compiled core finished its first frame at 160 ms. Without it, the first frame took 176 to 180 ms. It compiled 3 of the core's functions again, against 273. Chrome 156 and earlier have a fault in this wait, which can put the write off for up to about half an hour. So they rarely keep the code. Chrome 157 fixed it.
 
 ## Offline play
 
@@ -303,13 +327,23 @@ async function update() {
 }
 ```
 
-The page registers it in production builds only, so the dev server's pages stay out of the cache:
+The page registers it once the first frame has drawn, and in production builds only. The worker's downloads then leave the connection to the start's own files, and the dev server's pages stay out of the cache:
 
 ```ts
-if (import.meta.env.PROD) void navigator.serviceWorker?.register('./sw.js');
+// page.ts, after createEngine
+engine.firstFrame.then(
+  () => {
+    if (import.meta.env.PROD) void navigator.serviceWorker?.register('./sw.js');
+  },
+  () => {}, // the engine stopped before its first frame: cache nothing
+);
 ```
 
+A worker that starts with the page shares the connection with every file of the start, so the first frame comes later. Over HTTP/1.1, a long list holds every connection the browser opens to the host.
+
 Put the game's own files that the build does not hold, such as its models in `public/`, in the list that `cache.addAll` takes. On each visit with a network, the worker checks the list. When the build changed, it caches the new build in one step and deletes the old caches. The new build then runs from the next visit.
+
+`cache.addAll` keeps no file until every file of its list has arrived. A visitor who leaves before then starts the whole list again on the next visit, and each such visit shares its connection with the start. So keep the list to the files that the game needs. A build of many pages lists the files of every page in `start`.
 
 ### Keep the page isolated
 
@@ -329,6 +363,8 @@ The engine keeps its [cache of derived data](../api/assets.md#the-cache-of-deriv
 
 The null3D Vite plugin sends both isolation headers on every response from `vite` and `vite preview`. That includes the `.wasm` files and the worker scripts. `vite preview` also lets the browser keep the hashed files in `assets/`, as a well-set host does.
 
+Both servers compress what a phone or tablet on the network downloads, with Brotli, or with gzip for a browser that lacks Brotli. The dev server compresses its answers to every request from another device, and leaves requests over `localhost` as they are. The preview compresses the build's scripts, WebAssembly, glTF models and other text for every request. After its first answers, it compresses each file again at Brotli's best level while no request waits. Later visits then download the same sizes as from a host that compresses its files ahead of time.
+
 Shared memory and WebGPU also need a secure context: HTTPS, or `localhost`. WebGPU, and so the High and Ultra presets, only exist there. A page served over plain HTTP on a network address silently falls back to WebGL2 at Medium. An Android phone connected by USB can reach your computer's `localhost` through `adb reverse tcp:5173 tcp:5173`.
 
 To test on a phone or tablet over your local network, serve HTTPS with a local certificate. Make one with [mkcert](https://github.com/FiloSottile/mkcert), for `localhost` and your computer's network name:
@@ -345,9 +381,13 @@ Keep the `certs` folder out of version control, because it holds a private key. 
 export default defineConfig({ plugins: [null3d({ https: true, certDir: 'certs' })] });
 ```
 
-The plugin serves this HTTPS over HTTP/1.1. Over HTTP/2, Safari on an iPad sometimes stops while a worker loads its modules. The dev server sends each module as its own file, and every engine thread loads its own copy of each.
+The plugin serves this HTTPS over HTTP/1.1. Over HTTP/2, Safari on an iPad sometimes stops while a worker loads its modules. The dev server sends each module as its own file, and every engine thread loads its own copy of each. So a page asks for hundreds of files, and HTTP/1.1 sends six at a time. For other browsers, the plugin's `http2: true` option serves HTTP/2, which sends every request at once.
 
-The device must trust mkcert's root certificate. `mkcert -CAROOT` prints its folder. Copy `rootCA.pem` to the device and install it. On an iPhone or iPad, also turn on full trust in Settings > General > About > Certificate Trust Settings. A browser that has not been given the root certificate shows a warning: open the address over HTTPS and accept the certificate warning to continue.
+The device must trust mkcert's root certificate. `mkcert -CAROOT` prints its folder. Copy `rootCA.pem` to the device and install it. On an iPhone or iPad, also turn on full trust in Settings > General > About > Certificate Trust Settings.
+
+A browser that has not been given the root certificate shows a warning. You can accept it and continue, but then Chrome keeps no file from the site in its cache. Every load downloads every file again, so each reload is as slow as a first visit, and every timing of a start is wrong. Over a simulated phone connection, a reload of the dev server took 30 seconds instead of 15. Install the root certificate on every device that tests a page.
+
+The dev server also asks the browser to check every module on each load. So time a start only on a production build that a host serves, as [A fast start](../guides/start-time.md#test-a-production-build) explains.
 
 ## What isolation changes
 
@@ -357,3 +397,4 @@ The device must trust mkcert's root certificate. `mkcert -CAROOT` prints its fol
 
 - [Architecture: threads and the frame](../concepts/architecture.md): what the worker threads do.
 - [GPU tiers and backends](../concepts/backends.md): which browsers get WebGPU.
+- [A fast start](../guides/start-time.md): what a host, a page and a sketch do for a fast start.

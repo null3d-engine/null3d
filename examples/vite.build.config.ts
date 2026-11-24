@@ -8,7 +8,12 @@ import { join } from 'node:path';
 import { defineConfig } from 'vite';
 import null3d from '../packages/vite-plugin/src/index.ts';
 import { refuseStaleCore } from '../tools/lib/core-sources.ts';
-import { DEV_CERT_DIR, requireDevCertificate, servesHttps } from '../tools/lib/dev-https.ts';
+import {
+	DEV_CERT_DIR,
+	requireDevCertificate,
+	servesHttp2,
+	servesHttps,
+} from '../tools/lib/dev-https.ts';
 import { samplesServer } from '../tools/lib/samples.ts';
 import { ensureShaderModules } from '../tools/lib/shader-modules.ts';
 import { sourceResolve } from '../tools/lib/source-condition.ts';
@@ -37,7 +42,17 @@ export default defineConfig(({ command, isPreview }) => {
 		root: import.meta.dirname,
 		base: './',
 		// The engine's test switches, such as ?hold= and ?gpu=, work in this build too.
-		plugins: [null3d({ https, certDir: DEV_CERT_DIR, urlSwitches: true }), samplesServer(repo)],
+		// The certificate lives at the repository's root, where `bun run dev-cert` writes it, not
+		// under this config's root.
+		plugins: [
+			null3d({
+				https,
+				http2: servesHttp2(),
+				certDir: join(repo, DEV_CERT_DIR),
+				urlSwitches: true,
+			}),
+			samplesServer(repo),
+		],
 		// The demos take the packages' source, not the files that their pack step builds.
 		resolve: sourceResolve,
 		logLevel: 'warn',

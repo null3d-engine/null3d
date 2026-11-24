@@ -1877,7 +1877,9 @@ export function splatsPlan(): PlanItem<Check>[] {
 				`splats-scan-${tier}`,
 				'demo-frames',
 				{ kind: 'probe', tier },
-				{ switches: [`gpu=${tier}`, 'demo=splats', 'seconds=5'], timeoutSeconds: 300 },
+				// The demo draws before the whole scan has arrived; `grown` waits for it, so the frames
+				// sample the whole scan.
+				{ switches: [`gpu=${tier}`, 'demo=splats', 'grown', 'seconds=5'], timeoutSeconds: 300 },
 			),
 		]),
 	];
@@ -1902,6 +1904,11 @@ const VEGETATION_PRESETS = ['low', 'medium', 'high', 'ultra'] as const;
  * then waits for the overlay's figures.
  */
 const VEGETATION_TIMEOUT_SECONDS = 900;
+/**
+ * The switch that holds a demo's first frame until its models stand. A live Creek draws its garden
+ * first and stands its models as they land, so a page that times it asks for the finished garden.
+ */
+const grownFirst = (demo: string): string[] => (demo === 'creek' ? ['grown'] : []);
 
 /**
  * Creek and the forest demo at every preset on each GPU path, for M3-V1's vegetation budgets: the
@@ -1931,6 +1938,7 @@ export function vegetationPlan(): PlanItem<Check>[] {
 								// whole render scale and each preset's own cost shows.
 								'target-fps=1',
 								'seconds=5',
+								...grownFirst(demo),
 							],
 							timeoutSeconds: VEGETATION_TIMEOUT_SECONDS,
 						},
@@ -1957,6 +1965,7 @@ export function vegetationPlan(): PlanItem<Check>[] {
 							'settle=90',
 							'windows=3',
 							'still-route=on',
+							...grownFirst(demo),
 						],
 						timeoutSeconds: VEGETATION_TIMEOUT_SECONDS,
 					},
@@ -1977,6 +1986,7 @@ export function vegetationPlan(): PlanItem<Check>[] {
 					'target-fps=1',
 					'seconds=5',
 					'still-route=on',
+					...grownFirst('creek'),
 				],
 				timeoutSeconds: VEGETATION_TIMEOUT_SECONDS,
 			},
@@ -2004,6 +2014,7 @@ export function vegetationPlan(): PlanItem<Check>[] {
 							'settle=90',
 							'windows=3',
 							'still-route=on',
+							...grownFirst(demo),
 						],
 						timeoutSeconds: VEGETATION_TIMEOUT_SECONDS,
 					},
@@ -2375,7 +2386,14 @@ export function webgpuStallPlan(): PlanItem<Check>[] {
 				'demo-device',
 				{ kind: 'probe', tier: 'webgpu' },
 				{
-					switches: [`gpu=webgpu`, 'demo=creek', `preset=${preset}`, 'target-fps=1', 'seconds=5'],
+					switches: [
+						'gpu=webgpu',
+						'demo=creek',
+						`preset=${preset}`,
+						'target-fps=1',
+						'seconds=5',
+						...grownFirst('creek'),
+					],
 					timeoutSeconds: 240,
 				},
 			),
@@ -2385,7 +2403,14 @@ export function webgpuStallPlan(): PlanItem<Check>[] {
 			'demo-device',
 			{ kind: 'probe', tier: 'webgpu' },
 			{
-				switches: ['gpu=compat', 'demo=creek', 'preset=low', 'target-fps=1', 'seconds=5'],
+				switches: [
+					'gpu=compat',
+					'demo=creek',
+					'preset=low',
+					'target-fps=1',
+					'seconds=5',
+					...grownFirst('creek'),
+				],
 				timeoutSeconds: 240,
 			},
 		),

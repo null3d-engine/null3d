@@ -32,6 +32,7 @@ run('runtime-levels', async () => {
 		preset: 'low',
 	});
 	await engine.firstFrame;
+	await engine.presetChecked;
 	const levels = await new Promise<Record<string, unknown>>((resolve, reject) => {
 		engine.onSketchMessage((name, data) => {
 			if (name === 'levels') resolve(data as Record<string, unknown>);

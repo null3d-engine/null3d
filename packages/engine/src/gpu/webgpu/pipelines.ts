@@ -234,6 +234,7 @@ import {
 import type { CustomShader } from '../../shared/images';
 import { LINE_VERTICES } from '../line-vertices';
 import { PARTICLE_RECORDS } from '../particle-records';
+import { pipelineName } from '../pipeline-name';
 import { missingVariant, variantFor } from '../variants';
 import {
 	plainScale,
@@ -294,6 +295,11 @@ export interface RenderTemplate {
 	readonly lastVertices?: boolean;
 	/** The other vertex buffers that the vertex stage reads, by slot, after the mesh's vertices. */
 	readonly vertexBuffers: GPUVertexBufferLayout[];
+	/**
+	 * True for a custom material's draw shader, whose vertex stage makes every vertex: its draws are
+	 * objects of the scene, as a mesh template's are, though it reads no mesh.
+	 */
+	readonly meshless?: boolean;
 	/**
 	 * True for a template whose pipelines draw the depth prepass with their own vertex shader: a
 	 * custom material's or a sprite's, whose vertices the depth template does not place. A pipeline
@@ -1991,7 +1997,7 @@ export class Pipelines {
 			// shader that returns that alpha, so the prepass keeps the same fragments.
 			prepassCutout: shader.coverage === true || shader.alpha === true,
 			...(shader.meshless === true
-				? { vertexBuffers: [] }
+				? { vertexBuffers: [], meshless: true }
 				: {
 						meshLocations: shader.locations,
 						vertexBuffers: INSTANCE_BUFFERS,
@@ -2019,6 +2025,21 @@ export class Pipelines {
 	/** True when a template has this id. */
 	has(id: number): boolean {
 		return this.templates[id] !== undefined || this.computeTemplates.has(id);
+	}
+
+	/**
+	 * True when the pipelines of a template draw objects of the scene: meshes, or a custom material's
+	 * draw shader. A frame can go without such a pipeline's draws, while a pass of the frame's own
+	 * cannot.
+	 */
+	drawsObjects(id: number): boolean {
+		const template = this.templates[id];
+		return template?.meshLocations !== undefined || template?.meshless === true;
+	}
+
+	/** The name of a render pipeline of a template, for a message (`pipelineName`). */
+	describe(id: number, permutation: number): string {
+		return pipelineName(id, permutation, this.templates[id]?.label);
 	}
 
 	/** The shader variants of a template that exists. */

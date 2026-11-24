@@ -12,12 +12,13 @@
 // short. A page part that does not load fails the demo's start, also after the first frame. A demo
 // that the page leaves while its part loads starts no part and leaves the next demo's choices,
 // HUD and overlay alone. A finger whose capture the browser refuses is not counted among the
-// fingers down.
+// fingers down. A demo whose drawing fails at its first frame says why on its loading card.
 // CI's software GPU draws only a few frames a second, and a frame's step is at most 0.25 s, so
 // sketch time can run slower than the page's. Every check therefore waits on sketch time or on a
 // condition, never on the page's clock alone.
 import { expect, type Page, test } from '@playwright/test';
 import { frameDifference, readFrame } from '../lib/canvas-frame.ts';
+import { prefixEngineScripts, restoreEngineScripts } from '../lib/engine-scripts.ts';
 import { pageResult } from '../lib/page-result.ts';
 import type { DemoProbe } from '../pages/lib/demo-probe.ts';
 
@@ -205,6 +206,35 @@ test('a key hands the walk and fly demo to first-person controls, and Space to f
 	await page.keyboard.up('KeyR');
 	expect(flown.camera[1]).toBeGreaterThan(3.5);
 	expect(errors).toEqual([]);
+});
+
+/**
+ * Makes each GPU texture fail as an iPad's does once its GPU memory runs out, in every thread, so
+ * the thread that draws fails at its first frame, after the engine has started.
+ */
+const TEXTURES_FAIL = `if (typeof GPUDevice !== 'undefined') GPUDevice.prototype.createTexture = () => {
+	throw new DOMException('GPUDevice.createTexture: Unable to create texture.', 'InvalidStateError');
+};`;
+
+// The engine starts its frames once the setup has run, so a failure of the thread that draws at the
+// first frame comes after createEngine has resolved. engine.firstFrame then rejects with it, and
+// the demos page shows it on the loading card instead of waiting for a frame that never comes.
+test('a demo whose drawing fails at its first frame shows the failure on its loading card', async ({
+	page,
+}) => {
+	await prefixEngineScripts(page, TEXTURES_FAIL);
+	// ?bench publishes the engine as createEngine resolves, which shows that the start got that far.
+	await page.goto('/examples/index.html?demo=instances&preset=low&gpu=webgpu&bench');
+	await expect(page.locator('.loader--error')).toContainText(
+		/E140[45]: .*Unable to create texture/,
+		{ timeout: PATIENCE },
+	);
+	await restoreEngineScripts(page);
+	expect(
+		await page.evaluate(
+			() => (globalThis as { __null3dEngine?: unknown }).__null3dEngine !== undefined,
+		),
+	).toBe(true);
 });
 
 test('a key swaps the weighted demo between its two blends, as the HUD does, and the pointer does not', async ({

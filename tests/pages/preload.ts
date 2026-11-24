@@ -56,6 +56,7 @@ run('preload', async () => {
 	const failures: string[] = [];
 	engine.onFailure((error) => failures.push(error.code));
 	await engine.firstFrame;
+	await engine.presetChecked;
 	const firstFrameMs = performance.now() - startedAt;
 	mark('first-frame');
 	const first = await engine.captureFrame();

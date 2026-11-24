@@ -172,6 +172,32 @@ function bootstrappingWorker(Native: typeof Worker): typeof Worker {
 }
 
 /**
+ * The script that `start` would start a worker from, as the thread resolves it, without starting
+ * one: `start` runs while the thread's `Worker` is a stand-in that only notes the address. So a
+ * thread learns the built file's address of a worker that it starts later, to download its script
+ * ahead. Undefined when `start` throws.
+ */
+export function workerScriptOf(start: () => Worker): URL | undefined {
+	const Native = globalThis.Worker;
+	let script: URL | undefined;
+	// A plain constructor, as `new` refuses an arrow function. It returns an object, which `new` gives
+	// back in place of the stand-in's own.
+	function NotingWorker(address: string | URL): Worker {
+		script = new URL(String(address), globalThis.location?.href);
+		return {} as Worker;
+	}
+	globalThis.Worker = NotingWorker as unknown as typeof Worker;
+	try {
+		start();
+	} catch {
+		script = undefined;
+	} finally {
+		globalThis.Worker = Native;
+	}
+	return script;
+}
+
+/**
  * Starts an engine worker. `start` constructs it in the form that bundlers read, `new Worker(new
  * URL('<file>', import.meta.url), options)`, and runs while the thread's `Worker` starts a script
  * of another origin through the bootstrap module. A worker that the bootstrap cannot start gets an

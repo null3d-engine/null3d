@@ -1,10 +1,12 @@
 // The preset check's rules, apart from the code that runs it (sketch/preset-check.ts). When the
 // engine chooses the preset itself, the device hints only suggest it, so after the first frame the
-// engine draws the loading scene for a moment and measures the frame rate. It reads the lower of
-// the presented and completed rates, so frames that queue on the GPU cannot pass for a healthy
-// rate. A preset holds when that rate reaches most of the target. Otherwise the engine lowers the
-// preset by one and measures again, down to Low. These functions are pure, so tests call them with
-// any rates, and the docs generator reads the constants.
+// engine measures the frame rate for a moment: of play, or of the scene that the setup built
+// before play starts, as the page's choice of timing says. It reads the lower of the presented and
+// completed rates, so frames that queue on the GPU cannot pass for a healthy rate. A preset holds
+// when that rate reaches most of the target. Otherwise the engine lowers the preset by one and
+// measures again, down to Low. A preset far below the target goes straight to Low. These
+// functions are pure, so tests call them with any rates, and the docs generator reads the
+// constants.
 
 import type { QualityPreset } from './presets';
 
@@ -16,6 +18,11 @@ import type { QualityPreset } from './presets';
 export const CHECK_MAX_FPS = 60;
 /** A preset holds its target when the measured rate reaches this share of it. */
 export const CHECK_HOLD_SHARE = 0.9;
+/**
+ * A preset is far below its target when the measured rate stays under this share of it. The
+ * check then lowers it straight to Low, and the presets between could not close such a gap.
+ */
+export const CHECK_FAR_SHARE = 0.25;
 /**
  * How long the check draws before it measures, in ms: after the first frame, and after each lower
  * preset's first frame. The first frames after a warm-up can run slower than play, and a new
@@ -74,10 +81,25 @@ export interface PresetCheck {
 	rounds: PresetCheckRound[];
 	/**
 	 * True when the engine took this result from an earlier start of the sketch in this browser on
-	 * this device, and did not measure again. The engine stores each check's result for a week.
+	 * this device, and did not measure again. The engine stores each check's result for a week. A
+	 * check that went on from the rounds of an earlier start, whose check never ended, is false, and
+	 * lists those rounds first.
 	 */
 	reused: boolean;
 }
+
+/**
+ * When the preset check measures, as `createEngine`'s `presetCheck` option and the
+ * `?preset-check=` switch name it. With `during-play`, the default, the scene plays from its first
+ * frame, and the check measures the first frames of play. With `before-play`, the check measures
+ * before the sketch's update runs, and the start waits for it.
+ *
+ * @category api/engine
+ */
+export type PresetCheckTiming = 'during-play' | 'before-play';
+
+/** The values of `PresetCheckTiming`, for the option's and the switch's checks. */
+export const PRESET_CHECK_TIMINGS: readonly PresetCheckTiming[] = ['during-play', 'before-play'];
 
 /**
  * The frame rate that the engine defends, as `createEngine`'s `targetFps` option and the
@@ -108,8 +130,9 @@ export function checkTargetFps(refreshHz: number, highest = CHECK_MAX_FPS): numb
 /**
  * The target after a round: the higher of the target so far and the one from the refresh rate that
  * the meter reads now. A GPU that falls behind can slow the meter, which then reads low, so the
- * target never falls during a check. Each round that the check lowered then missed the target that
- * the check reports.
+ * target never falls during a check, and it starts at the rate that the meter read before the
+ * check's first frame. Each round that the check lowered then missed the target that the check
+ * reports.
  */
 export function raiseTarget(targetFps: number, refreshHz: number, highest = CHECK_MAX_FPS): number {
 	return Math.max(targetFps, checkTargetFps(refreshHz, highest));
@@ -123,4 +146,9 @@ export function frameRate(frames: number, ms: number): number {
 /** True when the lower of a round's two rates reaches the share of the target that holds it. */
 export function holdsTarget(round: PresetCheckRound, targetFps: number): boolean {
 	return Math.min(round.presentedFps, round.completedFps) >= targetFps * CHECK_HOLD_SHARE;
+}
+
+/** True when the lower of a round's two rates stays under the share of the target that is far below it. */
+export function farBelowTarget(round: PresetCheckRound, targetFps: number): boolean {
+	return Math.min(round.presentedFps, round.completedFps) < targetFps * CHECK_FAR_SHARE;
 }

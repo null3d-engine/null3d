@@ -23,7 +23,7 @@
 // destroy({ release: true }), so the page keeps no memory for the next engine. ?sketch=heap starts
 // a scene of a million instances in place of the empty sketch, so each engine's memory grows.
 // ?ballast=on fills the address space with memories before the starts, as busy pages do.
-import { createEngine, EngineError } from '@null3d/engine';
+import { createEngine, type Engine, EngineError } from '@null3d/engine';
 import { coreUrls, probeCapabilities } from '@null3d/engine/internal';
 import type { EngineFrameMessage } from './engine-frame';
 import { coreInitialPages } from './lib/core-memory';
@@ -274,7 +274,7 @@ async function startAndStopEngine(keepCanvas: boolean): Promise<void> {
 		let stopIndex = 0;
 		let frameError: unknown;
 		try {
-			await withTimeout(engine.firstFrame, ENGINE_TIMEOUT_MS, 'the first frame');
+			await withTimeout(firstFrameOrFailure(engine), ENGINE_TIMEOUT_MS, 'the first frame');
 		} catch (e) {
 			frameError = e;
 		}
@@ -308,6 +308,21 @@ async function startAndStopEngine(keepCanvas: boolean): Promise<void> {
 		if (last) last.roomAfter = (await countRoom(CAP, MAXIMUM_PAGES)).room;
 		countedMemories += sharedMemories.made - made;
 	}
+}
+
+/**
+ * Resolves once the engine has drawn its first frame, and fails with a failure that the engine
+ * reports first. The start ends with the setup, so a thread that fails at the first frame reaches
+ * the page through `engine.onFailure`, as every failure after the start does.
+ */
+function firstFrameOrFailure(engine: Engine): Promise<void> {
+	return new Promise((resolve, reject) => {
+		const stopListening = engine.onFailure(reject);
+		void engine.firstFrame.then(() => {
+			stopListening();
+			resolve();
+		});
+	});
 }
 
 /**

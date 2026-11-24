@@ -66,6 +66,7 @@ async function drawRow(scale: number): Promise<{ tier: string; frames: Float32Ar
 	sketch.searchParams.set('scene', SCENE);
 	const engine = await createEngine({ canvas, sketch, maxPixelRatio: 1 });
 	await engine.firstFrame;
+	await engine.presetChecked;
 	let placed: (() => void) | undefined;
 	engine.onSketchMessage((name) => {
 		if (name === 'placed') placed?.();

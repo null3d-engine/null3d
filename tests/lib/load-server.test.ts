@@ -8,7 +8,6 @@ import { join } from 'node:path';
 import { brotliDecompressSync, gunzipSync } from 'node:zlib';
 import type { Downloads } from './load-routes.ts';
 import {
-	acceptedEncoding,
 	buildsForLoads,
 	LOAD_BUILDS,
 	type LoadBuild,
@@ -48,17 +47,6 @@ describe('markCore', () => {
 		expect(() => markCore(new TextEncoder().encode('<html>'), new Uint8Array(4))).toThrow(
 			'not a WebAssembly module',
 		);
-	});
-});
-
-describe('acceptedEncoding', () => {
-	it('prefers Brotli, then gzip, and skips what a weight of 0 refuses', () => {
-		expect(acceptedEncoding('gzip, deflate, br, zstd')).toBe('br');
-		expect(acceptedEncoding('gzip, deflate')).toBe('gzip');
-		expect(acceptedEncoding('br;q=0, gzip;q=0.5')).toBe('gzip');
-		expect(acceptedEncoding('BR')).toBe('br');
-		expect(acceptedEncoding('')).toBe('identity');
-		expect(acceptedEncoding(undefined)).toBe('identity');
 	});
 });
 

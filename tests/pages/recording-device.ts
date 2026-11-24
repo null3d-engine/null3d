@@ -15,6 +15,15 @@ if (canvas === null) throw new Error('the page has no canvas');
 /** Resolves after `ms` milliseconds. */
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+/** True once a frame of the session has read the key as down. */
+const keySeen = () => log.some((line) => line.split('|')[3] === '1');
+
+/** Resolves once `done` holds, or after `ms` milliseconds, checking it between the page's tasks. */
+async function until(done: () => boolean, ms: number): Promise<void> {
+	const deadline = performance.now() + ms;
+	while (!done() && performance.now() < deadline) await wait(20);
+}
+
 /** Blocks the page's thread for `ms` milliseconds, so the frame around it is long. */
 function hold(ms: number): void {
 	const until = performance.now() + ms;
@@ -78,6 +87,11 @@ run('record', async () => {
 			if (name === 'frame' && typeof data === 'string') log.push(data);
 		},
 	});
+	// The engine resolves before its first frame, and a slow GPU can take longer over that frame
+	// than the whole session below, so the session starts once play has started and the preset
+	// check has ended.
+	await engine.firstFrame;
+	await engine.presetChecked;
 	await wait(250);
 	key('keydown');
 	touch('pointermove', 120, 90);
@@ -85,14 +99,17 @@ run('record', async () => {
 	// A frame this long is a hitch that the recording must keep, so the replay spans one too.
 	hold(250);
 	await wait(400);
+	// A slow GPU can draw no frame in that time, and a key that goes down and up between two
+	// frames is down in neither, so the key stays down until a frame has read it.
+	await until(keySeen, 30_000);
 	touch('pointerup', 120, 90);
 	key('keyup');
 	await wait(250);
 	const bytes = (await engine.saveRecording()) ?? new Uint8Array(0);
 	if (bytes.length === 0) throw new Error('the page recorded nothing');
 	const frames = log.length;
-	if (!log.some((line) => line.split('|')[3] === '1'))
-		throw new Error('the session never recorded the key as down');
+	if (!keySeen())
+		throw new Error(`the session never recorded the key as down, in ${frames} frames`);
 	if (longestStep(log) < 0.2) throw new Error('the session held no long frame to replay');
 	return {
 		log: log.slice(),

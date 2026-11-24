@@ -119,6 +119,15 @@ export interface SketchEngine {
 	 * this is true, so a held frame or a replay shows the finished scene.
 	 */
 	readonly held: boolean;
+	/**
+	 * Resolves once the GPU has finished the engine's first frame, as `engine.firstFrame` does on
+	 * the page. Start the downloads that the first frame does not need here, so they leave the
+	 * network to the first frame's own files. Never await it in the setup: the first frame waits
+	 * for the setup. In hold mode and a replay, it resolves once the engine has stepped the sketch
+	 * to the last frame, which no later frame follows, so work that it starts never changes the
+	 * frames that those modes show. It never resolves when the engine stops first.
+	 */
+	readonly firstFrame: Promise<void>;
 }
 
 /**
@@ -215,6 +224,25 @@ export interface SketchOptions {
 	 * default is true, and the page's `?tier=off` switch keeps the tier out too.
 	 */
 	lowestTier?: boolean;
+	/**
+	 * The files that the setup loads, as addresses that resolve against the page's address, as the
+	 * loading calls' do. A live start begins to download them as soon as the sketch's module has
+	 * loaded, often while the engine's core still downloads. The setup's loads then take the bytes
+	 * that arrived or are on their way, with no second download. List the files in the order that
+	 * the setup needs them. Two download at a time, so the engine's own start files keep free
+	 * connections. A load of a later file moves it to the front, and up to four listed files
+	 * download while loads wait for them. Name only files that the first frame waits for, and start
+	 * the others when `engine.firstFrame` resolves. A file that no load takes costs its download,
+	 * and its bytes stay in memory until the engine stops. Hold mode, a replay and a recording
+	 * download each file at its load, as without the list.
+	 */
+	downloads?: readonly (string | URL)[];
+	/**
+	 * False turns off the warning of a development build for a load whose download starts only
+	 * after another load's file has arrived, during the setup. Turn it off when each address comes
+	 * from the contents of the file before it. The default is true.
+	 */
+	serialLoadWarning?: boolean;
 }
 
 const SKETCH_MARKER = Symbol.for('null3d.sketch');

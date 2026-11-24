@@ -8,8 +8,10 @@ import { commonStep, stepMs } from '../shared/gpu-clock';
 import {
 	COUNTER_NAMES,
 	Counter,
+	type DrawingStep,
 	GPU_TIMED_PASSES,
 	GpuCounter,
+	type MetricsReader,
 	PHASE_NAMES,
 	type PhaseName,
 	type RingRecords,
@@ -282,6 +284,13 @@ export interface FrameMetrics extends FrameSummary {
 		/** GPU pipelines that the first frame built, or null before the first frame. */
 		firstFramePipelines: number | null;
 		/**
+		 * When the thread that draws reached each step of its start, in milliseconds from the start
+		 * of page navigation. Right after the probe, the page tells that thread which GPU path and
+		 * device to start, so it asks for its device and its shader files while the core downloads.
+		 * A step that the thread has not reached, or does not take, is null.
+		 */
+		drawingStart: DrawingStart;
+		/**
 		 * The quality preset in force when the first frame was drawn: the one the engine starts with.
 		 * It can differ from the preset the page ends on, because the engine's own preset check may
 		 * step down afterwards, and the frame's pipelines are the ones its own preset builds.
@@ -313,6 +322,47 @@ export interface FrameMetrics extends FrameSummary {
 	 * or absent when the page asked for none.
 	 */
 	slow?: SlowFrame[];
+}
+
+/**
+ * When the thread that draws reached each step of its start, in `FrameMetrics.load.drawingStart`:
+ * milliseconds from the start of page navigation, or null for a step that it has not reached or
+ * does not take.
+ *
+ * @category api/debug
+ */
+export interface DrawingStart {
+	/**
+	 * The page's message after the probe arrived. The thread then started the downloads of its
+	 * renderers and shader files, and on WebGPU the request for its device.
+	 */
+	requestMs: number | null;
+	/** Its WebGPU adapter arrived. Null on WebGL2. */
+	adapterMs: number | null;
+	/** Its WebGPU device arrived. Null on WebGL2. */
+	deviceMs: number | null;
+	/** The shader file of its device arrived. */
+	shadersMs: number | null;
+	/** The core and the thread's setup arrived from the page. */
+	initMs: number | null;
+	/** Its first renderer was built, so its frame loop could start. */
+	rendererMs: number | null;
+}
+
+/** The start of the thread that draws, as `reader` holds it, on the page's timeline. */
+export function drawingStartFigures(reader: MetricsReader): DrawingStart {
+	const at = (step: DrawingStep) => {
+		const epoch = reader.drawingStep(step);
+		return epoch > 0 ? epoch - performance.timeOrigin : null;
+	};
+	return {
+		requestMs: at('request'),
+		adapterMs: at('adapter'),
+		deviceMs: at('device'),
+		shadersMs: at('shaders'),
+		initMs: at('init'),
+		rendererMs: at('renderer'),
+	};
 }
 
 /**

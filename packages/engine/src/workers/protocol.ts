@@ -8,7 +8,8 @@ import type { HoldScript, HoldScriptResult } from '../page/hold';
 import type { CoreDevice } from '../page/limits';
 import type { GlTimingMode } from '../page/switches';
 import type { FramePacing } from '../render/loop';
-import type { Tier } from '../render/renderer';
+import type { GpuErrorKind } from '../render/loss';
+import type { DrawingPreload, Tier } from '../render/renderer';
 import { awaitLater } from '../shared/await-later';
 import { type Build, loadGlue, type StartedCore, startCore } from '../shared/core';
 import type { ReplayProgram, ReplayResult } from '../shared/recording';
@@ -78,6 +79,16 @@ export interface RendererSetup extends FramePacing {
 	 * thread that draws loads the tier's shaders with the first generator that it runs.
 	 */
 	cloudSteps?: number;
+	/**
+	 * The pipeline list of the first frame of the sketch's last start, whose pipelines the thread
+	 * starts to build at once (`gpu/early-builds.ts`).
+	 */
+	earlyBuilds?: Uint32Array;
+	/**
+	 * True when the page stores pipeline lists: the thread sends the list of its first frame's
+	 * pipelines once that frame has drawn.
+	 */
+	keepBuilds?: boolean;
 }
 
 export type SketchWorkerInit = CoreHandoff & {
@@ -142,13 +153,16 @@ export type JobWorkerInit = CoreHandoff & {
 
 /**
  * A request any worker that owns a renderer takes: a capture, which it answers with the frame's
- * pixels, or with a PNG file of the frame when `image` is true; a simulated loss; a stop, which it
- * answers once it has destroyed its GPU objects and its device; or a park after the stop, which lets
- * go of the engine's core and keeps the canvas for the next engine.
+ * pixels, or with a PNG file of the frame when `image` is true; a simulated loss; the page's entry
+ * into the browser's back/forward cache, when `cached` is true, which gives the GPU back, and its
+ * return from it, which takes a new device; a stop, which it answers once it has destroyed its GPU
+ * objects and its device; or a park after the stop, which lets go of the engine's core and keeps
+ * the canvas for the next engine.
  */
 export type RendererRequest =
 	| { type: 'capture'; image?: boolean }
 	| { type: 'lose-gpu' }
+	| { type: 'page-cache'; cached: boolean }
 	| { type: 'stop-drawing' }
 	| { type: 'park' }
 	/** Gives the permutation words that the drawing thread's pipelines asked for while it recorded. */
@@ -156,14 +170,10 @@ export type RendererRequest =
 
 /**
  * Sent to the worker that draws as soon as the probe has chosen the GPU path, before the core
- * arrives: start the downloads of that path's renderers and of the device's shaders for that path
- * and the fixed bits `bits`.
+ * arrives: start the downloads of that path's renderers, of the device's shaders and of the
+ * features that the start preloads, and on WebGPU the request for the device.
  */
-export interface ShaderPreload {
-	type: 'load-shaders';
-	tier: Tier;
-	bits: number;
-}
+export type ShaderPreload = DrawingPreload & { type: 'load-shaders' };
 
 export type WorkerReply =
 	| {
@@ -186,8 +196,11 @@ export type WorkerReply =
 	 * job worker's part in the job system. The page reports it as E1404.
 	 */
 	| { type: 'fault'; role: 'sketch' | 'render' | 'job'; index?: number; message: string }
-	/** The GPU of the thread that draws ran out of memory or rejected a command; the engine draws on. */
-	| { type: 'gpu-error'; role: 'sketch' | 'render'; outOfMemory: boolean; message: string }
+	/**
+	 * The GPU of the thread that draws ran out of memory, rejected a command, or its driver could not
+	 * build a pipeline of the scene's objects; the engine draws on.
+	 */
+	| { type: 'gpu-error'; role: 'sketch' | 'render'; kind: GpuErrorKind; message: string }
 	/** A job worker left the job system after the engine stopped, so it no longer blocks. */
 	| { type: 'stopped'; role: 'job'; index: number }
 	/** The worker that draws stopped drawing, and destroyed its GPU objects and its device. */
@@ -197,6 +210,8 @@ export type WorkerReply =
 	 * that gets no reply from a worker reads them to learn which step never finished.
 	 */
 	| { type: 'progress'; role: 'sketch' | 'render' | 'job'; step: string }
+	/** The pipeline list of the pipelines that the first frame built, which the page stores. */
+	| { type: 'pipeline-list'; list: Uint32Array }
 	/** The browser took the GPU away from the worker that draws, which stopped drawing. */
 	| { type: 'lost'; role: 'sketch' | 'render'; reason: string }
 	| { type: 'sketch-message'; name: string; data: unknown }
@@ -233,6 +248,13 @@ export type SketchWorkerMessage =
 	| SketchWorkerInit
 	/** Sent before the core in low-latency mode, where the sketch worker draws: load the renderer. */
 	| { type: 'load-renderer' }
+	/**
+	 * Sent as the worker starts, for a live sketch: import the sketch module at `url` now, while the
+	 * core downloads, and start the files that its options list, whose addresses resolve against
+	 * `pageUrl`. Hold mode, a replay and a recording send none, since their sketch module loads only
+	 * after the runner has seeded the thread's random numbers.
+	 */
+	| { type: 'load-sketch'; url: string; pageUrl: string }
 	| ShaderPreload
 	| RendererRequest
 	| { type: 'post'; name: string; data: unknown }
@@ -251,6 +273,11 @@ export type SketchWorkerMessage =
 /** Sends a reply from a worker to the page, moving the `transfer` objects instead of copying them. */
 export function replyToPage(message: WorkerReply, transfer: Transferable[] = []): void {
 	postMessage(message, { transfer });
+}
+
+/** Sends the page the pipeline list of the first frame, which the page stores for the next start. */
+export function sendPipelineList(list: Uint32Array): void {
+	replyToPage({ type: 'pipeline-list', list }, [list.buffer]);
 }
 
 /**

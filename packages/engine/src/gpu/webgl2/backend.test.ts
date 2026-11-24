@@ -459,6 +459,93 @@ describe('WebGL2Backend', () => {
 		expect([...backend.gpuMemory.bytes]).toEqual([0, 0]);
 	});
 
+	it("compiles a stored list's programs ahead, and waits for one only once a pipeline takes it", async () => {
+		let linked = false;
+		const parallel = { COMPLETION_STATUS_KHR: 0x91b1 };
+		const { gl, calls } = fakeContext(false, (name, args) => {
+			if (name === 'getExtension' && args[0] === 'KHR_parallel_shader_compile') return parallel;
+			if (name === 'getProgramParameter' && args[1] === parallel.COMPLETION_STATUS_KHR)
+				return linked;
+			return undefined;
+		});
+		const canvas = { width: 4, height: 4 } as OffscreenCanvas;
+		const backend = new WebGL2Backend(gl, canvas, await loadGlslShaders(0), true, 'reversed');
+		const stage = { source: '', uniformBlocks: [], textures: [] };
+		const shader: ShaderVariants = {
+			table: { permutation: 0, wgsl: null, glsl: { main: { vertex: stage, fragment: stage } } },
+		};
+		backend.defineTemplate(G.TEMPLATE_CUSTOM_FIRST, { shader, pipeline: 'main' });
+		const links = () => calls.filter((name) => name === 'linkProgram').length;
+		const before = links();
+		const operands = [
+			G.TEMPLATE_CUSTOM_FIRST,
+			0,
+			G.FORMAT_RGBA8_UNORM,
+			G.FORMAT_NONE,
+			1,
+			G.STATE_CULL_NONE,
+			0,
+			0,
+			0,
+		];
+		backend.buildEarly(Uint32Array.of(G.OP_CREATE_RENDER_PIPELINE, ...operands));
+		expect(links()).toBe(before + 1);
+		// No frame waits for a program that no pipeline has taken.
+		expect(backend.building).toBe(false);
+		const words = Uint32Array.of(G.OP_CREATE_RENDER_PIPELINE | (11 << 8), 4, ...operands);
+		backend.prepare(words, 0, words.length);
+		expect(links()).toBe(before + 1);
+		expect(backend.building).toBe(true);
+		linked = true;
+		expect(backend.building).toBe(false);
+		expect(Array.from(backend.takeListing() ?? [])).toEqual([
+			G.OP_CREATE_RENDER_PIPELINE,
+			...operands,
+		]);
+	});
+
+	it('compiles the program of a pipeline that a list before the first frame creates after other commands in the background', async () => {
+		let linked = false;
+		const parallel = { COMPLETION_STATUS_KHR: 0x91b1 };
+		const { gl, calls } = fakeContext(false, (name, args) => {
+			if (name === 'getExtension' && args[0] === 'KHR_parallel_shader_compile') return parallel;
+			if (name === 'getProgramParameter' && args[1] === parallel.COMPLETION_STATUS_KHR)
+				return linked;
+			return undefined;
+		});
+		const canvas = { width: 4, height: 4 } as OffscreenCanvas;
+		const backend = new WebGL2Backend(gl, canvas, await loadGlslShaders(0), true, 'reversed');
+		const stage = { source: '', uniformBlocks: [], textures: [] };
+		const shader: ShaderVariants = {
+			table: { permutation: 0, wgsl: null, glsl: { main: { vertex: stage, fragment: stage } } },
+		};
+		backend.defineTemplate(G.TEMPLATE_CUSTOM_FIRST, { shader, pipeline: 'main' });
+		const links = () => calls.filter((name) => name === 'linkProgram').length;
+		const before = links();
+		const create = [
+			G.OP_CREATE_RENDER_PIPELINE | (11 << 8),
+			4,
+			G.TEMPLATE_CUSTOM_FIRST,
+			0,
+			G.FORMAT_RGBA8_UNORM,
+			G.FORMAT_NONE,
+			1,
+			G.STATE_CULL_NONE,
+			0,
+			0,
+			0,
+		];
+		const words = Uint32Array.of(G.OP_RESIZE_CANVAS | (3 << 8), 4, 4, ...create);
+		const from = backend.prepare(words, 0, words.length);
+		expect(from).toBe(0);
+		expect(links()).toBe(before + 1);
+		expect(backend.building).toBe(true);
+		linked = true;
+		expect(backend.building).toBe(false);
+		backend.replay(words, new Float32Array(words.buffer), from, words.length, new ArrayBuffer(0));
+		expect(links()).toBe(before + 1);
+	});
+
 	it("reads a copied box into engine memory with WebGPU's row spacing once its fence signals, and raises its slot once", async () => {
 		let signalled = false;
 		const { gl, calls, log } = fakeContext(false, (name, args) => {
@@ -542,5 +629,78 @@ describe('WebGL2Backend', () => {
 		replay();
 		expect(slots[5]).toBe(1);
 		expect(named('deleteSync')).toHaveLength(1);
+	});
+});
+
+/**
+ * A backend whose context refuses the first `refused` links after the start, and the list of a
+ * frame that creates pipeline 1 of the lit template and sets it in a pass, with one draw when
+ * `draw` is set.
+ */
+async function refusingBackend(refused: number, draw: boolean, lost = false) {
+	let started = false;
+	let refusals = refused;
+	const refusedPrograms = new Set<unknown>();
+	const { gl, calls } = fakeContext(false, (name, args) => {
+		if (name === 'getParameter') return 16;
+		if (name === 'linkProgram' && started && refusals-- > 0) refusedPrograms.add(args[0]);
+		if (name === 'getProgramParameter' && refusedPrograms.has(args[0])) return false;
+		if (name === 'getProgramInfoLog')
+			return refusedPrograms.has(args[0]) ? 'L0001 link failed' : '';
+		if (name === 'isContextLost') return lost && started;
+		return undefined;
+	});
+	const canvas = { width: 4, height: 4 } as OffscreenCanvas;
+	const backend = new WebGL2Backend(gl, canvas, await loadGlslShaders(0), true, 'reversed');
+	started = true;
+	const reports: [string, string][] = [];
+	backend.refused = (pipeline, why) => reports.push([pipeline, why]);
+	const words: number[] = [];
+	const push = (op: number, operands: number[]) =>
+		words.push(op | ((operands.length + 1) << 8), ...operands);
+	const usage = G.TEXTURE_USAGE_RENDER_ATTACHMENT | G.TEXTURE_USAGE_TEXTURE_BINDING;
+	push(G.OP_CREATE_TEXTURE, [1, 4, 4, 1, G.FORMAT_RGBA16_FLOAT, usage, 1, 1, G.VIEW_2D]);
+	push(G.OP_CREATE_RENDER_PIPELINE, [
+		...[1, G.TEMPLATE_INSTANCED_LIT, 0, G.FORMAT_RGBA16_FLOAT, G.FORMAT_NONE, 1, 0, G.VERTEX_ALL],
+		...[0, 0],
+	]);
+	const create = words.length;
+	push(G.OP_BEGIN_RENDER_PASS, [1, G.NO_TARGET, G.NO_TARGET, 0, 0, 0, 0, 0, 0]);
+	push(G.OP_SET_PIPELINE, [1]);
+	if (draw) push(G.OP_DRAW, [3, 1, 0, 0]);
+	push(G.OP_END_RENDER_PASS, []);
+	const list = new Uint32Array(words);
+	const replay = (from = 0) =>
+		backend.replay(list, new Float32Array(list.buffer), from, list.length, new ArrayBuffer(64));
+	const links = () => calls.filter((call) => call === 'linkProgram').length;
+	return { backend, reports, replay, create, links };
+}
+
+describe('WebGL2Backend, when the driver refuses to link a program', () => {
+	it("links a program of the scene's objects once more, and uses it", async () => {
+		const { reports, replay, links } = await refusingBackend(1, false);
+		const before = links();
+		replay();
+		expect(links() - before).toBe(2);
+		expect(reports).toEqual([]);
+	});
+
+	it('skips the draws of a program refused twice, reports it once, and draws on', async () => {
+		const { backend, reports, replay, create, links } = await refusingBackend(2, true);
+		const before = links();
+		replay();
+		replay(create);
+		// The second frame links nothing more, and its draw draws nothing too.
+		expect(links() - before).toBe(2);
+		expect(backend.counts.skippedDraws).toBe(2);
+		expect(reports).toEqual([
+			['engine template 1', 'a WebGL2 program failed to link: L0001 link failed'],
+		]);
+	});
+
+	it('leaves a link that fails on a lost context to the loss, and reports no refusal', async () => {
+		const { reports, replay } = await refusingBackend(2, true, true);
+		expect(() => replay()).toThrow('a WebGL2 program failed to link');
+		expect(reports).toEqual([]);
 	});
 });

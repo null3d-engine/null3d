@@ -15,6 +15,7 @@ run('capture-frames', async () => {
 		maxPixelRatio: 1,
 	});
 	await engine.firstFrame;
+	await engine.presetChecked;
 	const shades: number[] = [];
 	for (let i = 0; i < CAPTURES; i++) {
 		const { width, height, pixels } = await engine.captureFrame();

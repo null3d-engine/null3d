@@ -34,6 +34,7 @@ import type { EulerOrder, Mat4Like, QuatLike, Vec3Like } from '../math/types';
 import { transformQuat } from '../math/vec3';
 import { rowLimitWarning } from '../page/limits';
 import { controlViews, createControlBuffer, nextFrame } from '../shared/control';
+import { importOnce } from '../shared/import-once';
 import type { Animator, SceneAnimations } from './animation';
 import type { AreaLightTables } from './area-light-tables';
 import {
@@ -3091,10 +3092,21 @@ const LIGHT_CLASSES: Readonly<Record<number, ObjectClass<Light>>> = {
 	[C.LIGHT_KIND_TUBE]: TubeLight,
 };
 
+/**
+ * The modules that the scene imports on first use, each shared by every call, so calls that wait for
+ * one together go on in the order they were made.
+ */
+const spriteCode = importOnce(() => import('./sprites'));
+const chunkRowCode = importOnce(() => import('./chunk-rows'));
+const particleCode = importOnce(() => import('./particles'));
+const lineCode = importOnce(() => import('./lines'));
+const featureInstanceCode = importOnce(() => import('./feature-instances'));
+const featureDrawCode = importOnce(() => import('./feature-draws'));
+
 /** Imports the sprite code, which a page downloads with its first sprite batch, or throws E1406. */
 async function loadSprites(call: string): Promise<typeof import('./sprites')> {
 	try {
-		return await import('./sprites');
+		return await spriteCode();
 	} catch (error) {
 		throw new EngineError(
 			'E1406',
@@ -3106,7 +3118,7 @@ async function loadSprites(call: string): Promise<typeof import('./sprites')> {
 /** Imports the chunked-row code, which a page downloads with its first chunked batch, or throws E1406. */
 async function loadChunkRows(call: string): Promise<typeof import('./chunk-rows')> {
 	try {
-		return await import('./chunk-rows');
+		return await chunkRowCode();
 	} catch (error) {
 		throw new EngineError(
 			'E1406',
@@ -3118,7 +3130,7 @@ async function loadChunkRows(call: string): Promise<typeof import('./chunk-rows'
 /** Imports the particle code, which a page downloads with its first particle buffer, or throws E1406. */
 async function loadParticles(call: string): Promise<typeof import('./particles')> {
 	try {
-		return await import('./particles');
+		return await particleCode();
 	} catch (error) {
 		throw new EngineError(
 			'E1406',
@@ -3130,7 +3142,7 @@ async function loadParticles(call: string): Promise<typeof import('./particles')
 /** Imports the line code, which a page downloads with its first line batch, or throws E1406. */
 async function loadLines(call: string): Promise<typeof import('./lines')> {
 	try {
-		return await import('./lines');
+		return await lineCode();
 	} catch (error) {
 		throw new EngineError(
 			'E1406',
@@ -3142,7 +3154,7 @@ async function loadLines(call: string): Promise<typeof import('./lines')> {
 /** Imports the instance adapter, which a page downloads with its first instance draw, or throws E1406. */
 async function loadFeatureInstances(call: string): Promise<typeof import('./feature-instances')> {
 	try {
-		return await import('./feature-instances');
+		return await featureInstanceCode();
 	} catch (error) {
 		throw new EngineError(
 			'E1406',
@@ -3154,7 +3166,7 @@ async function loadFeatureInstances(call: string): Promise<typeof import('./feat
 /** Imports the draw adapter, which a page downloads with its first feature draw, or throws E1406. */
 async function loadFeatureDraws(call: string): Promise<typeof import('./feature-draws')> {
 	try {
-		return await import('./feature-draws');
+		return await featureDrawCode();
 	} catch (error) {
 		throw new EngineError(
 			'E1406',
@@ -4922,6 +4934,10 @@ export class Scene implements ViewHolder {
 		const call = 'addFeatureInstances';
 		const { makers } = this;
 		if (!makers) throw new Error(`${call}() needs a scene that the engine made`);
+		// A batch of feature instances takes its rows in chunks, and its first `createChunkRows`
+		// comes right after this call. Its code, which is small, downloads beside the draw adapter
+		// rather than one round trip after it. A failure waits for the call that needs the code.
+		import('./chunk-rows').catch(() => {});
 		const draws = await loadFeatureDraws(call);
 		return draws.createFeatureInstances(
 			description,

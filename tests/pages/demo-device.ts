@@ -192,6 +192,9 @@ run('demo-device', async () => {
 		// Freezes the camera route at its opening shot, for a governed row that must compare one
 		// view with itself before and after the governor's steps.
 		'still-route',
+		// Holds the first frame until the scene's models stand, so a scene that fills in after its
+		// first frame is measured finished.
+		'grown',
 	])
 		if (params.has(id)) sketch.searchParams.set(id, params.get(id) ?? '');
 	const runDemo = { ...demo, sketch };

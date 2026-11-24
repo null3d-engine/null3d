@@ -1,6 +1,8 @@
 // Starts the engine in hold mode with a mesh made in code whose level plan waits behind busy job
 // workers (sketches/levels-held-sketch.ts). It reports the levels that the held frames' grid held,
-// and the levels that the plan gave with whether they came before the hold ended.
+// and the levels that the plan gave with whether they came before the hold ended. The page's `plan`
+// switch, `setup` or `steps`, goes to the sketch, and says whether it makes the grid in its setup
+// or in the first held step.
 import { createEngine, type HoldResult } from '@null3d/engine';
 import { progress, run } from './lib/result';
 
@@ -11,10 +13,12 @@ run('levels-held', async () => {
 	/** The levels that the grid's plan gave, and whether they came before the hold ended. */
 	let planned: { levels: number; beforeHold: boolean } | undefined;
 	let holdEnded = false;
+	const sketch = new URL('./sketches/levels-held-sketch.ts', import.meta.url);
+	sketch.searchParams.set('plan', new URLSearchParams(location.search).get('plan') ?? 'setup');
 	const started = performance.now();
 	const engine = await createEngine({
 		canvas,
-		sketch: new URL('./sketches/levels-held-sketch.ts', import.meta.url),
+		sketch,
 		maxPixelRatio: 1,
 		hold: 0.5,
 		onSketchMessage: (name, data) => {

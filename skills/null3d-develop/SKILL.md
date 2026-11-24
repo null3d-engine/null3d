@@ -1,6 +1,6 @@
 ---
 name: null3d-develop
-description: Build, extend, debug and speed up 3D web experiences made with the null3D engine (also written null3d, Null3D or null 3d), such as games, product viewers, configurators, product and marketing pages, data visualizations and interactive scenes. Use this skill whenever a task touches a null3D project or the @null3d packages, even for short requests like add a spinning cube, load this model, soften the shadows, click to select units, add a water shader, or why is it slow on my phone. Also use it to start a new null3D project, to write WGSL materials, post effects or render passes for null3D, and to test or profile null3D scenes. To convert existing three.js or React Three Fiber code, use the null3d-port-threejs skill instead.
+description: Build, extend, debug and speed up 3D web experiences made with the null3D engine (also written null3d, Null3D or null 3d), such as games, product viewers, configurators, product and marketing pages, data visualizations and interactive scenes. Use this skill whenever a task touches a null3D project or the @null3d packages, even for short requests like add a spinning cube, load this model, soften the shadows, click to select units, add a water shader, why is it slow on my phone, or make it load faster. Also use it to start a new null3D project, to write WGSL materials, post effects or render passes for null3D, and to test or profile null3D scenes. To convert existing three.js or React Three Fiber code, use the null3d-port-threejs skill instead.
 compatibility: Needs Node.js 20 or newer and a null3D project. The engine docs ship inside the engine package, so their version always matches the installed engine.
 metadata:
   skill-version: 0.1.0
@@ -92,14 +92,14 @@ export default defineSketch(({ scene, geometry, materials }) => {
 
 ## 4. Rules that keep null3D fast
 
-Each rule comes with its reason, which covers cases the rule does not name.
+Each rule gives its reason, which covers cases the rule does not name.
 
 1. Allocate nothing in `onUpdate`, `onFixedUpdate` or `onLateUpdate`: no `new`, no array or object literals, no closures, no `map` or `filter`. Create scratch values at setup, such as `const tmp = vec3.create()`. A garbage collection pause stalls the frame.
 2. Use an instance batch for many copies of one mesh: one engine object and one typed array, where `createMesh` calls would mean many objects. (`concepts/instances`)
 3. Move many objects by writing arrays, not by setters in a loop: each setter crosses into WebAssembly, a typed-array write does not.
 4. Create `dynamic: true` objects only for what changes most frames; write arrays for those and batches.
 5. Pool short-lived objects such as bullets in a batch with a fixed capacity and `setActiveCount`. A structural change (create, destroy, a new mesh or material) rebuilds the draw tables; `setVisible` and `setActiveCount` do not. Create meshes, materials and batches at setup, since the engine sizes memory for what the scene holds.
-6. Load and warm up before play: `await assets.preload([...])` and `await scene.warmUp()` behind a loading screen. A shader feature, such as a normal map, is fixed when you create the material, and the first frame waits for its pipeline, so create every variant before play. (`guides/loading-screens`)
+6. Before play, list the first view's files in `defineSketch`'s `downloads`, start the rest after the first frame, and `await scene.warmUp()` behind a loading screen. A material's shader features, such as a normal map, are fixed at its creation. The first frame waits for its pipeline, so create every variant before play. (`guides/loading-screens`, `guides/start-time`)
 7. Keep the DOM on the page and messages rare: send events, not per-frame state. Labels that follow objects use `ui.trackLabel` (0.2), which needs no messages. (`guides/ui-overlays`)
 8. Use layer masks to limit work. A camera with a mask draws fewer objects, and a raycast (0.2) with a mask tests fewer. (`concepts/render-layers`)
 9. Respect the quality preset. Do not force a heavier preset on phones. When frames run long, the governor lowers a sketch's budgets and the render scale, then the shadow and effect settings once the scale floors, by itself. Keep your own values per preset, such as particle counts or AI update rates, in one table keyed by `quality.preset`, and apply them in `quality.onChange`. (`concepts/quality-presets`)
@@ -245,11 +245,11 @@ Most faults come from a page that is not cross-origin isolated, an object change
 
 ## 9. References in this skill
 
-Read these when the task needs them:
+Read these when needed:
 
 - `references/api-quickref.md`: the API by area, with the roadmap step for each part and the doc to read. Read it before an API's first use in a session.
-- `references/recipes.md`: patterns for common tasks. They include camera controls, animated models, thousands of moving objects, pooling, picking, labels, loading screens, HTML UI, physics, video, custom effects, large worlds, particle effects and terrain.
-- `references/performance.md`: budgets, how to measure, symptom-to-fix tables, phone rules, staged loading, caching across visits and a review order.
+- `references/recipes.md`: patterns for common tasks. Camera controls, animated models, thousands of moving objects, pooling, picking, labels, loading screens, HTML UI, physics, video, custom effects, large worlds, particle effects and terrain.
+- `references/performance.md`: budgets, measuring, symptom-to-fix tables, phone rules, slow first loads, staged loading, caching across visits and a review order.
 - `references/shaders.md`: the surface-function contract, built-in values, uniforms and textures, portable WGSL rules, custom post effects and custom passes.
 - `references/testing-and-debugging.md`: `bunx @null3d/cli test`, image tests, testing on devices, the MCP server tools (0.3, not built yet), error codes and a troubleshooting table.
 - `references/content-pages.md`: product and marketing pages with a 3D scene: scroll-driven cameras, caching and crashes.

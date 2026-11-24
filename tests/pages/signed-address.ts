@@ -95,6 +95,7 @@ run('signed-address', async (): Promise<SignedAddressResult> => {
 	const failures: string[] = [];
 	engine.onFailure((error) => failures.push(`${error.code}: ${error.message}`));
 	await engine.firstFrame;
+	await engine.presetChecked;
 	if (engine.mode.build !== 'threaded') {
 		await engine.destroy();
 		return { threaded: false, skipped: 'the page is not isolated, so the engine shares no memory' };

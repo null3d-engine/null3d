@@ -233,9 +233,36 @@ describe('budgets', () => {
 	});
 });
 
+describe('budget names', () => {
+	test('name places by names that a production build keeps', () => {
+		// A production build renames local variables, so a place named after one, such as an inline
+		// handler set on a port's `onmessage`, takes another name when the code around it changes, and
+		// its budget stops applying. A function or a method keeps its name.
+		const perWorker = [
+			BUDGETS,
+			STATS_BUDGETS,
+			SKY_ENVIRONMENT_BUDGETS,
+			SWIFTSHADER_BUDGETS,
+			DAY_BUDGETS,
+			CANVAS_BUDGETS,
+			...PAGE_SWITCHES.flatMap((choice) => (choice.budgets ? [choice.budgets] : [])),
+		];
+		const names = [
+			...perWorker.flatMap((table) =>
+				Object.values(table).flatMap((byWorker) => Object.keys(byWorker ?? {})),
+			),
+			...Object.keys(TASK_CALL_BUDGETS),
+			...Object.keys(WIND_CALL_BUDGETS),
+			...PAGE_SWITCHES.flatMap((choice) => Object.keys(choice.callBudgets ?? {})),
+		];
+		expect(names.length).toBeGreaterThan(20);
+		expect(names.filter((name) => /^[A-Za-z_$]\./.test(name))).toEqual([]);
+	});
+});
+
 describe('per-call budgets', () => {
 	test("a switch's own figure holds for its run alone", () => {
-		const place = 'n.onmessage shared/tasks.ts';
+		const place = 'answer shared/tasks.ts';
 		const wind = PAGE_SWITCHES.find((choice) => choice.flag === '--wind');
 		const splats = PAGE_SWITCHES.find((choice) => choice.flag === '--splats');
 		// The shared figure guards the splats' answer, whose handler read up to 230.4 a call, and

@@ -326,6 +326,31 @@ function streamChunks(path: string, bytes: Buffer): string[] {
 		.map((url) => posix.join(folder, url));
 }
 
+/** The first 16 hex digits of a pinned file's SHA-256, which a sample address may carry as `?h=`. */
+export function sampleHash(file: SampleFile): string {
+	return file.sha256.slice(0, 16);
+}
+
+/** The constant through which a build gives the demos the hash of each sample file they name. */
+export const SAMPLE_HASHES_CONSTANT = '__NULL3D_SAMPLE_HASHES__';
+
+/**
+ * The hash of each pinned sample file that the code under `folders` names, by its path, for the
+ * demos' sample addresses (examples/lib/samples.ts). An address with its file's hash names those
+ * bytes alone, so a browser may keep the file for good: a new pin that changes the file changes the
+ * address too, and a file that a new pin leaves as it is keeps its address and its cached copy.
+ */
+export function sampleHashes(root: string, folders = ['examples']): Record<string, string> {
+	const pinned = pinnedFiles(root);
+	const hashes: Record<string, string> = {};
+	const paths = namedSamples(root, folders).map((sample) => sample.path);
+	for (const path of [...new Set(paths)].sort()) {
+		const file = path === null ? undefined : pinned.get(path);
+		if (path !== null && file) hashes[path] = sampleHash(file);
+	}
+	return hashes;
+}
+
 /**
  * Copies every pinned sample file that the code under `folders` names into `outDir`, each at its
  * path there, from the cache that `bun run samples:fetch` fills. A splat stream index brings the
@@ -456,10 +481,13 @@ export function optimizedSampleFile(root: string, id: string): string | null {
 
 /**
  * Serves the pinned sample files under `/samples/` on the dev server and the preview server. Only
- * files in the pinned manifest are served, from the shared cache. The SHA-256 is the entity tag, so
- * a browser revalidates each file and never keeps one from an earlier pin. A module may also import
- * a pinned model as `/samples/<path>?optimized`: the import resolves to the cached file, and the
- * null3D plugin optimizes it as it does a model of the project.
+ * files in the pinned manifest are served, from the shared cache. The SHA-256 is the entity tag. An
+ * address whose `?h=` holds the file's hash may stay in the browser's cache for good, as no other
+ * bytes can answer it. Any other address is checked again on each use, so a browser never keeps a
+ * file from an earlier pin under it. The builds of pages get the hashes of the files that the demos
+ * name, through a constant that examples/lib/samples.ts reads. A module may also import a pinned
+ * model as `/samples/<path>?optimized`: the import resolves to the cached file, and the null3D
+ * plugin optimizes it as it does a model of the project.
  */
 export function samplesServer(root: string): Plugin {
 	const serve: Connect.NextHandleFunction = (req, res: ServerResponse, next) => {
@@ -478,7 +506,11 @@ export function samplesServer(root: string): Plugin {
 		}
 		const tag = `"${file.sha256}"`;
 		res.setHeader('ETag', tag);
-		res.setHeader('Cache-Control', 'no-cache');
+		const asked = new URL(req.url, 'http://samples').searchParams.get('h');
+		res.setHeader(
+			'Cache-Control',
+			asked === sampleHash(file) ? 'public, max-age=31536000, immutable' : 'no-cache',
+		);
 		if (req.headers['if-none-match'] === tag) {
 			res.statusCode = 304;
 			res.end();
@@ -495,6 +527,9 @@ export function samplesServer(root: string): Plugin {
 		name: 'null3d-samples',
 		// Before Vite's own resolver, which would look for the address under the project's root.
 		enforce: 'pre',
+		config: () => ({
+			define: { [SAMPLE_HASHES_CONSTANT]: JSON.stringify(sampleHashes(root)) },
+		}),
 		resolveId(id) {
 			try {
 				return optimizedSampleFile(root, id);

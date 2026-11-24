@@ -16,6 +16,7 @@ describe('parseSwitches', () => {
 			parallelCompile: true,
 			freshShaders: false,
 			freshCheck: false,
+			freshBuilds: false,
 			twoStep: false,
 			wakeByMessage: false,
 			displayChecks: true,
@@ -37,6 +38,7 @@ describe('parseSwitches', () => {
 			derivedCache: true,
 			fps: undefined,
 			targetFps: undefined,
+			presetCheck: undefined,
 			queue: undefined,
 			jobs: undefined,
 			join: true,
@@ -266,6 +268,13 @@ describe('parseSwitches', () => {
 			expect(parseSwitches(`?target-fps=${value}`).targetFps).toBeUndefined();
 	});
 
+	it('reads when the preset check measures, and ignores a timing it does not know', () => {
+		expect(parseSwitches('?preset-check=during-play').presetCheck).toBe('during-play');
+		expect(parseSwitches('?preset-check=before-play').presetCheck).toBe('before-play');
+		for (const value of ['', 'off', 'before'])
+			expect(parseSwitches(`?preset-check=${value}`).presetCheck).toBeUndefined();
+	});
+
 	it('reads the thread that runs the sketch, and ignores a thread it does not know', () => {
 		expect(parseSwitches('?sketch-thread=main').sketchThread).toBe('main');
 		expect(parseSwitches('?latency=low&sketch-thread=worker').sketchThread).toBe('worker');
@@ -285,6 +294,11 @@ describe('parseSwitches', () => {
 	it('measures the preset again with ?check=fresh only', () => {
 		expect(parseSwitches('?check=fresh').freshCheck).toBe(true);
 		expect(parseSwitches('?check=stored').freshCheck).toBe(false);
+	});
+
+	it('builds every pipeline when the first frame asks with ?builds=fresh only', () => {
+		expect(parseSwitches('?builds=fresh').freshBuilds).toBe(true);
+		expect(parseSwitches('?builds=stored').freshBuilds).toBe(false);
 	});
 
 	it('makes the threads wake each other with messages with ?wake=message only', () => {

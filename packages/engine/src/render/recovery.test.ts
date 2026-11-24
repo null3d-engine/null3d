@@ -214,4 +214,43 @@ describe('Drawing', () => {
 		expect(renderer.destroyed).toBe(true);
 		expect(renderer.canvas).toEqual({ width: 640, height: 360 });
 	});
+
+	it('gives the GPU back while the page is in the back/forward cache, and takes a new one after', async () => {
+		const { slots, renderers, loops, failures, drawing, last } = setup();
+		const first = last();
+		drawing.enterPageCache();
+		expect(first.destroys).toBe(1);
+		expect(loops[0]?.stopped).toBe(true);
+		// A second entry changes nothing.
+		drawing.enterPageCache();
+		expect(first.destroys).toBe(1);
+		await drawing.leavePageCache();
+		expect(renderers).toHaveLength(2);
+		expect(drawing.renderer).toBe(last());
+		expect(loops).toHaveLength(2);
+		expect(Atomics.load(slots, Slot.GpuEpoch)).toBe(1);
+		// The cache counts no loss: two real losses within the minute still recover.
+		for (let loss = 0; loss < MAX_RECOVERIES; loss++) {
+			last().lose('driver reset');
+			await settle();
+		}
+		expect(failures).toEqual([]);
+		// A stop releases the renderer that the return made, once.
+		await drawing.stop();
+		expect(last().destroys).toBe(1);
+		expect(first.destroys).toBe(1);
+	});
+
+	it('keeps its renderer in the back/forward cache in hold mode, and a stop while cached releases nothing again', async () => {
+		const held = setup(undefined, false);
+		held.drawing.enterPageCache();
+		expect(held.last().destroys).toBe(0);
+		const { drawing, last } = setup();
+		const first = last();
+		drawing.enterPageCache();
+		await drawing.stop();
+		await drawing.leavePageCache();
+		expect(first.destroys).toBe(1);
+		expect(first.blanks).toEqual([]);
+	});
 });

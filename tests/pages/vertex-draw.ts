@@ -28,6 +28,7 @@ run('vertex-draw', async () => {
 		maxPixelRatio: 1,
 	});
 	await engine.firstFrame;
+	await engine.presetChecked;
 	let settle: (data: unknown) => void = () => {};
 	const accepted = new Promise<unknown>((resolve) => {
 		settle = resolve;

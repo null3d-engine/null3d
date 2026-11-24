@@ -8,9 +8,13 @@ import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { ERRORS, type ErrorEntry } from '../../packages/engine/src/errors/codes.ts';
 import {
+	CHECK_FAR_SHARE,
 	CHECK_GRACE_MS,
 	CHECK_HOLD_SHARE,
 	CHECK_MAX_FPS,
+	CHECK_SETTLE_FRAMES,
+	CHECK_SETTLE_INTERVAL_MS,
+	CHECK_SETTLE_WAIT_MS,
 	CHECK_UPLOAD_WAIT_MS,
 	CHECK_WINDOW_MS,
 } from '../../packages/engine/src/quality/check.ts';
@@ -151,6 +155,7 @@ export const PAGES: readonly PageEntry[] = [
 	{ id: 'guides/lens-kit', title: 'Lens kit', since: '0.3', summary: 'One look for the camera\'s marks: the core grade, sharpening and vignette, and one effect with film grain, color fringes, a streak read from bloom and a speed blur.' },
 	{ id: 'guides/screens', title: 'In-world screens', since: '0.3', summary: 'Displays painted on an OffscreenCanvas in the sketch: a refresh rate for each screen, uploads of only the changed rectangles, an LCD look that changes with distance, a boot glitch, and clicks mapped back to the canvas\'s coordinates.' },
 	{ id: 'guides/loading-screens', title: 'Loading screens and warm-up', since: '0.1', summary: 'preload; onProgress; scene.warmUp; the preset check; upload budgets; switching presets behind a loading screen.' },
+	{ id: 'guides/start-time', title: 'A fast start', since: '0.1', summary: "Where a page's start goes; compression, cache headers and HTTP/2 on the host; the early core script; downloads that start together; a first frame before the large models; heavy work out of a sketch module's top level; testing and measuring a start." },
 	{ id: 'guides/accessibility', title: 'Accessibility', since: '0.1', summary: 'What the canvas tells assistive technology; keyboard use; reduced motion; pausing; loading and errors.' },
 	{ id: 'guides/content-pages', title: '3D scenes on content pages', since: '0.1', summary: 'Product and marketing pages: the fallback page, a load deadline, pausing off screen, scroll-driven cameras, second visits and crashes.' },
 	{ id: 'guides/ui-overlays', title: 'UI, HTML overlays and labels', since: '0.2', summary: 'HTML UI on the page; labels that follow objects; GUI panels.' },
@@ -242,6 +247,14 @@ export function presetCheckTable(): string {
 			`The display's refresh rate, at most ${CHECK_MAX_FPS} frames per second unless \`targetFps\` asks for more`,
 		],
 		['A preset holds its target', `At ${CHECK_HOLD_SHARE * 100}% of the target or more`],
+		[
+			'A preset is far below its target',
+			`Under ${CHECK_FAR_SHARE * 100}% of the target: the check lowers it straight to Low`,
+		],
+		[
+			'Wait before the first measurement and after each lowering',
+			`Until the pipelines are built, then until the GPU has finished ${CHECK_SETTLE_FRAMES} frames within ${CHECK_SETTLE_INTERVAL_MS} ms each, for ${CHECK_SETTLE_WAIT_MS} ms at most`,
+		],
 		[
 			'Frames drawn before each measurement',
 			`${CHECK_GRACE_MS} ms, and up to ${CHECK_UPLOAD_WAIT_MS} ms more while textures upload`,

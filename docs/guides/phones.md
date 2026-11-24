@@ -100,7 +100,17 @@ The engine reads touches as it reads the mouse: the first finger presses `Mouse0
 
 ## Networks and repeat visits
 
+On a phone, a start is mostly downloads, the round trips between them, and the GPU's pipeline builds. A host that compresses every file, `.wasm` included, and lets the browser keep the build's files saves seconds. So does a sketch that starts its downloads together and draws before its large models arrive. A first view with few pipelines saves more: 55 pipelines took 10.9 seconds to build on a Galaxy Tab A9 Plus. [A fast start](start-time.md) gives each step, with measured times on real phones.
+
 Phones often lose their network. A game that must play offline caches the engine's files and its own in a service worker, as [Hosting](../getting-started/hosting.md#offline-play) shows. The engine keeps each transcoded KTX2 texture in its [cache of derived data](../api/assets.md#the-cache-of-derived-data), so a repeat visit skips the transcoder. On phones that saves less time than on a tablet, because other start work takes most of a phone's start.
+
+## When the GPU's driver refuses a shader
+
+A phone's GPU driver can refuse to build one pipeline, such as a custom material's, though the shader is valid. The engine then builds that pipeline once more, alone. When the driver refuses it again, the engine leaves that pipeline's objects out of the frame and draws on. It reports [E1307](../errors/E1307.md) once, which does not stop the engine. A validation error, and a refused pipeline of a full-screen pass, still stop drawing with [E1404](../errors/E1404.md) ([Debugging](debugging.md)).
+
+On a Galaxy Tab A9 Plus, the driver refused the island demo's far tree cards, and the island then drew on without them. The garden demo reached its first frame at 71 seconds there, but the tablet ran out of GPU memory 4 seconds later ([E1302](../errors/E1302.md)).
+
+On phones and tablets, the engine also gives back its GPU device while the browser keeps the page in its back-forward cache. It starts a new one when the page comes back ([Page API](../api/engine.md#the-running-engine)).
 
 ## Browsers on iPhone and iPad
 
@@ -113,6 +123,7 @@ Check every rendering mode and the whole camera path, with repeats, as [Testing 
 Desktop browsers that emulate a phone show neither its GPU nor its heat, so test on the phones and tablets that your audience uses.
 
 - Serve the page over HTTPS, or reach it as `localhost` over USB. A secure origin is what makes WebGPU, and so the High and Ultra presets, available. On a network address over plain HTTP, the engine silently falls back to WebGL2 at Medium. [Hosting and cross-origin isolation](../getting-started/hosting.md#during-development) shows both.
+- Install the root of the page's certificate on the device. Chrome keeps no file in its cache from a site whose certificate it accepted after a warning. Every load is then as slow as a first visit.
 - Check the preset that the engine chose in `engine.mode.preset`. The capability report in `engine.report` holds the facts that it chose from: `coarsePointer`, `screenMinEdge` and `deviceMemoryGB`.
 - Add `?preset=low`, `?preset=medium`, `?preset=high` or `?preset=ultra` to the page's address to test each preset on one device. The GPU path still caps the preset.
 - Add `?gpu=webgl2` to test the WebGL2 path, which many phones use.

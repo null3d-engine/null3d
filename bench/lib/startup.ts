@@ -22,6 +22,12 @@ export interface StartupResult {
 			/** Times from navigation start. */
 			firstFrameMs: number | null;
 			firstFrameDoneMs: number | null;
+			/** The steps of the start of the thread that draws, from navigation start. */
+			drawingStart?: {
+				deviceMs: number | null;
+				shadersMs: number | null;
+				rendererMs: number | null;
+			};
 		};
 	};
 	downloads?: Downloads;
@@ -37,6 +43,12 @@ export interface LoadSample {
 	probeMs: number;
 	/** The engine core was downloaded and compiled. */
 	coreMs: number;
+	/** The thread that draws had its WebGPU device, or null on WebGL2. */
+	deviceMs: number | null;
+	/** The thread that draws had the shader file of its device. */
+	shadersMs: number | null;
+	/** The thread that draws had built its renderer, so its frame loop could start. */
+	rendererMs: number | null;
 	/** The engine had started, with the sketch's setup run, and createEngine was about to resolve. */
 	readyMs: number;
 	/** The first frame was submitted to the GPU. */
@@ -92,11 +104,15 @@ export function loadSample(result: StartupResult): LoadSample | undefined {
 		!downloads
 	)
 		return undefined;
+	const drawing = load.drawingStart;
 	return {
 		tier: result.capabilities?.tier ?? 'unknown',
 		scriptMs: start,
 		probeMs: start + load.probeMs,
 		coreMs: start + load.coreMs,
+		deviceMs: drawing?.deviceMs ?? null,
+		shadersMs: drawing?.shadersMs ?? null,
+		rendererMs: drawing?.rendererMs ?? null,
 		readyMs: start + load.engineStartMs,
 		frameMs: load.firstFrameMs,
 		frameDoneMs: load.firstFrameDoneMs,
@@ -130,6 +146,9 @@ const POINTS = [
 	['Script', 'scriptMs'],
 	['Probe', 'probeMs'],
 	['Core', 'coreMs'],
+	['Device', 'deviceMs'],
+	['Shaders', 'shadersMs'],
+	['Renderer', 'rendererMs'],
 	['Ready', 'readyMs'],
 	['Frame', 'frameMs'],
 	['Frame done', 'frameDoneMs'],
@@ -153,14 +172,19 @@ export function startupTable(heads: readonly string[], groups: readonly SampleGr
 	];
 	const lines = [`| ${columns.join(' | ')} |`, `|${' --- |'.repeat(columns.length)}`];
 	for (const { labels, samples } of groups) {
-		const pick = (key: keyof Omit<LoadSample, 'tier'>) => median(samples.map((s) => s[key]));
+		/** The median of a point over the loads that reached it, or NaN where none did. */
+		const pick = (key: keyof Omit<LoadSample, 'tier'>) => {
+			const values = samples.map((s) => s[key]).filter((value): value is number => value !== null);
+			return values.length > 0 ? median(values) : Number.NaN;
+		};
+		const ms = (value: number) => (Number.isNaN(value) ? '-' : value.toFixed(0));
 		const values =
 			samples.length === 0
 				? ['-', '0', ...POINTS.map(() => '-'), '-', '-']
 				: [
 						[...new Set(samples.map((s) => s.tier))].join(', '),
 						String(samples.length),
-						...POINTS.map(([, key]) => pick(key).toFixed(0)),
+						...POINTS.map(([, key]) => ms(pick(key))),
 						count(pick('requests')),
 						(pick('bytes') / 1024).toFixed(1),
 					];
@@ -175,6 +199,9 @@ export const STARTUP_LEGEND: readonly string[] = [
 	'- Script: the page script ran and called createEngine.',
 	'- Probe: the engine finished testing the GPU paths.',
 	'- Core: the engine core was downloaded and compiled.',
+	'- Device: the thread that draws had its WebGPU device; - on WebGL2.',
+	'- Shaders: the thread that draws had the shader file of its device.',
+	'- Renderer: the thread that draws had built its renderer.',
 	'- Ready: the engine had started and run the sketch setup.',
 	'- Frame: the engine submitted the first frame.',
 	'- Frame done: the GPU finished the first frame.',

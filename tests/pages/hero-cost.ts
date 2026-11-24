@@ -24,6 +24,7 @@ run('hero-cost', async () => {
 	const failures: string[] = [];
 	engine.onFailure((error) => failures.push(error.code));
 	await engine.firstFrame;
+	await engine.presetChecked;
 	const settled = () =>
 		new Promise<string>((resolve) => {
 			const off = engine.onSketchMessage((name, data) => {

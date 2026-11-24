@@ -6,8 +6,10 @@
 //
 // A thread can hold two copies of this module: in a production build, the sketch worker runs the
 // engine's worker code, and the sketch's bundle imports the engine again from the page's file. So
-// the table of fixes and the mark on each error live under registered symbols, which every copy in
-// the thread shares. Each copy then reads the same table, and instanceof accepts the errors of both.
+// the table of fixes, its load and the mark on each error live under registered symbols, which
+// every copy in the thread shares. Each copy then reads the same table, waits for the same load, and
+// instanceof accepts the errors of both. A copy that loaded the table on its own would leave its
+// errors short after the other copy's had their fixes, while a second file downloads.
 // The docs address, the message's form and the mark live in engine-error-core.ts, which code that
 // may not load the fixes, such as a simulation's math, throws its errors from.
 
@@ -16,16 +18,21 @@ import type { ErrorCode, ErrorFixes } from './fixes';
 
 /** The key of the thread's table of fixes on its global object. */
 const FIXES = Symbol.for('null3d.errorFixes');
+/** The key of the thread's load of that table, which the first copy to need it starts. */
+const LOAD = Symbol.for('null3d.errorFixesLoad');
 
-/** The thread's global object, which holds the table of fixes for every copy of this module. */
-const thread = globalThis as { [FIXES]?: ErrorFixes };
+/**
+ * The thread's global object, which holds the table of fixes and its load for every copy of this
+ * module.
+ */
+const thread = globalThis as { [FIXES]?: ErrorFixes; [LOAD]?: Promise<ErrorFixes> };
 
 /**
  * Every code, joined, so an error keeps its code before the file of fixes arrives. A test keeps it
  * equal to the keys of the table.
  */
 const CODES =
-	'E1101E1102E1103E1104E1105E1106E1107E1108E1109E1110E1111E1112E1203E1204E1205E1206E1207E1208E1209E1213E1214E1215E1216E1217E1218E1219E1220E1221E1222E1223E1224E1225E1301E1302E1303E1304E1305E1306E1401E1402E1403E1404E1405E1406E1407E1408E1409E1410E1411E1412E1413E1414E1415E1416E1417E1418E1419E1420E1421E1422E1423E1424E1425E1426E1430E1431E1432E1433E1434E1435E1436E1437E1501E1502E1503E1504E1505E1506';
+	'E1101E1102E1103E1104E1105E1106E1107E1108E1109E1110E1111E1112E1203E1204E1205E1206E1207E1208E1209E1213E1214E1215E1216E1217E1218E1219E1220E1221E1222E1223E1224E1225E1301E1302E1303E1304E1305E1306E1307E1401E1402E1403E1404E1405E1406E1407E1408E1409E1410E1411E1412E1413E1414E1415E1416E1417E1418E1419E1420E1421E1422E1423E1424E1425E1426E1430E1431E1432E1433E1434E1435E1436E1437E1501E1502E1503E1504E1505E1506';
 
 /** An error whose message waits for the file of fixes, and the detail that the message holds. */
 interface Waiting {
@@ -37,7 +44,7 @@ interface Waiting {
 }
 
 const waiting: Waiting[] = [];
-/** The load of the fixes, which one thread starts once. */
+/** This copy's wait for the thread's load of the fixes, which settles its own waiting errors. */
 let loading: Promise<void> | undefined;
 
 /** Tells each waiting error the fix, unless its message holds other text by now. */
@@ -47,19 +54,23 @@ function settle(fixes: ErrorFixes): void {
 	}
 }
 
-/** Loads the thread's file of fixes, once, and gives each error that waits its fix. */
+/**
+ * Loads the thread's file of fixes, once for every copy of this module in the thread, and gives
+ * each error of this copy that waits its fix.
+ */
 function loadFixes(): Promise<void> {
 	if (thread[FIXES] !== undefined) return Promise.resolve();
-	loading ??= import('./fixes').then(
-		({ ERROR_FIXES }) => {
-			thread[FIXES] ??= ERROR_FIXES;
-			settle(thread[FIXES]);
-		},
-		() => {
-			// The text is a hint: an error keeps its code and detail when the file does not arrive.
-			loading = undefined;
-		},
-	);
+	if (loading) return loading;
+	thread[LOAD] ??= import('./fixes').then(({ ERROR_FIXES }) => {
+		thread[FIXES] ??= ERROR_FIXES;
+		return thread[FIXES];
+	});
+	loading = thread[LOAD].then(settle, () => {
+		// The text is a hint: an error keeps its code and detail when the file does not arrive, and
+		// a later error tries again.
+		loading = undefined;
+		thread[LOAD] = undefined;
+	});
 	return loading;
 }
 

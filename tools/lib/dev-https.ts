@@ -17,6 +17,15 @@ export function servesHttps(command: 'build' | 'serve'): boolean {
 }
 
 /**
+ * True when `NULL3D_HTTP2=1` asks the HTTPS server for HTTP/2, which sends every request at once.
+ * It stays off by default: Safari on an iPad sometimes stops while a worker loads its modules over
+ * HTTP/2, which the null3D plugin's `http2` option says.
+ */
+export function servesHttp2(): boolean {
+	return process.env.NULL3D_HTTP2 === '1';
+}
+
+/**
  * Throws a clear message when a server needs the certificate and the checkout has none. The
  * plugin reads the certificate itself; this check runs first so the fix names the repository's step.
  */

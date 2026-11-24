@@ -54,6 +54,7 @@ run('addon-tasks', async () => {
 		preset: 'low',
 	});
 	await engine.firstFrame;
+	await engine.presetChecked;
 	const rounds: Round[] = [];
 	const outcome = await new Promise<{ failed?: string; rounds?: number }>((resolve) => {
 		engine.onSketchMessage((name, data) => {

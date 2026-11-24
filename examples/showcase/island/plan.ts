@@ -1,10 +1,15 @@
 // The island's stored plan: the roads and house plots that write-layout.ts laid out, which every
 // device loads the same. Around them this module bakes the final ground and places the worked terraces
 // with their olives, the strands of cypress, the umbrella pines by the coast and the closed forest over
-// the rest. Nothing stands on a road, in a plot or too close to its own kind.
+// the rest. Nothing stands on a road, in a plot or too close to its own kind. The plan decodes as the
+// module loads; the ground bakes, and the terraces, trees and shrubs are placed, at their first read,
+// so a scene's code loads before that work runs.
 import { random } from '../../lib/procedural';
 import {
 	bake,
+	groundHeight as bakedHeight,
+	roadEdge as bakedRoadEdge,
+	slopeAt as bakedSlope,
 	CELL,
 	CHURCH_AT,
 	COURT_DOOR,
@@ -15,26 +20,23 @@ import {
 	edgeGrid,
 	FOUNTAIN_WATER,
 	fromCell,
-	groundHeight,
 	inCore,
 	inWorld,
 	KEEPS,
 	LOOKUP,
 	type Lot,
 	lookupKey,
-	natural,
+	naturalGrid,
 	onHilltop,
 	rasterAll,
 	read,
-	roadEdge,
 	SIDE,
 	SQUARE,
 	STAIR_HALF,
-	slopeAt,
 	TERRACE_RISE,
 	type Tread,
 	toCell,
-	worked,
+	workedAt,
 } from './ground';
 import {
 	BAY,
@@ -63,16 +65,13 @@ export {
 	circleRadius,
 	FEWEST_ON_LANE,
 	FOUNTAIN_WATER,
-	groundHeight,
 	KEEPS,
 	type Lot,
 	MOST_OFF_FORM,
 	MOST_OFF_GROUND,
 	NEIGHBOUR,
-	roadEdge,
 	SQUARE,
 	STEEPEST_DRIVE,
-	slopeAt,
 	stairTreads,
 	WALL_EDGE,
 } from './ground';
@@ -404,38 +403,76 @@ export const STAIR_WALKS: readonly (readonly Tread[])[] = decoded.walks;
 /** The apron from each flight's foot to the street below it. */
 export const STAIR_APRONS: readonly (readonly Tread[])[] = decoded.aprons;
 
-rasterAll(ROADS);
-bake(LOTS, [...STAIRS, ...STAIR_APRONS]);
+/** Whether the stored plan's ground has been baked. */
+let baked = false;
 
-/** The plots near each cell of the lookup, which the trees read. */
-const taken = new Uint8Array(SIDE * SIDE);
-for (const lot of LOTS) {
-	const [w, back, front] = lot.plot;
-	const reach = hypot(w, Math.max(back, front)) + 3;
-	const span = Math.ceil(reach / CELL);
-	const [ci, cj] = [toCell(lot.x), toCell(lot.z)];
-	const [c, s] = [Math.cos(lot.yaw), Math.sin(lot.yaw)];
-	for (let j = Math.max(0, cj - span); j <= Math.min(SIDE - 1, cj + span); j++)
-		for (let i = Math.max(0, ci - span); i <= Math.min(SIDE - 1, ci + span); i++) {
-			const [dx, dz] = [fromCell(i) - lot.x, fromCell(j) - lot.z];
-			const u = Math.abs(dx * c - dz * s);
-			const v = dx * s + dz * c;
-			if (u < w + 1.5 && v < front + 1.5 && v > -back - 1.5) taken[cellAt(i, j)] = 1;
-		}
-	// The drive stays clear of trees too.
-	for (let t = 0; t <= 1; t += 0.1) {
-		const [x, z] = [lot.gate.x + (lot.x - lot.gate.x) * t, lot.gate.z + (lot.z - lot.gate.z) * t];
-		for (const [ox, oz] of [
-			[0, 0],
-			[2, 0],
-			[-2, 0],
-			[0, 2],
-			[0, -2],
-		] as const) {
-			const [i, j] = [toCell(x + ox), toCell(z + oz)];
-			if (i >= 0 && j >= 0 && i < SIDE && j < SIDE) taken[cellAt(i, j)] = 1;
+/** Bakes the stored plan's roads, plots and stairs into the ground, the first time a reader asks. */
+function bakeStored(): void {
+	if (baked) return;
+	baked = true;
+	rasterAll(ROADS);
+	bake(LOTS, [...STAIRS, ...STAIR_APRONS]);
+}
+
+/** The height of the ground at a point, in meters, with its roads and house plots cut in. */
+export function groundHeight(x: number, z: number): number {
+	bakeStored();
+	return bakedHeight(x, z);
+}
+
+/** The ground's steepness at a point, as the rise over the run. */
+export function slopeAt(x: number, z: number): number {
+	bakeStored();
+	return bakedSlope(x, z);
+}
+
+/** How far a point lies from the nearest road's edge, in meters, past the lookup's reach if far. */
+export function roadEdge(x: number, z: number): number {
+	bakeStored();
+	return bakedRoadEdge(x, z);
+}
+
+/**
+ * The grids that the placement of the terraces, the trees and the shrubs reads, made when the plan
+ * is first grown: the plots and drives, the cells near a terrace wall, and the cells below a
+ * hillside house.
+ */
+let taken: Uint8Array = new Uint8Array(0);
+let terraced: Uint8Array = new Uint8Array(0);
+let viewed: Uint8Array = new Uint8Array(0);
+
+/** Marks the plots near each cell of the lookup, which the trees read. */
+function markPlots(): Uint8Array {
+	const taken = new Uint8Array(SIDE * SIDE);
+	for (const lot of LOTS) {
+		const [w, back, front] = lot.plot;
+		const reach = hypot(w, Math.max(back, front)) + 3;
+		const span = Math.ceil(reach / CELL);
+		const [ci, cj] = [toCell(lot.x), toCell(lot.z)];
+		const [c, s] = [Math.cos(lot.yaw), Math.sin(lot.yaw)];
+		for (let j = Math.max(0, cj - span); j <= Math.min(SIDE - 1, cj + span); j++)
+			for (let i = Math.max(0, ci - span); i <= Math.min(SIDE - 1, ci + span); i++) {
+				const [dx, dz] = [fromCell(i) - lot.x, fromCell(j) - lot.z];
+				const u = Math.abs(dx * c - dz * s);
+				const v = dx * s + dz * c;
+				if (u < w + 1.5 && v < front + 1.5 && v > -back - 1.5) taken[cellAt(i, j)] = 1;
+			}
+		// The drive stays clear of trees too.
+		for (let t = 0; t <= 1; t += 0.1) {
+			const [x, z] = [lot.gate.x + (lot.x - lot.gate.x) * t, lot.gate.z + (lot.z - lot.gate.z) * t];
+			for (const [ox, oz] of [
+				[0, 0],
+				[2, 0],
+				[-2, 0],
+				[0, 2],
+				[0, -2],
+			] as const) {
+				const [i, j] = [toCell(x + ox), toCell(z + oz)];
+				if (i >= 0 && j >= 0 && i < SIDE && j < SIDE) taken[cellAt(i, j)] = 1;
+			}
 		}
 	}
+	return taken;
 }
 
 /** Whether a place's ground is taken by a plot or a drive. */
@@ -535,13 +572,9 @@ export function inWater(x: number, z: number): boolean {
 	return onPool(x, z);
 }
 
-/** The dry stone walls of the terraces. */
-export const TERRACES: TerraceWall[] = [];
 /** The meters of terrace wall to each olive, and the least gap between them, in meters. */
 const TERRACE_OLIVE_RUN = 4.5;
 const TERRACE_OLIVE_GAP = 3.8;
-/** The olive trees' places along the terraces. */
-const TERRACE_OLIVES: [number, number][] = [];
 
 /** The shortest joined run of terrace wall that stands, in meters. */
 const SHORTEST_TERRACE = 12;
@@ -578,9 +611,14 @@ function longTerraceChains(stretches: readonly TerraceWall[]): TerraceWall[] {
 	return stretches.filter((_, k) => (lengths.get(root(k)) as number) >= SHORTEST_TERRACE);
 }
 
-// Each cell of a grid adds the contour lines that cross it on a worked slope. A stretch keeps clear of
-// roads and plots, and of ground too steep to hold a level step.
-(() => {
+/**
+ * Lays the terraces' walls: each cell of a grid adds the contour lines that cross it on a worked
+ * slope. A stretch keeps clear of roads and plots, and of ground too steep to hold a level step. An
+ * olive stands every few stretches, a little behind the wall.
+ */
+function layTerraces(): { walls: TerraceWall[]; olives: [number, number][] } {
+	const natural = naturalGrid();
+	const stretches: TerraceWall[] = [];
 	const step = 4;
 	const count = Math.floor(GROUND / step);
 	let spare = 0;
@@ -594,7 +632,7 @@ function longTerraceChains(stretches: readonly TerraceWall[]): TerraceWall[] {
 				read(natural, x, z + step),
 			];
 			const [lo, hi] = [Math.min(h0, h1, h2, h3), Math.max(h0, h1, h2, h3)];
-			if (lo < 6 || hi - lo < 0.25 || !worked(x + step / 2, z + step / 2)) continue;
+			if (lo < 6 || hi - lo < 0.25 || !workedAt(x + step / 2, z + step / 2)) continue;
 			for (
 				let level = Math.ceil(lo / TERRACE_RISE) * TERRACE_RISE;
 				level < hi;
@@ -616,7 +654,7 @@ function longTerraceChains(stretches: readonly TerraceWall[]): TerraceWall[] {
 				if (read(edgeGrid, mx, mz) < 5 || inPlot(mx, mz) || slopeAt(mx, mz) > 1.3) continue;
 				// Where a road's or a plot's bank has moved the ground, no terrace wall stands.
 				if (Math.abs(groundHeight(mx, mz) - level) > TERRACE_RISE) continue;
-				TERRACES.push({
+				stretches.push({
 					ax: p[0],
 					ay: level - TERRACE_RISE * 0.4,
 					az: p[1],
@@ -627,18 +665,18 @@ function longTerraceChains(stretches: readonly TerraceWall[]): TerraceWall[] {
 			}
 		}
 	// A short piece of wall reads as a stray stub, so only the joined runs of some length stand.
-	const kept = longTerraceChains(TERRACES);
-	TERRACES.length = 0;
-	TERRACES.push(...kept);
+	const walls = longTerraceChains(stretches);
 	// An olive stands every few stretches, a little behind the wall.
-	for (const { ax, az, bx, bz } of TERRACES) {
+	const olives: [number, number][] = [];
+	for (const { ax, az, bx, bz } of walls) {
 		spare += hypot(bx - ax, bz - az);
 		if (spare > TERRACE_OLIVE_RUN) {
 			spare = 0;
-			TERRACE_OLIVES.push([(ax + bx) / 2, (az + bz) / 2]);
+			olives.push([(ax + bx) / 2, (az + bz) / 2]);
 		}
 	}
-})();
+	return { walls, olives };
+}
 
 /** The share of a village's ground that holds an olive in place of the forest. */
 const VILLAGE_OLIVES = 0.5;
@@ -654,13 +692,16 @@ const NORTH_FOREST_SLOPE = 4.5;
 const FOLD_DEPTH = 5;
 /** How far a fold is read across, in meters. */
 const FOLD_RUN = 30;
-/** How much the land around a place stands above it. */
-const around = (x: number, z: number) =>
+/** How high the land stands around a place, as the mean of four reads a fold's run away. */
+const around = (natural: Float32Array, x: number, z: number) =>
 	(read(natural, x + FOLD_RUN, z) +
 		read(natural, x - FOLD_RUN, z) +
 		read(natural, x, z + FOLD_RUN) +
 		read(natural, x, z - FOLD_RUN)) /
 	4;
+/** The land's fold at a place: above 0 in a gully and below it on a ridge, 1 at a full fold's depth. */
+const foldAt = (natural: Float32Array, x: number, z: number) =>
+	(around(natural, x, z) - read(natural, x, z)) / FOLD_DEPTH;
 
 /** The steepest ground south of the ridge that holds forest, as a rise over a run. */
 const FOREST_SLOPE = 2.6;
@@ -669,32 +710,39 @@ const VIEW_RUN = 20;
 /** The height from which a house stands on the hillside, and keeps its view, in meters. */
 const VIEW_FROM = 25;
 
-/** The cells that hold a terrace's wall or stand within a few meters of one. */
-const terraced = new Uint8Array(SIDE * SIDE);
-for (const { ax, az } of TERRACES) {
-	const [ci, cj] = [toCell(ax), toCell(az)];
-	for (let j = cj - 3; j <= cj + 3; j++)
-		for (let i = ci - 3; i <= ci + 3; i++) terraced[cellAt(i, j)] = 1;
+/** Marks the cells that hold a terrace's wall or stand within a few meters of one. */
+function markTerraced(walls: readonly TerraceWall[]): Uint8Array {
+	const terraced = new Uint8Array(SIDE * SIDE);
+	for (const { ax, az } of walls) {
+		const [ci, cj] = [toCell(ax), toCell(az)];
+		for (let j = cj - 3; j <= cj + 3; j++)
+			for (let i = ci - 3; i <= ci + 3; i++) terraced[cellAt(i, j)] = 1;
+	}
+	return terraced;
 }
 const terracedAt = (x: number, z: number) => terraced[cellAt(toCell(x), toCell(z))] === 1;
 
-/** The cells on the downhill side of each hillside house, where tall trees would hide it. */
-const viewed = new Uint8Array(SIDE * SIDE);
-for (const lot of LOTS) {
-	if (lot.y < VIEW_FROM) continue;
-	const e = 6;
-	const [gx, gz] = [
-		read(natural, lot.x + e, lot.z) - read(natural, lot.x - e, lot.z),
-		read(natural, lot.x, lot.z + e) - read(natural, lot.x, lot.z - e),
-	];
-	const length = hypot(gx, gz) || 1;
-	const [dx, dz] = [-gx / length, -gz / length];
-	const wide = lot.plot[0] + 4;
-	for (let run = 0; run <= VIEW_RUN + lot.plot[2]; run += CELL)
-		for (let w = -wide; w <= wide; w += CELL) {
-			const [i, j] = [toCell(lot.x + dx * run - dz * w), toCell(lot.z + dz * run + dx * w)];
-			if (i >= 0 && j >= 0 && i < SIDE && j < SIDE) viewed[cellAt(i, j)] = 1;
-		}
+/** Marks the cells on the downhill side of each hillside house, where tall trees would hide it. */
+function markViewed(): Uint8Array {
+	const natural = naturalGrid();
+	const viewed = new Uint8Array(SIDE * SIDE);
+	for (const lot of LOTS) {
+		if (lot.y < VIEW_FROM) continue;
+		const e = 6;
+		const [gx, gz] = [
+			read(natural, lot.x + e, lot.z) - read(natural, lot.x - e, lot.z),
+			read(natural, lot.x, lot.z + e) - read(natural, lot.x, lot.z - e),
+		];
+		const length = hypot(gx, gz) || 1;
+		const [dx, dz] = [-gx / length, -gz / length];
+		const wide = lot.plot[0] + 4;
+		for (let run = 0; run <= VIEW_RUN + lot.plot[2]; run += CELL)
+			for (let w = -wide; w <= wide; w += CELL) {
+				const [i, j] = [toCell(lot.x + dx * run - dz * w), toCell(lot.z + dz * run + dx * w)];
+				if (i >= 0 && j >= 0 && i < SIDE && j < SIDE) viewed[cellAt(i, j)] = 1;
+			}
+	}
+	return viewed;
 }
 const inView = (x: number, z: number) =>
 	viewed[cellAt(toCell(x), toCell(z))] === 1 || inParkView(x, z);
@@ -735,10 +783,13 @@ function inBunker(x: number, z: number): boolean {
 	);
 }
 
-/** The terrace walls by a coarse grid, for the search of the nearest. */
-const wallsByCell = (() => {
+/** The terrace walls by a coarse grid, for the search of the nearest, made when the plan is grown. */
+let wallsByCell = new Map<number, TerraceWall[]>();
+
+/** Lists the terrace walls by a coarse grid. */
+function listWalls(walls: readonly TerraceWall[]): Map<number, TerraceWall[]> {
 	const cells = new Map<number, TerraceWall[]>();
-	for (const wall of TERRACES) {
+	for (const wall of walls) {
 		const steps = Math.ceil(hypot(wall.bx - wall.ax, wall.bz - wall.az) / WALL_GRID);
 		for (let t = 0; t <= steps; t++) {
 			const key = lookupKey(
@@ -751,24 +802,37 @@ const wallsByCell = (() => {
 		}
 	}
 	return cells;
-})();
+}
 
 /** The terrace wall nearest a place, within a cell of the search's grid: how far it lies, and which way. */
 function nearestTerraceWall(x: number, z: number): { d: number; nx: number; nz: number } {
-	let best = { d: Number.POSITIVE_INFINITY, nx: 0, nz: 0 };
+	// Scalars, not objects and pairs, so a search for each of the tens of thousands of trees makes
+	// one object, its answer.
+	let bestD = Number.POSITIVE_INFINITY;
+	let bestX = 0;
+	let bestZ = 0;
 	for (let i = -1; i <= 1; i++)
-		for (let j = -1; j <= 1; j++)
-			for (const w of wallsByCell.get(lookupKey(x + i * LOOKUP, z + j * LOOKUP)) ?? []) {
-				const [dx, dz] = [w.bx - w.ax, w.bz - w.az];
+		for (let j = -1; j <= 1; j++) {
+			const walls = wallsByCell.get(lookupKey(x + i * LOOKUP, z + j * LOOKUP));
+			if (!walls) continue;
+			for (const w of walls) {
+				const dx = w.bx - w.ax;
+				const dz = w.bz - w.az;
 				const t = Math.max(
 					0,
 					Math.min(1, ((x - w.ax) * dx + (z - w.az) * dz) / (dx * dx + dz * dz || 1)),
 				);
-				const [ox, oz] = [x - w.ax - dx * t, z - w.az - dz * t];
+				const ox = x - w.ax - dx * t;
+				const oz = z - w.az - dz * t;
 				const d = hypot(ox, oz);
-				if (d < best.d) best = { d, nx: d ? ox / d : 0, nz: d ? oz / d : 0 };
+				if (d < bestD) {
+					bestD = d;
+					bestX = d ? ox / d : 0;
+					bestZ = d ? oz / d : 0;
+				}
 			}
-	return best;
+		}
+	return { d: bestD, nx: bestX, nz: bestZ };
 }
 
 /** A place moved just clear of the terrace wall it stands on, so a tree's trunk does not rise through it. */
@@ -804,8 +868,9 @@ function inParkSightLine(x: number, z: number): boolean {
 	return Math.abs((x - ex) * dz - (z - ez) * dx) < near + Math.max(0, along) * spread;
 }
 
-/** The trees. A preset draws a share of each. */
-export const TREE_SPOTS: readonly TreeSpot[] = (() => {
+/** Places the trees, with an olive near each of the terraces' olive places. */
+function placeTrees(terraceOlives: readonly (readonly [number, number])[]): TreeSpot[] {
+	const natural = naturalGrid();
 	// Each group of trees draws from a seed of its own place, so a change to a house moves the trees
 	// beside it and no others.
 	let next = random(631);
@@ -896,7 +961,7 @@ export const TREE_SPOTS: readonly TreeSpot[] = (() => {
 			add(next() < 0.5 ? OLIVE : OAK, x, z, 6);
 		}
 	}
-	for (const [x, z] of TERRACE_OLIVES) {
+	for (const [x, z] of terraceOlives) {
 		seedAt(x * 100, z * 100);
 		const [ox, oz] = offTerraceWall(x + (next() - 0.5) * 1.2, z + (next() - 0.5) * 1.2);
 		add(OLIVE, ox, oz, TERRACE_OLIVE_GAP);
@@ -989,7 +1054,7 @@ export const TREE_SPOTS: readonly TreeSpot[] = (() => {
 			const pick = next();
 			const high = naturalHeight(x, z);
 			// Dark cypress fills the gullies, and paler olive covers the ridges.
-			const fold = (around(x, z) - read(natural, x, z)) / FOLD_DEPTH;
+			const fold = foldAt(natural, x, z);
 			const cypressShare = Math.max(
 				0.05,
 				Math.min(0.85, (dark > 0.08 ? 0.45 : high > 90 ? 0.22 : 0.1) + fold),
@@ -1000,7 +1065,7 @@ export const TREE_SPOTS: readonly TreeSpot[] = (() => {
 			else add(OAK, x, z, 3.4);
 		}
 	return spots;
-})();
+}
 
 /** The side of a cell of the far canopy's grid, in meters, and how far from a house's plot it stays. */
 const FILL_CELL = 5;
@@ -1010,7 +1075,8 @@ const FILL_CELL = 5;
  * above for little cost. Close up, the plan's full trees stand on their own. Below a house on a hillside
  * only low ones stand, so its roof still shows from the sea.
  */
-export const FILL_SPOTS: readonly TreeSpot[] = (() => {
+function placeFills(): TreeSpot[] {
+	const natural = naturalGrid();
 	const next = random(733);
 	const spots: TreeSpot[] = [];
 	const across = Math.ceil(GROUND / 2 / FILL_CELL);
@@ -1026,7 +1092,7 @@ export const FILL_SPOTS: readonly TreeSpot[] = (() => {
 			const y = groundHeight(x, z);
 			if (y < 2 || slopeAt(x, z) > 4.5 || onHilltop(x, z)) continue;
 			if (inWater(x, z)) continue;
-			const fold = (around(x, z) - read(natural, x, z)) / FOLD_DEPTH;
+			const fold = foldAt(natural, x, z);
 			const kind = pick < 0.2 + fold * 0.6 ? CYPRESS : pick > 0.85 + fold ? OLIVE : OAK;
 			if (inParkSightLine(x, z)) continue;
 			const low = inView(x, z);
@@ -1040,7 +1106,7 @@ export const FILL_SPOTS: readonly TreeSpot[] = (() => {
 			});
 		}
 	return spots;
-})();
+}
 
 /**
  * The spots that stand at a share of the plan, each by a hash of its place in the list, so a larger
@@ -1091,11 +1157,11 @@ const CANOPY_FULL = 1.2;
 const OLIVE_SHADE = 0.7;
 const CANOPY_SIDE = Math.ceil(GROUND / CANOPY_CELL) + 1;
 
-/** How much of the ground at each cell lies under trees, from 0 to 1, spread a little. */
-const canopy = (() => {
+/** How much of the ground at each cell lies under the trees given, from 0 to 1, spread a little. */
+function shadeCanopy(lists: readonly (readonly TreeSpot[])[]): Float32Array {
 	const count = new Float32Array(CANOPY_SIDE * CANOPY_SIDE);
 	const cell = (v: number) => Math.round((v + GROUND / 2) / CANOPY_CELL);
-	for (const list of [TREE_SPOTS, FILL_SPOTS])
+	for (const list of lists)
 		for (const { x, z, kind } of list) {
 			const at = cell(z) * CANOPY_SIDE + cell(x);
 			count[at] = (count[at] ?? 0) + (kind === OLIVE ? OLIVE_SHADE : 1);
@@ -1109,10 +1175,11 @@ const canopy = (() => {
 			out[j * CANOPY_SIDE + i] = Math.min(1, sum / 9 / CANOPY_FULL);
 		}
 	return out;
-})();
+}
 
 /** How much of the ground at a point lies under trees, from 0 to 1. */
 export function canopyAt(x: number, z: number): number {
+	const { canopy } = growPlan();
 	const u = Math.min(CANOPY_SIDE - 1.001, Math.max(0, (x + GROUND / 2) / CANOPY_CELL));
 	const v = Math.min(CANOPY_SIDE - 1.001, Math.max(0, (z + GROUND / 2) / CANOPY_CELL));
 	// Scalars, not destructured pairs, so a read in every frame makes no array.
@@ -1127,8 +1194,8 @@ export function canopyAt(x: number, z: number): number {
 	return top * (1 - t) + bottom * t;
 }
 
-/** The shrubs and climbing flowers of the plots and the roadsides. */
-export const SHRUBS: readonly ShrubSpot[] = (() => {
+/** Places the shrubs and climbing flowers of the plots and the roadsides. */
+function placeShrubs(): ShrubSpot[] {
 	const next = random(211);
 	const spots: ShrubSpot[] = [];
 	const add = (x: number, z: number, scale: number, flower: boolean) => {
@@ -1201,7 +1268,52 @@ export const SHRUBS: readonly ShrubSpot[] = (() => {
 			if (next() < drift) add(x, z, 0.8 + next() * 1.4, false);
 		}
 	return spots;
-})();
+}
+
+/** What the plan grows around its roads and plots: the terraces, the trees and the shrubs. */
+interface Grown {
+	readonly terraces: readonly TerraceWall[];
+	readonly trees: readonly TreeSpot[];
+	readonly fills: readonly TreeSpot[];
+	readonly shrubs: readonly ShrubSpot[];
+	/** How much of the ground at each cell of the canopy's grid lies under trees. */
+	readonly canopy: Float32Array;
+}
+let grown: Grown | undefined;
+
+/** Grows the plan the first time a reader asks, in the order each step reads the one before. */
+function growPlan(): Grown {
+	if (grown) return grown;
+	bakeStored();
+	taken = markPlots();
+	const { walls, olives } = layTerraces();
+	terraced = markTerraced(walls);
+	viewed = markViewed();
+	wallsByCell = listWalls(walls);
+	const trees = placeTrees(olives);
+	const fills = placeFills();
+	grown = {
+		terraces: walls,
+		trees,
+		fills,
+		shrubs: placeShrubs(),
+		canopy: shadeCanopy([trees, fills]),
+	};
+	return grown;
+}
+
+/** The dry stone walls of the terraces. */
+export const terraceWalls = (): readonly TerraceWall[] => growPlan().terraces;
+/** The trees. A preset draws a share of each. */
+export const treeSpots = (): readonly TreeSpot[] => growPlan().trees;
+/**
+ * The far canopy: trees that show only from afar, as cards, so the slopes read as closed forest from
+ * above for little cost. Close up, the plan's full trees stand on their own. Below a house on a
+ * hillside only low ones stand, so its roof still shows from the sea.
+ */
+export const fillSpots = (): readonly TreeSpot[] => growPlan().fills;
+/** The shrubs and climbing flowers of the plots and the roadsides. */
+export const shrubSpots = (): readonly ShrubSpot[] => growPlan().shrubs;
 
 /** The fingerprint of the stored plan, which the plan tests and the browser test both hold it to. */
 export const PLAN_FINGERPRINT = 2604729754;
@@ -1225,10 +1337,10 @@ export function planFingerprint(): number {
 	}
 	for (const { x, y, z, yaw, kind, garden } of LOTS)
 		for (const v of [x, y, z, yaw, kind, garden]) add(v);
-	for (const { kind, x, y, z } of [...TREE_SPOTS, ...FILL_SPOTS])
-		for (const v of [kind, x, y, z]) add(v);
-	for (const { x, y, z } of SHRUBS) for (const v of [x, y, z]) add(v);
-	for (const { ax, ay, az } of TERRACES) for (const v of [ax, ay, az]) add(v);
+	const { trees, fills, shrubs, terraces } = growPlan();
+	for (const { kind, x, y, z } of [...trees, ...fills]) for (const v of [kind, x, y, z]) add(v);
+	for (const { x, y, z } of shrubs) for (const v of [x, y, z]) add(v);
+	for (const { ax, ay, az } of terraces) for (const v of [ax, ay, az]) add(v);
 	for (let x = -880; x <= 880; x += 40)
 		for (let z = -880; z <= 880; z += 40) add(groundHeight(x, z));
 	return hash;

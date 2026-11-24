@@ -80,6 +80,7 @@ run('still', async () => {
 		antialias: 'none',
 	});
 	await engine.firstFrame;
+	await engine.presetChecked;
 	const slots = engineSlots();
 	if (!slots) throw new Error('the engine handed no control block to a worker');
 	const first = await rest(slots);

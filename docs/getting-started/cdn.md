@@ -40,6 +40,8 @@ Give every file a CORS header, because the engine imports its modules and downlo
 Access-Control-Allow-Origin: *
 ```
 
+Send each `.wasm` file with `Content-Type: application/wasm`, with nothing after it, and let browsers keep the files. Chrome then keeps the compiled engine core, and a repeat visit skips most of its compile ([Let Chrome keep the compiled core](hosting.md#let-chrome-keep-the-compiled-core)). The folder's file names hold no hash of their content. So upload each engine version under a prefix of its own, such as `https://cdn.example.com/null3d/0.1.0/`. Then serve its files with `Cache-Control: public, max-age=31536000, immutable`, so a repeat visit takes them from the browser's cache.
+
 ## Production and development entries
 
 The build holds the engine's entry point twice. Both draw the same scene. They differ in the checks that run and in the switches that the page's address can set.
@@ -109,6 +111,20 @@ export default defineSketch(({ scene, geometry, materials }) => {
 The sketch is a module at a `blob:` address, which the page makes from the string. It imports the engine from the CDN by its full address. That works in a worker too, where a page's import map does not reach.
 
 The page imports the production entry. While you work on the page, change both `lib/index.js` addresses to `lib-dev/index.js`, so the development checks run and their errors name your mistakes.
+
+## Start the core early
+
+The engine core is the start's largest file. A page built with Vite and the null3D plugin starts the core's download from a small script in its head. That script runs before the page's own scripts. A page with no build step adds that script itself, as the first tag in its head:
+
+```html
+<script type="module" async src="https://cdn.example.com/null3d/lib/page/early-core.js"></script>
+```
+
+The script picks the build that `createEngine` will pick, and starts its download. The engine takes that download when it starts, so the core does not wait for the page's own scripts. Take the script from the page's entry: `lib-dev/page/early-core.js` with the development entry.
+
+The build loads the engine as many small modules, and each thread finds them in several rounds of imports, one after another. So a page with no build step starts more slowly than a Vite build. Serve the folder over HTTP/2 or HTTP/3, as most CDNs do, so each round's requests go out at once.
+
+Give the folder the headers of [Make the CDN build](#make-the-cdn-build) above, so a repeat visit downloads none of it. [A fast start](../guides/start-time.md) gives the other steps.
 
 ## Import maps
 

@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'bun:test';
 import { type WarmUpResult, warmUpProblems } from './warm-up-checks.ts';
 
-/** A warm-up page's result in which only the pipelines that the two presets imply were built. */
+/**
+ * A warm-up page's result in which only the pipelines that the two presets imply were built, with
+ * the depth prepass setting that the page reports outside the lowest tier.
+ */
 function result(
 	directDraws: boolean,
 	firstFramePipelines: number,
@@ -23,6 +26,7 @@ function result(
 				: tier === 'webgl2'
 					? 2
 					: 1,
+		depthPrepass: tier === 'webgl2',
 		afterPipelines: 0,
 		magenta: 100,
 		failures: [],
@@ -51,6 +55,28 @@ describe('warmUpProblems', () => {
 		// Had it warmed up at High, its depth pipeline would be one of the three it builds.
 		expect(warmUpProblems({ ...result(false, 38), addedPipelines: 1 }, 'webgpu')).toEqual([
 			"the added object built 1 pipelines at 'high', not 3",
+		]);
+	});
+
+	it('counts the depth pipeline wherever the screen texture reads depth, whatever the setting', () => {
+		// WebGPU's setting is off at every preset, and the bounce light's screen texture draws the
+		// prepass at High: the quad builds its opaque, prepass and occluder pipelines.
+		expect(warmUpProblems({ ...result(false, 38), depthPrepass: false }, 'webgpu')).toEqual([]);
+		expect(
+			warmUpProblems({ ...result(false, 38), depthPrepass: false, addedPipelines: 1 }, 'webgpu'),
+		).toEqual(["the added object built 1 pipelines at 'high', not 3"]);
+		// The lowest tier turns WebGL2's setting off. At Low nothing else reads depth, so the quad
+		// builds its opaque pipeline alone.
+		const lowest = { ...result(false, 22, 'low', 'webgl2'), depthPrepass: false };
+		expect(warmUpProblems({ ...lowest, addedPipelines: 1 }, 'webgl2')).toEqual([]);
+		expect(warmUpProblems(lowest, 'webgl2')).toEqual([
+			"the added object built 2 pipelines at 'low', not 1",
+		]);
+		// From WebGL2's Medium up, the bounce light still draws the prepass in the lowest tier.
+		const lit = { ...result(false, 28, 'medium', 'webgl2'), depthPrepass: false };
+		expect(warmUpProblems(lit, 'webgl2')).toEqual([]);
+		expect(warmUpProblems({ ...lit, addedPipelines: 1 }, 'webgl2')).toEqual([
+			"the added object built 1 pipelines at 'medium', not 2",
 		]);
 	});
 

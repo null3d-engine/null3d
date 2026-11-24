@@ -241,11 +241,11 @@ fn a_view_added_later_draws_from_its_own_rings_without_a_rebuild() {
         "one camera, one visible set"
     );
     assert_eq!(render_passes(&commands).len(), 2);
-    // Its index list textures, draw records and frame uniforms are new. So are its target, the
-    // white texel that its texture shows until the target exists, and the targets of the plan
-    // that the new pass changes. The data textures that every view reads and the camera view's
-    // rings are not.
-    assert_eq!(count(&commands, Op::CreateTexture), 8);
+    // Its three index list textures and its two targets are new, and so is the white texel that
+    // its texture shows until the target exists. The camera's targets keep their textures, though
+    // the plan now lists them after the new view's, and the data textures that every view reads
+    // and the camera view's rings are not made again either.
+    assert_eq!(count(&commands, Op::CreateTexture), 6);
     assert_eq!(count(&commands, Op::CreateRenderPipeline), 0);
     assert!(texture_writes(&commands, RESIDENT).is_empty());
     // A new ring lists into the slot after slot 0, as the camera's did in the first frame.

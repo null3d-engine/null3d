@@ -54,6 +54,7 @@ async function start(gpuOcclusion: boolean): Promise<Engine> {
 		gpuOcclusion,
 	});
 	await engine.firstFrame;
+	await engine.presetChecked;
 	return engine;
 }
 

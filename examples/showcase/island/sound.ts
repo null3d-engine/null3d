@@ -19,9 +19,9 @@ import { createSound, type Sound, type SoundGroup, type SoundLoop } from '@null3
 import type { Wind } from '@null3d/wind';
 import { sampleUrl } from '../../lib/samples';
 import { SOUND_GAIN } from '../../lib/sound-gain';
-import { FOUNTAIN_WATER, groundHeight } from './ground';
+import { FOUNTAIN_WATER } from './ground';
 import { BAY, beachShare, inland, SEA_LEVEL } from './island';
-import { canopyAt } from './plan';
+import { canopyAt, groundHeight } from './plan';
 
 /** The directions from the island's middle that the sea's points stand along. */
 const SEA_POINTS = 48;

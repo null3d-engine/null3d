@@ -151,7 +151,7 @@ import {
 } from '../generated/gpu';
 import type { ShaderVariants } from '../generated/shaders';
 import type { CustomShader } from '../shared/images';
-import { planEnded, planStarted } from '../shared/task-pending';
+import { planEnded, planStarted, planTurn } from '../shared/task-pending';
 import type { WgslUpdate } from '../shared/wgsl-updates';
 import { type ColorInput, linearColor, writeLinearColor } from './color';
 import type { SceneInput } from './features';
@@ -744,6 +744,8 @@ export class MeshGeometry {
 					call,
 					levelsError,
 				);
+				// Hold mode hands the plans' levels over in the order the plans started.
+				await planTurn(counted);
 				return await this.takePlan(output, plan, entry, call);
 			} catch (error) {
 				if (plan === this.plans) this.planning = undefined;
@@ -4466,6 +4468,9 @@ export class Materials {
 			this.shaders.need('color_copy');
 		} else if (features & MATERIAL_FEATURE_TRANSLUCENCY) this.shaders.need('translucency');
 		if (features & MATERIAL_FEATURE_COAT_SHEEN) this.shaders.need('coat_sheen');
+		// An opaque object brings the passes that the device and the preset draw over the scene's
+		// opaque surfaces, such as occlusion culling and the bounce light.
+		if (options.alphaMode !== 'blend') this.shaders.needPasses();
 		// So do the builds of the weighted layer.
 		if (options.alphaMode === 'blend' && options.blending === 'weighted')
 			this.shaders.need('weighted');

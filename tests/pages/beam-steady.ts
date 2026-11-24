@@ -15,3 +15,4 @@ if (params.get('volumetric') === 'off') sketch.searchParams.set('volumetric', 'o
 const engine = await createEngine({ canvas, sketch, maxPixelRatio: 1 });
 (globalThis as { __null3dEngine?: unknown }).__null3dEngine = engine;
 await engine.firstFrame;
+await engine.presetChecked;

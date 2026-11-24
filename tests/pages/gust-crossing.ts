@@ -60,6 +60,7 @@ run('gust-crossing', async () => {
 		maxPixelRatio: 1,
 	});
 	await engine.firstFrame;
+	await engine.presetChecked;
 	progress('the first frame drew');
 	const reply = await new Promise<GustReply>((resolve, reject) => {
 		const timer = setTimeout(() => reject(new Error('the gust was not read in 20 s')), 20_000);

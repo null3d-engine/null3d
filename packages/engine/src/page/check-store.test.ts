@@ -4,6 +4,8 @@ import type { CapabilityReport } from './capabilities';
 import {
 	CheckStore,
 	checkConditions,
+	checkEnded,
+	checkedPreset,
 	reusableCheck,
 	STORED_CHECK_AREA_RATIO,
 	STORED_CHECK_MS,
@@ -118,6 +120,70 @@ describe('CheckStore', () => {
 		expect(() => store(storage).save(CHECK, 60, NOW)).not.toThrow();
 		expect(store(storage).read(NOW)).toBeUndefined();
 		expect(new CheckStore(SKETCH, CONDITIONS, AREA, undefined).read(NOW)).toBeUndefined();
+	});
+});
+
+describe('a check that has not ended', () => {
+	/** The rounds of the check above when the page closed during its Medium round. */
+	const SO_FAR: PresetCheck = { ...CHECK, rounds: CHECK.rounds.slice(0, 1) };
+
+	it('ends at a round that holds the target, or at Low', () => {
+		expect(checkEnded(CHECK)).toBe(true);
+		expect(checkEnded(SO_FAR)).toBe(false);
+		const low = { preset: 'low', presentedFps: 20, completedFps: 20 } as const;
+		expect(checkEnded({ ...CHECK, rounds: [...SO_FAR.rounds, { ...low, preset: 'medium' }] })).toBe(
+			false,
+		);
+		expect(checkEnded({ ...CHECK, rounds: [...SO_FAR.rounds, low] })).toBe(true);
+	});
+
+	it('leaves the engine at the preset that it lowered to', () => {
+		expect(checkedPreset(CHECK)).toBe('medium');
+		expect(checkedPreset(SO_FAR)).toBe('medium');
+		expect(checkedPreset({ ...SO_FAR, rounds: [] })).toBe('high');
+	});
+
+	it('keeps its rounds for a later start, until the result replaces them', () => {
+		const { storage } = memoryStorage();
+		store(storage).save(SO_FAR, 60, NOW);
+		expect(store(storage).read(NOW + 1000)).toEqual({ ...SO_FAR, reused: true });
+		store(storage).save(CHECK, 60, NOW + 2000);
+		expect(store(storage).read(NOW + 3000)).toEqual({ ...CHECK, reused: true });
+	});
+
+	it('gives a stored check without a tier, whatever the stored text holds', () => {
+		const { items, storage } = memoryStorage();
+		const atLow: PresetCheck = {
+			from: 'medium',
+			targetFps: 60,
+			rounds: [
+				{ preset: 'medium', presentedFps: 4, completedFps: 4 },
+				{ preset: 'low', presentedFps: 9, completedFps: 9 },
+			],
+			reused: false,
+		};
+		store(storage).save(atLow, 60, NOW);
+		expect(checkEnded(atLow)).toBe(true);
+		// A result that an earlier build stored with the tier starts at Low alone.
+		const [key, text] = [...items][0] as [string, string];
+		const stored = JSON.parse(text);
+		stored.check.lowest = true;
+		items.set(key, JSON.stringify(stored));
+		expect(store(storage).read(NOW)).toEqual({ ...atLow, reused: true });
+	});
+
+	it('leaves the engine at Low after a round far below the target', () => {
+		const far: PresetCheck = {
+			...SO_FAR,
+			rounds: [{ preset: 'high', presentedFps: 9, completedFps: 9 }],
+		};
+		expect(checkedPreset(far)).toBe('low');
+	});
+
+	it('keeps no rounds measured against a lowered target', () => {
+		const { items, storage } = memoryStorage();
+		store(storage).save({ ...SO_FAR, targetFps: 30 }, 60, NOW);
+		expect(items.size).toBe(0);
 	});
 });
 

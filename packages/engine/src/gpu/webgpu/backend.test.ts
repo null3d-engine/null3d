@@ -294,6 +294,181 @@ describe('WebGPUBackend', () => {
 		expect(backend.counts.dispatches).toBe(1);
 	});
 
+	it('lists the pipelines that the lists before the first frame create, once', async () => {
+		const { device } = fakeDevice();
+		const backend = new WebGPUBackend(device, undefined, 'rgba8unorm', SHADERS);
+		await settle();
+		const words = drawList(
+			[G.OP_CREATE_COMPUTE_PIPELINE, 1, G.TEMPLATE_SKIN, 0],
+			[G.OP_CREATE_COMPUTE_PIPELINE, 2, G.TEMPLATE_CULL, 0],
+		);
+		backend.prepare(words, 0, words.length);
+		expect(Array.from(backend.takeListing() ?? [])).toEqual([
+			G.OP_CREATE_COMPUTE_PIPELINE,
+			G.TEMPLATE_SKIN,
+			0,
+			G.OP_CREATE_COMPUTE_PIPELINE,
+			G.TEMPLATE_CULL,
+			0,
+		]);
+		// After the first frame, the lists create pipelines that no list keeps.
+		backend.prepare(drawList([G.OP_CREATE_COMPUTE_PIPELINE, 3, G.TEMPLATE_CULL, 0]), 0, 4);
+		expect(backend.takeListing()).toBeUndefined();
+	});
+
+	it('builds a stored list ahead of its commands, which take the builds instead of building again', async () => {
+		const { device, log } = fakeDevice();
+		const backend = new WebGPUBackend(device, undefined, 'rgba8unorm', SHADERS);
+		await settle();
+		log.length = 0;
+		backend.buildEarly(Uint32Array.of(G.OP_CREATE_COMPUTE_PIPELINE, G.TEMPLATE_SKIN, 0));
+		expect(log).toEqual(['background build compute']);
+		await settle();
+		const words = drawList(
+			[G.OP_CREATE_COMPUTE_PIPELINE, 1, G.TEMPLATE_SKIN, 0],
+			[G.OP_CREATE_COMPUTE_PIPELINE, 2, G.TEMPLATE_CULL, 0],
+			[G.OP_BEGIN_COMPUTE_PASS],
+			[G.OP_SET_COMPUTE_PIPELINE, 1],
+			[G.OP_DISPATCH, 2, 1, 1],
+			[G.OP_END_COMPUTE_PASS],
+		);
+		const from = backend.prepare(words, 0, words.length);
+		// The listed pipeline is built already, and the other one builds now.
+		expect(log).toEqual(['background build compute', 'background build compute']);
+		expect(backend.counts.pipelines).toBe(2);
+		await settle();
+		expect(backend.building).toBe(false);
+		replayFrom(backend, words, from);
+		expect(log.filter((entry) => entry.startsWith('dispatch'))).toEqual(['dispatch 2 x 1 x 1']);
+	});
+
+	it('waits for a listed build that is still running when its command comes', async () => {
+		const { device, log } = fakeDevice();
+		let finish: (pipeline: unknown) => void = () => {};
+		const later = new Promise((resolve) => {
+			finish = resolve;
+		});
+		const backend = new WebGPUBackend(device, undefined, 'rgba8unorm', SHADERS);
+		await settle();
+		(
+			device as unknown as { createComputePipelineAsync: () => Promise<unknown> }
+		).createComputePipelineAsync = () => {
+			log.push('slow build compute');
+			return later;
+		};
+		log.length = 0;
+		backend.buildEarly(Uint32Array.of(G.OP_CREATE_COMPUTE_PIPELINE, G.TEMPLATE_SKIN, 0));
+		const words = drawList([G.OP_CREATE_COMPUTE_PIPELINE, 1, G.TEMPLATE_SKIN, 0]);
+		backend.prepare(words, 0, words.length);
+		expect(log).toEqual(['slow build compute']);
+		expect(backend.building).toBe(true);
+		finish({ getBindGroupLayout: () => ({}) });
+		await settle();
+		expect(backend.building).toBe(false);
+	});
+
+	it('builds a stored list of a custom shader once the shader arrives, and drops what no command took', async () => {
+		const { device, log } = fakeDevice();
+		const images = new ImageTable();
+		const backend = new WebGPUBackend(device, undefined, 'rgba8unorm', SHADERS, undefined, images);
+		await settle();
+		log.length = 0;
+		backend.buildEarly(
+			Uint32Array.of(
+				G.OP_CREATE_COMPUTE_PIPELINE,
+				SHADING_CUSTOM_FIRST,
+				G.FORMAT_RGBA16_FLOAT,
+				G.OP_CREATE_COMPUTE_PIPELINE,
+				G.TEMPLATE_CULL,
+				0,
+			),
+		);
+		expect(log).toEqual(['background build compute']);
+		images.setShader(SHADING_CUSTOM_FIRST, {
+			kind: 'compute',
+			variants: {
+				compute: {
+					permutation: 0,
+					wgsl: { source: '@compute @workgroup_size(1) fn main() {}', pipelines: {} },
+					glsl: null,
+				},
+			},
+			locations: [],
+			textures: 0,
+		});
+		await new Promise((resolve) => setTimeout(resolve, 60));
+		expect(log).toEqual(['background build compute', 'background build compute']);
+		// The first frame drew without the culling pipeline, whose listed build no command takes.
+		backend.takeListing();
+		log.length = 0;
+		const words = drawList([G.OP_CREATE_COMPUTE_PIPELINE, 1, G.TEMPLATE_CULL, 0]);
+		backend.prepare(words, 0, words.length);
+		expect(log).toEqual(['background build compute']);
+	});
+
+	it('builds a pipeline that a list before the first frame creates after other commands in the background', async () => {
+		const { device, log } = fakeDevice();
+		const backend = new WebGPUBackend(device, undefined, 'rgba8unorm', SHADERS);
+		await settle();
+		log.length = 0;
+		const words = drawList(
+			[G.OP_BEGIN_COMPUTE_PASS],
+			[G.OP_CREATE_COMPUTE_PIPELINE, 1, G.TEMPLATE_SKIN, 0],
+			[G.OP_SET_COMPUTE_PIPELINE, 1],
+			[G.OP_DISPATCH, 2, 1, 1],
+			[G.OP_END_COMPUTE_PASS],
+		);
+		const from = backend.prepare(words, 0, words.length);
+		expect(log).toEqual(['background build compute']);
+		// The frame waits for it, as for the pipelines at the list's front.
+		expect(backend.building).toBe(true);
+		await settle();
+		expect(backend.building).toBe(false);
+		replayFrom(backend, words, from);
+		const builtOrDispatched = () =>
+			log.filter((entry) => entry.includes('build') || entry.startsWith('dispatch'));
+		expect(builtOrDispatched()).toEqual(['background build compute', 'dispatch 2 x 1 x 1']);
+		// After the first frame, such a command builds its pipeline at once, as the replay needs it.
+		backend.takeListing();
+		log.length = 0;
+		const later = drawList(
+			[G.OP_BEGIN_COMPUTE_PASS],
+			[G.OP_CREATE_COMPUTE_PIPELINE, 2, G.TEMPLATE_CULL, 0],
+			[G.OP_END_COMPUTE_PASS],
+		);
+		replayFrom(backend, later, backend.prepare(later, 0, later.length));
+		expect(builtOrDispatched()).toEqual(['build compute']);
+	});
+
+	it('builds equal pipelines that a list creates after other commands once, for every id', async () => {
+		const { device, log } = fakeDevice();
+		const backend = new WebGPUBackend(device, undefined, 'rgba8unorm', SHADERS);
+		await settle();
+		log.length = 0;
+		const words = drawList(
+			[G.OP_BEGIN_COMPUTE_PASS],
+			[G.OP_CREATE_COMPUTE_PIPELINE, 1, G.TEMPLATE_SKIN, 0],
+			[G.OP_CREATE_COMPUTE_PIPELINE, 2, G.TEMPLATE_SKIN, 0],
+			[G.OP_SET_COMPUTE_PIPELINE, 2],
+			[G.OP_DISPATCH, 1, 1, 1],
+			[G.OP_END_COMPUTE_PASS],
+		);
+		const from = backend.prepare(words, 0, words.length);
+		expect(log).toEqual(['background build compute']);
+		await settle();
+		replayFrom(backend, words, from);
+		expect(log.filter((entry) => entry.includes('build') || entry.startsWith('dispatch'))).toEqual([
+			'background build compute',
+			'dispatch 1 x 1 x 1',
+		]);
+		// The list of the first frame names the pipeline once.
+		expect(Array.from(backend.takeListing() ?? [])).toEqual([
+			G.OP_CREATE_COMPUTE_PIPELINE,
+			G.TEMPLATE_SKIN,
+			0,
+		]);
+	});
+
 	it('draws a capture of a frame that resolves into the canvas into color targets of its own', () => {
 		const { device, passes, textures } = fakeDevice();
 		const canvas = device.createTexture({ size: [64, 64], format: 'rgba8unorm', usage: 0 });
@@ -719,5 +894,123 @@ describe('WebGPUBackend', () => {
 		replay(backend, drawList([G.OP_DESTROY_BUFFER, 3]));
 		await settle();
 		expect(slots[5]).toBe(1);
+	});
+});
+
+/** The error of a build that the GPU's driver refused, as Chrome's `GPUPipelineError` gives it. */
+const refusal = (reason: 'internal' | 'validation') =>
+	Object.assign(new Error('CreateGraphicsPipelines failed with VK_ERROR_UNKNOWN\n    at Check'), {
+		reason,
+	});
+
+/**
+ * A backend whose device refuses the first `refused` render pipelines that it builds after the
+ * start, with `reason`, and the list of a frame that creates pipeline 1 of `template` and draws
+ * with it once.
+ */
+async function refusingBackend(
+	refused: number,
+	reason: 'internal' | 'validation',
+	template: number,
+) {
+	const { device } = fakeDevice();
+	const backend = new WebGPUBackend(device, undefined, 'rgba8unorm', SHADERS);
+	backend.canvasTarget = { createView: () => ({}) } as unknown as GPUTexture;
+	await settle();
+	const built = { count: 0 };
+	let refusals = refused;
+	device.createRenderPipelineAsync = (() => {
+		built.count++;
+		return refusals-- > 0
+			? Promise.reject(refusal(reason))
+			: Promise.resolve({ getBindGroupLayout: () => ({}) });
+	}) as unknown as GPUDevice['createRenderPipelineAsync'];
+	const reports: [string, string][] = [];
+	backend.refused = (pipeline, why) => reports.push([pipeline, why]);
+	const words = drawList(
+		[
+			G.OP_CREATE_RENDER_PIPELINE,
+			...[1, template, 0, G.FORMAT_RGBA8_UNORM, G.FORMAT_DEPTH32_FLOAT, 1, 0, G.VERTEX_ALL, 0, 0],
+		],
+		[G.OP_BEGIN_RENDER_PASS, ...[0, G.NO_TARGET, G.NO_TARGET, 0, 0, 0, 0, 0, G.PASS_CLEAR_COLOR]],
+		[G.OP_SET_PIPELINE, 1],
+		[G.OP_DRAW, 3, 1, 0, 0],
+		[G.OP_END_RENDER_PASS],
+	);
+	const from = backend.prepare(words, 0, words.length);
+	return { backend, built, reports, words, from };
+}
+
+describe('WebGPUBackend, when the GPU driver refuses a pipeline', () => {
+	it("builds a pipeline of the scene's objects once more, alone, and draws with it", async () => {
+		const { backend, built, reports, words, from } = await refusingBackend(
+			1,
+			'internal',
+			G.TEMPLATE_INSTANCED_LIT,
+		);
+		await settle();
+		expect(built.count).toBe(1);
+		// The refused pipeline still counts as building, and the next check starts its retry once no
+		// other build runs.
+		expect(backend.building).toBe(true);
+		expect(built.count).toBe(2);
+		await settle();
+		expect(backend.building).toBe(false);
+		replayFrom(backend, words, from);
+		expect(backend.counts.drawCalls).toBe(1);
+		expect(reports).toEqual([]);
+	});
+
+	it('skips the draws of a pipeline that it refused twice, reports it once, and draws on', async () => {
+		const { backend, built, reports, words, from } = await refusingBackend(
+			2,
+			'internal',
+			G.TEMPLATE_INSTANCED_LIT,
+		);
+		await settle();
+		expect(backend.building).toBe(true);
+		await settle();
+		expect(built.count).toBe(2);
+		// The frames no longer wait for it, and its draws draw nothing.
+		expect(backend.building).toBe(false);
+		replayFrom(backend, words, from);
+		replayFrom(backend, words, from);
+		expect(backend.counts.drawCalls).toBe(0);
+		expect(backend.counts.skippedDraws).toBe(2);
+		expect(reports).toEqual([
+			[
+				'engine template mesh lit',
+				'CreateGraphicsPipelines failed with VK_ERROR_UNKNOWN\n    at Check',
+			],
+		]);
+	});
+
+	it('forgets the retry of a pipeline that the list destroys before it builds again', async () => {
+		const { backend, built, reports } = await refusingBackend(
+			1,
+			'internal',
+			G.TEMPLATE_INSTANCED_LIT,
+		);
+		await settle();
+		replay(backend, drawList([G.OP_DESTROY_PIPELINE, 1]));
+		expect(backend.building).toBe(false);
+		expect(built.count).toBe(1);
+		expect(reports).toEqual([]);
+	});
+
+	it("stops the replays at a refusal by the browser's validation, or of a pass of the frame's own", async () => {
+		for (const [reason, template] of [
+			['validation', G.TEMPLATE_INSTANCED_LIT],
+			['internal', G.TEMPLATE_FINAL],
+		] as const) {
+			const { backend, built, reports, words, from } = await refusingBackend(1, reason, template);
+			await settle();
+			expect(backend.building).toBe(false);
+			expect(built.count).toBe(1);
+			expect(() => replayFrom(backend, words, from)).toThrow(
+				'a pipeline failed to build: CreateGraphicsPipelines failed with VK_ERROR_UNKNOWN',
+			);
+			expect(reports).toEqual([]);
+		}
 	});
 });

@@ -4,6 +4,8 @@ import { ERROR_FIXES } from '../errors/fixes';
 import {
 	checkedSettings,
 	LIVE_SETTINGS,
+	LOWEST_TIER_SCALE,
+	lowestTierSettings,
 	presetSettings,
 	type QualityPreset,
 	type QualitySettingName,
@@ -167,6 +169,21 @@ describe('SketchQuality', () => {
 		expect(quality.takeChange()).toBe(RESTART_CHANGE);
 	});
 
+	it("tells the page of the check's rounds so far with the check's lower preset", async () => {
+		const { quality, applied } = medium();
+		const soFar = {
+			from: 'medium',
+			targetFps: 60,
+			rounds: [{ preset: 'medium', presentedFps: 40, completedFps: 40 }],
+			reused: false,
+		} as const;
+		await quality.lower({ ...soFar, rounds: [...soFar.rounds] });
+		expect(applied.at(-1)?.preset).toBe('low');
+		expect(applied.at(-1)?.check).toEqual({ ...soFar, rounds: [...soFar.rounds] });
+		// The lowering does not end the check.
+		expect(applied.at(-1)?.checked).toBeUndefined();
+	});
+
 	it("keeps the lower preset's anti-aliasing mode when a later setPreset changes the preset", async () => {
 		const { quality } = medium();
 		await quality.lower();
@@ -188,6 +205,41 @@ describe('SketchQuality', () => {
 		expect(quality.preset).toBe('low');
 		// A device can move to a lighter mode while it runs, so the check's lower preset gives it.
 		expect(quality.settings.antialias).toBe('fxaa');
+	});
+
+	it("raises the lowest tier's cap of the render scale to a floor that the sketch sets itself", async () => {
+		const tier = lowestTierSettings('webgpu');
+		const inTier = {
+			steps: 0,
+			farCascadeInterval: MEDIUM.farCascadeInterval,
+			shadowFilter: MEDIUM.shadowFilter,
+			bloomSize: MEDIUM.bloomSize,
+			aoScale: MEDIUM.aoScale,
+			ssrScale: MEDIUM.ssrScale,
+			contactShadowSteps: MEDIUM.contactShadowSteps,
+			farAnimationInterval: MEDIUM.farAnimationInterval,
+			lowest: true,
+		};
+		const start = {
+			preset: 'medium',
+			settings: { ...MEDIUM, ...tier },
+			options: tier,
+			highest: 'ultra',
+		} as const;
+		const quality = new SketchQuality(start, () => {}, undefined, undefined, inTier);
+		expect(quality.settings.maxRenderScale).toBe(LOWEST_TIER_SCALE);
+		await quality.set({ minRenderScale: 1 });
+		expect([quality.settings.minRenderScale, quality.settings.maxRenderScale]).toEqual([1, 1]);
+		expect(quality.owns('minRenderScale')).toBe(true);
+		expect(quality.owns('maxRenderScale')).toBe(false);
+		// A cap that the sketch set itself is its own choice, which a floor above it contradicts.
+		const capped = new SketchQuality(start, () => {}, undefined, undefined, inTier);
+		await capped.set({ maxRenderScale: 0.5 });
+		expect(() => capped.set({ minRenderScale: 1 })).toThrow('E1213');
+		// Outside the tier, a floor above the cap is still the sketch's mistake.
+		const { quality: outside } = medium();
+		await outside.set({ maxRenderScale: 0.7 });
+		expect(() => outside.set({ minRenderScale: 0.9 })).toThrow('E1213');
 	});
 
 	it('keeps the lowest render scale at or below the highest', async () => {
@@ -453,8 +505,16 @@ describe('SketchQuality.setPreset', () => {
 			reused: false,
 		};
 		quality.report(check);
-		expect(applied).toEqual([{ preset: 'medium', settings: MEDIUM, check }]);
+		expect(applied).toEqual([{ preset: 'medium', settings: MEDIUM, check, checked: true }]);
 		expect(changes).toEqual([[]]);
+	});
+
+	it('tells the page that a check ended without a result, and counts the presets that the sketch asks for', async () => {
+		const { quality, applied } = medium();
+		await quality.setPreset('low');
+		expect(quality.presetRequests).toBe(1);
+		quality.report(undefined);
+		expect(applied.at(-1)).toEqual({ preset: 'low', settings: quality.settings, checked: true });
 	});
 });
 

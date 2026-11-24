@@ -12,6 +12,8 @@ import { QUALITY_SETTINGS } from '../quality/presets';
 import {
 	Counter,
 	createMetricsBuffer,
+	DRAWING_STEPS,
+	DrawingSteps,
 	FrameRecorder,
 	GPU_TIMED_PASSES,
 	MetricsReader,
@@ -216,6 +218,33 @@ describe('frame records', () => {
 		expect(warmUp).toBeGreaterThan(0);
 		expect(reader.warmUpStart).toBe(warmUp);
 		expect(reader.warmUpMs).not.toBeNull();
+	});
+
+	it('keep the first time of each start step of the thread that draws, noted before and after the buffer', () => {
+		const buffer = createMetricsBuffer(true, 0);
+		const reader = new MetricsReader(buffer);
+		const steps = new DrawingSteps();
+		steps.mark('request');
+		steps.mark('device');
+		expect(DRAWING_STEPS.map((step) => reader.drawingStep(step))).toEqual([0, 0, 0, 0, 0, 0]);
+		steps.publish(buffer);
+		const request = reader.drawingStep('request');
+		expect(request).toBeGreaterThan(0);
+		expect(reader.drawingStep('device')).toBeGreaterThanOrEqual(request);
+		expect(reader.drawingStep('adapter')).toBe(0);
+		steps.mark('renderer');
+		const renderer = reader.drawingStep('renderer');
+		expect(renderer).toBeGreaterThanOrEqual(request);
+		// A renderer that a GPU loss replaces moves no step.
+		steps.mark('renderer');
+		steps.mark('request');
+		expect([reader.drawingStep('renderer'), reader.drawingStep('request')]).toEqual([
+			renderer,
+			request,
+		]);
+		// The steps follow the header's other figures, which keep their places.
+		const header = new Float64Array(buffer, 0, 8);
+		expect([...header.subarray(2, 8)]).toEqual([0, 0, 0, 0, 0, 0]);
 	});
 
 	it('tell a setup that took no measurable time from one still running', () => {

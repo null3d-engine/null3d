@@ -100,6 +100,7 @@ run('labels-3d', async () => {
 		};
 	}
 	await engine.firstFrame;
+	await engine.presetChecked;
 	/** The frame whose labels the element showed, then its center, for each frame it moved. */
 	const samples: number[] = [];
 	const until = performance.now() + SAMPLE_SECONDS * 1000;

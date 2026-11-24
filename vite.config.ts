@@ -6,9 +6,13 @@ import { loadServer } from './tests/lib/load-server.ts';
 import { reportCollector } from './tests/lib/report-collector.ts';
 import { checkoutServer, HTTP_PORT, HTTPS_PORT } from './tests/lib/server.ts';
 import { splatStreamServer } from './tests/lib/splat-stream.ts';
-import { tunnelServer } from './tests/lib/tunnel-server.ts';
 import { coreSourcesServer } from './tools/lib/core-sources.ts';
-import { DEV_CERT_DIR, requireDevCertificate, servesHttps } from './tools/lib/dev-https.ts';
+import {
+	DEV_CERT_DIR,
+	requireDevCertificate,
+	servesHttp2,
+	servesHttps,
+} from './tools/lib/dev-https.ts';
 import { sampleEnvironmentsServer } from './tools/lib/sample-environments.ts';
 import { sampleTexturesServer } from './tools/lib/sample-textures.ts';
 import { samplesServer } from './tools/lib/samples.ts';
@@ -29,8 +33,9 @@ import { watchIgnored } from './tools/lib/watch-ignored.ts';
 // with the environment maps of its HDR files under /sample-environments/ and the KTX2 files of its
 // images under /sample-textures/, S6's model files, built from the sample content's city
 // layout, to modules that import them, and the desert benchmark's model files under /bench-desert/
-// once a run has built them. Requests that come through BrowserStack Local's tunnel get
-// cache times and compression. The dev server gives the engine the stamp of the core's Rust
+// once a run has built them. The null3D plugin compresses the answers to every request that does
+// not come from this computer's loopback, such as a phone's over the network or a cloud device's
+// through BrowserStack Local's tunnel. The dev server gives the engine the stamp of the core's Rust
 // sources, so a page whose WebAssembly core is older than the checkout fails with E1402. It also
 // names the checkout it serves, so a test run that finds it on its port refuses another checkout's.
 
@@ -78,8 +83,7 @@ function devConfig(https: boolean): UserConfig {
 		// The HTTP and HTTPS servers can run at once, so each keeps its own prebundled dependencies.
 		cacheDir: https ? 'node_modules/.vite-https' : 'node_modules/.vite',
 		plugins: [
-			tunnelServer(),
-			null3d({ https, certDir: DEV_CERT_DIR, urlSwitches: true }),
+			null3d({ https, http2: servesHttp2(), certDir: DEV_CERT_DIR, urlSwitches: true }),
 			reportCollector(),
 			loadServer(),
 			samplesServer(import.meta.dirname),

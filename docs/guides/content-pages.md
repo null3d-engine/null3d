@@ -65,7 +65,7 @@ Decide how long a visitor waits for the scene, and count it from the moment the 
 - Never hide the page's text while the scene loads. Where a rule must hide content, put it inside `@media (scripting: enabled)`, so a page without JavaScript still shows everything.
 - Show no loading indicator for the first half second or so. A fast load then never flashes one.
 - Never let a progress value move back. Keep the largest value shown so far.
-- Reveal the canvas only when `engine.firstFrame` resolves. Before that, it shows nothing.
+- Reveal the canvas only when `engine.firstFrame` resolves. Before that, it shows nothing. It rejects when drawing stops before the first frame, and the page then keeps its poster.
 - Chromium browsers report `navigator.connection.saveData`. When it is true, go straight to the late state.
 
 ```ts
@@ -75,8 +75,12 @@ const root = document.documentElement;
 setTimeout(() => {
   if (!root.classList.contains('ready')) root.classList.add('late');
 }, Math.max(0, DEADLINE_MS - performance.now()));
-await engine.firstFrame;
-root.classList.add('ready'); // CSS fades the canvas in over the poster
+try {
+  await engine.firstFrame;
+  root.classList.add('ready'); // CSS fades the canvas in over the poster
+} catch {
+  // Drawing stopped before the first frame: the onFailure handler above keeps the poster.
+}
 ```
 
 For a game, the late state has no page content to show. There it changes the message, and opens the menus and settings that do not need the scene.
@@ -174,7 +178,7 @@ return {
 | Views of a single-page app | The running engine | `engine.detach()` and `engine.attach(element)`: [Architecture](../concepts/architecture.md) |
 | Back and forward | The browser's back/forward cache | Listen for `pagehide`, never `unload`, and do not send `Cache-Control: no-store` on the page |
 
-Browsers decide whether they can keep a page with a running engine in the back/forward cache. Build the page so that a full reload works too. [Caches between visits](../getting-started/hosting.md#caches-between-visits) shows every cache that a repeat visit uses.
+Browsers decide whether they can keep a page with a running engine in the back/forward cache. Build the page so that a full reload works too. On phones and tablets the engine gives its GPU back while the page sits in that cache. It builds the scene's GPU objects again when the page shows ([When the GPU goes away](../concepts/backends.md#when-the-gpu-goes-away)). [Caches between visits](../getting-started/hosting.md#caches-between-visits) shows every cache that a repeat visit uses.
 
 A sketch that generates data, such as a terrain or a scatter of objects, can keep it in the engine's cache of derived data. The call `assets.cache(name, version)` gives the sketch a namespace of it ([Caching](../api/assets.md#the-cache-of-derived-data)). Follow these rules:
 
@@ -218,7 +222,7 @@ else {
   write(String(Date.now()));
   addEventListener('pagehide', () => write(null));
   // ... createEngine, then:
-  await engine.firstFrame;
+  await engine.firstFrame.catch(() => {}); // a start that failed cleanly is no crash
   setTimeout(() => write(null), 5000);
 }
 ```

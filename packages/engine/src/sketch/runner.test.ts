@@ -6,7 +6,13 @@ import { FORMAT_CANVAS, FORMAT_RGBA16_FLOAT } from '../generated/gpu';
 import type { EngineCapabilities } from '../page/engine';
 import type { HoldScript } from '../page/hold';
 import type { CoreDevice } from '../page/limits';
-import { LOWEST_TIER_SCALE, lowestTierSettings, presetSettings } from '../quality/presets';
+import { GovernorLoop } from '../quality/governor';
+import {
+	checkedSettings,
+	LOWEST_TIER_SCALE,
+	lowestTierSettings,
+	presetSettings,
+} from '../quality/presets';
 import { callValueArguments } from '../scene/fake-call-values';
 import type { Material, MeshGeometry } from '../scene/resources';
 import {
@@ -36,7 +42,7 @@ import { checkAddonVersion, onAddonChecked, VERSION } from '../shared/version';
 import { defineSketch, type SketchContext, type SketchOptions } from './define-sketch';
 import { INPUT_OFF_NOTES } from './input-off';
 import type { QualityStart, QualityUpdate } from './quality';
-import { runPipelined, SketchRunner } from './runner';
+import { type ListedFiles, runPipelined, SketchRunner, startListedFiles } from './runner';
 
 /** The core's frame steps, which the tests follow among the sketch's callbacks. */
 const FRAME_STEPS = new Set([
@@ -161,13 +167,16 @@ type GlueAnswers = Partial<Record<keyof CoreGlue, (field: number) => number>>;
 /**
  * How the thread that draws behaves in a test: the intervals it records, in ms. With `replayMs`,
  * each frame's replay lasts that long after the frame is taken, and `overwritten` gets each frame
- * whose list the sketch recorded again during its replay.
+ * whose list the sketch recorded again during its replay. `refreshHz` is the refresh rate that
+ * its meter reads before it takes a frame, and `loadedHz` the one it reads once it takes frames.
  */
 interface FakeDrawing {
 	presentedMs: number;
 	completedMs: number;
 	replayMs?: number;
 	overwritten?: number[];
+	refreshHz?: number;
+	loadedHz?: number;
 }
 
 /**
@@ -184,6 +193,7 @@ function drawFrames(
 	const { slots } = control;
 	const render = new FrameRecorder(metrics, Role.Render);
 	const completion = new FrameRecorder(metrics, Role.Completion);
+	if (drawing.refreshHz) render.setRefreshHz(drawing.refreshHz);
 	let replaying = 0;
 	let replayEnd = 0;
 	const timer = setInterval(() => {
@@ -199,6 +209,7 @@ function drawFrames(
 		Atomics.store(slots, Slot.PipelinesBuilt, published);
 		Atomics.store(slots, Slot.FramesTaken, published);
 		if (slots.buffer instanceof SharedArrayBuffer) Atomics.notify(slots, Slot.FramesTaken);
+		if (drawing.loadedHz) render.setRefreshHz(drawing.loadedHz);
 		if (drawing.replayMs) {
 			replaying = published;
 			replayEnd = performance.now() + drawing.replayMs;
@@ -254,6 +265,7 @@ async function start(
 		device,
 		answers,
 		hearAddons = onAddonChecked,
+		listed,
 	}: {
 		quality?: QualityStart;
 		drawing?: FakeDrawing;
@@ -278,6 +290,8 @@ async function start(
 		answers?: GlueAnswers;
 		/** How the runner hears add-ons, which a worker gives as `onAddonChecked`. */
 		hearAddons?: (heard: (name: string) => void) => () => void;
+		/** The downloads of the sketch's list that the thread began before the runner. */
+		listed?: ListedFiles;
 	} = {},
 ) {
 	const log: string[] = [];
@@ -354,6 +368,7 @@ async function start(
 			wantJobs: jobAsker(jobs.most, (count) => jobs.asked.push(count)),
 			sendLabelSlot: () => {},
 			hearAddons,
+			listed,
 		},
 		holdSeconds,
 		holdScript,
@@ -744,6 +759,55 @@ describe('SketchRunner', () => {
 		expect(calls.find((call) => call[0] === 'recordFrame')?.[4]).toBe(333);
 	});
 
+	it('keeps a render-scale floor that the sketch sets itself in a page that starts in the lowest tier', async () => {
+		const tier = lowestTierSettings('webgpu');
+		const { runner, calls, context } = await start(
+			({ quality }) => {
+				quality.set({ minRenderScale: 1 });
+				return {};
+			},
+			undefined,
+			{
+				quality: {
+					...MEDIUM,
+					settings: { ...MEDIUM.settings, ...tier },
+					options: tier,
+					lowest: true,
+				},
+			},
+		);
+		runner.step(0);
+		runner.step(1000 / 60);
+		// The tier's cuts stay, and the sketch's floor wins over its cap of the scale.
+		expect(context.quality.governor.lowest).toBe(true);
+		expect(context.quality.settings.castShadows).toBe(false);
+		expect(context.quality.settings.minRenderScale).toBe(1);
+		expect(calls.filter((call) => call[0] === 'recordFrame').at(-1)?.[4]).toBe(1000);
+	});
+
+	it('keeps a render-scale floor that the sketch sets itself while the governor holds the lowest tier, and after it', async () => {
+		const { runner, calls, context } = await start(() => ({}));
+		const governor = (
+			runner as unknown as {
+				governor: { enterLowest(now: number): void; exitLowest(now: number): void };
+			}
+		).governor;
+		governor.enterLowest(0);
+		runner.step(0);
+		expect(context.quality.settings.minRenderScale).toBe(LOWEST_TIER_SCALE);
+		await context.quality.set({ minRenderScale: 1 });
+		runner.step(1000 / 60);
+		expect(context.quality.governor.lowest).toBe(true);
+		expect(context.quality.settings.castShadows).toBe(false);
+		expect(context.quality.settings.minRenderScale).toBe(1);
+		expect(calls.filter((call) => call[0] === 'recordFrame').at(-1)?.[4]).toBe(1000);
+		governor.exitLowest(0);
+		runner.step(2000 / 60);
+		expect(context.quality.governor.lowest).toBe(false);
+		expect(context.quality.settings.castShadows).toBe(MEDIUM.settings.castShadows);
+		expect(context.quality.settings.minRenderScale).toBe(1);
+	});
+
 	it('turns the depth prepass on and off during play, with no new preset', async () => {
 		const { runner, calls, context } = await start(() => ({}));
 		runner.step(0);
@@ -1021,6 +1085,216 @@ describe('SketchRunner', () => {
 	});
 });
 
+describe("SketchRunner and the sketch's first frame", () => {
+	/** Lets every promise reaction that is due run. */
+	const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+	it('a live start resolves engine.firstFrame at the first step after the GPU finished the first frame', async () => {
+		for (const modes of [{}, { record: true }]) {
+			let reached = false;
+			const { runner, context, metrics } = await start(() => ({}), undefined, modes);
+			void context.engine.firstFrame.then(() => {
+				reached = true;
+			});
+			runner.step(16);
+			await settle();
+			expect(reached).toBe(false);
+			// The thread that draws records when the GPU finished the first frame.
+			new FrameRecorder(metrics, Role.Render).markFirstFrameDone();
+			await settle();
+			expect(reached).toBe(false);
+			runner.step(32);
+			await settle();
+			expect(reached).toBe(true);
+		}
+	});
+
+	it('hold mode resolves engine.firstFrame once the held frame is stepped, never during the setup', async () => {
+		let duringSetup: boolean | undefined;
+		let reached = false;
+		const { context } = await start(
+			async (ctx) => {
+				void ctx.engine.firstFrame.then(() => {
+					reached = true;
+				});
+				await settle();
+				duringSetup = reached;
+				return {};
+			},
+			undefined,
+			{ holdSeconds: 0.05 },
+		);
+		expect(duringSetup).toBe(false);
+		await settle();
+		expect(reached).toBe(true);
+		await context.engine.firstFrame;
+	});
+});
+
+describe('SketchRunner and the download list', () => {
+	/**
+	 * Answers every fetch with its own path, and records each fetch's path and priority. A fetch of
+	 * a path in `held` answers only when the test calls `release`.
+	 */
+	function recordFetches(held: string[] = []) {
+		const fetched: [string, RequestPriority | undefined][] = [];
+		let release = () => {};
+		const released = new Promise<void>((resolve) => {
+			release = resolve;
+		});
+		const real = globalThis.fetch;
+		globalThis.fetch = (async (input: URL, init?: RequestInit) => {
+			const path = new URL(String(input)).pathname;
+			fetched.push([path, init?.priority]);
+			if (held.includes(path)) await released;
+			return new Response(path);
+		}) as unknown as typeof fetch;
+		return { fetched, release, restore: () => (globalThis.fetch = real) };
+	}
+
+	const LIST = {
+		downloads: ['a.glb', '/b.glb', 'c.glb', 'a.glb', new URL('http://localhost/d.bin')],
+	};
+
+	it('a live start begins two listed files at low priority before the setup runs, and the setup takes each without a second fetch', async () => {
+		const fetches = recordFetches(['/a.glb', '/b.glb']);
+		try {
+			let atSetup: string[] = [];
+			const { context } = await start((ctx) => {
+				atSetup = fetches.fetched.map(([path]) => path);
+				return {};
+			}, LIST);
+			expect(atSetup).toEqual(['/a.glb', '/b.glb']);
+			expect(fetches.fetched).toEqual([
+				['/a.glb', 'low'],
+				['/b.glb', 'low'],
+			]);
+			fetches.release();
+			const files = await Promise.all(
+				['a.glb', 'b.glb', 'c.glb', 'd.bin'].map((path) => context.assets.loadBinary(path)),
+			);
+			expect(files.map((bytes) => new TextDecoder().decode(bytes))).toEqual([
+				'/a.glb',
+				'/b.glb',
+				'/c.glb',
+				'/d.bin',
+			]);
+			// The repeat in the list downloads once, and every file downloads once.
+			expect(fetches.fetched.map(([path]) => path).sort()).toEqual([
+				'/a.glb',
+				'/b.glb',
+				'/c.glb',
+				'/d.bin',
+			]);
+		} finally {
+			fetches.restore();
+		}
+	});
+
+	it('takes the downloads that the thread began as the module loaded, and begins none of its own', async () => {
+		const fetches = recordFetches();
+		try {
+			const listed: ListedFiles = {};
+			startListedFiles(
+				listed,
+				defineSketch(() => ({}), LIST),
+				'http://localhost/',
+			);
+			expect(fetches.fetched.map(([path]) => path)).toEqual(['/a.glb', '/b.glb']);
+			const { context } = await start(() => ({}), LIST, { listed });
+			await context.assets.loadBinary('a.glb');
+			await context.assets.loadBinary('/c.glb');
+			expect(fetches.fetched.filter(([path]) => path === '/a.glb')).toHaveLength(1);
+			expect(fetches.fetched.filter(([path]) => path === '/c.glb')).toHaveLength(1);
+		} finally {
+			fetches.restore();
+		}
+	});
+
+	for (const [mode, modes] of [
+		['hold mode', { holdSeconds: 0 }],
+		['a recording', { record: true }],
+	] as const)
+		it(`${mode} downloads each listed file only at its load, as without the list`, async () => {
+			const fetches = recordFetches();
+			try {
+				let atSetup = -1;
+				const { context } = await start(
+					() => {
+						atSetup = fetches.fetched.length;
+						return {};
+					},
+					LIST,
+					modes,
+				);
+				expect(atSetup).toBe(0);
+				await context.assets.loadBinary('a.glb');
+				expect(fetches.fetched).toEqual([['/a.glb', undefined]]);
+			} finally {
+				fetches.restore();
+			}
+		});
+
+	it('refuses a list entry that is not a file address with E1214, before the setup runs, in every mode', async () => {
+		for (const [downloads, message] of [
+			[
+				['a.glb', ''],
+				'E1214: defineSketch() got "" in downloads, which is not the address of a file.',
+			],
+			[
+				['http://[bad'],
+				'E1214: defineSketch() got "http://[bad" in downloads, which is not the address of a file.',
+			],
+			[[7], 'E1214: defineSketch() got 7 in downloads, which is not the address of a file.'],
+			[
+				'a.glb',
+				'E1214: defineSketch() got a.glb for downloads, which takes an array of addresses.',
+			],
+		] as const)
+			for (const modes of [{}, { holdSeconds: 0 }]) {
+				let ran = false;
+				const failed = start(
+					() => {
+						ran = true;
+						return {};
+					},
+					{ downloads } as unknown as SketchOptions,
+					modes,
+				);
+				await expect(failed).rejects.toThrow(message);
+				expect(ran).toBe(false);
+			}
+	});
+
+	it('warns once in a live setup whose load waited for another, unless the sketch turns the warning off', async () => {
+		const fetches = recordFetches();
+		const warn = spyOn(console, 'warn').mockImplementation(() => {});
+		const serialWarnings = () =>
+			warn.mock.calls.filter(([text]) => String(text).includes('only after')).length;
+		try {
+			const loadInTurn = async (ctx: SketchContext) => {
+				await ctx.assets.loadBinary('first.bin');
+				await ctx.assets.loadBinary('second.bin');
+				await ctx.assets.loadBinary('third.bin');
+				return {};
+			};
+			await start(loadInTurn);
+			expect(serialWarnings()).toBe(1);
+			await start(loadInTurn, { serialLoadWarning: false });
+			await start(loadInTurn, undefined, { holdSeconds: 0 });
+			expect(serialWarnings()).toBe(1);
+			// Loads after the setup, as the frames make them, are left alone.
+			const { context } = await start(() => ({}));
+			await context.assets.loadBinary('first.bin');
+			await context.assets.loadBinary('second.bin');
+			expect(serialWarnings()).toBe(1);
+		} finally {
+			warn.mockRestore();
+			fetches.restore();
+		}
+	});
+});
+
 describe('SketchRunner and quality presets', () => {
 	it('holds the frame after a change of preset, whose handlers hear of it, until it draws', async () => {
 		const heard: string[] = [];
@@ -1176,17 +1450,23 @@ describe('SketchRunner and quality presets', () => {
 		expect(meshBytes()).toBe(MESH_BYTES);
 	});
 
-	it('checks the preset after the setup, and keeps a preset that holds the target', async () => {
+	it('checks the preset before play, and keeps a preset that holds the target', async () => {
 		const { context, updates, log, stopDrawing } = await start(
 			(_, log) => ({ onUpdate: () => log.push('update') }),
 			undefined,
-			{ quality: { ...MEDIUM, check: true }, drawing: { presentedMs: 16, completedMs: 16.5 } },
+			{
+				quality: { ...MEDIUM, check: 'before-play' },
+				drawing: { presentedMs: 16, completedMs: 16.5 },
+			},
 		);
 		stopDrawing();
 		expect(context.quality.preset).toBe('medium');
 		// The check draws the scene as the setup built it, without the sketch's update.
 		expect(log).not.toContain('update');
+		// The setup resolves after the check, whose end the page hears once.
+		expect(updates.filter((update) => update.checked).length).toBe(1);
 		const check = updates.at(-1)?.check;
+		expect(updates.at(-1)?.checked).toBe(true);
 		expect(check?.from).toBe('medium');
 		expect(check?.targetFps).toBe(60);
 		expect(check?.rounds).toEqual([{ preset: 'medium', presentedFps: 62.5, completedFps: 60.6 }]);
@@ -1196,7 +1476,7 @@ describe('SketchRunner and quality presets', () => {
 		'lowers the preset when the GPU finishes too few frames, down to Low',
 		async () => {
 			const { context, updates, stopDrawing } = await start(() => ({}), undefined, {
-				quality: { ...MEDIUM, check: true },
+				quality: { ...MEDIUM, check: 'before-play' },
 				drawing: { presentedMs: 16, completedMs: 40 },
 			});
 			stopDrawing();
@@ -1208,6 +1488,10 @@ describe('SketchRunner and quality presets', () => {
 				['medium', 25],
 				['low', 25],
 			]);
+			// The lowering tells the page of the rounds so far, so a page that closes keeps them.
+			const lowering = updates.filter((update) => update.check && !update.checked);
+			expect(lowering.map((update) => update.preset)).toEqual(['low']);
+			expect(lowering[0]?.check?.rounds.map((round) => round.preset)).toEqual(['medium']);
 		},
 		scaledBudget(10_000),
 	);
@@ -1223,7 +1507,10 @@ describe('SketchRunner and quality presets', () => {
 					return {};
 				},
 				undefined,
-				{ quality: { ...MEDIUM, check: true }, drawing: { presentedMs: 16, completedMs: 40 } },
+				{
+					quality: { ...MEDIUM, check: 'before-play' },
+					drawing: { presentedMs: 16, completedMs: 40 },
+				},
 			);
 			stopDrawing();
 			expect(context.quality.preset).toBe('low');
@@ -1241,9 +1528,46 @@ describe('SketchRunner and quality presets', () => {
 		scaledBudget(10_000),
 	);
 
+	it(
+		"ends the check at Low when Low too draws far below the target, with Low's own settings",
+		async () => {
+			// Eleven frames a second: under a quarter of the target, on Medium and then on Low. The
+			// lowest tier is the governor's step, during play.
+			const { context, updates, stopDrawing } = await start(() => ({}), undefined, {
+				quality: { ...MEDIUM, check: 'before-play' },
+				drawing: { presentedMs: 16, completedMs: 90 },
+			});
+			stopDrawing();
+			const check = updates.at(-1)?.check;
+			expect(check?.rounds.map((round) => round.preset)).toEqual(['medium', 'low']);
+			expect(context.quality.governor.lowest).toBe(false);
+			const { settings } = context.quality;
+			const low = presetSettings('low');
+			expect([settings.maxRenderScale, settings.castShadows, settings.bloom]).toEqual([
+				low.maxRenderScale,
+				low.castShadows,
+				low.bloom,
+			]);
+			// A sketch can still set a floor of its own after the check.
+			expect(() => context.quality.set({ minRenderScale: 1 })).not.toThrow();
+		},
+		scaledBudget(10_000),
+	);
+
+	it('starts the target at the refresh rate read before the check, which its load cannot lower', async () => {
+		// A GPU that falls behind slows the frame callbacks, which then read as a slower display.
+		const { context, updates, stopDrawing } = await start(() => ({}), undefined, {
+			quality: { ...MEDIUM, check: 'before-play' },
+			drawing: { presentedMs: 16, completedMs: 16.5, refreshHz: 90, loadedHz: 45 },
+		});
+		stopDrawing();
+		expect(context.quality.preset).toBe('medium');
+		expect(updates.at(-1)?.check?.targetFps).toBe(60);
+	});
+
 	it('asks for no more than the highest target that the page and ?fps= allow', async () => {
 		const { context, updates, stopDrawing } = await start(() => ({}), undefined, {
-			quality: { ...MEDIUM, check: true },
+			quality: { ...MEDIUM, check: 'before-play' },
 			maxTargetFps: 30,
 			drawing: { presentedMs: 1000 / 30, completedMs: 1000 / 30 },
 		});
@@ -1251,6 +1575,192 @@ describe('SketchRunner and quality presets', () => {
 		expect(context.quality.preset).toBe('medium');
 		expect(updates.at(-1)?.check?.targetFps).toBe(30);
 	});
+
+	/**
+	 * Steps the sketch as the pipelined frame loop does, a frame once the stand-in for the thread
+	 * that draws has taken the one before, until `done` or the time runs out.
+	 */
+	const play = async (
+		runner: SketchRunner,
+		control: ReturnType<typeof controlViews>,
+		done: () => boolean,
+	) => {
+		const { slots } = control;
+		const end = performance.now() + scaledBudget(8_000);
+		let time = 0;
+		while (!done() && performance.now() < end) {
+			const published = Atomics.load(slots, Slot.FramesPublished);
+			if (!frameAfter(published, Atomics.load(slots, Slot.FramesTaken))) {
+				Atomics.store(slots, Slot.FramesPublished, runner.step(time));
+				time += 16;
+			}
+			await new Promise((resolve) => setTimeout(resolve, 1));
+		}
+	};
+
+	it(
+		'checks the preset during play: the setup resolves first, and the sketch plays while the check measures',
+		async () => {
+			const { runner, control, updates, log, stopDrawing } = await start(
+				(_, log) => ({ onUpdate: () => log.push('update') }),
+				undefined,
+				{
+					quality: { ...MEDIUM, check: 'during-play' },
+					drawing: { presentedMs: 16, completedMs: 16.5 },
+				},
+			);
+			try {
+				// The setup resolves before the check has measured, and before any frame of play.
+				expect(runner.started).toBe(true);
+				expect(updates.some((update) => update.checked)).toBe(false);
+				const ended = () => updates.some((update) => update.checked);
+				await play(runner, control, ended);
+				expect(ended()).toBe(true);
+				// The sketch's update ran in the frames that the check measured.
+				expect(log.filter((line) => line === 'update').length).toBeGreaterThan(10);
+				const last = updates.at(-1);
+				expect(last?.checked).toBe(true);
+				expect(last?.check?.from).toBe('medium');
+				expect(last?.check?.rounds).toEqual([
+					{ preset: 'medium', presentedFps: 62.5, completedFps: 60.6 },
+				]);
+			} finally {
+				stopDrawing();
+			}
+		},
+		scaledBudget(10_000),
+	);
+
+	it(
+		'lowers the preset during play, and the sketch hears of it in a frame of play',
+		async () => {
+			const heard: string[] = [];
+			const { runner, control, context, updates, stopDrawing } = await start(
+				({ quality }) => {
+					quality.onChange(() => heard.push(quality.preset));
+					return {};
+				},
+				undefined,
+				{
+					quality: { ...MEDIUM, check: 'during-play' },
+					drawing: { presentedMs: 16, completedMs: 40 },
+				},
+			);
+			try {
+				const ended = () => updates.some((update) => update.checked);
+				await play(runner, control, ended);
+				expect(context.quality.preset).toBe('low');
+				expect(heard).toContain('low');
+				expect(updates.at(-1)?.check?.rounds.map((round) => round.preset)).toEqual([
+					'medium',
+					'low',
+				]);
+			} finally {
+				stopDrawing();
+			}
+		},
+		scaledBudget(10_000),
+	);
+
+	it(
+		"goes on from the rounds that an earlier start's check measured before it ended",
+		async () => {
+			const earlier = {
+				from: 'medium',
+				targetFps: 60,
+				rounds: [{ preset: 'medium', presentedFps: 62.5, completedFps: 25 }],
+				reused: true,
+			} as const;
+			const { runner, control, context, updates, stopDrawing } = await start(
+				() => ({}),
+				undefined,
+				{
+					quality: {
+						...MEDIUM,
+						preset: 'low',
+						settings: checkedSettings('medium', 'low'),
+						check: 'during-play',
+						resume: { ...earlier, rounds: [...earlier.rounds] },
+					},
+					drawing: { presentedMs: 16, completedMs: 40 },
+				},
+			);
+			try {
+				const ended = () => updates.some((update) => update.checked);
+				await play(runner, control, ended);
+				expect(context.quality.preset).toBe('low');
+				const check = updates.at(-1)?.check;
+				expect(check?.from).toBe('medium');
+				expect(check?.reused).toBe(false);
+				expect(check?.rounds.map((round) => [round.preset, round.completedFps])).toEqual([
+					['medium', 25],
+					['low', 25],
+				]);
+			} finally {
+				stopDrawing();
+			}
+		},
+		scaledBudget(10_000),
+	);
+
+	it(
+		'holds the governor until the check during play ends',
+		async () => {
+			const judged = spyOn(GovernorLoop.prototype, 'frame');
+			try {
+				const { runner, control, updates, stopDrawing } = await start(() => ({}), undefined, {
+					quality: { ...MEDIUM, check: 'during-play' },
+					drawing: { presentedMs: 16, completedMs: 16.5 },
+				});
+				try {
+					let callsAtEnd = -1;
+					const ended = () => {
+						if (callsAtEnd < 0 && updates.some((update) => update.checked))
+							callsAtEnd = judged.mock.calls.length;
+						return callsAtEnd >= 0;
+					};
+					await play(runner, control, ended);
+					expect(callsAtEnd).toBe(0);
+					await play(runner, control, () => judged.mock.calls.length > 0);
+					expect(judged.mock.calls.length).toBeGreaterThan(0);
+				} finally {
+					stopDrawing();
+				}
+			} finally {
+				judged.mockRestore();
+			}
+		},
+		scaledBudget(10_000),
+	);
+
+	it(
+		'ends the check during play with no result when the sketch picks its own preset',
+		async () => {
+			const { runner, control, context, updates, stopDrawing } = await start(
+				({ quality, time }) => ({
+					onUpdate: () => {
+						if (time.frame === 3) void quality.setPreset('high');
+					},
+				}),
+				undefined,
+				{
+					quality: { ...MEDIUM, check: 'during-play' },
+					drawing: { presentedMs: 16, completedMs: 40 },
+				},
+			);
+			try {
+				const ended = () => updates.some((update) => update.checked);
+				await play(runner, control, ended);
+				const last = updates.at(-1);
+				expect(last?.checked).toBe(true);
+				expect(last?.check).toBeUndefined();
+				expect(context.quality.preset).toBe('high');
+			} finally {
+				stopDrawing();
+			}
+		},
+		scaledBudget(10_000),
+	);
 });
 
 describe('the held frames that draw', () => {

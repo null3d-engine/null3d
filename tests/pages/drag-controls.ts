@@ -32,6 +32,7 @@ run('drag-controls', async () => {
 		maxPixelRatio: 1,
 	});
 	await engine.firstFrame;
+	await engine.presetChecked;
 
 	/** Sends the sketch a message, and waits for its answer under the same name. */
 	const ask = <T>(type: string) =>

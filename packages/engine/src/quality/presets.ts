@@ -9,7 +9,13 @@
 
 import { EngineError } from '../errors/engine-error';
 import type { Tier } from '../shared/tier';
-import type { TargetFps } from './check';
+import {
+	farBelowTarget,
+	PRESET_CHECK_TIMINGS,
+	type PresetCheckRound,
+	type PresetCheckTiming,
+	type TargetFps,
+} from './check';
 
 /** Bytes in a mebibyte. */
 export const MIB = 1024 * 1024;
@@ -892,6 +898,14 @@ export function lowered(preset: QualityPreset, steps: number): QualityPreset {
 	return QUALITY_PRESETS[Math.max(0, presetIndex(preset) - steps)] ?? 'low';
 }
 
+/**
+ * The preset that the preset check lowers to after `round` missed `targetFps`: Low when the round
+ * fell far below the target, or else the next lighter preset.
+ */
+export function presetAfterMiss(round: PresetCheckRound, targetFps: number): QualityPreset {
+	return farBelowTarget(round, targetFps) ? 'low' : lowered(round.preset, 1);
+}
+
 /** A setting's value on a preset, on the GPU path `tier`, or on WebGPU without it. */
 export function presetValue<K extends QualitySettingName>(
 	name: K,
@@ -1125,6 +1139,19 @@ export function targetFpsOption(value: unknown): TargetFps | undefined {
 	throw new EngineError(
 		'E1213',
 		`createEngine() got ${quoted(value)} for targetFps, which is not 'display' or a whole number from 1 up.`,
+	);
+}
+
+/**
+ * When the preset check measures, as `createEngine`'s `presetCheck` option names it, or undefined
+ * for no choice. Throws E1213 for a value that names no timing.
+ */
+export function presetCheckOption(value: unknown): PresetCheckTiming | undefined {
+	if (value === undefined || (PRESET_CHECK_TIMINGS as readonly unknown[]).includes(value))
+		return value as PresetCheckTiming | undefined;
+	throw new EngineError(
+		'E1213',
+		`createEngine() got ${quoted(value)} for presetCheck, which is not ${listOf(PRESET_CHECK_TIMINGS.map((name) => `'${name}'`))}.`,
 	);
 }
 

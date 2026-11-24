@@ -7,7 +7,8 @@ import { interact } from '../lib/interact';
 import { reportLoading } from '../lib/progress';
 import { sampleUrl } from '../lib/samples';
 
-/** The Knight's accessories that it leaves behind: it carries one sword and one round shield. */
+/** The Knight's file, and the accessories it hides: it carries one sword and one round shield. */
+const KNIGHT = sampleUrl('sources/characters/kaykit-knight/Knight.glb');
 const HIDDEN = ['1H_Sword_Offhand', '2H_Sword', 'Badge_Shield', 'Rectangle_Shield', 'Spike_Shield'];
 /** The walk's radius, in meters. */
 const RADIUS = 2.5;
@@ -33,7 +34,6 @@ export default defineSketch(async (ctx) => {
 	const day = timeOfDay(15, { heading: 0.9 });
 	const sky = { intensity: day.skyIntensity };
 	scene.setBackground({ sky: { ...day.sky, cloudCoverage: 0.4 } }, sky);
-	scene.setEnvironment(await assets.skyEnvironment(), sky);
 	scene.createDirectionalLight({ ...day.light, castShadows: true, shadow: { distance: 30 } });
 	scene.setFog({ color: day.fog.color, density: 0.004, sunGlow: day.fog.sunGlow });
 	const look = { bloom: { intensity: 0.1, threshold: 1 }, ao: { radius: 0.4 }, vignette: {} };
@@ -83,8 +83,7 @@ export default defineSketch(async (ctx) => {
 	const block = (material: typeof stone, x: number, z: number, w: number, h: number, d: number) =>
 		scene.createMesh({ mesh: box, material, position: [x, h / 2, z], scale: [w, h, d], ...solid });
 	block(plaster, 0, -9, 18, 2, 0.6);
-	block(plaster, -9, 0, 0.6, 2, 18);
-	block(plaster, 9, 0, 0.6, 2, 18);
+	for (const x of [-9, 9]) block(plaster, x, 0, 0.6, 2, 18);
 	for (const x of [-9, 9]) for (const z of [-9, 9]) block(stone, x, z, 1, 2.8, 1);
 
 	const camera = scene.createPerspectiveCamera({ fov: 45, far: 500, position: [0, 3, 7.5] });
@@ -94,7 +93,8 @@ export default defineSketch(async (ctx) => {
 	const lead = { groundY: 0, bounds: [-8, 0, -8, 8, 0, 8] } as const;
 	const view = interact(ctx, camera, { target: [0, 0.5, 0], ...limits, ...lead });
 
-	const knight = await assets.loadGltf(sampleUrl('sources/characters/kaykit-knight/Knight.glb'));
+	const [skyLight, knight] = await Promise.all([assets.skyEnvironment(), assets.loadGltf(KNIGHT)]);
+	scene.setEnvironment(skyLight, sky);
 	const walker = scene.instantiate(knight, { dynamic: true, castShadows: true });
 	for (const name of HIDDEN) walker.find(name)?.setVisible(false);
 	const animator = walker.animator();

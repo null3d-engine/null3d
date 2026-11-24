@@ -1,12 +1,17 @@
 // The GPU-bound page's scene: layers of detailed spheres in a grid that fills the view. The page's
 // `load` message shows the first n spheres, and the sketch answers once it has. `?spheres=` in the
-// sketch's address shows that many from the setup on. The spheres never move, so a frame's CPU
-// work stays small at every count, and a large count leaves the GPU the slowest part of each frame.
+// sketch's address shows that many from the setup on. `?levels=off` keeps the sphere from planning
+// levels of detail, so the scene stays as heavy in play as at its first frame. The spheres never
+// move, so a frame's CPU work stays small at every count, and a large count leaves the GPU the
+// slowest part of each frame.
 import { defineSketch } from '@null3d/engine';
 import { OVERLOAD_SCENE, OVERLOAD_SPHERES } from '../lib/overload';
 
+const switches = new URL(import.meta.url).searchParams;
 /** The spheres that the setup shows. */
-const SHOWN = Number(new URL(import.meta.url).searchParams.get('spheres') ?? 0);
+const SHOWN = Number(switches.get('spheres') ?? 0);
+/** False when the sphere plans no levels of detail. */
+const LEVELS = switches.get('levels') !== 'off';
 
 export default defineSketch(({ scene, materials, geometry, page }) => {
 	const { side, layers, widthSegments, heightSegments } = OVERLOAD_SCENE;
@@ -22,7 +27,12 @@ export default defineSketch(({ scene, materials, geometry, page }) => {
 	scene.setActiveCamera(camera);
 	scene.createDirectionalLight({ direction: [-1, -2, -1], color: '#ffffff', intensity: 3 });
 	scene.createAmbientLight({ color: '#ffffff', intensity: 0.4 });
-	const sphere = geometry.sphere({ radius: 0.5, widthSegments, heightSegments });
+	const sphere = geometry.sphere({
+		radius: 0.5,
+		widthSegments,
+		heightSegments,
+		...(LEVELS ? {} : { levels: false }),
+	});
 	const spheres = scene.createInstances(sphere, OVERLOAD_SPHERES, {
 		material: materials.standard({ color: '#5bc27a' }),
 	});

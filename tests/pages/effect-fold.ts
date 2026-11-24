@@ -32,6 +32,7 @@ run('effect-fold', async () => {
 	const failures: string[] = [];
 	engine.onFailure((error) => failures.push(error.code));
 	await engine.firstFrame;
+	await engine.presetChecked;
 	progress('first frame');
 	await engine.measure(BLOOM_PLAY_SECONDS);
 	const withBloom = await requestJoinTiming();

@@ -1,7 +1,8 @@
 // The creek's stones: mossy rocks along the water's edge, in the stream and on the banks, and pebbles
 // on the bed. Each kind of rock is an instance batch whose rows cast and receive the sun's shadows.
-// The rocks are noise-shaped spheres with a texture made in code, and moss on the parts that face
-// up. The pebbles are small and lie under the water, so they cast none.
+// The broken rock is noise-shaped spheres with a texture made in code, and moss on the parts that
+// face up; the bank row copies the garden's boulder models. The pebbles are small and lie under the
+// water, so they cast none.
 import {
 	type MeshArrays,
 	math,
@@ -277,12 +278,20 @@ export function stoneFootprints(places = rockPlaces()): (x: number, z: number) =
 	return within(places.map(({ x, z, size }) => ({ x, z, r: size * 1.1 })));
 }
 
-/** The stones and the pebbles, and a test of whether anything may stand at a point. */
+/** The three boulder models that the bank row copies, largest first; the third is the bank stone. */
+export type BankModels = readonly [Part, Part, Part];
+
+/**
+ * The stones and the pebbles, and a test of whether anything may stand at a point. The broken rock
+ * and the pebbles are made in code; the bank row copies the finished boulder models. A live page may
+ * hand the models over still loading: the row then stands once they land, in the same places, and
+ * the foam, which only the broken rock in the current leaves, is complete at once.
+ */
 export function createStones(
 	ctx: SketchContext,
 	detail: number,
 	textureSize: number,
-	bankModels?: readonly [Part, Part, Part],
+	bankModels: BankModels | Promise<BankModels>,
 ): {
 	clear(x: number, z: number): boolean;
 	fit(preset: QualityPreset): void;
@@ -297,19 +306,16 @@ export function createStones(
 	const next = random(43);
 	const places = rockPlaces();
 	const obstacles: Obstacle[] = [];
-	for (let shape = 0; shape < ROCK_SHAPES; shape++) {
-		// The first shapes are the rounded bank stones, thick with moss; the rest are broken rock.
-		const kind: StoneKind = shape < ROCK_SHAPES / 2 ? 'bank' : 'broken';
-		if (kind === 'bank' && bankModels) continue;
-		const squash =
-			kind === 'bank'
-				? ([1, 0.62 + 0.12 * next(), 0.85 + 0.15 * next()] as const)
-				: ([1, 0.55 + 0.25 * next(), 0.8 + 0.3 * next()] as const);
-		const arrays = rock(300 + shape, detail, squash, kind === 'bank' ? 0.03 : 0.12);
-		const mesh = geometry.fromArrays(mossy(arrays, 50 + shape, kind === 'bank' ? 0.62 : 0.1));
+	// The broken rock takes the second half of the shapes' seeds; the bank row's places take the
+	// boulder models below.
+	for (let shape = ROCK_SHAPES / 2; shape < ROCK_SHAPES; shape++) {
+		const squash = [1, 0.55 + 0.25 * next(), 0.8 + 0.3 * next()] as const;
+		const arrays = rock(300 + shape, detail, squash, 0.12);
+		const mesh = geometry.fromArrays(mossy(arrays, 50 + shape, 0.1));
 		const mine = places
 			.filter(
-				(place, k) => place.kind === kind && k % (ROCK_SHAPES / 2) === shape % (ROCK_SHAPES / 2),
+				(place, k) =>
+					place.kind === 'broken' && k % (ROCK_SHAPES / 2) === shape % (ROCK_SHAPES / 2),
 			)
 			.map((place) => ({ ...place, yaw: next() * Math.PI * 2 }));
 		for (const wetness of [true, false]) {
@@ -375,11 +381,12 @@ export function createStones(
 		}
 	}
 
-	// The bank row from the finished rock models, when the scene has them: mostly the bank stone, with
-	// now and then a small copy of a larger boulder, so the row is no string of like beads. Each copy
-	// is as wide as the stone it stands for, tipped a little and sunk unevenly into the bank. A warm,
-	// muted copy of each model's material keeps its moss olive rather than golden from afar.
-	if (bankModels) {
+	// The bank row from the finished rock models: mostly the bank stone, with now and then a small copy
+	// of a larger boulder, so the row is no string of like beads. Each copy is as wide as the stone it
+	// stands for, tipped a little and sunk unevenly into the bank. A warm, muted copy of each model's
+	// material keeps its moss olive rather than golden from afar. The row takes its draws after the
+	// rock's from the one seeded sequence, so it stands in the same places whenever the models land.
+	const standBank = (models: BankModels): void => {
 		const bank = places
 			.filter((place) => place.kind === 'bank')
 			.map((place) => {
@@ -387,7 +394,7 @@ export function createStones(
 				return { ...place, model: pick < BANK.mix[0] ? 0 : pick < BANK.mix[1] ? 1 : 2 };
 			});
 		for (const model of [0, 1, 2] as const) {
-			const part = bankModels[model];
+			const part = models[model];
 			const mine = bank.filter((place) => place.model === model);
 			if (mine.length === 0) continue;
 			const batch = scene.createInstances(part.mesh, mine.length, {
@@ -417,7 +424,10 @@ export function createStones(
 			});
 			batch.markDirty();
 		}
-	}
+	};
+	// A failed load is the caller's to report, through the same models it handed over.
+	if ('then' in bankModels) void bankModels.then(standBank, () => {});
+	else standBank(bankModels);
 
 	// Pebbles on the bed and the shore: two shapes in three colors, each pair one batch.
 	const tints = ['#6e6455', '#7a6a52', '#5c564c'];

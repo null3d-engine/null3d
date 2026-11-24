@@ -225,8 +225,10 @@ export function createWind(ctx: SketchContext, options: WindOptions): Wind {
 	// The air starts when a page makes the wind. A held page's first drawn frame runs the air from
 	// then to the held time, so a held picture carries the air that the hold built. Each frame reads
 	// the sketch time from the engine's field, because a helper that answered it would box its
-	// fraction on a call that the browser does not inline.
-	let solved = ctx.time.now;
+	// fraction on a call that the browser does not inline. The time that the air has run to sits in
+	// a typed array, because a fraction written to a closure's variable makes a number object at each
+	// write.
+	const solved = new Float64Array([ctx.time.now]);
 	// The preset names no field at Low. A page that keeps its own grid there still gets a field, at
 	// the add-on's own step and pressure count, because air that never steps never moves.
 	const presetField = (): boolean => stepSeconds > 0;
@@ -240,12 +242,12 @@ export function createWind(ctx: SketchContext, options: WindOptions): Wind {
 		const step = presetField() ? stepSeconds : STEP_SECONDS;
 		// The sketch time is a sum of frame times, so a frame that owes exactly one step can read a
 		// hair under it.
-		const owed = Math.floor((ctx.time.now - solved) / step + 1e-6);
+		const owed = Math.floor((ctx.time.now - (solved[0] as number)) / step + 1e-6);
 		if (owed <= 0) return 0;
 		const cycles = Math.min(owed, MAX_CYCLES);
 		// A stall that owes more than one frame runs skips the air that it missed. Crediting only
 		// the cycles that ran would leave a debt, and every later frame would pay it.
-		solved = owed > MAX_CYCLES ? ctx.time.now : solved + cycles * step;
+		solved[0] = owed > MAX_CYCLES ? ctx.time.now : (solved[0] as number) + cycles * step;
 		return cycles * cycleSteps();
 	};
 
@@ -393,7 +395,7 @@ export function createWind(ctx: SketchContext, options: WindOptions): Wind {
 		const old = pass;
 		if (old) ctx.render.removePass(old);
 		pass = makePass();
-		solved = ctx.time.now;
+		solved[0] = ctx.time.now;
 		host.remove('wind');
 		feature = host.add(describe());
 		feature.refresh();

@@ -56,6 +56,7 @@ run('resize', async () => {
 		window.engineFailure ??= error.message;
 	});
 	await engine.firstFrame;
+	await engine.presetChecked;
 	/** Has the sketch change its settings, and resolves once it has heard of the change. */
 	const setSettings = (settings: Record<string, unknown>) =>
 		new Promise<void>((resolve) => {

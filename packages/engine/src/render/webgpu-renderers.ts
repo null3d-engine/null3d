@@ -14,10 +14,11 @@ import { RenderPassSetup, submitOne } from '../gpu/webgpu/reusable';
 import { DEV } from '../shared/dev';
 import type { ImageTable } from '../shared/images';
 import { Counter, type FrameRecorder, Phase } from '../shared/metrics';
-import { deviceLoss, type GpuErrorReport, GpuErrorWatch } from './loss';
+import { deviceLoss, type GpuErrorReport, GpuErrorWatch, refusalText } from './loss';
 import {
 	type FrameInput,
 	linearToSrgb,
+	type PipelineLists,
 	type RenderCanvas,
 	type Renderer,
 	type RendererOptions,
@@ -50,6 +51,7 @@ export function webgpuRenderer(
 		shaders,
 		options.device.transparent,
 		options.device.skinning,
+		options,
 		options.gpuError,
 	);
 }
@@ -184,6 +186,7 @@ class WebGPUSceneRenderer implements Renderer {
 		shaders: DeviceShaderSet,
 		readonly transparent: boolean,
 		skinning: number,
+		lists: PipelineLists,
 		gpuError?: GpuErrorReport,
 	) {
 		this.lost = deviceLoss(device, () => this.simulated);
@@ -207,6 +210,8 @@ class WebGPUSceneRenderer implements Renderer {
 			images,
 		);
 		this.backend.moreShaders = shaders;
+		this.backend.refused = (pipeline, reason) =>
+			this.errors.hear('pipeline', refusalText(pipeline, reason));
 		// The skinning pass writes 32-bit float directions in the modes that measure 8-bit ones.
 		if (skinning === SKINNING_FULL || skinning === SKINNING_SKIP_ONLY)
 			this.backend.skinWithFloatDirections();
@@ -214,7 +219,7 @@ class WebGPUSceneRenderer implements Renderer {
 		shaders.onPreloaded((features, module) => this.backend.precompile(features, module));
 		this.backend.timer = metrics && GpuTimer.create(device, metrics, this.backend.gpuMemory);
 		this.completions = metrics && new QueueCompletion(device.queue, metrics);
-		this.frames = new FrameReplay(this.backend, memory, control);
+		this.frames = new FrameReplay(this.backend, memory, control, lists);
 	}
 
 	/** The frame's draw list resizes the canvas, in the frame built for the new size. */

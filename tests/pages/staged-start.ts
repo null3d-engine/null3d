@@ -41,6 +41,7 @@ run('staged-start', async () => {
 	};
 	const engine = await createEngine({ canvas, sketch });
 	await engine.firstFrame;
+	await engine.presetChecked;
 	const firstFrameMs = performance.now();
 	// Everything that the page had downloaded when its first picture was drawn.
 	const before = await take();

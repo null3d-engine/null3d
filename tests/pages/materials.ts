@@ -42,6 +42,7 @@ run('materials', async () => {
 	const failures: string[] = [];
 	engine.onFailure((error) => failures.push(error.code));
 	await engine.firstFrame;
+	await engine.presetChecked;
 	const colors: number[][] = [];
 	for (const options of STEPS) {
 		await set(engine, options);

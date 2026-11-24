@@ -138,6 +138,10 @@ pub type Clock = fn() -> f64;
 /// task while no job worker has joined.
 pub type WantWorkers = fn();
 
+/// Brings the calling thread's view of the shared memory up to date, so that it can use memory that
+/// another thread allocated. See [`JobConfig::refresh_memory`].
+pub type RefreshMemory = fn();
+
 /// Identifies the thread running a chunk: [`WorkerId::CALLER`] for the thread that called
 /// [`JobSystem::parallel_for`], and `i + 1` for job worker `i`. Use it to index per-thread data.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -193,6 +197,11 @@ pub struct JobConfig {
     /// The hook that asks the host for job workers when a background task is queued before any
     /// has joined, or `None` for a host that starts them all at once.
     pub want_workers: Option<WantWorkers>,
+    /// The hook that runs on a job worker before each chunk and background task that it takes,
+    /// and on the calling thread after each loop that it handed out, before the thread uses what
+    /// another thread wrote. A host whose threads can each lag behind the shared memory's growth
+    /// brings the thread up to date in it. `None` where every thread always sees all the memory.
+    pub refresh_memory: Option<RefreshMemory>,
 }
 
 impl Default for JobConfig {
@@ -203,6 +212,7 @@ impl Default for JobConfig {
             spin_rounds: DEFAULT_SPIN_ROUNDS,
             clock: None,
             want_workers: None,
+            refresh_memory: None,
         }
     }
 }
@@ -257,6 +267,7 @@ pub struct JobSystem {
     background: TaskQueue,
     clock: Option<Clock>,
     want_workers: Option<WantWorkers>,
+    refresh_memory: Option<RefreshMemory>,
     /// True once a job worker has entered [`JobSystem::worker_loop`].
     joined: AtomicBool,
     /// Nanoseconds of work per job worker since its total was last taken.
@@ -314,6 +325,7 @@ impl JobSystem {
             background: TaskQueue::new(config.background_capacity),
             clock: config.clock,
             want_workers: config.want_workers,
+            refresh_memory: config.refresh_memory,
             joined: AtomicBool::new(false),
             busy_ns: (0..workers)
                 .map(|_| CachePadded(AtomicU64::new(0)))
@@ -400,6 +412,8 @@ impl JobSystem {
         while self.done.0.load(Ordering::Acquire) < chunks {
             spin_loop();
         }
+        // The job workers' chunks may have written to memory that they allocated.
+        self.refresh_memory();
         if let (Some(now), Some(at)) = (self.clock, handed_at) {
             let ns = ((now() - at) * 1e6).max(0.0) as u64;
             self.handed_ns.fetch_add(ns, Ordering::Relaxed);
@@ -508,6 +522,7 @@ impl JobSystem {
         let mut exit = LoopExit::Stopped;
         while !self.shutdown.load(Ordering::Acquire) {
             if let Some(chunk) = self.try_claim() {
+                self.refresh_memory();
                 self.run_chunk(chunk, me);
                 idle_rounds = 0;
                 continue;
@@ -522,6 +537,7 @@ impl JobSystem {
                 break;
             }
             if !frame_work && let Some(task) = self.background.pop() {
+                self.refresh_memory();
                 let started = self.work_started(me);
                 (task.run)(task.arg, me);
                 self.work_finished(me, started);
@@ -610,6 +626,14 @@ impl JobSystem {
     /// True after [`JobSystem::shutdown`].
     pub fn is_shut_down(&self) -> bool {
         self.shutdown.load(Ordering::Acquire)
+    }
+
+    /// Runs the settings' memory hook, if there is one.
+    #[inline]
+    fn refresh_memory(&self) {
+        if let Some(refresh) = self.refresh_memory {
+            refresh();
+        }
     }
 
     /// Claims the next chunk of the current frame job, if one is left.

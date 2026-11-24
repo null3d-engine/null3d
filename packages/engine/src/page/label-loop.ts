@@ -72,6 +72,8 @@ export class LabelLoop {
 	private readonly seen = Float64Array.of(-1, 0, 0);
 	/** The camera that the containers show, and the canvas size, as the update read them. */
 	private readonly cameraSeen = new Float64Array(CAMERA_STATE).fill(Number.NaN);
+	/** The presented frame's camera, which the update reads with the tables. */
+	private readonly cameraNext = new Float64Array(CAMERA_STATE - 2);
 	/** The transform of a container, and the container of each parent element that holds 3D labels. */
 	private containerTransform = '';
 	private readonly containers = new Map<HTMLElement, HTMLElement>();
@@ -163,20 +165,23 @@ export class LabelLoop {
 		const seen = this.seen;
 		const sequence = labelSequence(region);
 		if (!this.changed && sequence === seen[0] && width === seen[1] && height === seen[2]) return;
-		if (!this.read(region, count, width, height)) return;
-		seen[0] = labelSequence(region);
+		const read = this.read(region, count, width, height);
+		if (read < 0) return;
+		seen[0] = read;
 		seen[1] = width;
 		seen[2] = height;
 		this.changed = false;
-		if (this.three > 0) this.updateCamera(region, width, height);
+		if (this.three > 0) this.updateCamera(width, height);
 		this.write(count);
 	}
 
 	/**
-	 * Reads each binding's place from the presented tables into `next`. Returns false when the thread
-	 * that draws kept changing the tables, so the elements stay as they are until the next update.
+	 * Reads each binding's place from the presented tables into `next`, and the presented frame's
+	 * camera with them, under the same sequence count, so the elements and the containers show one
+	 * frame. Returns that count, or -1 when the thread that draws kept changing the tables, so the
+	 * elements stay as they are until the next update.
 	 */
-	private read(region: LabelRegion, count: number, width: number, height: number): boolean {
+	private read(region: LabelRegion, count: number, width: number, height: number): number {
 		const { ints, floats } = region;
 		const { slots, generations, tables, next } = this;
 		for (let attempt = 0; attempt < READ_TRIES; attempt++) {
@@ -207,17 +212,18 @@ export class LabelLoop {
 				next[n + STATE_X] = (((floats[at + LABEL_X] as number) + 1) / 2) * width;
 				next[n + STATE_Y] = ((1 - (floats[at + LABEL_Y] as number)) / 2) * height;
 			}
+			if (this.three > 0) this.cameraNext.set(region.presentedCamera);
 			if (labelSequence(region) !== sequence) continue;
 			this.frame = frame;
-			return true;
+			return sequence;
 		}
-		return false;
+		return -1;
 	}
 
-	/** Moves the containers to the presented frame's camera, when the camera or the canvas changed. */
-	private updateCamera(region: LabelRegion, width: number, height: number): void {
+	/** Moves the containers to the camera that the update read, when it or the canvas changed. */
+	private updateCamera(width: number, height: number): void {
 		const seen = this.cameraSeen;
-		const camera = region.presentedCamera;
+		const camera = this.cameraNext;
 		let changed = seen[CAMERA_STATE - 2] !== width || seen[CAMERA_STATE - 1] !== height;
 		for (let k = 0; k < CAMERA_STATE - 2; k++) {
 			if (seen[k] !== (camera[k] as number)) changed = true;

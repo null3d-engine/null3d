@@ -286,8 +286,8 @@ export function runNull3dPage(
 				const { width, height, pixels } = await engine.captureFrame();
 				return { ...report, width, height, pixels: toBase64(pixels) };
 			}
-			// The warm-up counts from the first frame. A start that takes the stored result of an
-			// earlier preset check resolves before its first frame, and a first visit only after it.
+			// The warm-up counts from the first frame, once the preset check has chosen the preset that
+			// the run measures. Where no check runs, as with a stored result, that is the first frame.
 			await firstFrameOrFailure(engine);
 			const own = pageOptions.measure?.(engine, log);
 			if (own) return { ...report, ...(await own), userAgent: navigator.userAgent };
@@ -337,14 +337,17 @@ function bindLabels(engine: Engine, count: number): void {
 	}
 }
 
-/** Resolves once the GPU has finished the engine's first frame; rejects when a thread fails first. */
+/**
+ * Resolves once the GPU has finished the engine's first frame and the preset check has ended;
+ * rejects when a thread fails first.
+ */
 function firstFrameOrFailure(engine: Engine): Promise<void> {
 	return new Promise<void>((resolve, reject) => {
 		const stopWatching = engine.onFailure(reject);
-		engine.firstFrame.then(() => {
+		void Promise.all([engine.firstFrame, engine.presetChecked]).then(() => {
 			stopWatching();
 			resolve();
-		});
+		}, reject);
 	});
 }
 

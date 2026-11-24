@@ -40,6 +40,15 @@ function fakeBackend() {
 		gpuMemory: new GpuMemory(),
 		joins: new JoinedBuilds(new Map()),
 		readSink: undefined,
+		early: [] as Uint32Array[],
+		listings: 0,
+		buildEarly(list: Uint32Array) {
+			this.early.push(list);
+		},
+		takeListing() {
+			this.listings++;
+			return this.listings === 1 ? Uint32Array.of(1) : undefined;
+		},
 	};
 }
 
@@ -53,6 +62,26 @@ function setup() {
 }
 
 describe('FrameReplay', () => {
+	it("builds the last start's list at once, and gives the list of the first frame once it has drawn", () => {
+		const control = createControlBuffer(false);
+		const backend = fakeBackend();
+		const memory = new WebAssembly.Memory({ initial: 1 });
+		const heard: number[][] = [];
+		const early = Uint32Array.of(7, 1, 2);
+		const replay = new FrameReplay(backend, memory, control, {
+			earlyBuilds: early,
+			listBuilds: (list) => heard.push(Array.from(list)),
+		});
+		expect(backend.early).toEqual([early]);
+		replay.prepare(1);
+		expect(heard).toEqual([]);
+		replay.replay(1);
+		replay.prepare(2);
+		replay.replay(2);
+		expect(heard).toEqual([[1]]);
+		expect(backend.listings).toBe(1);
+	});
+
 	it('holds the first frame until its pipelines are built, and later frames draw at once', () => {
 		const { backend, replay } = setup();
 		backend.building = true;
