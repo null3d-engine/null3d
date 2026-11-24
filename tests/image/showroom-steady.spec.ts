@@ -45,10 +45,12 @@ const FLOOR = 0.05;
 const WANTED = 24;
 const LEAST = 8;
 /**
- * How long the page may take to start, and the capture after it. CI's software GPU did not publish
- * the engine within 180 s, and this Mac's did not within 360 s under other helpers' load. The start
- * wait takes ten minutes, and the capture takes a minute, where a software frame can take seconds
- * and the measure needs at least eight of them.
+ * How long the page may take to start, and the capture after it. The start publishes the engine,
+ * draws the first frame and ends the preset check, which measures the first frames of play. CI's
+ * software GPU did not finish it within 180 s, and this Mac's did not within 360 s under other
+ * helpers' load: on this Mac's software GPU the first frame came 31 s after the engine and the check
+ * ended 80 s after that. The start takes ten minutes at most, and the capture takes a minute, where
+ * a software frame can take seconds and the measure needs at least eight of them.
  */
 const READY_MS = 600_000;
 const CAPTURE_MS = 60_000;
@@ -97,17 +99,34 @@ test('the showroom floor holds still on a still camera', async ({ page, context 
 	// smaller window keeps the same reading; a real GPU keeps the full window.
 	if (SOFTWARE_GPU) await page.setViewportSize({ width: 480, height: 320 });
 	test.setTimeout(READY_MS + CAPTURE_MS + 60_000);
+	const readyBy = Date.now() + READY_MS;
 	await page.goto('/examples/?demo=showroom&bench');
 	await page.waitForFunction(
 		() => (globalThis as { __null3dEngine?: unknown }).__null3dEngine !== undefined,
 		null,
 		{ timeout: READY_MS },
 	);
-	await page.evaluate(async () => {
-		const engine = (globalThis as { __null3dEngine?: { firstFrame?: Promise<unknown> } })
-			.__null3dEngine;
-		await engine?.firstFrame;
-	});
+	// The engine is published before its first frame, and the preset check then measures the first
+	// frames of play: a lowering changes the pixel ratio, the shadows and the smoothing of edges in
+	// front of the camera, which is a step of the floor's light, not the pulse this test looks for.
+	// The capture measures the preset that plays, so it starts once the check has ended.
+	await page.evaluate(
+		async (leftMs) => {
+			const engine = (
+				globalThis as {
+					__null3dEngine?: { firstFrame: Promise<unknown>; presetChecked: Promise<unknown> };
+				}
+			).__null3dEngine;
+			const late = new Promise((_, reject) =>
+				setTimeout(
+					() => reject(new Error('the showroom did not draw and end its preset check in time')),
+					leftMs,
+				),
+			);
+			await Promise.race([Promise.all([engine?.firstFrame, engine?.presetChecked]), late]);
+		},
+		Math.max(0, readyBy - Date.now()),
+	);
 	// The Manual camera holds the view where the route has it, and the route's first shot holds the
 	// opening view for three seconds, so the press lands on that view.
 	await page.keyboard.press('c');

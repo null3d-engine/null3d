@@ -78,6 +78,11 @@ run('record', async () => {
 			if (name === 'frame' && typeof data === 'string') log.push(data);
 		},
 	});
+	// The engine resolves before its first frame, and a slow GPU can take longer over that frame
+	// than the whole session below, so the session starts once play has started and the preset
+	// check has ended.
+	await engine.firstFrame;
+	await engine.presetChecked;
 	await wait(250);
 	key('keydown');
 	touch('pointermove', 120, 90);
