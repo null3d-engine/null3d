@@ -64,7 +64,7 @@ import {
 	WGSL_TAG,
 	type WgslError,
 } from './wgsl.ts';
-import { workerPreloadPlugin } from './worker-preload.ts';
+import { directImports, workerPreloadPlugin } from './worker-preload.ts';
 
 export type { AssetOptions } from './assets.ts';
 export { FILES_LIST, type OfflineFiles } from './offline.ts';
@@ -486,6 +486,8 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin[] {
 	const emitted = new Map<string, string>();
 	/** The chunks emitted for the scripts that a worker imports, by their rollup reference. */
 	const workerChunks = new Set<string>();
+	/** The modules of the scripts that a worker imports, which those chunks are built from. */
+	const workerModules = new Set<string>();
 	/** Hashes the generated shader files on worker threads, so the build goes on meanwhile. */
 	const hasher = new HashPool();
 	/**
@@ -620,6 +622,7 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin[] {
 		buildStart() {
 			emitted.clear();
 			workerChunks.clear();
+			workerModules.clear();
 			// The copies follow the generated set: a watch rebuild reads the files again, so a hash
 			// from the last build would name old bytes, and a file that went away would be copied.
 			copiedShaders.clear();
@@ -797,6 +800,7 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin[] {
 							preserveSignature: 'strict',
 						});
 						workerChunks.add(ref);
+						workerModules.add(script.id);
 						out ??= new MagicString(code);
 						out.overwrite(
 							start,
@@ -854,6 +858,18 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin[] {
 			for (const { key, shader } of updates) hot.remember(key, shader);
 			if (updates.length > 0) sendUpdates(environment, updates);
 			return otherModules(modules, file);
+		},
+		// A worker that imports a script by its address asks for the script's imports only once the
+		// script has arrived, so the script names them all. This runs before the build names the
+		// files, so each file's name follows its code.
+		renderChunk(code, chunk, _options, meta) {
+			const module = chunk.facadeModuleId;
+			if (!chunk.isEntry || module === null || !workerModules.has(module)) return null;
+			const chunks = (meta as { chunks?: Record<string, Rollup.RenderedChunk> }).chunks;
+			if (!chunks) return null;
+			const edited = new MagicString(code);
+			if (!directImports(edited, chunk.fileName, chunks)) return null;
+			return { code: edited.toString(), map: edited.generateMap({ hires: true }) };
 		},
 		// After Vite's own plugins, which add the worker builds' files and the pages to the bundle.
 		generateBundle: {
