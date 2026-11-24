@@ -45,6 +45,14 @@ const FLOOR = 0.05;
 const WANTED = 24;
 const LEAST = 8;
 /**
+ * The least time that the capture runs, in ms, so the car's turn moves the frame. The car swings
+ * 0.4 radians either way over a nine-second period, and half a second of frames by the widest point
+ * of its swing, two and a quarter seconds into play, shows it nearly still: on this Mac's GPU those
+ * frames changed the moving part by 0.4 to 0.8 levels. Three seconds of consecutive frames hold a
+ * clear part of the turn wherever the capture starts.
+ */
+const SPAN_MS = 3000;
+/**
  * How long the page may take to start, and the capture after it. The start publishes the engine,
  * draws the first frame and ends the preset check, which measures the first frames of play. CI's
  * software GPU did not finish it within 180 s, and this Mac's did not within 360 s under other
@@ -150,8 +158,10 @@ test('the showroom floor holds still on a still camera', async ({ page, context 
 		await session.send('Page.screencastFrameAck', { sessionId: event.sessionId }).catch(() => {});
 	});
 	await session.send('Page.startScreencast', { format: 'png', everyNthFrame: 1 });
-	const deadline = Date.now() + CAPTURE_MS;
-	while (frames.length < WANTED && Date.now() < deadline) await page.waitForTimeout(250);
+	const started = Date.now();
+	const deadline = started + CAPTURE_MS;
+	while ((frames.length < WANTED || Date.now() - started < SPAN_MS) && Date.now() < deadline)
+		await page.waitForTimeout(250);
 	await session.send('Page.stopScreencast');
 
 	const drawn = frames.map((base64) =>
