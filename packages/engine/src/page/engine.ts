@@ -35,9 +35,9 @@ import {
 	targetFpsOption,
 } from '../quality/presets';
 import type { DrawingSetup } from '../render/draw';
-import { type DrawModule, loadDrawModule, preloadDeviceFiles } from '../render/load-draw';
+import { type DrawModule, loadDrawModule, preloadDrawing } from '../render/load-draw';
 import type { Drawing } from '../render/recovery';
-import type { Renderer, Tier } from '../render/renderer';
+import type { DrawingPreload, EarlyStart, Renderer, Tier } from '../render/renderer';
 import type { FeatureStats } from '../scene/features';
 import { awaitLater } from '../shared/await-later';
 import { controlViews, createControlBuffer, Slot } from '../shared/control';
@@ -2207,6 +2207,8 @@ async function startEngine(
 	/** The worker that holds the canvas, or will once the start moves it there. */
 	let canvasWorker = movedTo === 'render' ? threads?.render : movedTo ? threads?.sketch : undefined;
 	let localDrawing: Drawing<Renderer> | undefined;
+	/** What the page started for its renderer right after the probe, until the renderer takes it. */
+	let pageEarly: Promise<EarlyStart | undefined> | undefined;
 	let localRunner: SketchRunner | undefined;
 	/** Sends the sketch a message, here where the page runs it, or through its worker. */
 	const sendToSketch = (name: string, data: unknown, transfer: Transferable[] = []) => {
@@ -2325,6 +2327,8 @@ async function startEngine(
 			])
 				notifySlot(slots, slot, threads?.sketch?.handle);
 			await localDrawing?.stop();
+			// A start that stops before the page's renderer took its early device destroys it.
+			void pageEarly?.then((early) => early?.release());
 			localRunner?.dispose();
 			videos?.dispose();
 			input?.listen(false);
@@ -2582,12 +2586,20 @@ async function startEngine(
 			expectedObjects,
 			gpuOcclusion: quality.settings.gpuOcclusion,
 		});
-		// The GPU path and the device's fixed bits choose the renderers and the shader file that the
-		// thread that draws loads first, so it starts their downloads now, while the core downloads.
-		const shaderPreload: ShaderPreload = { type: 'load-shaders', tier, bits: device.shaderBits };
+		// The GPU path and the device choose the renderers and the shader files that the thread that
+		// draws loads first, and the GPU device that it asks for, so it starts them now, while the core
+		// downloads.
+		const drawingPreload: DrawingPreload = {
+			tier,
+			device,
+			forceCompat,
+			powerPreference,
+			preload: options.preload,
+		};
+		const shaderPreload: ShaderPreload = { type: 'load-shaders', ...drawingPreload };
 		if (renderThread === 'render-worker') threads?.render?.send(shaderPreload);
 		else if (renderThread === 'sketch-worker') threads?.sketch?.send(shaderPreload);
-		else if (drawModule) preloadDeviceFiles(drawModule, tier, device.shaderBits);
+		else if (drawModule) pageEarly = preloadDrawing(drawModule, drawingPreload);
 
 		const core = await abortable(coreLoad, signal);
 		coreMemory = core.memory;
@@ -2678,11 +2690,14 @@ async function startEngine(
 			sketch?: SketchRunner,
 		) => {
 			draw = await (drawModule ?? loadDrawModule());
+			const early = await pageEarly;
+			pageEarly = undefined;
 			// The page's context stays with the canvas: an engine after this one draws on the page too.
 			canvasHold.pageContext = true;
 			return draw.startDrawing({
 				canvas: options.canvas,
 				...rendererSetup,
+				early,
 				metrics,
 				device,
 				scene: memory && { memory, control },
@@ -3051,8 +3066,14 @@ async function startEngine(
 				// adds an object then builds its pipelines while the figures load.
 				const reader = new MetricsReader(metrics);
 				reader.begin();
-				const { HeapSampler, secondRates, slowFrames, summarizeFrames, wasmDownloadBytes } =
-					await loadFrameStats();
+				const {
+					HeapSampler,
+					drawingStartFigures,
+					secondRates,
+					slowFrames,
+					summarizeFrames,
+					wasmDownloadBytes,
+				} = await loadFrameStats();
 				const mainThread = new MainThreadWatch();
 				const started = performance.now();
 				const heap = new HeapSampler();
@@ -3079,6 +3100,7 @@ async function startEngine(
 						firstDrawMs: reader.firstDrawMs,
 						firstFramePipelines: reader.firstFramePipelines,
 						firstFramePreset,
+						drawingStart: drawingStartFigures(reader),
 					},
 					gpuLosses: Atomics.load(slots, Slot.GpuEpoch),
 					downloadBytes: { wasm: wasmDownloadBytes() },

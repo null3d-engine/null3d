@@ -12,9 +12,15 @@ import type { SketchRunner } from '../sketch/runner';
 import { runDirectLoop } from './direct-loop';
 import { emptySceneInput, type FramePacing, HoldLoop, type LoopFault, runRenderLoop } from './loop';
 import { Drawing } from './recovery';
-import { createRenderer, type RenderCanvas, type Renderer, type RendererOptions } from './renderer';
+import {
+	createRenderer,
+	EarlyStart,
+	type RenderCanvas,
+	type Renderer,
+	type RendererOptions,
+} from './renderer';
 
-export { preloadDeviceFiles } from './renderer';
+export { startEarly } from './renderer';
 
 export interface DrawingSetup extends RendererOptions, FramePacing {
 	/** The canvas that this thread owns. */
@@ -58,15 +64,19 @@ export interface DrawingSetup extends RendererOptions, FramePacing {
 /**
  * Starts drawing on this thread's canvas, with a new renderer after each GPU loss. The images for
  * texture uploads come through the setup's port, or into its table from the sketch that this thread
- * runs, and every renderer reads them.
+ * runs, and every renderer reads them. The first renderer takes the device that the setup's early
+ * start asked for, and the start destroys that device when the renderer does not take it.
  */
 export async function startDrawing(setup: DrawingSetup): Promise<Drawing<Renderer>> {
 	const { canvas, control, metrics, sketch, hold = false, fault, presented } = setup;
 	const { slots } = controlViews(control);
+	const early = setup.early ?? new EarlyStart();
+	early.steps.mark('init');
+	early.steps.publish(metrics);
 	const imageTable = setup.imageTable ?? new ImageTable();
 	imageTable.loadGeneratorsWith(generatorLoader(setup.tier, (setup.cloudSteps ?? 0) > 0));
 	const receiving = setup.imagePort && receiveImages(setup.imagePort, imageTable, slots);
-	const options = { ...setup, imageTable };
+	const options = { ...setup, imageTable, early };
 	const create = () => createRenderer(canvas, options);
 	const run = (renderer: Renderer) =>
 		hold
@@ -74,7 +84,12 @@ export async function startDrawing(setup: DrawingSetup): Promise<Drawing<Rendere
 			: sketch
 				? runDirectLoop(sketch, renderer, control, metrics, setup, fault, presented)
 				: runRenderLoop(renderer, control, metrics, setup, setup.imagePort, fault, presented);
-	const renderer = await create();
+	let renderer: Renderer;
+	try {
+		renderer = await create();
+	} finally {
+		early.release();
+	}
 	// Firefox can fail to read an image that reached this thread while it made its first renderer,
 	// so the sketch thread sends its images only once the renderer exists.
 	receiving?.();

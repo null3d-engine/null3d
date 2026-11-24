@@ -6,7 +6,8 @@
 
 import { messageOf } from '../errors/message';
 import { recordPermutations, stopRecordingPermutations } from '../gpu/variants';
-import { captureFrame, captureImage, preloadDeviceFiles, startDrawing } from '../render/draw';
+import { captureFrame, captureImage, startDrawing, startEarly } from '../render/draw';
+import type { EarlyStart } from '../render/renderer';
 import { controlViews } from '../shared/control';
 import { setWakeByMessage } from '../shared/wake';
 import { DrawingHost } from './drawing-host';
@@ -26,6 +27,14 @@ let controlSlots: Int32Array | undefined;
 let canvas: OffscreenCanvas | undefined;
 /** The running engine's image port, which a park lets go of. */
 let imagePort: MessagePort | undefined;
+/** What the worker started for the next engine's renderer, until that engine's setup arrives. */
+let early: EarlyStart | undefined;
+
+/** Destroys the device of an early start that no renderer took. */
+function releaseEarly(): void {
+	early?.release();
+	early = undefined;
+}
 
 const step = startSteps('render');
 
@@ -35,8 +44,11 @@ startWorker(
 	async (event: MessageEvent<RenderWorkerInit | ShaderPreload | RendererRequest>) => {
 		const message = event.data;
 		if (message.type === 'load-shaders') {
-			preloadDeviceFiles(message.tier, message.bits);
+			releaseEarly();
+			early = startEarly(message);
 		} else if (message.type === 'init') {
+			const started = early;
+			early = undefined;
 			try {
 				canvas = message.canvas ?? canvas;
 				if (!canvas) throw new Error('the page gave the render worker no canvas');
@@ -51,6 +63,7 @@ startWorker(
 					startDrawing({
 						...message,
 						canvas,
+						early: started,
 						scene: message.memory && { memory: message.memory, control: message.control },
 						fail: (reason) => replyToPage({ type: 'lost', role: 'render', reason }),
 						fault: (error) =>
@@ -67,6 +80,7 @@ startWorker(
 					tier: drawing.renderer.tier,
 				});
 			} catch (e) {
+				started?.release();
 				await host.release();
 				replyToPage({
 					type: 'error',
@@ -82,8 +96,10 @@ startWorker(
 		} else if (message.type === 'lose-gpu') {
 			host.drawing?.simulateLoss();
 		} else if (message.type === 'stop-drawing') {
+			releaseEarly();
 			await host.stop('render');
 		} else if (message.type === 'park') {
+			releaseEarly();
 			imagePort?.close();
 			imagePort = undefined;
 			controlSlots = undefined;

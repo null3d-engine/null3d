@@ -6,6 +6,7 @@
 import { messageOf } from '../errors/message';
 import { type DrawPathReason, probeDrawPath } from '../gpu/webgpu/draw-path-probe';
 import { needsOwnArguments } from '../gpu/webgpu/indirect-arguments';
+import type { PowerPreference } from '../page/capabilities';
 
 /**
  * What a dedicated worker can do, in `CapabilityReport.worker`. A render worker needs the frame
@@ -37,9 +38,18 @@ export interface WorkerProbe {
  */
 export type ProbeMessage = 'loaded' | WorkerProbe;
 
+/** What the page sends the probe worker: the power preference that picks the GPU to test. */
+export interface ProbeRequest {
+	powerPreference?: PowerPreference;
+}
+
 const post = (message: ProbeMessage) => postMessage(message);
 
-async function probe(): Promise<WorkerProbe> {
+/**
+ * Tests the worker's GPU paths on the GPU that `powerPreference` picks, the one that the engine will
+ * draw with.
+ */
+async function probe(powerPreference: PowerPreference | undefined): Promise<WorkerProbe> {
 	const result: WorkerProbe = {
 		requestAnimationFrame:
 			typeof (globalThis as { requestAnimationFrame?: unknown }).requestAnimationFrame ===
@@ -49,8 +59,11 @@ async function probe(): Promise<WorkerProbe> {
 		directDraws: false,
 		drawPath: 'no-probe',
 	};
+	// The adapter request runs while the WebGL2 test, which blocks this thread, does.
+	const adapterRequest = (async () =>
+		navigator.gpu?.requestAdapter({ featureLevel: 'compatibility', powerPreference }))();
 	try {
-		const gl = new OffscreenCanvas(1, 1).getContext('webgl2');
+		const gl = new OffscreenCanvas(1, 1).getContext('webgl2', { powerPreference });
 		result.offscreenWebGL2 = gl !== null;
 		// A browser holds only a few WebGL contexts at once, and frees this one when it collects it.
 		gl?.getExtension('WEBGL_lose_context')?.loseContext();
@@ -58,7 +71,7 @@ async function probe(): Promise<WorkerProbe> {
 		result.offscreenWebGL2 = false;
 	}
 	try {
-		const adapter = await navigator.gpu?.requestAdapter({ featureLevel: 'compatibility' });
+		const adapter = await adapterRequest;
 		if (adapter) {
 			const device = await adapter.requestDevice();
 			const context = new OffscreenCanvas(1, 1).getContext('webgpu');
@@ -84,4 +97,7 @@ async function probe(): Promise<WorkerProbe> {
 }
 
 post('loaded');
-probe().then(post);
+self.onmessage = ({ data }: MessageEvent<ProbeRequest>) => {
+	self.onmessage = null;
+	probe(data.powerPreference).then(post);
+};

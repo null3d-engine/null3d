@@ -133,8 +133,16 @@ const ANSWER: WorkerProbe = {
 	drawPath: 'no-probe',
 };
 
-/** What the fake probe workers do, in the order the page starts them, and how many it handled. */
-const probes = { behaviors: [] as ProbeBehavior[], started: 0, terminated: 0 };
+/**
+ * What the fake probe workers do, in the order the page starts them, how many it handled, and what
+ * the page asked of them.
+ */
+const probes = {
+	behaviors: [] as ProbeBehavior[],
+	started: 0,
+	terminated: 0,
+	requests: [] as unknown[],
+};
 
 /**
  * A probe worker that acts as the next of `probes.behaviors` says. One class serves every test: the
@@ -152,6 +160,9 @@ class FakeProbeWorker extends EventTarget {
 			if (behavior === 'answers') this.onmessage?.({ data: ANSWER });
 		}, 0);
 	}
+	postMessage(request: unknown) {
+		probes.requests.push(request);
+	}
 	terminate() {
 		probes.terminated++;
 	}
@@ -159,7 +170,7 @@ class FakeProbeWorker extends EventTarget {
 
 /** Makes the next probe workers act as `behaviors` say, in turn. */
 function fakeProbeWorkers(behaviors: ProbeBehavior[]): typeof probes {
-	Object.assign(probes, { behaviors, started: 0, terminated: 0 });
+	Object.assign(probes, { behaviors, started: 0, terminated: 0, requests: [] });
 	globalThis.Worker = FakeProbeWorker as unknown as typeof Worker;
 	return probes;
 }
@@ -217,6 +228,15 @@ describe("the page's worker probe", () => {
 		forgetWorkerProbe();
 		expect(await pageWorkerProbe([10])).toEqual(ANSWER);
 		expect(counts.started).toBe(2);
+	});
+
+	it("tests the GPU of each start's power preference, and keeps an answer for each", async () => {
+		const counts = fakeProbeWorkers(['answers', 'answers', 'answers']);
+		expect(await pageWorkerProbe([10], 'low-power')).toEqual(ANSWER);
+		expect(await pageWorkerProbe([10], 'low-power')).toEqual(ANSWER);
+		expect(await pageWorkerProbe([10])).toEqual(ANSWER);
+		expect(counts.started).toBe(2);
+		expect(counts.requests).toEqual([{ powerPreference: 'low-power' }, {}]);
 	});
 
 	it('keeps no failure, so the next start probes again', async () => {

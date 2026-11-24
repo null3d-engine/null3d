@@ -68,6 +68,7 @@ export type {
 } from './page/engine';
 export { createEngine } from './page/engine';
 export type {
+	DrawingStart,
 	FrameMetrics,
 	FrameSummary,
 	GpuPassStats,

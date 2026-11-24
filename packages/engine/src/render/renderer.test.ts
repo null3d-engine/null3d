@@ -7,7 +7,8 @@ import {
 import { FORMAT_RG11B10_UFLOAT, PERMUTATION_HALF } from '../generated/gpu';
 import { releaseContext, webgl2Context } from '../gpu/webgl2/context';
 import type { CoreDevice } from '../page/limits';
-import { createRenderer, type RenderCanvas } from './renderer';
+import { createMetricsBuffer, MetricsReader } from '../shared/metrics';
+import { createRenderer, EarlyStart, type RenderCanvas } from './renderer';
 
 type ContextRequest = { type: string; settings: unknown };
 
@@ -248,4 +249,128 @@ describe('the WebGPU renderer', () => {
 			}
 		});
 	}
+});
+
+describe('the early WebGPU device', () => {
+	/** A device that the fake adapter made: whether it was destroyed, and a loss to act out. */
+	interface FakeDevice {
+		destroyed: boolean;
+		lost: Promise<unknown>;
+		destroy(): void;
+		lose(): void;
+	}
+
+	/** Gives the thread a WebGPU adapter that makes fake devices, and counts the adapters asked for. */
+	function fakeDevices() {
+		const made: FakeDevice[] = [];
+		const asked = { adapters: 0 };
+		const makeDevice = (): FakeDevice => {
+			let lose: (info: unknown) => void = () => {};
+			const device: FakeDevice = {
+				destroyed: false,
+				lost: new Promise((resolve) => {
+					lose = resolve;
+				}),
+				destroy() {
+					device.destroyed = true;
+					lose({ reason: 'destroyed' });
+				},
+				lose: () => lose({ reason: 'unknown' }),
+			};
+			made.push(device);
+			return device;
+		};
+		const before = (navigator as { gpu?: unknown }).gpu;
+		Object.defineProperty(navigator, 'gpu', {
+			configurable: true,
+			value: {
+				requestAdapter: async () => {
+					asked.adapters++;
+					return {
+						features: new Set(['core-features-and-limits', 'timestamp-query']),
+						requestDevice: async () => makeDevice(),
+					};
+				},
+			},
+		});
+		const restore = () =>
+			Object.defineProperty(navigator, 'gpu', { configurable: true, value: before });
+		return { made, asked, restore };
+	}
+
+	const device = { capabilities: 0, storageBindingBytes: 1 << 27, shaderBits: 0 } as CoreDevice;
+	const request = { device, timestamps: true };
+
+	it('gives its device to the first renderer that asks for the same one, once', async () => {
+		const { made, asked, restore } = fakeDevices();
+		try {
+			const early = new EarlyStart();
+			early.requestDevice(request);
+			const taken = await early.takeDevice({ ...request, device: { ...device } });
+			expect(taken?.device).toBe(made[0] as unknown as GPUDevice);
+			expect(taken?.tier).toBe('webgpu');
+			expect(early.takeDevice(request)).toBeUndefined();
+			early.release();
+			await settle();
+			expect(made.map((d) => d.destroyed)).toEqual([false]);
+			expect(asked.adapters).toBe(1);
+		} finally {
+			restore();
+		}
+	});
+
+	it('destroys its device when the renderer asks for another one, or when no renderer takes it', async () => {
+		const { made, restore } = fakeDevices();
+		try {
+			const other = new EarlyStart();
+			other.requestDevice(request);
+			expect(other.takeDevice({ ...request, powerPreference: 'low-power' })).toBeUndefined();
+			const untaken = new EarlyStart();
+			untaken.requestDevice(request);
+			untaken.release();
+			await settle();
+			expect(made.map((d) => d.destroyed)).toEqual([true, true]);
+		} finally {
+			restore();
+		}
+	});
+
+	it('asks again for a device that the browser took away before a renderer took it', async () => {
+		const { made, asked, restore } = fakeDevices();
+		try {
+			const early = new EarlyStart();
+			early.requestDevice(request);
+			await settle();
+			made[0]?.lose();
+			await settle();
+			const taken = await early.takeDevice(request);
+			expect(taken?.device).toBe(made[1] as unknown as GPUDevice);
+			expect(asked.adapters).toBe(2);
+		} finally {
+			restore();
+		}
+	});
+
+	it('hands the renderer its early device, and destroys it when the renderer fails to start', async () => {
+		const { made, asked, restore } = fakeDevices();
+		try {
+			const early = new EarlyStart();
+			early.requestDevice(request);
+			const metrics = createMetricsBuffer(true, 0);
+			// The fake device has none of a device's calls, so the renderer fails as it starts.
+			await expect(
+				createRenderer(fakeCanvas().canvas, { tier: 'webgpu', device, metrics, early }),
+			).rejects.toThrow();
+			await settle();
+			expect(asked.adapters).toBe(1);
+			expect(made.map((d) => d.destroyed)).toEqual([true]);
+			const reader = new MetricsReader(metrics);
+			early.steps.publish(metrics);
+			expect(reader.drawingStep('adapter')).toBeGreaterThan(0);
+			expect(reader.drawingStep('device')).toBeGreaterThanOrEqual(reader.drawingStep('adapter'));
+			expect(reader.drawingStep('renderer')).toBe(0);
+		} finally {
+			restore();
+		}
+	});
 });

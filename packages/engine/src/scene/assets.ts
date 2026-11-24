@@ -527,6 +527,8 @@ export class Assets {
 	 */
 	async builtinEnvironment(name: BuiltinEnvironmentName): Promise<Environment> {
 		const call = 'assets.builtinEnvironment';
+		// The thread that draws loads the generators' code while the environments' tables load here.
+		this.makers?.materials.shaders.needGenerators();
 		const builtins = await builtinEnvironments(call);
 		if (!Object.hasOwn(builtins.BUILTIN_ENVIRONMENTS, name))
 			throw new EngineError(
@@ -552,6 +554,8 @@ export class Assets {
 	 */
 	async skyEnvironment(): Promise<Environment> {
 		const call = 'assets.skyEnvironment';
+		// The thread that draws loads the generators' code while the environments' tables load here.
+		this.makers?.materials.shaders.needGenerators();
 		const { size, levels, stages, capture, sh } = (await builtinEnvironments(call)).SKY_MAP;
 		const texture = await this.textures.fromGenerator('sky', size, levels, call);
 		this.textures.addSkyMap(texture, stages, capture, call, writeSkyDefaults);

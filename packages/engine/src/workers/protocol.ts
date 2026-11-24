@@ -8,7 +8,7 @@ import type { HoldScript, HoldScriptResult } from '../page/hold';
 import type { CoreDevice } from '../page/limits';
 import type { GlTimingMode } from '../page/switches';
 import type { FramePacing } from '../render/loop';
-import type { Tier } from '../render/renderer';
+import type { DrawingPreload, Tier } from '../render/renderer';
 import { awaitLater } from '../shared/await-later';
 import { type Build, loadGlue, type StartedCore, startCore } from '../shared/core';
 import type { ReplayProgram, ReplayResult } from '../shared/recording';
@@ -156,14 +156,10 @@ export type RendererRequest =
 
 /**
  * Sent to the worker that draws as soon as the probe has chosen the GPU path, before the core
- * arrives: start the downloads of that path's renderers and of the device's shaders for that path
- * and the fixed bits `bits`.
+ * arrives: start the downloads of that path's renderers, of the device's shaders and of the
+ * features that the start preloads, and on WebGPU the request for the device.
  */
-export interface ShaderPreload {
-	type: 'load-shaders';
-	tier: Tier;
-	bits: number;
-}
+export type ShaderPreload = DrawingPreload & { type: 'load-shaders' };
 
 export type WorkerReply =
 	| {

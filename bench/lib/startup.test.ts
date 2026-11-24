@@ -45,6 +45,7 @@ function result(frameDoneMs: number, overrides: Partial<StartupResult> = {}): St
 				engineStartMs: 300,
 				firstFrameMs: frameDoneMs - 20,
 				firstFrameDoneMs: frameDoneMs,
+				drawingStart: { deviceMs: null, shadersMs: 250, rendererMs: 350 },
 			},
 		},
 		downloads: { requests: 12, bytes: 102_400, files: [] },
@@ -59,6 +60,9 @@ describe('a startup load', () => {
 			scriptMs: 100,
 			probeMs: 150,
 			coreMs: 300,
+			deviceMs: null,
+			shadersMs: 250,
+			rendererMs: 350,
 			readyMs: 400,
 			frameMs: 580,
 			frameDoneMs: 600,
@@ -66,6 +70,12 @@ describe('a startup load', () => {
 			bytes: 102_400,
 		});
 		expect(loadSample(result(600, { downloads: undefined }))).toBeUndefined();
+	});
+
+	it('leaves out the steps of the thread that draws where a page reports none', () => {
+		const load = result(600).stats?.load;
+		const bare = result(600, { stats: load && { load: { ...load, drawingStart: undefined } } });
+		expect(loadSample(bare)).toMatchObject({ deviceMs: null, shadersMs: null, rendererMs: null });
 	});
 
 	it('passes a load in its mode with every time and the downloads', () => {
@@ -134,16 +144,19 @@ describe('the startup table', () => {
 					labels: ['pipelined', 'cold'],
 					samples: [sample(600, 12), sample(900, 13), sample(700, 12)],
 				},
-				{ labels: ['pipelined', 'warm'], samples: [sample(300, 1), sample(400, 2, 'webgpu')] },
+				{
+					labels: ['pipelined', 'warm'],
+					samples: [sample(300, 1), { ...sample(400, 2, 'webgpu'), deviceMs: 200 }],
+				},
 				{ labels: ['single-threaded', 'cold'], samples: [] },
 			],
 		);
 		expect(lines).toEqual([
-			'| Thread mode | Load | GPU | Loads | Script, ms | Probe, ms | Core, ms | Ready, ms | Frame, ms | Frame done, ms | Requests | KB |',
-			'| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |',
-			'| pipelined | cold | webgl2 | 3 | 100 | 150 | 300 | 400 | 680 | 700 | 12 | 100.0 |',
-			'| pipelined | warm | webgl2, webgpu | 2 | 100 | 150 | 300 | 400 | 330 | 350 | 1.5 | 100.0 |',
-			'| single-threaded | cold | - | 0 | - | - | - | - | - | - | - | - |',
+			'| Thread mode | Load | GPU | Loads | Script, ms | Probe, ms | Core, ms | Device, ms | Shaders, ms | Renderer, ms | Ready, ms | Frame, ms | Frame done, ms | Requests | KB |',
+			'| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |',
+			'| pipelined | cold | webgl2 | 3 | 100 | 150 | 300 | - | 250 | 350 | 400 | 680 | 700 | 12 | 100.0 |',
+			'| pipelined | warm | webgl2, webgpu | 2 | 100 | 150 | 300 | 200 | 250 | 350 | 400 | 330 | 350 | 1.5 | 100.0 |',
+			'| single-threaded | cold | - | 0 | - | - | - | - | - | - | - | - | - | - | - |',
 		]);
 		expect(STARTUP_LEGEND[0]).toStartWith('Each time is a median, in milliseconds from navigation');
 	});

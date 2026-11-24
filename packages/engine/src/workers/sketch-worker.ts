@@ -11,8 +11,8 @@
 import { DEV } from '../errors/checks';
 import { messageOf } from '../errors/message';
 import { recordPermutations, stopRecordingPermutations } from '../gpu/variants';
-import { type DrawModule, loadDrawModule, preloadDeviceFiles } from '../render/load-draw';
-import type { Tier } from '../render/renderer';
+import { type DrawModule, loadDrawModule, preloadDrawing } from '../render/load-draw';
+import type { EarlyStart, Tier } from '../render/renderer';
 import { awaitLater } from '../shared/await-later';
 import { controlViews } from '../shared/control';
 import type { CoreGlue } from '../shared/core';
@@ -36,6 +36,8 @@ let runner: SketchRunner | undefined;
 /** The renderer, which this worker loads only in low-latency mode, where it draws. */
 let drawLoad: Promise<DrawModule> | undefined;
 let draw: DrawModule | undefined;
+/** What the worker started for its renderer in low-latency mode, until the renderer takes it. */
+let early: Promise<EarlyStart | undefined> | undefined;
 let host = new DrawingHost();
 let controlSlots: Int32Array | undefined;
 /** The canvas that the first engine moved here in low-latency mode, which later engines draw on. */
@@ -59,7 +61,8 @@ startWorker('sketch', step, async (event: MessageEvent<SketchWorkerMessage>) => 
 		drawLoad ??= loadDrawModule();
 	} else if (message.type === 'load-shaders') {
 		drawLoad ??= loadDrawModule();
-		preloadDeviceFiles(drawLoad, message.tier, message.bits);
+		releaseEarly();
+		early = preloadDrawing(drawLoad, message);
 	} else if (message.type === 'load-sketch') {
 		// A development build hears each add-on that the module loads from before its import begins,
 		// and hands them to the runner once it exists.
@@ -161,9 +164,12 @@ startWorker('sketch', step, async (event: MessageEvent<SketchWorkerMessage>) => 
 				// pipelines ask for. The page stops it once the held frame has drawn them.
 				if (message.renderer.recordPermutations) recordPermutations();
 				step('renderer loaded');
+				const started = early;
+				early = undefined;
 				const drawing = await host.start(
 					draw.startDrawing({
 						...message.renderer,
+						early: await started,
 						canvas: canvas as OffscreenCanvas,
 						metrics: message.metrics,
 						device: message.device,
@@ -206,6 +212,7 @@ startWorker('sketch', step, async (event: MessageEvent<SketchWorkerMessage>) => 
 			});
 		} catch (e) {
 			if (DEV) endEarlyAddons();
+			releaseEarly();
 			await host.release();
 			replyToPage({
 				type: 'error',
@@ -230,10 +237,12 @@ startWorker('sketch', step, async (event: MessageEvent<SketchWorkerMessage>) => 
 	} else if (message.type === 'lose-gpu') {
 		host.drawing?.simulateLoss();
 	} else if (message.type === 'stop-drawing') {
+		releaseEarly();
 		runner?.dispose();
 		runner = undefined;
 		await host.stop('sketch');
 	} else if (message.type === 'park') {
+		releaseEarly();
 		controlSlots = undefined;
 		clearJobTasks(jobTaskHost);
 		jobTaskHost = undefined;
@@ -246,6 +255,12 @@ startWorker('sketch', step, async (event: MessageEvent<SketchWorkerMessage>) => 
 function endEarlyAddons(): void {
 	earlyAddons?.stop();
 	earlyAddons = undefined;
+}
+
+/** Destroys the device of an early start that no renderer took. */
+function releaseEarly(): void {
+	void early?.then((start) => start?.release());
+	early = undefined;
 }
 
 /** Tells the page that the sketch's frame loop, or the drawing in low-latency mode, failed. */
