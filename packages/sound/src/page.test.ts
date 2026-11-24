@@ -38,10 +38,12 @@ class FakeContext {
 	currentTime = 0;
 	readonly destination = { id: 'destination' };
 	onstatechange: (() => void) | null = null;
-	readonly audioWorklet = { addModule: async () => {} };
+	readonly audioWorklet = { addModule: () => FakeContext.mixerModule };
 	static all: FakeContext[] = [];
 	/** Whether a resume succeeds now, as it does only in answer to the user's input. */
 	static activated = false;
+	/** When the mixer's module has loaded, which a test can hold back. */
+	static mixerModule: Promise<void> = Promise.resolve();
 	constructor() {
 		FakeContext.all.push(this);
 	}
@@ -58,6 +60,7 @@ class FakeContext {
 		this.state = 'closed';
 	}
 	async decodeAudioData() {
+		if (this.state === 'closed') throw new Error('the context is closed');
 		return {
 			length: 48_000,
 			sampleRate: 48_000,
@@ -136,8 +139,10 @@ beforeEach(() => {
 	windowListeners = new Map();
 	FakeContext.all = [];
 	FakeContext.activated = false;
+	FakeContext.mixerModule = Promise.resolve();
 	FakeSource.all = [];
 	FakeWorklet.messages = [];
+	FakeWorklet.last = null;
 	const g = globalThis as Record<string, unknown>;
 	for (const [name, value] of Object.entries(GLOBALS)) {
 		saved[name] = g[name];
@@ -325,6 +330,79 @@ describe('a start before the user acts', () => {
 		expect(FakeSource.all).toHaveLength(1);
 		page.stop();
 		sound.destroy();
+	});
+});
+
+describe('the files of a start', () => {
+	test("download beside the mixer's code, each once, and play once the mixer runs", async () => {
+		const { connectSound } = await import('./page');
+		const { engine, ctx, listener } = engineAndSketch();
+		const fetched: string[] = [];
+		const g = globalThis as Record<string, unknown>;
+		const answer = g.fetch as (url: unknown) => Promise<unknown>;
+		g.fetch = (url: unknown) => {
+			fetched.push(String(url));
+			return answer(url);
+		};
+		let mixerLoaded: () => void = () => {};
+		FakeContext.mixerModule = new Promise<void>((resolve) => {
+			mixerLoaded = resolve;
+		});
+		const sound = createSound(ctx, { listener });
+		sound.loop({ file: '/rain.mp3', positional: false });
+		sound.shot({ file: '/thunder.mp3', voices: 1 });
+		const page = connectSound(engine);
+		await settle();
+		// Nothing loads before the start.
+		expect(fetched).toEqual([]);
+		void page.start();
+		await settle();
+		// A sound that the sketch makes while the mixer's code loads starts its file at once too.
+		sound.loop({ file: '/wind.mp3', positional: false });
+		await settle();
+		expect(FakeWorklet.last).toBeNull();
+		const files = () => fetched.filter((url) => url.endsWith('.mp3')).sort();
+		expect(files()).toEqual(['/rain.mp3', '/thunder.mp3', '/wind.mp3']);
+		mixerLoaded();
+		await settle();
+		FakeContext.activated = true;
+		input('click');
+		await settle();
+		expect(page.state).toBe('on');
+		expect(FakeSource.all.filter((source) => source.options.loop)).toHaveLength(2);
+		expect(files()).toEqual(['/rain.mp3', '/thunder.mp3', '/wind.mp3']);
+		page.stop();
+		sound.destroy();
+	});
+
+	test('stay quiet about the files of a sound whose mixer failed', async () => {
+		const { connectSound } = await import('./page');
+		const { engine, ctx, listener } = engineAndSketch();
+		const page404 = new TextEncoder().encode('<!doctype html><title>Not found</title>').buffer;
+		// The mixer's module answers with a page of the host at once, and the file arrives later.
+		(globalThis as Record<string, unknown>).fetch = async (url: unknown) => {
+			const file = String(url).endsWith('.mp3');
+			if (file) await settle(30);
+			return { ok: true, arrayBuffer: async () => (file ? EMPTY_MODULE.slice(0) : page404) };
+		};
+		const warnings: string[] = [];
+		const warn = console.warn;
+		console.warn = (message: string) => warnings.push(message);
+		try {
+			const sound = createSound(ctx, { listener });
+			sound.loop({ file: '/rain.mp3', positional: false });
+			const page = connectSound(engine);
+			await settle();
+			FakeContext.activated = true;
+			await page.start();
+			await settle(60);
+			expect(page.state).toBe('stopped');
+			expect(warnings).toHaveLength(1);
+			expect(warnings[0]).toContain('the audio could not start');
+			sound.destroy();
+		} finally {
+			console.warn = warn;
+		}
 	});
 });
 
