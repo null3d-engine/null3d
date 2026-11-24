@@ -57,7 +57,29 @@ Each change below was then measured alone, on the same connection:
 | [The preset check during play](#the-preset-check) | A small demo's loading screen on a first visit, at full speed on a MacBook Pro | 1.18 s | 0.49 s |
 | [Chrome keeps the compiled core](#let-the-browser-keep-the-files) | A repeat visit's first frame on the engine's test page, at full speed, and the core's functions that it compiled again | 176 to 180 ms, 273 functions | 160 ms, 3 functions |
 
-<!-- TODO(lead): replace the single-change rows above with the figures of the combined build, measured by the timing helper's script on the same link, once the pull request's changes stand together. -->
+With every change together, the same Mac timed the engine before and after the changes in turns, over the same simulated phone connection. Each figure is the median of three loads, in seconds to the first finished frame. A cold load starts with an empty cache. A reload comes after a first visit that ran for 30 seconds. The load average is the Mac's during each pair of loads, before and after.
+
+Over HTTP/1.1:
+
+| Demo and load | Before | After | Load average, before and after |
+| --- | --- | --- | --- |
+| Small demo, cold | 4.6 s | 2.9 s | 4.2 and 3.5 |
+| Skyway, cold | 5.7 s | 3.5 s | 7.0 and 5.7 |
+| Island, cold | 8.9 s | 7.6 s | 11.5 and 7.9 |
+| Garden, cold | 25.7 s | 4.3 s | 3.9 and 4.2 |
+| Island, reload | 4.7 s | 2.2 s | 3.9 and 4.1 |
+| Garden, reload | 2.6 s | 1.3 s | 9.6 and 4.2 |
+
+Over HTTP/2:
+
+| Demo and load | Before | After | Load average, before and after |
+| --- | --- | --- | --- |
+| Small demo, cold | 4.5 s | 2.7 s | 13.7 and 10.7 |
+| Skyway, cold | 5.3 s | 2.8 s | 3.5 and 3.3 |
+| Island, cold | 10.2 s | 7.0 s | 4.4 and 3.1 |
+| Garden, cold | 27.7 s | 3.3 s | 9.4 and 4.3 |
+| Island, reload | 3.9 s | 2.4 s | 3.8 and 5.1 |
+| Garden, reload | 2.3 s | 0.9 s | 3.3 and 2.7 |
 
 ### On real phones
 
@@ -72,7 +94,16 @@ The same demos also ran on real phones, over a tunnel of about 105 ms for each r
 
 Safari on the iPhone 17 kept the files and its compiled shaders between visits. Its repeat visits drew their first frame in 0.9 to 5.5 seconds. Chrome on the Android devices kept no file between visits, because they had accepted the test server's certificate after a warning ([Test a production build](#test-a-production-build)).
 
-<!-- TODO(phones helper): add the after figures on the same devices, once the combined build has run there. -->
+With the changes, on the same devices, a first visit in a fresh session drew its first frame in these times. The tunnel ran at about 100 ms for each round trip and 4 to 9 Mbit/s:
+
+| Device | Small demo | Skyway | Island | Garden |
+| --- | --- | --- | --- | --- |
+| Galaxy S25, Chrome | 3.5 to 7.3 s | 5.7 s | 8.1 s | 5.7 s |
+| Pixel 9, Chrome | 4.0 s | 6.5 s | 13.4 s | 8.7 s |
+| Galaxy Tab A9 Plus, Chrome | 11.3 s | 17.7 s | 39 s | 31 s |
+| iPhone 17, Safari | 8.9 s | 17.2 s | 20.4 s | 11.1 s |
+
+The phones start at Low and run no preset check. On the Galaxy Tab A9 Plus, the check runs during play for 12 to 38 seconds after the first frame, and settles on Low. There the garden demo lost its GPU in 2 of 6 loads. The iPhone 17's repeat visits drew their first frame in 0.4 to 3.1 seconds. The small demo's times follow the tunnel's speed, which differed between the two runs.
 
 A phone's processor makes the largest difference from a computer. The first frame's pipeline builds take seconds there, as [Pipelines on phones](#pipelines-on-phones) shows. The Galaxy Tab A9 Plus failed to build one custom material's pipeline in the garden demo, and on repeat visits of the island.
 
@@ -228,7 +259,7 @@ Building the first frame's pipelines is the largest processor cost of a start on
 | iPhone 17 | 2.4 s | 11.8 s | 13.1 s | 16.5 s |
 | MacBook Pro | 0.1 s | 0.2 s | 0.3 s | 0.7 s |
 
-The phones built 16 to 17, 53 to 55, 61 to 63 and 45 to 46 pipelines for the four demos. The MacBook Pro built 31, 73, 84 and 73 at its higher preset, in a fraction of the time.
+The phones built 16 to 17, 53 to 55, 61 to 63 and 45 to 46 pipelines for the four demos. The MacBook Pro built 31, 73, 84 and 73 at its higher preset, in a fraction of the time. With the changes, a first visit's builds took 0.4 to 3.6 seconds on the Galaxy S25, and 0.8 to 6.5 seconds on the Pixel 9. They took 3 to 23 seconds on the Galaxy Tab A9 Plus, and 2.4 to 13 seconds on the iPhone 17.
 
 On a repeat visit, Safari reused its compiled shaders, and the iPhone 17 built each demo's pipelines in 0.2 seconds or less. In Chrome on Android, the small demo built its pipelines 4 to 5 times faster, and the larger demos built theirs no faster. Chrome on Android keeps about 2 MB of a site's compiled WebGPU pipelines between visits, and 128 KB on a low-end phone. A computer keeps 6 MB. A scene with many large shaders overflows it, so the engine keeps a list of its own.
 
