@@ -34,6 +34,7 @@ import {
 } from '../generated/core';
 import { DEV } from '../shared/dev';
 import { onEngineStop } from '../shared/helper-workers';
+import { importOnce } from '../shared/import-once';
 import { compileOnce, type WasmFile } from '../shared/tasks';
 import type { WasmError } from '../shared/wasm';
 import { bootstrapFailure, spawnWorker, watchWorkerError } from '../shared/worker-start';
@@ -1198,10 +1199,19 @@ async function makeRig(
 	}
 }
 
+/** What one texture use's texture is made from: a decoded image, or a KTX2 file's texels. */
+type TextureSource = { image: ImageBitmap } | { texels: Ktx2Texels } | undefined;
+
+/** The texels that the KTX2 loader transcodes a file into. */
+type Ktx2Texels = Awaited<ReturnType<typeof import('./ktx2')['transcodeKtx2']>>;
+
 /**
  * One texture for each texture use: from a bitmap the worker decoded, an image file, or KTX2 data.
- * When one fails, it destroys the others it made, closes the bitmaps it did not use, and throws the
- * first failure. Exported for its tests.
+ * Every use decodes at once, and the textures are made in the order the file lists them once all
+ * have decoded, so their order never follows the order in which the images finish decoding: a
+ * texture's id, and so the order of the draws that use it, is the same on every run. When one
+ * fails, it closes the images and destroys the textures it made, and throws the first failure.
+ * Exported for its tests.
  */
 export async function makeTextures(
 	context: GltfContext,
@@ -1211,19 +1221,9 @@ export async function makeTextures(
 	call: string,
 ): Promise<(Texture | undefined)[]> {
 	const files = new Map<string, Promise<Blob>>();
-	/** The texture of one use, from its bitmap, its image file or its KTX2 data. */
-	const makeTexture = async (
-		use: TextureUse,
-		bitmap?: ImageBitmap,
-	): Promise<Texture | undefined> => {
-		const options = {
-			colorSpace: use.colorSpace,
-			wrap: use.wrap,
-			filter: use.filter,
-			mipmaps: use.mipmaps,
-			uvSet: use.uvSet,
-		} as const;
-		if (bitmap) return context.textures.fromImage(bitmap, options, 0, call);
+	/** The decoded image or the transcoded texels of one use. */
+	const sourceOf = async (use: TextureUse, bitmap?: ImageBitmap): Promise<TextureSource> => {
+		if (bitmap) return { image: bitmap };
 		const image = data.images[use.image];
 		let bytes = image?.bytes;
 		let source = address;
@@ -1236,18 +1236,45 @@ export async function makeTextures(
 			}
 			const blob = await file;
 			const head = new Uint8Array(await blob.slice(0, KTX2_IDENTIFIER.length).arrayBuffer());
-			if (!isKtx2(head)) {
-				const decoded = await context.decode(blob, source, use.colorSpace, call);
-				return context.textures.fromImage(decoded, options, 0, call);
-			}
+			if (!isKtx2(head)) return { image: await context.decode(blob, source, use.colorSpace, call) };
 			bytes = new Uint8Array(await blob.arrayBuffer());
 		}
 		if (!bytes) return undefined;
-		return ktx2Texture(context, bytes.slice().buffer, source, use, call);
+		return { texels: await ktx2Texels(context, bytes.slice().buffer, source, use, call) };
 	};
-	const results = await Promise.allSettled(
-		data.textures.map(async (use, k) => {
-			const texture = await makeTexture(use, bitmaps[k]);
+	const sources = await Promise.allSettled(
+		data.textures.map((use, k) => sourceOf(use, bitmaps[k])),
+	);
+	/** Closes the decoded images of the uses from `first` on, and the bitmaps of those that failed. */
+	const closeFrom = (first: number) => {
+		for (let k = first; k < sources.length; k++) {
+			const result = sources[k] as PromiseSettledResult<TextureSource>;
+			if (result.status === 'rejected') bitmaps[k]?.close();
+			else if (result.value && 'image' in result.value) result.value.image.close();
+		}
+	};
+	const failed = sources.find((r): r is PromiseRejectedResult => r.status === 'rejected');
+	if (failed) {
+		closeFrom(0);
+		throw failed.reason;
+	}
+	const textures: (Texture | undefined)[] = [];
+	try {
+		for (const [k, use] of data.textures.entries()) {
+			const source = (sources[k] as PromiseFulfilledResult<TextureSource>).value;
+			const options = textureOptions(use);
+			const texture =
+				source === undefined
+					? undefined
+					: 'image' in source
+						? context.textures.fromImage(
+								source.image,
+								{ ...options, mipmaps: use.mipmaps },
+								0,
+								call,
+							)
+						: context.textures.fromTexels(source.texels, options, call);
+			textures.push(texture);
 			// The texture memory budget may drop the levels of a texture whose file the engine can
 			// read again: an image file, or an image inside a buffer of a file.
 			const image = data.images[use.image];
@@ -1255,44 +1282,53 @@ export async function makeTextures(
 				? { url: new URL(image.url) }
 				: image?.source && { ...image.source, url: new URL(image.source.url) };
 			if (texture && file) context.reloadsFrom(texture, file, use.colorSpace, call);
-			return texture;
-		}),
-	);
-	const failed = results.find((r): r is PromiseRejectedResult => r.status === 'rejected');
-	if (!failed) return results.map((r) => (r as PromiseFulfilledResult<Texture | undefined>).value);
-	results.forEach((result, k) => {
-		if (result.status === 'fulfilled') result.value?.destroy();
-		else bitmaps[k]?.close();
-	});
-	throw failed.reason;
+		}
+	} catch (error) {
+		for (const texture of textures) texture?.destroy();
+		closeFrom(textures.length);
+		throw error;
+	}
+	return textures;
 }
 
-/** A texture from KTX2 data, through the KTX2 loader, which this imports the first time. */
-async function ktx2Texture(
+/** The KTX2 loader's module, which a page downloads with its first KTX2 texture. */
+const ktx2Code = importOnce(() => import('./ktx2'));
+
+/** The texels of KTX2 data, through the KTX2 loader, which this imports the first time. */
+async function ktx2Texels(
 	context: GltfContext,
 	file: ArrayBuffer,
 	address: URL,
 	use: TextureUse,
 	call: string,
-): Promise<Texture> {
+): Promise<Ktx2Texels> {
 	let ktx2: typeof import('./ktx2');
 	try {
-		ktx2 = await import('./ktx2');
+		ktx2 = await ktx2Code();
 	} catch (error) {
 		throw context.error(
 			'E1406',
 			`the KTX2 loader did not download for ${call}() of ${address}: ${error instanceof Error ? error.message : String(error)}.`,
 		);
 	}
-	const options = {
+	return ktx2.transcodeKtx2(
+		context.textures,
+		file,
+		address,
+		textureOptions(use),
+		call,
+		(code, message) => context.error(code, message),
+	);
+}
+
+/** A texture use's options for its texture, apart from its mipmaps, which an image takes. */
+function textureOptions(use: TextureUse) {
+	return {
 		colorSpace: use.colorSpace,
 		wrap: use.wrap,
 		filter: use.filter,
 		uvSet: use.uvSet,
-	};
-	return ktx2.loadKtx2(context.textures, file, address, options, call, (code, message) =>
-		context.error(code, message),
-	);
+	} as const;
 }
 
 const KTX2_IDENTIFIER = [0xab, 0x4b, 0x54, 0x58, 0x20, 0x32, 0x30, 0xbb, 0x0d, 0x0a, 0x1a, 0x0a];

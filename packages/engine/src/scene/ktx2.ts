@@ -203,9 +203,10 @@ export async function reloadKtx2(
 
 /**
  * Transcodes a KTX2 file, which moves to the transcoder's worker, into the format of `ktx2Target`,
- * with the file's mip levels unless `mipmaps` is false. Throws as `loadKtx2` does.
+ * with the file's mip levels unless `mipmaps` is false, for `textures.fromTexels`. Throws as
+ * `loadKtx2` does.
  */
-async function transcodeKtx2(
+export async function transcodeKtx2(
 	textures: Textures,
 	file: ArrayBuffer,
 	address: URL,

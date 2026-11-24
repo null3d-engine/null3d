@@ -1,7 +1,8 @@
 // The glTF loader's texture step, its materials' textures and its levels, with a fake engine: a
-// load whose textures fail part way frees what it made, a material gives the textures it samples
-// by slot, a level whose primitive names its base's accessors shares the base's vertices, and a
-// file's error fades unless the tool's coverage comes beside it.
+// load makes its textures in the file's order whatever order its images decode in, a load whose
+// textures fail part way frees what it made, a material gives the textures it samples by slot, a
+// level whose primitive names its base's accessors shares the base's vertices, and a file's error
+// fades unless the tool's coverage comes beside it.
 
 import { expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
@@ -34,6 +35,39 @@ const use = (image: number): TextureUse => ({
 	mipmaps: true,
 });
 
+test("a load makes its textures in the file's order, whatever order its images decode in", async () => {
+	const made: string[] = [];
+	// The images decode in the order opposite to the file's: the last one first.
+	const decoded = [30, 20, 10];
+	const context = {
+		textures: {
+			fromImage: (bitmap: { name: string }) => {
+				made.push(bitmap.name);
+				return { destroy: () => {} };
+			},
+		},
+		download: async () => new Blob([new Uint8Array(16)]),
+		decode: async (_blob: Blob, address: URL) => {
+			const k = Number(address.pathname.slice(-5, -4));
+			await new Promise((resolve) => setTimeout(resolve, decoded[k]));
+			return { name: `image ${k}`, close: () => {} };
+		},
+		reloadsFrom: () => {},
+	} as unknown as GltfContext;
+	const data = {
+		textures: [use(0), use(1), use(2)],
+		images: [0, 1, 2].map((k) => ({ url: `https://example.com/image${k}.png` })),
+	} as unknown as GltfData;
+	await makeTextures(
+		context,
+		data,
+		[],
+		new URL('https://example.com/model.gltf'),
+		'assets.loadGltf',
+	);
+	expect(made).toEqual(['image 0', 'image 1', 'image 2']);
+});
+
 test('a texture that fails destroys the textures made before it and closes the unused bitmaps', async () => {
 	const destroyed: number[] = [];
 	const closed: number[] = [];
@@ -57,8 +91,9 @@ test('a texture that fails destroys the textures made before it and closes the u
 		'assets.loadGltf',
 	);
 	await expect(loading).rejects.toThrow('E1208');
-	expect(destroyed.sort()).toEqual([1, 2]);
-	expect(closed).toEqual([2]);
+	// The textures are made in the file's order, so the failure stops before the third.
+	expect(destroyed).toEqual([1]);
+	expect(closed.sort()).toEqual([2, 3]);
 });
 
 /** The accessors that a primitive of four vertices names, as the parser reads them. */

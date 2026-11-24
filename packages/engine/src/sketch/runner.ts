@@ -116,7 +116,13 @@ import {
 	refreshRate,
 } from '../shared/metrics';
 import type { Recorder, ReplayProgram, ReplayResult } from '../shared/recording';
-import { plansPending, tasksPending } from '../shared/task-pending';
+import {
+	endPlanHold,
+	holdPlans,
+	plansPending,
+	releasePlans,
+	tasksPending,
+} from '../shared/task-pending';
 import { VIDEO_FRAME, type VideoFrameMessage } from '../shared/videos';
 import { slotChange, slotChangeOrRecheck } from '../shared/wake';
 import type { WgslUpdate } from '../shared/wgsl-updates';
@@ -368,6 +374,12 @@ const JOB_PAUSE_SECONDS = 4.5;
  * registration keeps its errors, and the progress handlers join the loader once it arrives. The
  * loader takes the downloads of the sketch's list when `listed` gives them, and a development build
  * watches the sketch's loads while `watching` says so.
+ *
+ * With `inOrder`, as while the engine holds its frames, the calls run one at a time in the order
+ * the sketch made them: each starts once the call before it has answered. A load makes its
+ * textures, meshes and materials when its files arrive, and files arrive in an order that changes
+ * from run to run, so loads that ran together would make the scene's content in another order on
+ * each run, and the held frame would draw its objects in another order and with other ids.
  */
 function lazyAssets(
 	textures: Textures,
@@ -375,11 +387,14 @@ function lazyAssets(
 	makers: import('../scene/assets').ModelMakers,
 	listed: () => Promise<Downloads> | undefined,
 	watching: () => boolean,
+	inOrder: boolean,
 ): Assets {
 	const extensions = new GltfExtensions();
 	// The loader's file starts downloading at the first call that reads a file, or with the
 	// sketch's list, never at the start: a page that loads nothing must download none of it.
 	let ready: Promise<Assets> | undefined;
+	/** The answer of the call made last, which the next call waits for when the calls run in order. */
+	let answered: Promise<unknown> = Promise.resolve();
 	const load = (): Promise<Assets> =>
 		(ready ??= awaitLater(
 			import('../scene/assets').then(({ Assets, Downloads }) => {
@@ -411,10 +426,16 @@ function lazyAssets(
 					return () => off?.();
 				};
 			}
-			return (...args: unknown[]) =>
-				load().then((assets) =>
-					(assets[name as keyof Assets] as unknown as (...a: unknown[]) => unknown)(...args),
-				);
+			return (...args: unknown[]) => {
+				const call = () =>
+					load().then((assets) =>
+						(assets[name as keyof Assets] as unknown as (...a: unknown[]) => unknown)(...args),
+					);
+				if (!inOrder) return call();
+				const answer = answered.then(call, call);
+				answered = answer;
+				return answer;
+			};
 		},
 	});
 }
@@ -965,6 +986,7 @@ export class SketchRunner {
 				{ core: this.core, geometry, materials, scene },
 				() => this.listed,
 				() => this.watchesLoads,
+				this.holdsFrames,
 			),
 			input: this.input,
 			post: this.post,
@@ -1007,6 +1029,10 @@ export class SketchRunner {
 				? HOLD_SEED
 				: (replay?.seed ?? (record ? RECORDING_SEED : undefined));
 		if (seed !== undefined) this.restoreRandom = seedMathRandom(seed);
+		// The level plans that the setup starts hand over their levels when the hold begins, in the
+		// order they started, so the scene's meshes sit in engine memory in one order on every run.
+		// Last too, so a constructor that fails leaves the plans handing over as they answer.
+		if (holdSeconds !== undefined) holdPlans();
 	}
 
 	/**
@@ -1246,7 +1272,8 @@ export class SketchRunner {
 	/**
 	 * Ends the sketch when the engine stops: runs its onDestroy, then makes every later call to the
 	 * engine fail with E1420, so code that outlives the engine never reaches the next engine's core.
-	 * It also gives the thread its own Math.random back, where hold mode seeded it.
+	 * It also gives the thread its own Math.random back, where hold mode seeded it, and ends hold
+	 * mode's hold on the level plans, for a setup that failed before its hold.
 	 */
 	dispose(): void {
 		// Before the check below: a runner whose core stopped first still stops hearing add-ons.
@@ -1263,6 +1290,7 @@ export class SketchRunner {
 		stopHelperWorkers();
 		this.restoreRandom?.();
 		this.restoreRandom = undefined;
+		endPlanHold();
 	}
 
 	/**
@@ -1746,6 +1774,11 @@ export class SketchRunner {
 		this.render.held = true;
 		this.recorded.held = true;
 		try {
+			// The tasks and level plans that the setup started answer whenever the job workers finish
+			// them. The steps start once they all have, and the plans hand over their levels in the
+			// order they started, so the steps and the held frame find the same scene on every run.
+			releasePlans();
+			if (tasksPending() > 0) await this.settleTasks();
 			for (let step = 0; step <= steps; step++) {
 				this.clock.holdStep(step, steps, seconds);
 				const now = this.clock.now;
@@ -1812,6 +1845,7 @@ export class SketchRunner {
 				`hold mode stopped at ${Number(this.clock.now.toFixed(3))} seconds, in frame ${this.context.time.frame}: ${messageOf(error)}${phase}`,
 			);
 		} finally {
+			endPlanHold();
 			this.holding = false;
 			this.time.held = false;
 			this.time.drawn = true;

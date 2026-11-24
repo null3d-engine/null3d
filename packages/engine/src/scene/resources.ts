@@ -151,7 +151,7 @@ import {
 } from '../generated/gpu';
 import type { ShaderVariants } from '../generated/shaders';
 import type { CustomShader } from '../shared/images';
-import { planEnded, planStarted } from '../shared/task-pending';
+import { planEnded, planStarted, planTurn } from '../shared/task-pending';
 import type { WgslUpdate } from '../shared/wgsl-updates';
 import { type ColorInput, linearColor, writeLinearColor } from './color';
 import type { SceneInput } from './features';
@@ -746,6 +746,8 @@ export class MeshGeometry {
 					call,
 					levelsError,
 				);
+				// Hold mode hands the plans' levels over in the order the plans started.
+				await planTurn(counted);
 				return await this.takePlan(output, plan, entry, call);
 			} catch (error) {
 				if (plan === this.plans) this.planning = undefined;
