@@ -1899,6 +1899,76 @@ describe('labels', () => {
 		}
 	});
 
+	test('the containers show the camera of the frame whose labels the elements show', () => {
+		const { scene, setWorld, ui, page, record, show, take, region } = setup();
+		const camera = scene.createPerspectiveCamera({ fov: 60, near: 0.5, far: 30 });
+		setWorld(camera, world([0, 0, 10], [0, 0, 0]));
+		scene.setActiveCamera(camera);
+		const object = scene.createGroup();
+		setWorld(object, world([1, 0, 0], [0, 0, 0]));
+		ui.trackLabel(object, 'face', { transform: 'billboard' });
+		// Page elements, whose parent takes the container that holds the camera's view.
+		type Node = {
+			style: Record<string, string>;
+			parentElement: Node | null;
+			append(...c: Node[]): void;
+		};
+		const node = (): Node => {
+			const made: Node = {
+				style: {},
+				parentElement: null,
+				append: (...children) => {
+					for (const child of children) child.parentElement = made;
+				},
+			};
+			return made;
+		};
+		const realDocument = globalThis.document;
+		Object.assign(globalThis, { document: { createElement: node } });
+		try {
+			const face = node();
+			node().append(face);
+			page.bind('face', face as unknown as HTMLElement);
+			take();
+			record(1);
+			show(1);
+			const container = face.parentElement as Node;
+			const cameraOf = (frame: number) =>
+				cameraTransform(region.parityCameras[frame & 1] as Float32Array, CSS[0], CSS[1]);
+			expect(container.style.transform).toBe(cameraOf(1));
+			const first = face.style.transform;
+			// The camera rolls a step in each later frame.
+			const roll = (frame: number) => {
+				setWorld(camera, world([0, 0, 10], [0, 0, 0.1 * (frame - 1)]));
+				take();
+				record(frame);
+			};
+			roll(2);
+			presentLabels(region, 2);
+			roll(3);
+			// The thread that draws presents frame 3 after the page read frame 2's tables, as the page
+			// comes to the camera.
+			const own = (page as unknown as { region: LabelRegion }).region;
+			const presented = own.presentedCamera;
+			let presents = 1;
+			Object.defineProperty(own, 'presentedCamera', {
+				get: () => {
+					if (presents-- > 0) presentLabels(region, 3);
+					return presented;
+				},
+			});
+			page.update();
+			expect(container.style.transform).toBe(cameraOf(page.frame));
+			// The next update shows frame 3 whole: its camera and the element's turn to face it.
+			page.update();
+			expect(page.frame).toBe(3);
+			expect(container.style.transform).toBe(cameraOf(3));
+			expect(face.style.transform).not.toBe(first);
+		} finally {
+			Object.assign(globalThis, { document: realDocument });
+		}
+	});
+
 	test('a label that becomes a plane of the scene takes a slot in the other table', () => {
 		const { scene, setWorld, ui, sent } = setup(4, 2);
 		const object = scene.createGroup();
