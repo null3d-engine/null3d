@@ -2,16 +2,17 @@
 // the engine and the sketch report the same one. The GPU path caps the preset, and the engine
 // chooses from the device. The preset check then lowers a preset that the GPU cannot draw the
 // scene at, during play or before it, as ?preset-check= says. Each preset's texture settings reach
-// the core. Starts that crash the tab make the next
-// start lighter. The crash note stays out of storage that the browser refuses, and leaves after the
-// first seconds of play. A later start takes the stored result of the preset check. A sketch
-// changes its settings, its own upload budget stays until the setting changes, and a setting that
-// the engine does not take is refused. A sketch changes the preset, and no frame draws without the
-// pipelines of the new preset.
+// the core. Starts that crash the tab make the next start lighter. The crash note stays out of
+// storage that the browser refuses, and leaves after the first seconds of play. A later start
+// takes the stored result of the preset check, or goes on from the rounds of a check that never
+// ended. A sketch changes its settings, its own upload budget stays until the setting changes, and
+// a setting that the engine does not take is refused. A sketch changes the preset, and no frame
+// draws without the pipelines of the new preset.
 import { type BrowserContext, expect, type Page, test } from '@playwright/test';
 import type { PresetCheck } from '../../packages/engine/src/quality/check.ts';
 import {
 	checkedSettings,
+	lowered,
 	presetSettings,
 	type QualityPreset,
 	type QualitySettings,
@@ -253,6 +254,38 @@ test('the preset check measures during play by default, and before play with ?pr
 	// A stored result applies from the start, whichever the timing.
 	const stored = await openQuality(page, 'gpu=webgpu');
 	expect(stored.presetCheckAtStart?.reused).toBe(true);
+});
+
+test('a start goes on from the rounds of a check that never ended, at the preset they lowered to', async ({
+	page,
+}) => {
+	const measured = await openQuality(page, 'gpu=webgpu');
+	const from = measured.mode.presetCheck?.from;
+	if (!from) throw new Error('the engine did not check the preset');
+	// The page closed after the check's first round missed the target and lowered the preset: the
+	// store holds that round alone. The round is written here, so the test does not depend on the
+	// speed of the GPU.
+	const missed = { preset: from, presentedFps: 10, completedFps: 10 };
+	await page.evaluate((round) => {
+		const key = Object.keys(localStorage).find((name) => name.startsWith('null3d.check:'));
+		if (!key) throw new Error('the page stored no check');
+		const stored = JSON.parse(localStorage.getItem(key) as string);
+		stored.check.rounds = [round];
+		localStorage.setItem(key, JSON.stringify(stored));
+	}, missed);
+	const resumed = await openQuality(page, 'gpu=webgpu');
+	// The start runs the lower preset from its setup on, and its own check goes on from there.
+	expect(resumed.presetCheckAtStart).toBeNull();
+	expect(resumed.sketch.preset).toBe(lowered(from, 1));
+	const merged = resumed.mode.presetCheck;
+	expect(merged?.from).toBe(from);
+	expect(merged?.reused).toBe(false);
+	expect(merged?.rounds[0]).toEqual(missed);
+	expect(merged?.rounds[1]?.preset).toBe(lowered(from, 1));
+	expect(resumed.mode.preset).toBe(merged?.rounds.at(-1)?.preset);
+	// The check that went on stores its result for the next start.
+	const later = await openQuality(page, 'gpu=webgpu');
+	expect(later.mode.presetCheck).toEqual({ ...merged, reused: true } as PresetCheck);
 });
 
 // The sketch's thread hands the change to the page, which sizes the canvas: through a message

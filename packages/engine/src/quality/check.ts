@@ -75,7 +75,9 @@ export interface PresetCheck {
 	rounds: PresetCheckRound[];
 	/**
 	 * True when the engine took this result from an earlier start of the sketch in this browser on
-	 * this device, and did not measure again. The engine stores each check's result for a week.
+	 * this device, and did not measure again. The engine stores each check's result for a week. A
+	 * check that went on from the rounds of an earlier start, whose check never ended, is false, and
+	 * lists those rounds first.
 	 */
 	reused: boolean;
 }
@@ -122,8 +124,9 @@ export function checkTargetFps(refreshHz: number, highest = CHECK_MAX_FPS): numb
 /**
  * The target after a round: the higher of the target so far and the one from the refresh rate that
  * the meter reads now. A GPU that falls behind can slow the meter, which then reads low, so the
- * target never falls during a check. Each round that the check lowered then missed the target that
- * the check reports.
+ * target never falls during a check, and it starts at the rate that the meter read before the
+ * check's first frame. Each round that the check lowered then missed the target that the check
+ * reports.
  */
 export function raiseTarget(targetFps: number, refreshHz: number, highest = CHECK_MAX_FPS): number {
 	return Math.max(targetFps, checkTargetFps(refreshHz, highest));

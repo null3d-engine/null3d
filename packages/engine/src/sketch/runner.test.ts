@@ -7,7 +7,12 @@ import type { EngineCapabilities } from '../page/engine';
 import type { HoldScript } from '../page/hold';
 import type { CoreDevice } from '../page/limits';
 import { GovernorLoop } from '../quality/governor';
-import { LOWEST_TIER_SCALE, lowestTierSettings, presetSettings } from '../quality/presets';
+import {
+	checkedSettings,
+	LOWEST_TIER_SCALE,
+	lowestTierSettings,
+	presetSettings,
+} from '../quality/presets';
 import { callValueArguments } from '../scene/fake-call-values';
 import type { Material, MeshGeometry } from '../scene/resources';
 import {
@@ -162,13 +167,16 @@ type GlueAnswers = Partial<Record<keyof CoreGlue, (field: number) => number>>;
 /**
  * How the thread that draws behaves in a test: the intervals it records, in ms. With `replayMs`,
  * each frame's replay lasts that long after the frame is taken, and `overwritten` gets each frame
- * whose list the sketch recorded again during its replay.
+ * whose list the sketch recorded again during its replay. `refreshHz` is the refresh rate that
+ * its meter reads before it takes a frame, and `loadedHz` the one it reads once it takes frames.
  */
 interface FakeDrawing {
 	presentedMs: number;
 	completedMs: number;
 	replayMs?: number;
 	overwritten?: number[];
+	refreshHz?: number;
+	loadedHz?: number;
 }
 
 /**
@@ -185,6 +193,7 @@ function drawFrames(
 	const { slots } = control;
 	const render = new FrameRecorder(metrics, Role.Render);
 	const completion = new FrameRecorder(metrics, Role.Completion);
+	if (drawing.refreshHz) render.setRefreshHz(drawing.refreshHz);
 	let replaying = 0;
 	let replayEnd = 0;
 	const timer = setInterval(() => {
@@ -200,6 +209,7 @@ function drawFrames(
 		Atomics.store(slots, Slot.PipelinesBuilt, published);
 		Atomics.store(slots, Slot.FramesTaken, published);
 		if (slots.buffer instanceof SharedArrayBuffer) Atomics.notify(slots, Slot.FramesTaken);
+		if (drawing.loadedHz) render.setRefreshHz(drawing.loadedHz);
 		if (drawing.replayMs) {
 			replaying = published;
 			replayEnd = performance.now() + drawing.replayMs;
@@ -1215,6 +1225,10 @@ describe('SketchRunner and quality presets', () => {
 				['medium', 25],
 				['low', 25],
 			]);
+			// The lowering tells the page of the rounds so far, so a page that closes keeps them.
+			const lowering = updates.filter((update) => update.check && !update.checked);
+			expect(lowering.map((update) => update.preset)).toEqual(['low']);
+			expect(lowering[0]?.check?.rounds.map((round) => round.preset)).toEqual(['medium']);
 		},
 		scaledBudget(10_000),
 	);
@@ -1250,6 +1264,17 @@ describe('SketchRunner and quality presets', () => {
 		},
 		scaledBudget(10_000),
 	);
+
+	it('starts the target at the refresh rate read before the check, which its load cannot lower', async () => {
+		// A GPU that falls behind slows the frame callbacks, which then read as a slower display.
+		const { context, updates, stopDrawing } = await start(() => ({}), undefined, {
+			quality: { ...MEDIUM, check: 'before-play' },
+			drawing: { presentedMs: 16, completedMs: 16.5, refreshHz: 90, loadedHz: 45 },
+		});
+		stopDrawing();
+		expect(context.quality.preset).toBe('medium');
+		expect(updates.at(-1)?.check?.targetFps).toBe(60);
+	});
 
 	it('asks for no more than the highest target that the page and ?fps= allow', async () => {
 		const { context, updates, stopDrawing } = await start(() => ({}), undefined, {
@@ -1340,6 +1365,47 @@ describe('SketchRunner and quality presets', () => {
 				expect(updates.at(-1)?.check?.rounds.map((round) => round.preset)).toEqual([
 					'medium',
 					'low',
+				]);
+			} finally {
+				stopDrawing();
+			}
+		},
+		scaledBudget(10_000),
+	);
+
+	it(
+		"goes on from the rounds that an earlier start's check measured before it ended",
+		async () => {
+			const earlier = {
+				from: 'medium',
+				targetFps: 60,
+				rounds: [{ preset: 'medium', presentedFps: 62.5, completedFps: 25 }],
+				reused: true,
+			} as const;
+			const { runner, control, context, updates, stopDrawing } = await start(
+				() => ({}),
+				undefined,
+				{
+					quality: {
+						...MEDIUM,
+						preset: 'low',
+						settings: checkedSettings('medium', 'low'),
+						check: 'during-play',
+						resume: { ...earlier, rounds: [...earlier.rounds] },
+					},
+					drawing: { presentedMs: 16, completedMs: 40 },
+				},
+			);
+			try {
+				const ended = () => updates.some((update) => update.checked);
+				await play(runner, control, ended);
+				expect(context.quality.preset).toBe('low');
+				const check = updates.at(-1)?.check;
+				expect(check?.from).toBe('medium');
+				expect(check?.reused).toBe(false);
+				expect(check?.rounds.map((round) => [round.preset, round.completedFps])).toEqual([
+					['medium', 25],
+					['low', 25],
 				]);
 			} finally {
 				stopDrawing();

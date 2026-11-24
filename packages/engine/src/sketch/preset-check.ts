@@ -4,7 +4,10 @@
 // finished them. When the lower rate misses the target, it lowers the preset by one, waits for the
 // new preset's first frame, and measures again, down to Low. A round during which the page was
 // hidden or paused measures again: a hidden page draws no frames, and the first frame after it
-// carries the hidden time as its interval. The rules and the thresholds live in quality/check.ts.
+// carries the hidden time as its interval. The target starts at the refresh rate that the meter
+// read before the check's frames began: a GPU that falls behind slows the frame callbacks, which
+// then read as a slower display. A check can go on from the rounds that an earlier start measured
+// before its check ended. The rules and the thresholds live in quality/check.ts.
 
 import {
 	CHECK_GRACE_MS,
@@ -28,8 +31,11 @@ export interface CheckHost {
 	metrics: ArrayBufferLike;
 	/** The preset that runs. */
 	readonly preset: QualityPreset;
-	/** Switches to the next lighter preset, and resolves once its first frame is on screen. */
-	lower(): Promise<void>;
+	/**
+	 * Switches to the next lighter preset, and resolves once its first frame is on screen. `check`
+	 * is the check's rounds so far, whose last missed its target, for the page to keep.
+	 */
+	lower(check: PresetCheck): Promise<void>;
 	/**
 	 * Draws a frame of the scene as it stands, and resolves once the thread that draws has taken
 	 * it: with false when the engine stopped.
@@ -80,18 +86,44 @@ const rounded = (fps: number) => Math.round(fps * 10) / 10;
 const rateOf = (sums: RingSums) =>
 	rounded(frameRate(sums.sums[SUM_RECORDS] as number, sums.sums[SUM_INTERVAL_MS] as number));
 
+/** Where a check starts: its first preset, its target so far and its rounds so far. */
+export type CheckStart = Pick<PresetCheck, 'from' | 'targetFps' | 'rounds'>;
+
+/**
+ * Where a check of `preset` starts, before its first frame. Its target starts at `refreshHz`, the
+ * rate that the meter read then, once the meter has read one, and at most `maxTargetFps`.
+ * `resume` holds the rounds that an earlier start measured before its check ended: the check then
+ * goes on from them, and reports them with its own from the earlier start's first preset.
+ */
+export function checkStart(
+	preset: QualityPreset,
+	refreshHz: number,
+	maxTargetFps: number,
+	resume?: CheckStart,
+): CheckStart {
+	const targetFps = resume?.targetFps ?? 0;
+	return {
+		from: resume?.from ?? preset,
+		targetFps: refreshHz > 0 ? raiseTarget(targetFps, refreshHz, maxTargetFps) : targetFps,
+		rounds: [...(resume?.rounds ?? [])],
+	};
+}
+
 /**
  * Measures the preset that runs, and lowers it until one holds the target or the preset is Low.
- * The first grace counts from `graceStart`, when the scene started drawing for the check. Resolves
- * with what the check measured, or undefined when the engine stopped first.
+ * The first grace counts from `graceStart`, when the scene started drawing for the check.
+ * `begin` is where the check starts, as `checkStart` gives it; without it, the check starts from
+ * the preset that runs, with no target until the meter reads one. Resolves with what the check
+ * measured, or undefined when the engine stopped first.
  */
 export async function checkPreset(
 	host: CheckHost,
 	graceStart: number,
+	begin: CheckStart = { from: host.preset, targetFps: 0, rounds: [] },
 ): Promise<PresetCheck | undefined> {
-	const from = host.preset;
-	const rounds: PresetCheckRound[] = [];
-	let targetFps = 0;
+	const { from } = begin;
+	const rounds: PresetCheckRound[] = [...begin.rounds];
+	let targetFps = begin.targetFps;
 	let start = graceStart;
 	for (;;) {
 		const resumes = host.resumes();
@@ -120,7 +152,7 @@ export async function checkPreset(
 		};
 		rounds.push(round);
 		if (host.preset === 'low' || holdsTarget(round, targetFps)) break;
-		await host.lower();
+		await host.lower({ from, targetFps, rounds: [...rounds], reused: false });
 		if (!(await settle(host))) return undefined;
 		start = performance.now();
 	}

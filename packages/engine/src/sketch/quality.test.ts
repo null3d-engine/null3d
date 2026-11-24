@@ -167,6 +167,21 @@ describe('SketchQuality', () => {
 		expect(quality.takeChange()).toBe(RESTART_CHANGE);
 	});
 
+	it("tells the page of the check's rounds so far with the check's lower preset", async () => {
+		const { quality, applied } = medium();
+		const soFar = {
+			from: 'medium',
+			targetFps: 60,
+			rounds: [{ preset: 'medium', presentedFps: 40, completedFps: 40 }],
+			reused: false,
+		} as const;
+		await quality.lower({ ...soFar, rounds: [...soFar.rounds] });
+		expect(applied.at(-1)?.preset).toBe('low');
+		expect(applied.at(-1)?.check).toEqual({ ...soFar, rounds: [...soFar.rounds] });
+		// The lowering does not end the check.
+		expect(applied.at(-1)?.checked).toBeUndefined();
+	});
+
 	it("keeps the lower preset's anti-aliasing mode when a later setPreset changes the preset", async () => {
 		const { quality } = medium();
 		await quality.lower();

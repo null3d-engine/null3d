@@ -54,6 +54,11 @@ export interface QualityStart {
 	 */
 	check?: PresetCheckTiming;
 	/**
+	 * The rounds that an earlier start of the sketch measured before its check ended, as the page
+	 * stored them. The start runs the preset that they lowered to, and its check goes on from them.
+	 */
+	resume?: PresetCheck;
+	/**
 	 * True when the page started in the lowest quality tier, through its start switch. The
 	 * governor then gives the tier's settings back when the frames have room for its window.
 	 */
@@ -81,7 +86,8 @@ const NO_TEXTURE_MEMORY: TextureMemory = {
 /**
  * What the page learns after each change: the preset, the settings, and the check's result.
  * `checked` marks the one update that ends the preset check, which carries the check's result
- * when it measured one.
+ * when it measured one. Each lowering by the check carries the check's rounds so far, without
+ * `checked`, so the page keeps them should the check never end.
  */
 export interface QualityUpdate {
 	preset: QualityPreset;
@@ -535,9 +541,10 @@ export class SketchQuality implements Quality {
 	 * and those that the sketch chose itself, keep their values. A device can move to a lighter
 	 * anti-aliasing mode while it runs, so the lower preset gives that too: the check lowers a
 	 * tablet from Medium to Low, whose FXAA costs half of MSAA's draws. A heavier mode stays as the
-	 * device started with it.
+	 * device started with it. `check` is the check's rounds so far, which the page hears of with
+	 * the lower preset.
 	 */
-	lower(): Promise<void> {
+	lower(check?: PresetCheck): Promise<void> {
 		const next = lowered(this.preset, 1);
 		const kept: Record<string, unknown> = { ...this.options };
 		const current = this.settings as unknown as Record<string, unknown>;
@@ -552,7 +559,7 @@ export class SketchQuality implements Quality {
 			// keeps it too, and the settings never name a mode that the canvas is not drawing.
 			this.options.antialias = wanted;
 		}
-		return this.update(next, this.presetValues(next, kept as Partial<QualitySettings>));
+		return this.update(next, this.presetValues(next, kept as Partial<QualitySettings>), check);
 	}
 
 	/** The settings of `preset`, with `kept`'s values, under the device's texture memory cap. */
@@ -615,9 +622,14 @@ export class SketchQuality implements Quality {
 
 	/**
 	 * Moves to `preset` with the values in `settings`, and applies the settings that change. A new
-	 * preset, or a new value of a setting that is not live, restarts the preset.
+	 * preset, or a new value of a setting that is not live, restarts the preset. `check` goes to
+	 * the page with the change.
 	 */
-	private update(preset: QualityPreset, settings: Partial<QualitySettings>): Promise<void> {
+	private update(
+		preset: QualityPreset,
+		settings: Partial<QualitySettings>,
+		check?: PresetCheck,
+	): Promise<void> {
 		const current = this.settings as unknown as Record<string, unknown>;
 		const changed: QualitySettingName[] = [];
 		let restart = preset !== this.preset;
@@ -631,7 +643,7 @@ export class SketchQuality implements Quality {
 		this.preset = preset;
 		this.change = restart ? RESTART_CHANGE : Math.max(this.change, LIVE_CHANGE);
 		if (restart) this.restart = true;
-		this.apply({ preset, settings: { ...this.settings } }, changed);
+		this.apply({ preset, settings: { ...this.settings }, ...(check && { check }) }, changed);
 		return restart ? this.settle() : Promise.resolve();
 	}
 }

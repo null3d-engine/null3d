@@ -91,7 +91,7 @@ import {
 	probeCapabilities,
 	type WorkerProbeFailure,
 } from './capabilities';
-import { CheckStore, checkConditions } from './check-store';
+import { CheckStore, checkConditions, checkEnded, checkedPreset } from './check-store';
 import { watchDisplay } from './display';
 import { FirstFrame } from './first-frame';
 import type { FrameMetrics, MeasureOptions } from './frame-stats';
@@ -619,7 +619,9 @@ export interface EngineMode {
 	 * sketch chose its own preset first. The engine checks the preset when it chose it from the
 	 * device: after the first frame, it measures the frame rate of the scene, and lowers the preset
 	 * until one holds the target. A later start of the sketch in the same browser on the same
-	 * device takes the stored result instead, and starts at its preset. `reused` is then true.
+	 * device takes the stored result instead, and starts at its preset. `reused` is then true. A
+	 * start after a check that never ended starts at the preset that the check had lowered to, and
+	 * its own check goes on from there, with the earlier rounds first.
 	 */
 	presetCheck: PresetCheck | null;
 	/**
@@ -2084,13 +2086,14 @@ async function startEngine(
 		sketchError: onSketchError,
 		failure: onFailure,
 		// The page applies the settings that it owns: the pixel ratio cap sizes the canvas. The
-		// engine's mode reports the preset and the preset check, which the page stores for later
-		// starts.
+		// engine's mode reports the preset and the preset check's result, which the page stores for
+		// later starts. It also stores the check's rounds at each lowering, so a page that closes
+		// before the check ends keeps them.
 		quality: (update) => {
 			canvasWatch?.setMaxPixelRatio(update.settings.maxPixelRatio);
 			mode.preset = update.preset;
 			if (update.check) {
-				mode.presetCheck = update.check;
+				if (update.checked) mode.presetCheck = update.check;
 				checkStore?.save(update.check, maxTarget);
 			}
 			if (update.checked) endCheck();
@@ -2510,7 +2513,9 @@ async function startEngine(
 		// The engine checks a preset that it chose itself, when a lighter one exists. A preset that the
 		// page, a switch or hold mode fixes stays as it is. A start after a crash measures again, and
 		// so does one that ?check=fresh asks to. Otherwise the result of an earlier check of the sketch
-		// on this device and browser gives the preset at once, while it applies.
+		// on this device and browser gives the preset at once, while it applies. The rounds of an
+		// earlier check that never ended give the preset that they lowered to, and this start's check
+		// goes on from them.
 		const checks =
 			optionPreset === 'auto' &&
 			switches.preset === undefined &&
@@ -2521,8 +2526,9 @@ async function startEngine(
 			const conditions = checkConditions(report, tier, chosen, switches.fps, maxTarget);
 			checkStore = new CheckStore(sketchUrl, conditions, width * height);
 		}
-		const storedCheck = switches.freshCheck ? undefined : checkStore?.read();
-		const preset = storedCheck?.rounds.at(-1)?.preset ?? chosen;
+		const stored = switches.freshCheck ? undefined : checkStore?.read();
+		const storedCheck = stored && checkEnded(stored) ? stored : undefined;
+		const preset = stored ? checkedPreset(stored) : chosen;
 		// Occlusion culling on the GPU needs WebGPU's compute passes. Phones and tablets run it only
 		// when the page asks.
 		const gpuOcclusion =
@@ -2556,6 +2562,7 @@ async function startEngine(
 			highest: withinTier('ultra', tier),
 			// A replay steps through its recording, which leaves no frames of play to measure.
 			check: checks && !storedCheck && replay === undefined ? checkTiming : undefined,
+			resume: storedCheck ? undefined : stored,
 			lowest: startLowest,
 			lowestAllowed,
 			tier,

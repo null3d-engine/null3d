@@ -2,9 +2,10 @@
 // hidden for a while in the middle of a round, which the first frame after it carries as its
 // interval.
 import { expect, test } from 'bun:test';
+import type { PresetCheck } from '../quality/check';
 import type { QualityPreset } from '../quality/presets';
 import { createMetricsBuffer, FrameRecorder, Role } from '../shared/metrics';
-import { type CheckHost, checkPreset } from './preset-check';
+import { type CheckHost, type CheckStart, checkPreset, checkStart } from './preset-check';
 
 const FRAME_MS = 1000 / 60;
 
@@ -53,7 +54,10 @@ function host(hiddenMs: number): CheckHost & { lowered: number } {
  * A host whose Medium round draws at 50 per second, so the check lowers it, and whose rebuilt Low
  * preset finishes no frame for `rebuildMs`: the GPU carries the shadow map and pipeline builds.
  */
-function rebuildingHost(rebuildMs: number): CheckHost & { lowered: number } {
+function rebuildingHost(
+	rebuildMs: number,
+	start: QualityPreset = 'medium',
+): CheckHost & { lowered: number; heard: PresetCheck[] } {
 	const metrics = createMetricsBuffer(false, 0);
 	const presented = new FrameRecorder(metrics, Role.Render);
 	const completed = new FrameRecorder(metrics, Role.Completion);
@@ -61,15 +65,17 @@ function rebuildingHost(rebuildMs: number): CheckHost & { lowered: number } {
 	let frame = 0;
 	let loweredAt = 0;
 	let rebuilt = false;
-	let preset: QualityPreset = 'medium';
-	const check: CheckHost & { lowered: number } = {
+	let preset: QualityPreset = start;
+	const check: CheckHost & { lowered: number; heard: PresetCheck[] } = {
 		metrics,
 		get preset() {
 			return preset;
 		},
 		lowered: 0,
-		lower: async () => {
+		heard: [],
+		lower: async (soFar) => {
 			check.lowered++;
+			check.heard.push(soFar);
 			preset = 'low';
 			loweredAt = performance.now();
 		},
@@ -125,4 +131,48 @@ test('a round during which the page was hidden measures again, and keeps the pre
 	expect(check.lowered).toBe(0);
 	expect(result?.rounds).toHaveLength(1);
 	expect(result?.rounds[0]?.presentedFps).toBeGreaterThan(50);
+});
+
+test('each lowering hands on the rounds so far, whose last missed the target', async () => {
+	const check = rebuildingHost(0);
+	await checkPreset(check, performance.now());
+	expect(check.heard).toHaveLength(1);
+	expect(check.heard[0]?.from).toBe('medium');
+	expect(check.heard[0]?.targetFps).toBe(60);
+	expect(check.heard[0]?.rounds.map((round) => [round.preset, round.completedFps])).toEqual([
+		['medium', 50],
+	]);
+});
+
+test("a check goes on from an earlier start's rounds, and reports them with its own", async () => {
+	const earlier: PresetCheck = {
+		from: 'medium',
+		targetFps: 60,
+		rounds: [{ preset: 'medium', presentedFps: 60, completedFps: 50 }],
+		reused: true,
+	};
+	// The earlier start lowered the preset to Low, where this start begins.
+	const check = rebuildingHost(0, 'low');
+	const result = await checkPreset(check, performance.now(), checkStart('low', 0, 60, earlier));
+	expect(check.lowered).toBe(0);
+	expect(result?.from).toBe('medium');
+	expect(result?.reused).toBe(false);
+	expect(result?.rounds.map((round) => round.preset)).toEqual(['medium', 'low']);
+	expect(result?.rounds[0]).toEqual(earlier.rounds[0]);
+});
+
+test('a check starts its target at the rate that the meter read before it, once it read one', () => {
+	expect(checkStart('high', 0, 60)).toEqual({ from: 'high', targetFps: 0, rounds: [] });
+	expect(checkStart('high', 90, 60).targetFps).toBe(60);
+	expect(checkStart('high', 30, 60).targetFps).toBe(30);
+	expect(checkStart('high', 90, 30).targetFps).toBe(30);
+	const earlier: CheckStart = {
+		from: 'ultra',
+		targetFps: 60,
+		rounds: [{ preset: 'ultra', presentedFps: 30, completedFps: 30 }],
+	};
+	const resumed = checkStart('high', 30, 60, earlier);
+	// The earlier start's target stays: a target never falls during a check.
+	expect(resumed).toEqual({ from: 'ultra', targetFps: 60, rounds: [...earlier.rounds] });
+	expect(resumed.rounds).not.toBe(earlier.rounds);
 });

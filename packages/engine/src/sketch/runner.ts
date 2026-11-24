@@ -111,6 +111,7 @@ import {
 	Phase,
 	RingFrames,
 	Role,
+	refreshRate,
 } from '../shared/metrics';
 import type { Recorder, ReplayProgram, ReplayResult } from '../shared/recording';
 import { plansPending, tasksPending } from '../shared/task-pending';
@@ -945,8 +946,9 @@ export class SketchRunner {
 	 * publishes of the scene as the setup built it, before play, or the frame loop's next frame,
 	 * during play. It resolves with false when the check must stop. The check's code loads after the
 	 * first frame, while the scene keeps drawing. A check that cannot load leaves the preset as it
-	 * is. While the engine runs, the page hears that the check ended, with its result when it
-	 * measured one.
+	 * is. It goes on from the rounds that an earlier start measured before its check ended, when the
+	 * page gives them. While the engine runs, the page hears of each lowering with the rounds so
+	 * far, and that the check ended, with its result when it measured one.
 	 */
 	private async checkPreset(drawFrame: () => Promise<boolean>): Promise<void> {
 		let check: PresetCheck | undefined;
@@ -965,6 +967,9 @@ export class SketchRunner {
 
 	/** Runs the preset check with `drawFrame`, as `checkPreset` says; undefined when it stopped. */
 	private async measurePreset(drawFrame: () => Promise<boolean>): Promise<PresetCheck | undefined> {
+		// The display's rate before the check's frames load the GPU, whose frame callbacks slow down
+		// when it falls behind.
+		const refreshHz = refreshRate(this.metrics);
 		if (!(await drawFrame())) return undefined;
 		const loading = import('./preset-check');
 		let loaded = false;
@@ -974,21 +979,23 @@ export class SketchRunner {
 		loading.then(settled, settled);
 		const graceStart = performance.now();
 		while (!loaded) if (!(await drawFrame())) return undefined;
-		const { glue } = this.sketch;
+		const { glue, maxTargetFps } = this.sketch;
 		const { quality } = this;
-		return (await loading).checkPreset(
+		const { checkPreset, checkStart } = await loading;
+		return checkPreset(
 			{
 				metrics: this.metrics,
 				get preset() {
 					return quality.preset;
 				},
-				lower: () => quality.lower(),
+				lower: (check) => quality.lower(check),
 				drawFrame,
 				uploading: () => glue.textureStat(TEXTURE_STAT_WAITING, 0) > 0,
-				maxTargetFps: this.sketch.maxTargetFps,
+				maxTargetFps,
 				resumes: () => Atomics.load(this.sketch.control.slots, Slot.Resumes),
 			},
 			graceStart,
+			checkStart(quality.preset, refreshHz, maxTargetFps, this.sketch.quality.resume),
 		);
 	}
 
