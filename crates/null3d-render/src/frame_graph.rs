@@ -814,14 +814,20 @@ fn numbered(name: &str, number: usize) -> Cow<'static, str> {
     Cow::Owned(text)
 }
 
-/// A value that a frame finds in the compiled plan, once for each compile of the graph: the
-/// compile it was found in, and the value. A frame whose graph compiled since finds it again, and
-/// so does one after [`CompileCache::clear`]. The count lives here for every such value, so no
-/// finder carries a comparison of its own.
+/// A value that a frame finds in the compiled plan, once for each [`PlanStamp`]: the stamp it was
+/// found at, and the value. A frame whose graph compiled since, or whose textures moved since,
+/// finds it again, and so does one after [`CompileCache::clear`]. The stamp lives here for every
+/// such value, so no finder carries a comparison of its own.
 #[derive(Clone, Copy, Debug)]
 struct CompileCache<T> {
-    found: Option<(u32, T)>,
+    found: Option<(PlanStamp, T)>,
 }
+
+/// The compile of the graph and the make of its textures that a value found in the plan holds
+/// for. A texture's id follows the slot that holds it, and a make can move a texture to another
+/// slot without a compile, as a new canvas size does, or after the compile that a value was found
+/// in, as an early compile allows.
+type PlanStamp = (u32, u32);
 
 impl<T> Default for CompileCache<T> {
     fn default() -> Self {
@@ -830,15 +836,15 @@ impl<T> Default for CompileCache<T> {
 }
 
 impl<T: Copy> CompileCache<T> {
-    /// The value, from `find` when this compile of the graph has not found it yet.
-    fn get_or(&mut self, compiles: u32, find: impl FnOnce() -> T) -> T {
+    /// The value, from `find` when it was not found at this stamp yet.
+    fn get_or(&mut self, stamp: PlanStamp, find: impl FnOnce() -> T) -> T {
         if let Some((at, value)) = self.found
-            && at == compiles
+            && at == stamp
         {
             return value;
         }
         let value = find();
-        self.found = Some((compiles, value));
+        self.found = Some((stamp, value));
         value
     }
 
@@ -1317,8 +1323,12 @@ pub(crate) struct FrameGraph {
     /// The slots that the textures being made take, and the slots made anew among them.
     slot_taken: Vec<bool>,
     slot_new: Vec<bool>,
-    /// For each texture of the plan, the slot that the views of its layers were made for.
+    /// For each texture of the plan, the slot that it took in the make before, which the views of
+    /// its layers were made for.
     layer_slots: Vec<u32>,
+    /// How many makes of the plan's textures made, released or moved any: the second half of
+    /// the [`PlanStamp`] that values found in the plan hold for.
+    moves: u32,
     /// The views, as a mask of places, whose target the frame made anew at the size it had,
     /// after the view drew: a new format or usage leaves the texture empty. Each draws into it in
     /// this frame, as a view draws into a texture of a new size, though it rests or waits for its
@@ -1330,7 +1340,9 @@ pub(crate) struct FrameGraph {
     refill_served: u32,
     /// The views, as a mask of places, whose full-screen pass has its pipeline built.
     fullscreen_built: u32,
-    /// True when the frame being recorded made or released a texture of the plan.
+    /// True when the frame being recorded made, released or moved a texture of the plan. A
+    /// texture that moved to another slot holds the image that the slot held, not its own, so
+    /// its readers bind it again and those that keep state start again, as with a new texture.
     textures_made: bool,
     /// The canvas size the draw lists set last, or `(0, 0)` before any.
     canvas: (u32, u32),
@@ -1581,6 +1593,7 @@ impl FrameGraph {
             slot_taken: Vec::new(),
             slot_new: Vec::new(),
             layer_slots: Vec::new(),
+            moves: 0,
             refill: 0,
             refill_served: 0,
             fullscreen_built: 0,
@@ -3053,7 +3066,7 @@ impl FrameGraph {
     /// The moment layer's textures, found once for each compile of the graph.
     fn moment_textures_value(&mut self) -> MomentTextures {
         let mut found = self.moment_textures;
-        let value = found.get_or(self.graph.compiles(), || {
+        let value = found.get_or(self.plan_stamp(), || {
             let id = |name: &str| {
                 self.sampled_id(name)
                     .expect("the moment layer reads planned textures")
@@ -5499,7 +5512,7 @@ impl FrameGraph {
     /// and the history, which the still build reads, found once for each compile.
     fn accumulate_textures(&mut self) -> [u32; 2] {
         let mut found = self.accumulate_textures;
-        let textures = found.get_or(self.graph.compiles(), || {
+        let textures = found.get_or(self.plan_stamp(), || {
             [self.color_output(), ACCUM_HISTORY].map(|name| {
                 self.sampled_id(name)
                     .expect("the accumulation reads a planned texture")
@@ -5565,7 +5578,7 @@ impl FrameGraph {
     /// once for each compile of the graph.
     fn bloom_textures(&mut self) -> ([u32; STEPS], u32) {
         let mut found = self.bloom_textures;
-        let (sources, base) = found.get_or(self.graph.compiles(), || {
+        let (sources, base) = found.get_or(self.plan_stamp(), || {
             let levels = self.bloom_pass.as_ref().map_or(1, BloomPass::levels);
             let id = |name: &str| {
                 self.sampled_id(name)
@@ -5855,7 +5868,7 @@ impl FrameGraph {
     /// depth, found by name once for each compile of the graph.
     fn effect_textures(&mut self) -> ([u32; MAX_EFFECTS], u32) {
         let mut found = self.effect_textures;
-        let textures = found.get_or(self.graph.compiles(), || {
+        let textures = found.get_or(self.plan_stamp(), || {
             let depth = if self.effect_depths != 0 {
                 self.sampled_id(SCENE_DEPTH)
                     .expect("an effect that reads depth reads the scene depth")
@@ -5890,7 +5903,7 @@ impl FrameGraph {
             return Ok(());
         };
         let mut found = self.dof_textures;
-        let sources = found.get_or(self.graph.compiles(), || {
+        let sources = found.get_or(self.plan_stamp(), || {
             let id = |name: &str| {
                 self.sampled_id(name)
                     .expect("each step of depth of field reads a planned texture")
@@ -5918,7 +5931,7 @@ impl FrameGraph {
             return Ok(());
         };
         let mut found = self.subsurface_textures;
-        let sources = found.get_or(self.graph.compiles(), || {
+        let sources = found.get_or(self.plan_stamp(), || {
             let id = |name: &str| {
                 self.sampled_id(name)
                     .expect("each step of the subsurface blur reads a planned texture")
@@ -5947,7 +5960,7 @@ impl FrameGraph {
             return Ok(());
         };
         let mut found = self.taa_textures;
-        let sources = found.get_or(self.graph.compiles(), || {
+        let sources = found.get_or(self.plan_stamp(), || {
             let id = |name: &str| {
                 self.sampled_id(name)
                     .expect("each step of temporal anti-aliasing reads a planned texture")
@@ -5984,7 +5997,7 @@ impl FrameGraph {
             return Ok(());
         };
         let mut found = self.fog_textures;
-        let sources = found.get_or(self.graph.compiles(), || {
+        let sources = found.get_or(self.plan_stamp(), || {
             let id = |name: &str| {
                 self.sampled_id(name)
                     .expect("each step of the volumetric fog reads a planned texture")
@@ -6011,7 +6024,7 @@ impl FrameGraph {
             return Ok(());
         }
         let mut found = self.transmission_target;
-        let (color, depth, _) = found.get_or(self.graph.compiles(), || {
+        let (color, depth, _) = found.get_or(self.plan_stamp(), || {
             let id = |name: &str| {
                 self.sampled_id(name)
                     .expect("the transmission copy reads and writes planned textures")
@@ -6061,7 +6074,7 @@ impl FrameGraph {
             return Ok(());
         }
         let mut found = self.weighted_textures;
-        let [sum, cover, depth] = found.get_or(self.graph.compiles(), || {
+        let [sum, cover, depth] = found.get_or(self.plan_stamp(), || {
             let id = |name: &str| {
                 self.sampled_id(name)
                     .expect("the weighted layer reads planned textures")
@@ -6092,7 +6105,7 @@ impl FrameGraph {
             return Ok(());
         }
         let mut found = self.single_textures;
-        let [layer, depth] = found.get_or(self.graph.compiles(), || {
+        let [layer, depth] = found.get_or(self.plan_stamp(), || {
             let id = |name: &str| {
                 self.sampled_id(name)
                     .expect("the one-sample layer reads planned textures")
@@ -6155,7 +6168,7 @@ impl FrameGraph {
         let mut found = self.particle_depth_target;
         // The graph culls the copy while no running pass reads it, as in a frame whose only
         // reader shades its opaque objects, so the plan may hold no target for it.
-        let targets = found.get_or(self.graph.compiles(), || {
+        let targets = found.get_or(self.plan_stamp(), || {
             self.sampled_id(SCENE_DEPTH)
                 .zip(self.sampled_id(PARTICLE_DEPTH))
         });
@@ -6298,7 +6311,8 @@ impl FrameGraph {
 
     /// Makes each texture of the plan whose shape or size differs from what the draw lists made,
     /// with the views of its layers where passes draw into it by layer, and releases the textures
-    /// and views the plan no longer has. Returns true when it made or released any.
+    /// and views the plan no longer has. Returns true when it made or released any, or moved a
+    /// texture to another slot, which changes its id.
     ///
     /// A multisampled target is made again when the pass that takes the scene to the canvas
     /// changes, between the resolve pass and the final pass. On the Galaxy S25 (Adreno 830), a
@@ -6402,6 +6416,7 @@ impl FrameGraph {
             self.made[slot] = Some(made);
         }
         let mut layers = 0;
+        let mut slots_moved = false;
         for index in 0..count {
             let target = textures[index].target;
             let slot = self.slots[index];
@@ -6411,8 +6426,9 @@ impl FrameGraph {
             if by_layer {
                 layers += target.layers;
             }
-            let moved = self.layer_views.get(index) != Some(&first_view)
-                || self.layer_slots.get(index) != Some(&slot);
+            let slot_moved = self.layer_slots.get(index) != Some(&slot);
+            slots_moved |= slot_moved;
+            let moved = self.layer_views.get(index) != Some(&first_view) || slot_moved;
             match self.layer_views.get_mut(index) {
                 Some(views) => *views = first_view,
                 None => self.layer_views.push(first_view),
@@ -6456,7 +6472,15 @@ impl FrameGraph {
                 self.view_slots[place] = self.slots[usize::from(index)];
             }
         }
-        Ok(list.len() != start)
+        let changed = list.len() != start || slots_moved;
+        self.moves = self.moves.wrapping_add(u32::from(changed));
+        Ok(changed)
+    }
+
+    /// The stamp that values found in the plan hold for: the graph's compile and the last make
+    /// that changed the plan's textures.
+    fn plan_stamp(&self) -> PlanStamp {
+        (self.graph.compiles(), self.moves)
     }
 
     /// The id of the view of `layer` of a texture whose views start at `first_view`.
@@ -13104,6 +13128,67 @@ mod tests {
             newest,
             "its run reads the newest state and writes the other"
         );
+    }
+
+    /// A texture that moves to another slot changes its id, and its readers read it there. Bloom's
+    /// steps find their textures once for each plan; a make that moves them after a reader found
+    /// them, as a new canvas size does or the make after an early compile, finds them again, and
+    /// the steps bind the slots that hold them, not the textures that came into their old slots.
+    #[test]
+    fn a_texture_that_moves_is_read_from_its_new_slot() {
+        let mut frames = frame_graph(format::RGBA16_FLOAT, Antialias::Msaa, true, false);
+        let stopped = stopped_pass(&mut frames, compute(true));
+        let views = [View::default(), stopped];
+        let names = [ViewNames::default(), ViewNames::default()];
+        let mut pipelines = PipelineCache::default();
+        let mut list = DrawList::with_capacity(65536);
+        frames.set_bloom(Some(Bloom::default()), ChainFrame::default());
+        for frame in 0..3 {
+            frames.request_pipelines(&mut pipelines, frame);
+            frames.sync(&views);
+            pipelines.create_new(&mut list, frame + 1).unwrap();
+            probe_frame(&mut frames, (64, 48));
+        }
+        assert!(frames.bloom_draws(), "bloom draws");
+        // The texture that each step's group binds, as the frames bound it last.
+        let first_group = frames.bloom_pass.as_ref().unwrap().ids().first_group;
+        let mut bound = [0; STEPS];
+        let mut bind = |lists: &[&DrawList]| {
+            for list in lists {
+                for group in operands(list, Op::CreateBindGroup) {
+                    if group[1] == bind_layout::BLOOM {
+                        bound[(group[0] - first_group) as usize] = group[10];
+                    }
+                }
+            }
+            bound
+        };
+        frames.bind_shadow_map(CascadeDepth::Unorm16);
+        for (step, canvas) in [(64, 48), (80, 60), (64, 48), (80, 60), (64, 48)]
+            .into_iter()
+            .enumerate()
+        {
+            frames.set_depth_prepass(step % 2 == 1);
+            frames.sync(&views);
+            frames.check(&views, &names).unwrap();
+            // A reader finds bloom's textures between the early compile and the frame's make.
+            frames.bloom_textures();
+            let (prepared, uploaded, recorded) = probe_frame(&mut frames, canvas);
+            let found = frames.bloom_textures();
+            frames.bloom_textures.clear();
+            let (sources, base) = frames.bloom_textures();
+            assert_eq!(
+                found,
+                (sources, base),
+                "step {step}: bloom reads its textures where they are now"
+            );
+            let steps = frames.bloom_pass.as_ref().unwrap().steps();
+            assert_eq!(
+                bind(&[&prepared, &uploaded, &recorded])[..steps],
+                sources[..steps],
+                "step {step}: each bloom step binds the texture that it reads"
+            );
+        }
     }
 
     /// The builders ask for a frame's pipelines before they sync its views, so a view that appears
