@@ -182,7 +182,14 @@ run('stats', async (): Promise<StatsResult> => {
 		instances: null,
 		feature: null,
 	};
-	if (quiet) return { ...result, overlay: readOverlay(canvas), figures: null };
+	if (quiet) {
+		// The overlay's code loads beside the start, and a first frame that comes sooner than it
+		// leaves the page with no overlay to read yet.
+		const until = performance.now() + WAIT_MS;
+		while (!readOverlay(canvas) && performance.now() < until)
+			await new Promise((resolve) => setTimeout(resolve, 100));
+		return { ...result, overlay: readOverlay(canvas), figures: null };
+	}
 	/** Posts a message to the sketch, and resolves with the data of its answer of the same name. */
 	const ask = <T>(message: string, data?: unknown) =>
 		new Promise<T>((resolve) => {
@@ -229,8 +236,12 @@ run('stats', async (): Promise<StatsResult> => {
 	};
 	// Full-screen steps count their triangles at once, while the GPU's culled draws count theirs
 	// only once read back. So a window can hold a few triangles before it holds the box's.
+	// A window ends after half a second of presented frames. On a GPU that takes longer than that
+	// over a frame of the instance rows, a window can close before the GPU has finished any of its
+	// frames, and its completed rate reads 0 until the next one.
 	const ready = (figures: StatsFigures) =>
 		figures.frames > 0 &&
+		figures.completedFps > 0 &&
 		figures.triangles >= BOX_TRIANGLES &&
 		figures.meshBytes > 0 &&
 		figures.gpuTextureBytes > 0 &&
