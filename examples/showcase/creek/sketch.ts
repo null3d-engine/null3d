@@ -322,10 +322,7 @@ export default defineSketch(async (ctx) => {
 	 * started with the setup, they take every connection of a server that speaks HTTP/1.1, and the
 	 * first frame's own code and shader files wait behind them.
 	 */
-	let drawn = (): void => {};
-	const firstFrame = new Promise<void>((resolve) => {
-		drawn = resolve;
-	});
+	const firstFrame = ctx.engine.firstFrame;
 	// A first frame that waits for the models starts every download now, beside the build, and each
 	// load below takes its bytes from memory. A file that fails is reported by its load.
 	if (grownFirst)
@@ -643,8 +640,6 @@ export default defineSketch(async (ctx) => {
 	return {
 		onUpdate(dt) {
 			const t = time.now;
-			// The second frame's update runs once the first frame has drawn.
-			if (time.frame === 2) drawn();
 			// The air comes in waves: a gust rolls over the garden every several seconds, so the
 			// trees, the grass and the water's ripples move in swells rather than in a steady push.
 			if (t >= nextGust) {

@@ -418,6 +418,13 @@ export default defineSketch(
 				(error: unknown) => console.error(error),
 			);
 		};
+		// A live page grows the forest and brings in the life models once the first frame has drawn,
+		// so neither costs the first frame anything, and both appear as they land.
+		if (!grownFirst)
+			void ctx.engine.firstFrame.then(() => {
+				grow();
+				settleTraffic();
+			});
 		if (grownFirst) {
 			trees = await createTrees(ctx, camera, { wind });
 			sound.setWind(trees.wind);
@@ -433,10 +440,6 @@ export default defineSketch(
 		const tint: [number, number, number] = [1, 1, 1];
 		return {
 			onUpdate(dt) {
-				// The forest grows once the first frame has drawn, so its species and lawns cost nothing
-				// before it and appear as they land.
-				if (!grownFirst && time.frame >= 2) grow();
-				if (!grownFirst && time.frame >= 2) settleTraffic();
 				const t = time.now;
 				stage.update(dt);
 				// The scene's own ambient takes the hour, eased by the same share as the town's lamps.
