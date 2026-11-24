@@ -59,8 +59,9 @@ import {
 	SKETCH_SETTINGS,
 	tierRestoreSettings,
 } from '../quality/presets';
-import type { Assets, GltfExtensionHandler, ProgressHandler } from '../scene/assets';
+import type { Assets, Downloads, GltfExtensionHandler, ProgressHandler } from '../scene/assets';
 import type { DerivedCache } from '../scene/derived-cache';
+import type { FetchFile } from '../scene/downloads';
 import { FrameCameras } from '../scene/frame-cameras';
 import { GltfExtensions } from '../scene/gltf-extensions';
 import { GradeTable } from '../scene/grade-table';
@@ -231,6 +232,96 @@ export interface SketchCore {
 	 * production build.
 	 */
 	hearAddons?(heard: (name: string) => void): () => void;
+	/**
+	 * The downloads of a live sketch's list for this start, which the thread began as the sketch's
+	 * module loaded. The runner begins them at the setup when the thread did not.
+	 */
+	listed?: ListedFiles;
+}
+
+/**
+ * The downloads of a sketch's list for one start. The thread that runs the sketch begins them as
+ * its module loads, or the runner at the setup, whichever comes first, and only once.
+ */
+export interface ListedFiles {
+	downloads?: Promise<Downloads>;
+}
+
+/**
+ * How many of a sketch's listed files download at once, while no load asks for one. On HTTP/1.1 a
+ * browser opens few connections to one server, and a large file holds one until it has arrived, so
+ * the engine's own start files, such as the shader files that the setup's first frame asks for,
+ * still find free ones. One file at a time would leave the link idle for a round trip between files.
+ */
+const LISTED_AT_ONCE = 2;
+
+/**
+ * How many of a sketch's listed files download at once while loads wait for them: those loads go
+ * ahead of the rest of the list. A setup that asks for many listed files together then still
+ * leaves connections for the engine's own files, which its loads need too, such as the model
+ * loader's code and the warm-up's shader files.
+ */
+const LISTED_MOST = 4;
+
+/**
+ * Fetches a listed file that no load has asked for yet, at low priority, so the engine's own files
+ * go first where the browser orders requests, as it does on HTTP/2.
+ */
+const fetchListed: FetchFile = (address) => fetch(address, { priority: 'low' });
+
+/**
+ * The addresses of a sketch's download list, resolved against the page's address, without repeats.
+ * Throws E1214 for a list that is not an array, and for an entry that is not a file's address.
+ */
+function listedAddresses(list: unknown, base: string): URL[] {
+	if (!Array.isArray(list))
+		throw new EngineError(
+			'E1214',
+			`defineSketch() got ${String(list)} for downloads, which takes an array of addresses.`,
+		);
+	const addresses = new Map<string, URL>();
+	for (const entry of list) {
+		let address: URL | undefined;
+		if (entry instanceof URL || (typeof entry === 'string' && entry.trim() !== '')) {
+			try {
+				address = new URL(entry, base);
+			} catch {}
+		}
+		if (!address)
+			throw new EngineError(
+				'E1214',
+				`defineSketch() got ${typeof entry === 'string' ? JSON.stringify(entry) : String(entry)} in downloads, which is not the address of a file.`,
+			);
+		addresses.set(address.href, address);
+	}
+	return [...addresses.values()];
+}
+
+/**
+ * Begins the downloads of a live sketch's list, unless `files` holds them already: the first two
+ * fetches at once, and the assets loader's code beside them, whose downloads read the bodies as
+ * they arrive and start the rest. A list that is not valid begins nothing, and the setup reports it.
+ */
+export function startListedFiles(files: ListedFiles, sketch: SketchDefinition, base: string): void {
+	const list = sketch.options.downloads;
+	if (files.downloads || list === undefined) return;
+	let addresses: URL[];
+	try {
+		addresses = listedAddresses(list, base);
+	} catch {
+		return;
+	}
+	if (addresses.length === 0) return;
+	const started = addresses
+		.slice(0, LISTED_AT_ONCE)
+		.map((address) => awaitLater(fetchListed(address)));
+	files.downloads = awaitLater(
+		import('../scene/assets').then(({ Downloads }) => {
+			const downloads = new Downloads(base);
+			downloads.list(addresses, started, LISTED_AT_ONCE, LISTED_MOST, fetchListed);
+			return downloads;
+		}),
+	);
 }
 
 /** How often a wait for a control slot checks it, where the control block is not shared memory. */
@@ -273,22 +364,34 @@ const JOB_PAUSE_SECONDS = 4.5;
  * The assets API, whose loader loads with the first call that reads a file: a sketch that loads no
  * file downloads none of it. Every call waits for the loader first. The two calls that answer with
  * a function of their own answer at once: the extension handlers live beside the runner, so a
- * registration keeps its errors, and the progress handlers join the loader once it arrives.
+ * registration keeps its errors, and the progress handlers join the loader once it arrives. The
+ * loader takes the downloads of the sketch's list when `listed` gives them, and a development build
+ * watches the sketch's loads while `watching` says so.
  */
 function lazyAssets(
 	textures: Textures,
 	base: string,
 	makers: import('../scene/assets').ModelMakers,
+	listed: () => Promise<Downloads> | undefined,
+	watching: () => boolean,
 ): Assets {
 	const extensions = new GltfExtensions();
-	// The loader's file starts downloading at the first call that reads a file, never at the start:
-	// a page that loads nothing must download none of it.
+	// The loader's file starts downloading at the first call that reads a file, or with the
+	// sketch's list, never at the start: a page that loads nothing must download none of it.
 	let ready: Promise<Assets> | undefined;
 	const load = (): Promise<Assets> =>
 		(ready ??= awaitLater(
-			import('../scene/assets').then(
-				({ Assets }) => new Assets(textures, base, makers, extensions),
-			),
+			import('../scene/assets').then(({ Assets, Downloads }) => {
+				const make = (downloads: Downloads) => {
+					if (DEV) downloads.watch(watching);
+					return new Assets(textures, base, makers, extensions, downloads);
+				};
+				// Without a list the loader is ready within the import's own promise steps, so its
+				// calls keep their place among the setup's other promises, as hold mode, a replay
+				// and a recording need.
+				const early = listed();
+				return early ? early.then(make) : make(new Downloads(base));
+			}),
 		));
 	return new Proxy({} as Assets, {
 		get(_target, name: string | symbol) {
@@ -400,6 +503,15 @@ export class SketchRunner {
 	private callbacks: SketchCallbacks = {};
 	/** True once the setup function has returned. */
 	private setUp = false;
+	/** The downloads of the sketch's list, once a live setup began or took them. */
+	private listed: Promise<Downloads> | undefined;
+	/** Resolves the sketch's `engine.firstFrame`, until it has. */
+	private firstFrameReached: (() => void) | undefined;
+	/**
+	 * True while a development build watches the sketch's loads for one that waits for another:
+	 * during the setup function of a live start.
+	 */
+	private watchesLoads = false;
 	/** The frames that warm-ups during the setup published, one after another, as the last one's number. */
 	private setupFrames: Promise<number> = Promise.resolve(0);
 	private readonly clock = new FrameClock();
@@ -827,12 +939,21 @@ export class SketchRunner {
 				viewport: this.viewport,
 				capabilities: sketch.capabilities,
 				held: this.holdsFrames,
+				firstFrame: new Promise<void>((resolve) => {
+					this.firstFrameReached = resolve;
+				}),
 			},
 			scene,
 			materials,
 			geometry,
 			textures,
-			assets: lazyAssets(textures, sketch.pageUrl, { core: this.core, geometry, materials, scene }),
+			assets: lazyAssets(
+				textures,
+				sketch.pageUrl,
+				{ core: this.core, geometry, materials, scene },
+				() => this.listed,
+				() => this.watchesLoads,
+			),
 			input: this.input,
 			post: this.post,
 			render: this.render,
@@ -881,18 +1002,34 @@ export class SketchRunner {
 	 * the preset check before play, the check follows, and the setup resolves after it. When it asks
 	 * for the check during play, the check starts as the setup resolves, and measures the frames
 	 * that the frame loop draws from then on. In hold mode, it then steps the sketch to the held time
-	 * (see `hold`). Options out of range fail with E1214 before the setup function runs.
+	 * (see `hold`). Options out of range fail with E1214 before the setup function runs. A live
+	 * start's listed files are downloading by then; hold mode, a replay and a recording leave each
+	 * file to its load, so their order stays as without the list.
 	 */
 	async setup(sketch: SketchDefinition): Promise<void> {
+		const { options } = sketch;
 		try {
-			this.fixed = new FixedClock(sketch.options.fixedRate, sketch.options.maxFixedSteps);
+			this.fixed = new FixedClock(options.fixedRate, options.maxFixedSteps);
 			// A sketch whose own thread limits its frames keeps the governor out of the lowest tier:
 			// its smaller render cannot speed the sketch work, so the cut only loses the picture.
-			if (sketch.options.lowestTier === false) this.governor.setLowestTier(false);
+			if (options.lowestTier === false) this.governor.setLowestTier(false);
+			const live = !this.holdsFrames && !this.records;
+			if (options.downloads !== undefined) {
+				const { pageUrl, listed = {} } = this.sketch;
+				listedAddresses(options.downloads, pageUrl);
+				if (live) {
+					startListedFiles(listed, sketch, pageUrl);
+					this.listed = listed.downloads;
+				}
+			}
 			// The setup grows the scene, and a page that stalls here reports the time it spent doing it.
 			this.record.markSetupStart();
 			const growing = performance.now();
+			// The development warning watches the setup function's own loads. A setup that fails ends
+			// the start, so the watch needs no end of its own then.
+			if (DEV) this.watchesLoads = live && options.serialLoadWarning !== false;
 			this.callbacks = (await sketch.setup(this.context)) ?? {};
+			if (DEV) this.watchesLoads = false;
 			this.record.markSetupDone(performance.now() - growing);
 			const check = this.holdsFrames ? undefined : this.sketch.quality.check;
 			if (check === 'before-play') await this.checkPreset(() => this.drawSetupFrame());
@@ -910,6 +1047,9 @@ export class SketchRunner {
 			if (check === 'during-play') void this.checkDuringPlay();
 			if (this.holdSeconds !== undefined) await this.hold(this.holdSeconds);
 			else if (this.replayProgram !== undefined) await this.replay(this.replayProgram);
+			// Hold mode and a replay record no frame after their last, so the sketch's `firstFrame`
+			// work can no longer change the frames that they show.
+			if (this.holdsFrames) this.reachFirstFrame();
 		} catch (error) {
 			// A setup that fails, at any step, leaves no runner to dispose, so the runner stops hearing
 			// add-ons now.
@@ -997,6 +1137,12 @@ export class SketchRunner {
 			graceStart,
 			checkStart(quality.preset, refreshHz, maxTargetFps, this.sketch.quality.resume),
 		);
+	}
+
+	/** Resolves the sketch's `engine.firstFrame`, once. */
+	private reachFirstFrame(): void {
+		this.firstFrameReached?.();
+		this.firstFrameReached = undefined;
 	}
 
 	/** True once the setup function has returned, so the frame loop may step the sketch. */
@@ -1522,6 +1668,10 @@ export class SketchRunner {
 	 * `timestamp` is the frame's time in milliseconds.
 	 */
 	step(timestamp: number): number {
+		// A live sketch's `firstFrame` resolves at the first step after the GPU finished the first
+		// frame, which the thread that draws records; the check ends once it has.
+		if (this.firstFrameReached !== undefined && !this.holdsFrames && this.record.firstFrameDone)
+			this.reachFirstFrame();
 		const resumes = Atomics.load(this.sketch.control.slots, Slot.Resumes);
 		this.resumed = this.resumes >= 0 && resumes !== this.resumes;
 		this.resumes = resumes;

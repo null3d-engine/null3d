@@ -44,8 +44,12 @@ export const NETWORK_USES: Readonly<Record<string, NetworkUse>> = {
 		why: "downloads the engine's own area light tables",
 	},
 	'packages/engine/src/scene/assets.ts': {
+		fetch: 1,
+		why: "reads a file that the sketch asked for again from the browser's cache",
+	},
+	'packages/engine/src/scene/downloads.ts': {
 		fetch: 2,
-		why: 'downloads the addresses that the sketch asks for, and a file again from the cache',
+		why: 'downloads the addresses that the sketch asks for, and those of its download list',
 	},
 	'packages/engine/src/shared/wasm.ts': {
 		fetch: 1,
@@ -54,6 +58,10 @@ export const NETWORK_USES: Readonly<Record<string, NetworkUse>> = {
 	'packages/engine/src/shared/worker-start.ts': {
 		fetch: 1,
 		why: "reads a worker script's status while the engine names a startup failure",
+	},
+	'packages/engine/src/sketch/runner.ts': {
+		fetch: 1,
+		why: "starts the first files of the sketch's download list while the sketch's module loads",
 	},
 	'packages/sound/src/page.ts': {
 		fetch: 2,

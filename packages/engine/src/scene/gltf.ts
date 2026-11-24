@@ -215,6 +215,22 @@ class Parser {
 let parser: Parser | undefined;
 
 /**
+ * This thread's glTF worker, started now unless it runs. A model's load starts it as the file's
+ * download begins, so the worker's script and its start overlap the download.
+ */
+export function startGltfWorker(error: WasmError): Parser {
+	if (!parser) {
+		const made: Parser = new Parser(() => {
+			forget();
+			if (parser === made) parser = undefined;
+		}, error);
+		const forget = onEngineStop(() => made.stop('the engine stopped'));
+		parser = made;
+	}
+	return parser;
+}
+
+/**
  * Parses a file in the glTF worker, downloading the buffers it names by address on the way, and
  * returns its data and the bitmaps of the images it holds, one for each texture use.
  */
@@ -224,15 +240,7 @@ function parse(
 	address: URL,
 	call: string,
 ): Promise<{ data: GltfData; bitmaps: (ImageBitmap | undefined)[] }> {
-	if (!parser) {
-		const made: Parser = new Parser(() => {
-			forget();
-			if (parser === made) parser = undefined;
-		}, context.error);
-		const forget = onEngineStop(() => made.stop('the engine stopped'));
-		parser = made;
-	}
-	const worker = parser;
+	const worker = startGltfWorker(context.error);
 	return new Promise((resolve, reject) => {
 		const id = worker.start(
 			(answer) => {

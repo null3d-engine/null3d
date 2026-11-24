@@ -70,7 +70,7 @@ import {
 } from '../shared/worker-start';
 import { loadSketch } from '../sketch/define-sketch';
 import type { QualityStart, QualityUpdate } from '../sketch/quality';
-import type { SketchRunner } from '../sketch/runner';
+import type { ListedFiles, SketchRunner } from '../sketch/runner';
 import type { LabelSlotSender } from '../sketch/ui';
 import type {
 	CapturedFrame,
@@ -1956,6 +1956,14 @@ async function startEngine(
 		});
 	}
 	const sketchModule = sketchOnPage && moduleFirst ? awaitLater(loadSketch(sketchUrl)) : undefined;
+	// The files that a live sketch lists start downloading once its module and the runner's code
+	// have loaded, unless the runner's setup begins them first.
+	const listed: ListedFiles = {};
+	if (sketchModule && runnerModule)
+		Promise.all([sketchModule, runnerModule]).then(
+			([sketch, runner]) => runner.startListedFiles(listed, sketch, pageUrl ?? sketchUrl),
+			() => {},
+		);
 	const powerPreference = options.powerPreference ?? DEFAULT_POWER_PREFERENCE;
 
 	const messageHandlers = new Set<(name: string, data: unknown) => void>();
@@ -2228,7 +2236,8 @@ async function startEngine(
 	if (threads?.sketch) {
 		// In low-latency mode the sketch worker draws, so it loads the renderer now too.
 		if (renderThread === 'sketch-worker') threads.sketch.send({ type: 'load-renderer' });
-		if (moduleFirst) threads.sketch.send({ type: 'load-sketch', url: sketchUrl });
+		if (moduleFirst)
+			threads.sketch.send({ type: 'load-sketch', url: sketchUrl, pageUrl: pageUrl ?? sketchUrl });
 		else prefetch(sketchUrl);
 	}
 	// The job workers start later, as the sketch's tasks and frames ask for them, and a setup that
@@ -2930,6 +2939,7 @@ async function startEngine(
 					wantJobs,
 					sendLabelSlot: events.labelSlot,
 					reportSketchError: (message) => events.sketchError(new Error(message)),
+					listed: sketchModule ? listed : undefined,
 					// What the sketch's module loaded before the runner existed, then each later load.
 					...(DEV && {
 						hearAddons: (heard: (name: string) => void) =>

@@ -42,7 +42,7 @@ import { checkAddonVersion, onAddonChecked, VERSION } from '../shared/version';
 import { defineSketch, type SketchContext, type SketchOptions } from './define-sketch';
 import { INPUT_OFF_NOTES } from './input-off';
 import type { QualityStart, QualityUpdate } from './quality';
-import { runPipelined, SketchRunner } from './runner';
+import { type ListedFiles, runPipelined, SketchRunner, startListedFiles } from './runner';
 
 /** The core's frame steps, which the tests follow among the sketch's callbacks. */
 const FRAME_STEPS = new Set([
@@ -265,6 +265,7 @@ async function start(
 		device,
 		answers,
 		hearAddons = onAddonChecked,
+		listed,
 	}: {
 		quality?: QualityStart;
 		drawing?: FakeDrawing;
@@ -289,6 +290,8 @@ async function start(
 		answers?: GlueAnswers;
 		/** How the runner hears add-ons, which a worker gives as `onAddonChecked`. */
 		hearAddons?: (heard: (name: string) => void) => () => void;
+		/** The downloads of the sketch's list that the thread began before the runner. */
+		listed?: ListedFiles;
 	} = {},
 ) {
 	const log: string[] = [];
@@ -365,6 +368,7 @@ async function start(
 			wantJobs: jobAsker(jobs.most, (count) => jobs.asked.push(count)),
 			sendLabelSlot: () => {},
 			hearAddons,
+			listed,
 		},
 		holdSeconds,
 		holdScript,
@@ -1029,6 +1033,216 @@ describe('SketchRunner', () => {
 		);
 		await expect(failed).rejects.toThrow('E1214: defineSketch() got 0 for fixedRate.');
 		expect(ran).toBe(false);
+	});
+});
+
+describe("SketchRunner and the sketch's first frame", () => {
+	/** Lets every promise reaction that is due run. */
+	const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+	it('a live start resolves engine.firstFrame at the first step after the GPU finished the first frame', async () => {
+		for (const modes of [{}, { record: true }]) {
+			let reached = false;
+			const { runner, context, metrics } = await start(() => ({}), undefined, modes);
+			void context.engine.firstFrame.then(() => {
+				reached = true;
+			});
+			runner.step(16);
+			await settle();
+			expect(reached).toBe(false);
+			// The thread that draws records when the GPU finished the first frame.
+			new FrameRecorder(metrics, Role.Render).markFirstFrameDone();
+			await settle();
+			expect(reached).toBe(false);
+			runner.step(32);
+			await settle();
+			expect(reached).toBe(true);
+		}
+	});
+
+	it('hold mode resolves engine.firstFrame once the held frame is stepped, never during the setup', async () => {
+		let duringSetup: boolean | undefined;
+		let reached = false;
+		const { context } = await start(
+			async (ctx) => {
+				void ctx.engine.firstFrame.then(() => {
+					reached = true;
+				});
+				await settle();
+				duringSetup = reached;
+				return {};
+			},
+			undefined,
+			{ holdSeconds: 0.05 },
+		);
+		expect(duringSetup).toBe(false);
+		await settle();
+		expect(reached).toBe(true);
+		await context.engine.firstFrame;
+	});
+});
+
+describe('SketchRunner and the download list', () => {
+	/**
+	 * Answers every fetch with its own path, and records each fetch's path and priority. A fetch of
+	 * a path in `held` answers only when the test calls `release`.
+	 */
+	function recordFetches(held: string[] = []) {
+		const fetched: [string, RequestPriority | undefined][] = [];
+		let release = () => {};
+		const released = new Promise<void>((resolve) => {
+			release = resolve;
+		});
+		const real = globalThis.fetch;
+		globalThis.fetch = (async (input: URL, init?: RequestInit) => {
+			const path = new URL(String(input)).pathname;
+			fetched.push([path, init?.priority]);
+			if (held.includes(path)) await released;
+			return new Response(path);
+		}) as unknown as typeof fetch;
+		return { fetched, release, restore: () => (globalThis.fetch = real) };
+	}
+
+	const LIST = {
+		downloads: ['a.glb', '/b.glb', 'c.glb', 'a.glb', new URL('http://localhost/d.bin')],
+	};
+
+	it('a live start begins two listed files at low priority before the setup runs, and the setup takes each without a second fetch', async () => {
+		const fetches = recordFetches(['/a.glb', '/b.glb']);
+		try {
+			let atSetup: string[] = [];
+			const { context } = await start((ctx) => {
+				atSetup = fetches.fetched.map(([path]) => path);
+				return {};
+			}, LIST);
+			expect(atSetup).toEqual(['/a.glb', '/b.glb']);
+			expect(fetches.fetched).toEqual([
+				['/a.glb', 'low'],
+				['/b.glb', 'low'],
+			]);
+			fetches.release();
+			const files = await Promise.all(
+				['a.glb', 'b.glb', 'c.glb', 'd.bin'].map((path) => context.assets.loadBinary(path)),
+			);
+			expect(files.map((bytes) => new TextDecoder().decode(bytes))).toEqual([
+				'/a.glb',
+				'/b.glb',
+				'/c.glb',
+				'/d.bin',
+			]);
+			// The repeat in the list downloads once, and every file downloads once.
+			expect(fetches.fetched.map(([path]) => path).sort()).toEqual([
+				'/a.glb',
+				'/b.glb',
+				'/c.glb',
+				'/d.bin',
+			]);
+		} finally {
+			fetches.restore();
+		}
+	});
+
+	it('takes the downloads that the thread began as the module loaded, and begins none of its own', async () => {
+		const fetches = recordFetches();
+		try {
+			const listed: ListedFiles = {};
+			startListedFiles(
+				listed,
+				defineSketch(() => ({}), LIST),
+				'http://localhost/',
+			);
+			expect(fetches.fetched.map(([path]) => path)).toEqual(['/a.glb', '/b.glb']);
+			const { context } = await start(() => ({}), LIST, { listed });
+			await context.assets.loadBinary('a.glb');
+			await context.assets.loadBinary('/c.glb');
+			expect(fetches.fetched.filter(([path]) => path === '/a.glb')).toHaveLength(1);
+			expect(fetches.fetched.filter(([path]) => path === '/c.glb')).toHaveLength(1);
+		} finally {
+			fetches.restore();
+		}
+	});
+
+	for (const [mode, modes] of [
+		['hold mode', { holdSeconds: 0 }],
+		['a recording', { record: true }],
+	] as const)
+		it(`${mode} downloads each listed file only at its load, as without the list`, async () => {
+			const fetches = recordFetches();
+			try {
+				let atSetup = -1;
+				const { context } = await start(
+					() => {
+						atSetup = fetches.fetched.length;
+						return {};
+					},
+					LIST,
+					modes,
+				);
+				expect(atSetup).toBe(0);
+				await context.assets.loadBinary('a.glb');
+				expect(fetches.fetched).toEqual([['/a.glb', undefined]]);
+			} finally {
+				fetches.restore();
+			}
+		});
+
+	it('refuses a list entry that is not a file address with E1214, before the setup runs, in every mode', async () => {
+		for (const [downloads, message] of [
+			[
+				['a.glb', ''],
+				'E1214: defineSketch() got "" in downloads, which is not the address of a file.',
+			],
+			[
+				['http://[bad'],
+				'E1214: defineSketch() got "http://[bad" in downloads, which is not the address of a file.',
+			],
+			[[7], 'E1214: defineSketch() got 7 in downloads, which is not the address of a file.'],
+			[
+				'a.glb',
+				'E1214: defineSketch() got a.glb for downloads, which takes an array of addresses.',
+			],
+		] as const)
+			for (const modes of [{}, { holdSeconds: 0 }]) {
+				let ran = false;
+				const failed = start(
+					() => {
+						ran = true;
+						return {};
+					},
+					{ downloads } as unknown as SketchOptions,
+					modes,
+				);
+				await expect(failed).rejects.toThrow(message);
+				expect(ran).toBe(false);
+			}
+	});
+
+	it('warns once in a live setup whose load waited for another, unless the sketch turns the warning off', async () => {
+		const fetches = recordFetches();
+		const warn = spyOn(console, 'warn').mockImplementation(() => {});
+		const serialWarnings = () =>
+			warn.mock.calls.filter(([text]) => String(text).includes('only after')).length;
+		try {
+			const loadInTurn = async (ctx: SketchContext) => {
+				await ctx.assets.loadBinary('first.bin');
+				await ctx.assets.loadBinary('second.bin');
+				await ctx.assets.loadBinary('third.bin');
+				return {};
+			};
+			await start(loadInTurn);
+			expect(serialWarnings()).toBe(1);
+			await start(loadInTurn, { serialLoadWarning: false });
+			await start(loadInTurn, undefined, { holdSeconds: 0 });
+			expect(serialWarnings()).toBe(1);
+			// Loads after the setup, as the frames make them, are left alone.
+			const { context } = await start(() => ({}));
+			await context.assets.loadBinary('first.bin');
+			await context.assets.loadBinary('second.bin');
+			expect(serialWarnings()).toBe(1);
+		} finally {
+			warn.mockRestore();
+			fetches.restore();
+		}
 	});
 });
 

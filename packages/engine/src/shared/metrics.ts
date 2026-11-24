@@ -489,6 +489,14 @@ export class FrameRecorder {
 	}
 
 	/**
+	 * True once the GPU has finished the first frame, as the thread that draws records it. It reads
+	 * the time without returning it, so a check in each frame allocates nothing.
+	 */
+	get firstFrameDone(): boolean {
+		return (this.views.times[FIRST_FRAME_DONE] as number) > 0;
+	}
+
+	/**
 	 * Records, once per engine, when the sketch's setup function started, as epoch milliseconds, so
 	 * the page can time a scene that is still growing.
 	 */

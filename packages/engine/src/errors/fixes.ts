@@ -45,7 +45,7 @@ export const ERROR_FIXES = {
 	E1213:
 		"Pass only the settings that the call has, each with a value that it takes. The call's docs page lists them.",
 	E1214:
-		'Give fixedRate the fixed steps per second, a number above 0 such as 60 or 120. Give maxFixedSteps a whole number of 1 or more, such as 8.',
+		"Give fixedRate the fixed steps per second, a number above 0 such as 60 or 120. Give maxFixedSteps a whole number of 1 or more, such as 8. Give downloads an array of the files that the setup loads, each a URL or an address string such as 'models/ship.glb'.",
 	E1215:
 		'Add the null3D Vite plugin to vite.config.ts. Write the WGSL in a template literal right after a /* wgsl */ comment, or import it from a .wgsl file. Declare fn surface(input: SurfaceInput) -> Surface, fn vertexOffset(input: VertexInput) -> vec3f or fn lobe(input: LobeInput) -> vec3f in it, with no @vertex or @fragment entry point. For a full shader, give the @vertex entry point an InstanceIn from null3d::mesh. For a draw that makes its own vertices, give it @builtin(vertex_index) and @builtin(instance_index) and no mesh attribute. Give post.addEffect() WGSL that declares fn effect(input: EffectInput) -> vec4f, post.set({ toneMapping }) WGSL that declares fn toneCurve(color: vec3f) -> vec3f, and scene.setSkyLayer() WGSL that declares fn skyLayer(input: SkyLayerInput) -> SkyLayer.',
 	E1216:

@@ -231,10 +231,11 @@ export type SketchWorkerMessage =
 	| { type: 'load-renderer' }
 	/**
 	 * Sent as the worker starts, for a live sketch: import the sketch module at `url` now, while the
-	 * core downloads. Hold mode, a replay and a recording send none, since their sketch module loads
-	 * only after the runner has seeded the thread's random numbers.
+	 * core downloads, and start the files that its options list, whose addresses resolve against
+	 * `pageUrl`. Hold mode, a replay and a recording send none, since their sketch module loads only
+	 * after the runner has seeded the thread's random numbers.
 	 */
-	| { type: 'load-sketch'; url: string }
+	| { type: 'load-sketch'; url: string; pageUrl: string }
 	| ShaderPreload
 	| RendererRequest
 	| { type: 'post'; name: string; data: unknown }

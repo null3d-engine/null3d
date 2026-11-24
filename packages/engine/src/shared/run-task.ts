@@ -63,7 +63,13 @@ export function runTask<T>(
 	// this count stands in for it, so hold mode waits for the first task too.
 	if (loaded) return loaded.runTaskWithError<T>(task, input, transfer, engineError);
 	taskStarted();
-	loader ??= import('./tasks');
+	if (!loader) {
+		// The loader's file imports the thread's list of helper workers, which the bundler can put
+		// in a file of its own. A worker finds that file only once the loader's has arrived, so it
+		// is asked for here, beside the loader, rather than one round trip after it.
+		import('./helper-workers').catch(() => {});
+		loader = import('./tasks');
+	}
 	const answer = loader.then((module) => {
 		loaded = module;
 		return module.runTaskWithError<T>(task, input, transfer, engineError);

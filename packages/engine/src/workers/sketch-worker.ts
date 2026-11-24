@@ -21,7 +21,7 @@ import { clearJobTasks, type JobTaskHost, jobAsker, setJobTasks } from '../share
 import { type EarlyAddons, hearAddonsEarly, onAddonChecked } from '../shared/version';
 import { setWakeByMessage, wakeWaiters } from '../shared/wake';
 import { loadSketch, type SketchDefinition } from '../sketch/define-sketch';
-import { runPipelined, SketchRunner } from '../sketch/runner';
+import { type ListedFiles, runPipelined, SketchRunner, startListedFiles } from '../sketch/runner';
 import { DrawingHost } from './drawing-host';
 import {
 	replyToPage,
@@ -45,8 +45,13 @@ let canvas: OffscreenCanvas | undefined;
 let core: CoreGlue | undefined;
 /** The job workers' task ports that this worker's on-demand loader uses while the engine runs. */
 let jobTaskHost: JobTaskHost | undefined;
-/** The import of a live sketch's module that started before the core arrived, with its address. */
-let earlySketch: { url: string; sketch: Promise<SketchDefinition> } | undefined;
+/**
+ * The import of a live sketch's module that started before the core arrived, with its address, and
+ * the downloads of the files that its options list.
+ */
+let earlySketch:
+	| { url: string; sketch: Promise<SketchDefinition>; listed: ListedFiles }
+	| undefined;
 /** In a development build, the add-ons that the sketch's module loaded before the runner existed. */
 let earlyAddons: EarlyAddons | undefined;
 
@@ -70,14 +75,24 @@ startWorker('sketch', step, async (event: MessageEvent<SketchWorkerMessage>) => 
 			endEarlyAddons();
 			earlyAddons = hearAddonsEarly();
 		}
-		earlySketch = { url: message.url, sketch: awaitLater(loadSketch(message.url, { step })) };
+		earlySketch = {
+			url: message.url,
+			sketch: awaitLater(loadSketch(message.url, { step })),
+			listed: {},
+		};
 		step('sketch import started');
+		// The files that the sketch lists start downloading as soon as its module has loaded.
+		const { sketch, listed } = earlySketch;
+		sketch.then(
+			(loaded) => startListedFiles(listed, loaded, message.pageUrl),
+			() => {},
+		);
 	} else if (message.type === 'init') {
 		// Only a live start takes the module that loaded early: hold mode, a replay and a recording
 		// load it once the runner has seeded the thread's random numbers.
 		const live = message.hold === undefined && message.replay === undefined && !message.record;
-		const loadedSketch =
-			live && earlySketch?.url === message.sketchUrl ? earlySketch.sketch : undefined;
+		const taken = live && earlySketch?.url === message.sketchUrl ? earlySketch : undefined;
+		const loadedSketch = taken?.sketch;
 		earlySketch = undefined;
 		if (DEV && !loadedSketch) endEarlyAddons();
 		try {
@@ -134,6 +149,7 @@ startWorker('sketch', step, async (event: MessageEvent<SketchWorkerMessage>) => 
 					sendLabelSlot: (id, table, slot, generation) =>
 						replyToPage({ type: 'label', id, table, slot, generation }),
 					reportSketchError: (message) => replyToPage({ type: 'sketch-error', message }),
+					listed: taken?.listed,
 					// What the sketch's module loaded before the runner existed, then each later load.
 					...(DEV && {
 						hearAddons: (heard: (name: string) => void) => {

@@ -169,7 +169,7 @@ const DOCS = {
 	E1214: {
 		title: 'Invalid sketch option',
 		cause:
-			'defineSketch() received an option out of its range. fixedRate must be a number above 0, and maxFixedSteps a whole number of 1 or more. The engine checks the options before it runs the setup function.',
+			'defineSketch() received an option out of its range. fixedRate must be a number above 0, and maxFixedSteps a whole number of 1 or more. downloads must be an array of file addresses: an empty string, or a string that is not an address, fails. The engine checks the options before it runs the setup function.',
 		example: 'E1214: defineSketch() got 0 for fixedRate.',
 		since: '0.1',
 	},

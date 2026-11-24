@@ -3,15 +3,17 @@
 // environment map reader (environment-file.ts) or by the HDR file readers (panorama.ts), outside
 // the sketch's frames, and the bytes of the downloads for loading screens. Built-in environments need
 // no file: the GPU makes them (builtin-environments.ts), as it filters HDR files. Relative addresses resolve against the page's address, in every thread
-// mode. Files that `preload` downloaded wait in memory until a load takes them, and loads of one
-// address at the same time share one download; the HTTP cache keeps everything else.
+// mode. The downloads themselves, with the files that `preload` and the sketch's download list
+// fetched ahead of their loads, are downloads.ts's.
 
 import { DEV } from '../errors/checks';
 import { EngineError } from '../errors/engine-error';
+import type { ErrorCode } from '../errors/fixes';
 import { reasonOf } from '../errors/message';
 import { Cubemap, writeSkyDefaults } from './background';
 import type { BakedLight, LightMapData } from './baked-light';
 import { type DerivedCache, derivedCache } from './derived-cache';
+import { Downloads } from './downloads';
 import { type BuiltinEnvironmentName, Environment } from './environment';
 import { FILE_LIMITS, imageSize, imageTooLarge } from './file-limits';
 import { GltfExtensions } from './gltf-extensions';
@@ -23,6 +25,10 @@ import type { Prefab } from './prefab';
 import type { Geometry, Material, Materials, MeshGeometry } from './resources';
 import type { Scene } from './scene';
 import type { Texture, TextureColorSpace, TextureOptions, Textures } from './textures';
+
+// The thread that runs a live sketch makes the downloads of its list from this module, before the
+// engine's core has arrived, so they share this module's file.
+export { Downloads };
 
 /**
  * The options of `assets.loadTexture`: how the image decodes, and the texture's options. A KTX2
@@ -221,17 +227,6 @@ export interface ModelMakers {
  */
 export type ProgressHandler = (loaded: number, total: number, url: string) => void;
 
-/** How long a download waits before its one retry, in ms. */
-const RETRY_DELAY_MS = 250;
-
-/**
- * Waits before a download's retry. A tunnel or a proxy can refuse a session's first request while
- * the same file serves a moment later, and a short wait lets it answer again.
- */
-function waitBeforeRetry(): Promise<void> {
-	return new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS));
-}
-
 /**
  * Loads files, and textures from image files. Every call runs outside the sketch's frames, so a
  * frame never waits for a download or a decode. A sketch finds it as `ctx.assets`. Addresses
@@ -240,32 +235,20 @@ function waitBeforeRetry(): Promise<void> {
  * @category api/assets
  */
 export class Assets {
-	private readonly base: string;
-	/** Downloads that `preload` started, by address, which the first load of each takes. */
-	private readonly preloaded = new Map<string, Promise<Blob>>();
-	/** Downloads under way, by address, which loads at the same time share. */
-	private readonly pending = new Map<string, Promise<Blob>>();
-	private readonly handlers = new Set<ProgressHandler>();
-	/** The handlers in registration order, for the report to walk by index. */
-	private handlerList: ProgressHandler[] = [];
-	/** Bytes that have arrived, and the bytes of the responses whose length is known so far. */
-	private loadedBytes = 0;
-	private totalBytes = 0;
-
 	/** @internal */
 	constructor(
 		private readonly textures: Textures,
 		/** The page's address, which relative addresses resolve against. */
-		base: string,
+		private readonly base: string,
 		private readonly makers?: ModelMakers,
 		/**
 		 * The handlers of glTF extensions that a sketch registered. They live outside the loader so
 		 * that a registration answers at once, before the loader has loaded.
 		 */
 		private readonly extensions = new GltfExtensions(),
-	) {
-		this.base = base;
-	}
+		/** The downloads, which may have started before the loader, for the sketch's list. */
+		private readonly downloads = new Downloads(base),
+	) {}
 
 	/**
 	 * Downloads an image file or a KTX2 file, decodes it off the sketch's frames, and makes a
@@ -282,7 +265,7 @@ export class Assets {
 	async loadTexture(url: string | URL, options: LoadTextureOptions = {}): Promise<Texture> {
 		const call = 'assets.loadTexture';
 		const address = this.resolve(url);
-		const blob = await this.file(address, call);
+		const blob = await this.downloads.load(address, call);
 		const texture = (await isKtx2(blob))
 			? await loadKtx2(this.textures, blob, address, options, call)
 			: this.textures.fromImage(
@@ -317,7 +300,7 @@ export class Assets {
 					options,
 					level,
 					call,
-					(code, message) => new EngineError(code, message),
+					engineError,
 				);
 				textures.setTexels(target, texels, call);
 			} else {
@@ -360,12 +343,20 @@ export class Assets {
 		const address = this.resolve(url);
 		const makers = this.makers;
 		if (!makers) throw new Error(`${call}() needs the engine's meshes and materials`);
-		const [file, gltf] = await Promise.all([this.file(address, call), loadModule(address, call)]);
+		const loader = loadModule(address, call);
+		// The loader's worker starts as soon as its code arrives, while the file still downloads. A
+		// worker that fails reports it to the load that needs it.
+		loader.then(
+			(gltf) => gltf.startGltfWorker(engineError),
+			() => {},
+		);
+		const [file, gltf] = await Promise.all([this.downloads.load(address, call), loader]);
 		return gltf.loadGltf(
 			{
 				...makers,
 				textures: this.textures,
-				download: (at, during) => this.file(rewritten(at, address, options, during), during),
+				download: (at, during) =>
+					this.downloads.file(rewritten(at, address, options, during), during),
 				decode: (blob, at, colorSpace, during) =>
 					decode(blob, at, { colorSpace, flipY: false }, during, this.textures.maxSize),
 				reloadsFrom: (texture, source, colorSpace, during) => {
@@ -378,7 +369,7 @@ export class Assets {
 						during,
 					);
 				},
-				error: (code, message) => new EngineError(code, message),
+				error: engineError,
 				extensionHandlers: this.extensions.all(),
 			},
 			file,
@@ -396,7 +387,7 @@ export class Assets {
 	async loadImageBitmap(url: string | URL, options: LoadImageOptions = {}): Promise<ImageBitmap> {
 		const call = 'assets.loadImageBitmap';
 		const address = this.resolve(url);
-		const blob = await this.file(address, call);
+		const blob = await this.downloads.load(address, call);
 		return decode(blob, address, options, call, FILE_LIMITS.imageSide);
 	}
 
@@ -420,7 +411,7 @@ export class Assets {
 		const faces = await Promise.all(
 			urls.map(async (url) => {
 				const address = this.resolve(url);
-				const blob = await this.file(address, call);
+				const blob = await this.downloads.load(address, call);
 				// A face keeps its first row at the top, as three.js uploads a cube texture's images.
 				return decode(blob, address, { flipY: false }, call, limit);
 			}),
@@ -450,7 +441,7 @@ export class Assets {
 	async loadLut(url: string | URL): Promise<Lut> {
 		const call = 'assets.loadLut';
 		const address = this.resolve(url);
-		const text = await (await this.file(address, call)).text();
+		const text = await (await this.downloads.load(address, call)).text();
 		const files = await lutMakers(`${call}() of ${address}`);
 		let table: import('./lut-files').LutTable;
 		try {
@@ -537,6 +528,7 @@ export class Assets {
 			);
 		const { size, levels, sh } = builtins.BUILTIN_ENVIRONMENTS[name];
 		const texture = await this.textures.fromGenerator(name, size, levels, call);
+		if (DEV) this.downloads.noteMade(`${call}('${name}')`);
 		return new Environment(texture, size, levels, 'rgb9e5ufloat', sh);
 	}
 
@@ -559,13 +551,14 @@ export class Assets {
 		const { size, levels, stages, capture, sh } = (await builtinEnvironments(call)).SKY_MAP;
 		const texture = await this.textures.fromGenerator('sky', size, levels, call);
 		this.textures.addSkyMap(texture, stages, capture, call, writeSkyDefaults);
+		if (DEV) this.downloads.noteMade(`${call}()`);
 		return new Environment(texture, size, levels, 'rgb9e5ufloat', sh);
 	}
 
 	/** Downloads and reads an environment map's file, and makes its cube texture. */
 	private async environment(address: URL, call: string): Promise<Environment> {
 		const [file, reader] = await Promise.all([
-			this.file(address, call),
+			this.downloads.load(address, call),
 			environmentReader(call, String(address)),
 		]);
 		const bytes = await file.arrayBuffer();
@@ -595,7 +588,7 @@ export class Assets {
 	private prepareHdr(): void {
 		this.makers?.materials.shaders.needGenerators();
 		panoramaLoader().then(
-			(loader) => loader.startPanoramaReader((code, message) => new EngineError(code, message)),
+			(loader) => loader.startPanoramaReader(engineError),
 			() => undefined,
 		);
 	}
@@ -615,12 +608,7 @@ export class Assets {
 			);
 		}
 		const { size, levels } = loader.PANORAMA_MAP;
-		const { panorama, sh } = await loader.readPanoramaFile(
-			bytes,
-			address,
-			call,
-			(code, message) => new EngineError(code, message),
-		);
+		const { panorama, sh } = await loader.readPanoramaFile(bytes, address, call, engineError);
 		const texture = await this.textures.fromGenerator(panorama, size, levels, call);
 		return new Environment(texture, size, levels, 'rgb9e5ufloat', sh);
 	}
@@ -636,7 +624,7 @@ export class Assets {
 	async loadLightProbeGrid(url: string | URL): Promise<LightProbeGridOptions> {
 		const call = 'assets.loadLightProbeGrid';
 		const address = this.resolve(url);
-		const text = await (await this.file(address, call)).text();
+		const text = await (await this.downloads.load(address, call)).text();
 		const file = await bakedLightFile(text, address, call);
 		if (file.kind !== 'probe-grid') wrongKind(address, call, file.kind, 'probe-grid');
 		const { grid } = file;
@@ -659,7 +647,7 @@ export class Assets {
 	async loadLightMap(url: string | URL): Promise<LightMapData> {
 		const call = 'assets.loadLightMap';
 		const address = this.resolve(url);
-		const text = await (await this.file(address, call)).text();
+		const text = await (await this.downloads.load(address, call)).text();
 		const file = await bakedLightFile(text, address, call);
 		if (file.kind !== 'light-map') wrongKind(address, call, file.kind, 'light-map');
 		const { width, height, encoding, radiance, direction } = file;
@@ -752,7 +740,8 @@ export class Assets {
 	async loadJson<T = unknown>(url: string | URL): Promise<T> {
 		const call = 'assets.loadJson';
 		const address = this.resolve(url);
-		const text = await (await this.file(address, call)).text();
+		const text = await (await this.downloads.load(address, call)).text();
+		if (DEV) this.downloads.noteText(address, text);
 		try {
 			return JSON.parse(text) as T;
 		} catch (error) {
@@ -766,7 +755,7 @@ export class Assets {
 	/** Downloads a file as bytes. Throws E1411 or E1413 as `loadTexture` does. */
 	async loadBinary(url: string | URL): Promise<ArrayBuffer> {
 		const address = this.resolve(url);
-		return (await this.file(address, 'assets.loadBinary')).arrayBuffer();
+		return (await this.downloads.load(address, 'assets.loadBinary')).arrayBuffer();
 	}
 
 	/**
@@ -785,210 +774,36 @@ export class Assets {
 	/**
 	 * Downloads files ahead of their loads, all at once, and resolves when every one has arrived.
 	 * The next load of each address takes its file from memory. Pair it with `onProgress` for a
-	 * loading screen. Throws the error of the first file that fails, as `loadBinary` does.
+	 * loading screen. For the files that the setup loads, name them in `defineSketch`'s `downloads`
+	 * option instead, which starts them sooner. Throws the error of the first file that fails, as
+	 * `loadBinary` does, and the next load of that file downloads it again.
 	 */
-	async preload(urls: readonly (string | URL)[]): Promise<void> {
-		const call = 'assets.preload';
-		const downloads = urls.map((url) => {
-			const address = this.resolve(url);
-			const key = address.href;
-			let download = this.preloaded.get(key);
-			if (!download) {
-				download = this.share(address, call);
-				this.preloaded.set(key, download);
-				// A failed file is not kept: a later load downloads it again.
-				download.then(undefined, () => this.preloaded.delete(key));
-			}
-			return download;
-		});
-		await Promise.all(downloads);
+	preload(urls: readonly (string | URL)[]): Promise<void> {
+		return this.downloads.preload(
+			urls.map((url) => this.resolve(url)),
+			'assets.preload',
+		);
 	}
 
 	/**
 	 * Calls `handler` as a download's bytes arrive and when one finishes or fails, with the bytes
 	 * downloaded so far, the bytes expected so far and the address whose bytes moved, as
-	 * `ProgressHandler` describes. Loads that take a file that `preload` downloaded report no
-	 * further. Returns a function that removes the handler.
+	 * `ProgressHandler` describes. The files of `defineSketch`'s `downloads` option count too, from
+	 * before the setup adds the handler. Loads that take a file that `preload` or that option
+	 * downloaded report no further. Returns a function that removes the handler.
 	 */
 	onProgress(handler: ProgressHandler): () => void {
-		if (!this.handlers.has(handler)) {
-			this.handlers.add(handler);
-			this.handlerList.push(handler);
-		}
-		return () => {
-			if (!this.handlers.delete(handler)) return;
-			// A new list, so a report that is walking the old one keeps its place and skips this
-			// handler by the set's membership.
-			this.handlerList = this.handlerList.filter((each) => each !== handler);
-		};
+		return this.downloads.onProgress(handler);
 	}
 
 	private resolve(url: string | URL): URL {
 		return new URL(url, this.base);
 	}
+}
 
-	/** A file that `preload` downloaded, or a download of it now. */
-	private file(address: URL, call: string): Promise<Blob> {
-		const key = address.href;
-		const preloaded = this.preloaded.get(key);
-		if (preloaded) {
-			this.preloaded.delete(key);
-			return preloaded;
-		}
-		return this.share(address, call);
-	}
-
-	/** The download of an address under way, or a new one. */
-	private share(address: URL, call: string): Promise<Blob> {
-		const key = address.href;
-		let download = this.pending.get(key);
-		if (!download) {
-			download = this.download(address, call);
-			this.pending.set(key, download);
-			const forget = () => this.pending.delete(key);
-			download.then(forget, forget);
-		}
-		return download;
-	}
-
-	/**
-	 * Downloads a file, counts its bytes for the progress handlers, and gives failures their codes.
-	 * A fetch that fails at the network level, or a server fault, gets one retry after a short wait;
-	 * a refused answer and a body that will not read are reported as they come.
-	 */
-	private async download(address: URL, call: string): Promise<Blob> {
-		// The bytes this download's response announced, and whether it delivered them.
-		let announced = 0;
-		let delivered = false;
-		try {
-			let response: Response | undefined;
-			let failure: unknown;
-			for (let attempt = 0; attempt < 2; attempt++) {
-				response = undefined;
-				failure = undefined;
-				try {
-					response = await fetch(address);
-				} catch (error) {
-					failure = error;
-					if (attempt === 0) {
-						await waitBeforeRetry();
-						continue;
-					}
-					break;
-				}
-				if (response.status >= 500 && attempt === 0) {
-					await waitBeforeRetry();
-					continue;
-				}
-				break;
-			}
-			if (!response) {
-				// Fetch gives no reason for a blocked response, so another origin's refusal and a
-				// network failure look alike. Another origin's file usually fails for its headers.
-				if (address.origin !== new URL(this.base).origin)
-					throw new EngineError(
-						'E1413',
-						`${call}() could not read ${address}: its server did not allow this page to read it, or could not be reached (${reasonOf(failure)}).`,
-					);
-				throw new EngineError(
-					'E1411',
-					`${call}() could not download ${address}: ${reasonOf(failure)}.`,
-				);
-			}
-			if (!response.ok)
-				throw new EngineError(
-					'E1411',
-					`${call}() could not download ${address}: HTTP ${response.status}.`,
-				);
-			const length = Number(response.headers.get('content-length'));
-			if (Number.isFinite(length) && length > 0) {
-				this.totalBytes += length;
-				announced = length;
-			}
-			try {
-				// A page that watches progress reads the body in chunks, which is the only way to see
-				// the bytes before the whole file arrives. With no handler the browser makes the blob
-				// in one step, as before.
-				if (this.handlers.size > 0 && response.body) {
-					const streamed = await this.read(response, address);
-					delivered = true;
-					return streamed;
-				}
-				const blob = await response.blob();
-				this.loadedBytes += blob.size;
-				this.report(address.href);
-				delivered = true;
-				return blob;
-			} catch (error) {
-				throw new EngineError(
-					'E1411',
-					`${call}() could not download ${address}: ${reasonOf(error)}.`,
-				);
-			}
-		} finally {
-			// A file that failed counts as done, so a loading bar reaches its end: the bytes its
-			// response announced still count, and a failure that announced none counts one byte. A
-			// file that arrived reported as its last bytes came, so it reports nothing here.
-			if (!delivered) {
-				if (announced > 0) this.loadedBytes += announced;
-				else {
-					this.loadedBytes += 1;
-					this.totalBytes += 1;
-				}
-				this.report(address.href);
-			}
-		}
-	}
-
-	/** Reads a response's body in chunks, counting each as it arrives. */
-	private async read(response: Response, address: URL): Promise<Blob> {
-		const reader = response.body?.getReader();
-		if (!reader) {
-			const blob = await response.blob();
-			this.loadedBytes += blob.size;
-			return blob;
-		}
-		const chunks: Uint8Array[] = [];
-		for (;;) {
-			const { done, value } = await reader.read();
-			if (done) break;
-			chunks.push(value);
-			this.loadedBytes += value.byteLength;
-			this.report(address.href);
-		}
-		return new Blob(chunks as BlobPart[]);
-	}
-
-	/** The bytes, total and address that the handlers last saw, so a repeat reports nothing. */
-	private reportedLoaded = 0;
-	private reportedTotal = 0;
-	private reportedUrl: string | null = null;
-
-	private report(url: string): void {
-		// A chunk's report and the download's end can hold the same numbers; the handlers see one.
-		if (
-			url === this.reportedUrl &&
-			this.loadedBytes === this.reportedLoaded &&
-			this.totalBytes === this.reportedTotal
-		)
-			return;
-		this.reportedLoaded = this.loadedBytes;
-		this.reportedTotal = this.totalBytes;
-		this.reportedUrl = url;
-		// The handlers as this report began: one removed during it is skipped. An addition is
-		// appended to the same list, so the walk reaches it unless an earlier removal replaced the
-		// list. Walking by index makes no iterator per report.
-		const handlers = this.handlerList;
-		for (let i = 0; i < handlers.length; i++) {
-			const handler = handlers[i];
-			if (handler === undefined || !this.handlers.has(handler)) continue;
-			try {
-				handler(this.loadedBytes, this.totalBytes, url);
-			} catch (error) {
-				console.error(error);
-			}
-		}
-	}
+/** Makes an engine error, for the loaders that run off this module and give their errors codes. */
+function engineError(code: ErrorCode, message: string): EngineError {
+	return new EngineError(code, message);
 }
 
 /** The identifier that starts every KTX2 file. */
@@ -1064,14 +879,7 @@ async function loadKtx2(
 			);
 	}
 	const ktx2 = await ktx2Module(address, call);
-	return ktx2.loadKtx2(
-		textures,
-		await blob.arrayBuffer(),
-		address,
-		options,
-		call,
-		(code, message) => new EngineError(code, message),
-	);
+	return ktx2.loadKtx2(textures, await blob.arrayBuffer(), address, options, call, engineError);
 }
 
 /**

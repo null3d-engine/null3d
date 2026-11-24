@@ -4931,6 +4931,10 @@ export class Scene implements ViewHolder {
 		const call = 'addFeatureInstances';
 		const { makers } = this;
 		if (!makers) throw new Error(`${call}() needs a scene that the engine made`);
+		// A batch of feature instances takes its rows in chunks, and its first `createChunkRows`
+		// comes right after this call. Its code, which is small, downloads beside the draw adapter
+		// rather than one round trip after it. A failure waits for the call that needs the code.
+		import('./chunk-rows').catch(() => {});
 		const draws = await loadFeatureDraws(call);
 		return draws.createFeatureInstances(
 			description,
