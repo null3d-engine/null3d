@@ -210,7 +210,7 @@ The same holds for work that the first view does not need. Light maps that a sce
 
 ## The preset check
 
-When the engine picks the quality preset itself, it checks the preset in the first frames of play on a first visit. The loading screen goes at the first frame, and the check measures while the sketch plays. Where the GPU misses the target frame rate, the engine lowers the preset in front of the viewer. `engine.presetChecked` resolves once the check has ended. A repeat visit takes the stored result and runs no check, and a phone starts at Low, which has no check.
+When the engine picks the quality preset itself, it checks the preset in the first frames of play on a first visit. The loading screen goes at the first frame, and the check measures while the sketch plays. Where the GPU misses the target frame rate, the engine lowers the preset in front of the viewer. `engine.presetChecked` resolves once the check has ended. A page or a tool that measures steady play waits for it, because the check can lower the preset inside the measured window. A repeat visit takes the stored result and runs no check, and a phone starts at Low, which has no check.
 
 A check before play costs a slow tablet the most. On a Galaxy Tab A9 Plus, it held the loading screen 8 to 18 seconds after the first frame. A page that would rather hide a change of preset behind its loading screen passes `presetCheck: 'before-play'` to `createEngine`. The check then runs before play, and `createEngine` waits for it, at least three quarters of a second for each preset that it measures. The `?preset-check=` switch sets the same from the page's address ([The preset check](loading-screens.md#the-preset-check)).
 
