@@ -409,14 +409,15 @@ export class Governor {
 	 * Sets the range of the render scale, in thousandths, from `low` to `high`, and brings the scale
 	 * into it. The scale starts at the highest. A new range gives the levels new settings, so the
 	 * governor forgets their trials. In the lowest quality tier, the floor stays at the tier's, and
-	 * the range's own floor is what the exit gives back.
+	 * the range's own floor is what the exit gives back. `ownFloor` says that the sketch set the
+	 * floor itself, which then wins over the tier's.
 	 */
-	setRange(low: number, high: number): void {
+	setRange(low: number, high: number, ownFloor = false): void {
 		let floor = low;
 		if (this.lowest) {
 			if (low !== LOWEST_FLOOR) this.lowestLow = low;
 			if (high !== LOWEST_FLOOR) this.lowestHigh = high;
-			floor = Math.min(low, LOWEST_FLOOR);
+			if (!ownFloor) floor = Math.min(low, LOWEST_FLOOR);
 		}
 		if (floor !== this.low || high !== this.high) {
 			this.forgetTrials();

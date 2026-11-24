@@ -1441,7 +1441,7 @@ export class SketchRunner {
 		const { governor } = this;
 		governor.setOn(settings.governor);
 		governor.setLevelSteps(settings.governorLevels);
-		governor.setRange(low, high);
+		governor.setRange(low, high, this.quality.owns('minRenderScale'));
 		this.followMovers = settings.followMovingCasters;
 		this.cascadeBlend = settings.shadowCascadeBlend;
 		this.lodThreshold = settings.lodThreshold;
@@ -1575,19 +1575,36 @@ export class SketchRunner {
 	 * the settings its own values again.
 	 */
 	private applyTierSettings(): void {
-		const { governor } = this;
+		const { governor, quality } = this;
 		this.tierChanges = governor.tierChanges;
-		const { settings } = this.quality;
+		const { settings } = quality;
+		// A render-scale floor that the sketch set itself wins over the tier's, in the tier and as it
+		// leaves.
+		const ownFloor = quality.owns('minRenderScale');
 		if (governor.lowest) {
 			this.tierRestore ??= tierRestoreSettings(settings);
 			const cuts = lowestTierCuts(this.sketch.capabilities.tier, settings.minRenderScale);
+			if (ownFloor) delete cuts.minRenderScale;
 			const current = settings as unknown as Record<string, unknown>;
 			if (Object.entries(cuts).some(([name, value]) => current[name] !== value))
-				void this.quality.setGoverned(cuts);
+				void quality.setGoverned(cuts);
+			if (ownFloor)
+				governor.setRange(
+					thousandths(settings.minRenderScale),
+					thousandths(settings.maxRenderScale),
+					true,
+				);
 		} else if (this.tierRestore) {
-			const restore = this.tierRestore;
+			const restore = { ...this.tierRestore };
 			this.tierRestore = undefined;
-			void this.quality.setGoverned(restore);
+			if (ownFloor) {
+				delete restore.minRenderScale;
+				restore.maxRenderScale = Math.max(
+					restore.maxRenderScale ?? settings.maxRenderScale,
+					settings.minRenderScale,
+				);
+			}
+			void quality.setGoverned(restore);
 		}
 	}
 

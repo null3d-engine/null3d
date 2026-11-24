@@ -4,6 +4,8 @@ import { ERROR_FIXES } from '../errors/fixes';
 import {
 	checkedSettings,
 	LIVE_SETTINGS,
+	LOWEST_TIER_SCALE,
+	lowestTierSettings,
 	presetSettings,
 	type QualityPreset,
 	type QualitySettingName,
@@ -203,6 +205,41 @@ describe('SketchQuality', () => {
 		expect(quality.preset).toBe('low');
 		// A device can move to a lighter mode while it runs, so the check's lower preset gives it.
 		expect(quality.settings.antialias).toBe('fxaa');
+	});
+
+	it("raises the lowest tier's cap of the render scale to a floor that the sketch sets itself", async () => {
+		const tier = lowestTierSettings('webgpu');
+		const inTier = {
+			steps: 0,
+			farCascadeInterval: MEDIUM.farCascadeInterval,
+			shadowFilter: MEDIUM.shadowFilter,
+			bloomSize: MEDIUM.bloomSize,
+			aoScale: MEDIUM.aoScale,
+			ssrScale: MEDIUM.ssrScale,
+			contactShadowSteps: MEDIUM.contactShadowSteps,
+			farAnimationInterval: MEDIUM.farAnimationInterval,
+			lowest: true,
+		};
+		const start = {
+			preset: 'medium',
+			settings: { ...MEDIUM, ...tier },
+			options: tier,
+			highest: 'ultra',
+		} as const;
+		const quality = new SketchQuality(start, () => {}, undefined, undefined, inTier);
+		expect(quality.settings.maxRenderScale).toBe(LOWEST_TIER_SCALE);
+		await quality.set({ minRenderScale: 1 });
+		expect([quality.settings.minRenderScale, quality.settings.maxRenderScale]).toEqual([1, 1]);
+		expect(quality.owns('minRenderScale')).toBe(true);
+		expect(quality.owns('maxRenderScale')).toBe(false);
+		// A cap that the sketch set itself is its own choice, which a floor above it contradicts.
+		const capped = new SketchQuality(start, () => {}, undefined, undefined, inTier);
+		await capped.set({ maxRenderScale: 0.5 });
+		expect(() => capped.set({ minRenderScale: 1 })).toThrow('E1213');
+		// Outside the tier, a floor above the cap is still the sketch's mistake.
+		const { quality: outside } = medium();
+		await outside.set({ maxRenderScale: 0.7 });
+		expect(() => outside.set({ minRenderScale: 0.9 })).toThrow('E1213');
 	});
 
 	it('keeps the lowest render scale at or below the highest', async () => {

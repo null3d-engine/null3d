@@ -488,14 +488,21 @@ export class SketchQuality implements Quality {
 		checkSettings('quality.set()', settings, LIVE_SETTINGS);
 		const lowest = settings.minRenderScale ?? this.settings.minRenderScale;
 		const highest = settings.maxRenderScale ?? this.settings.maxRenderScale;
-		if (lowest > highest)
+		// The lowest quality tier caps the render scale. A floor that the sketch sets itself wins
+		// over that cap, which rises to the floor; a cap that the sketch set itself stays its own.
+		const raisesCap =
+			lowest > highest &&
+			settings.maxRenderScale === undefined &&
+			this.governor.lowest &&
+			!this.owned.has('maxRenderScale');
+		if (lowest > highest && !raisesCap)
 			throw new EngineError(
 				'E1213',
 				`quality.set() would give minRenderScale ${lowest}, above maxRenderScale ${highest}. Give both in one call to change them together.`,
 			);
 		for (const [name, value] of Object.entries(settings))
 			if (value !== undefined) this.owned.add(name as QualitySettingName);
-		return this.update(this.preset, settings);
+		return this.update(this.preset, raisesCap ? { ...settings, maxRenderScale: lowest } : settings);
 	}
 
 	/**
@@ -526,6 +533,11 @@ export class SketchQuality implements Quality {
 	 */
 	own(name: QualitySettingName): void {
 		this.owned.add(name);
+	}
+
+	/** True when the sketch chose the setting itself since the preset it last asked for. */
+	owns(name: QualitySettingName): boolean {
+		return this.owned.has(name);
 	}
 
 	/**

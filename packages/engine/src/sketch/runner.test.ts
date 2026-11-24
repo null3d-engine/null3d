@@ -759,6 +759,55 @@ describe('SketchRunner', () => {
 		expect(calls.find((call) => call[0] === 'recordFrame')?.[4]).toBe(333);
 	});
 
+	it('keeps a render-scale floor that the sketch sets itself in a page that starts in the lowest tier', async () => {
+		const tier = lowestTierSettings('webgpu');
+		const { runner, calls, context } = await start(
+			({ quality }) => {
+				quality.set({ minRenderScale: 1 });
+				return {};
+			},
+			undefined,
+			{
+				quality: {
+					...MEDIUM,
+					settings: { ...MEDIUM.settings, ...tier },
+					options: tier,
+					lowest: true,
+				},
+			},
+		);
+		runner.step(0);
+		runner.step(1000 / 60);
+		// The tier's cuts stay, and the sketch's floor wins over its cap of the scale.
+		expect(context.quality.governor.lowest).toBe(true);
+		expect(context.quality.settings.castShadows).toBe(false);
+		expect(context.quality.settings.minRenderScale).toBe(1);
+		expect(calls.filter((call) => call[0] === 'recordFrame').at(-1)?.[4]).toBe(1000);
+	});
+
+	it('keeps a render-scale floor that the sketch sets itself while the governor holds the lowest tier, and after it', async () => {
+		const { runner, calls, context } = await start(() => ({}));
+		const governor = (
+			runner as unknown as {
+				governor: { enterLowest(now: number): void; exitLowest(now: number): void };
+			}
+		).governor;
+		governor.enterLowest(0);
+		runner.step(0);
+		expect(context.quality.settings.minRenderScale).toBe(LOWEST_TIER_SCALE);
+		await context.quality.set({ minRenderScale: 1 });
+		runner.step(1000 / 60);
+		expect(context.quality.governor.lowest).toBe(true);
+		expect(context.quality.settings.castShadows).toBe(false);
+		expect(context.quality.settings.minRenderScale).toBe(1);
+		expect(calls.filter((call) => call[0] === 'recordFrame').at(-1)?.[4]).toBe(1000);
+		governor.exitLowest(0);
+		runner.step(2000 / 60);
+		expect(context.quality.governor.lowest).toBe(false);
+		expect(context.quality.settings.castShadows).toBe(MEDIUM.settings.castShadows);
+		expect(context.quality.settings.minRenderScale).toBe(1);
+	});
+
 	it('turns the depth prepass on and off during play, with no new preset', async () => {
 		const { runner, calls, context } = await start(() => ({}));
 		runner.step(0);
