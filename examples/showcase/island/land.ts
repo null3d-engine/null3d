@@ -50,13 +50,20 @@ function splat(x: number, z: number, out: number[]): void {
 	// Under the water, the shelf's bed is pale only over the bay's and the harbour's sand. Elsewhere it is
 	// dark rock, broken by darker weed in patches that read as reef.
 	const under = 1 - smoothstep(y, -1.2, -0.4);
-	const sandy = sandyBed(x, z);
+	// Each part below that a factor of nothing multiplies is left out: the bed's sand and weed on dry
+	// land, the beach's width off the beach, the crags' noise off their slopes and heights, and the
+	// earth's mottle wherever rock or sand covers the ground in full. The weights come out the same.
+	const sandy = under === 0 ? 0 : sandyBed(x, z);
 	const sand = Math.max(
-		beach * (1 - smoothstep(d, sandWidth(x, z) - 2, sandWidth(x, z) + 5)),
+		beach === 0 ? 0 : beach * (1 - smoothstep(d, sandWidth(x, z) - 2, sandWidth(x, z) + 5)),
 		under * sandy,
 	);
 	const weed =
-		under * (1 - sandy) * smoothstep(noise.fbm2(x * 0.035 + 9, z * 0.035, 3), -0.08, 0.02);
+		under === 0
+			? 0
+			: under * (1 - sandy) * smoothstep(noise.fbm2(x * 0.035 + 9, z * 0.035, 3), -0.08, 0.02);
+	const cragSlope = smoothstep(slope, 0.95, 1.35);
+	const cragHeight = smoothstep(y, 90, 130);
 	// Bare rock stands in the cliffs, on the coast and on the steepest ground.
 	const rock = Math.max(
 		smoothstep(slope, 1.3, 2) * (1 - smoothstep(d, 30, 70)),
@@ -65,23 +72,27 @@ function splat(x: number, z: number, out: number[]): void {
 		// A crown's knob shows rock in strata and patches under its tower.
 		crownRock(x, z, y, slope),
 		// Crags stand in patches on the hills' steepest faces.
-		smoothstep(slope, 0.95, 1.35) *
-			smoothstep(noise.fbm2(x * 0.012 + 40, z * 0.012, 3), -0.05, 0.2) *
-			smoothstep(y, 90, 130),
+		cragSlope === 0 || cragHeight === 0
+			? 0
+			: cragSlope * smoothstep(noise.fbm2(x * 0.012 + 40, z * 0.012, 3), -0.05, 0.2) * cragHeight,
 		(1 - beach) * (1 - quay) * (1 - smoothstep(d, 16, 36)),
 		under * (1 - sandy) * (1 - weed),
 	);
 	// The ground lies dark under trees and dry in the open, mottled at a few meters. Wet sand darkens softly
 	// toward the water.
-	const under_trees = canopyAt(x, z);
-	const mottle = smoothstep(noise.fbm2(x * 0.09 + 3, z * 0.09, 3), -0.25, 0.25);
-	const kept = golfShare(x, z);
 	const wet = beach * (1 - smoothstep(y, SEA_LEVEL, SEA_LEVEL + WET_SAND)) * (1 - under) * 0.55;
-	const dry = Math.max(0, 1 - under_trees * 1.2) * (0.55 + 0.45 * mottle) * (1 - kept);
-	const earth = Math.max(dry, wet);
+	const open = (1 - rock) * (1 - sand * (1 - wet));
+	let earth = 0;
+	if (open !== 0) {
+		const under_trees = canopyAt(x, z);
+		const mottle = smoothstep(noise.fbm2(x * 0.09 + 3, z * 0.09, 3), -0.25, 0.25);
+		const kept = golfShare(x, z);
+		const dry = Math.max(0, 1 - under_trees * 1.2) * (0.55 + 0.45 * mottle) * (1 - kept);
+		earth = Math.max(dry, wet);
+	}
 	out[3] = sand * (1 - wet);
 	out[2] = rock * (1 - sand);
-	out[1] = earth * (1 - rock) * (1 - sand * (1 - wet));
+	out[1] = open === 0 ? 0 : earth * (1 - rock) * (1 - sand * (1 - wet));
 	out[0] = Math.max(0, 1 - (out[1] as number) - (out[2] as number) - (out[3] as number));
 }
 

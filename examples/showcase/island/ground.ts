@@ -179,22 +179,31 @@ function rasterRoad({ points, half, end }: Road): void {
 	for (let k = 0; k + 1 < points.length; k++) {
 		const a = points[k] as RoadPoint;
 		const b = points[k + 1] as RoadPoint;
-		const [abx, abz] = [b.x - a.x, b.z - a.z];
+		// Scalars, not destructured pairs, so a cell of the hundreds around each point makes no array.
+		const ax = a.x;
+		const az = a.z;
+		const ay = a.y;
+		const rise = b.y - ay;
+		const abx = b.x - ax;
+		const abz = b.z - az;
 		const length2 = abx * abx + abz * abz || 1;
-		const [ci, cj] = [toCell(a.x), toCell(a.z)];
-		for (let j = Math.max(0, cj - span); j <= Math.min(SIDE - 1, cj + span); j++)
+		const ci = toCell(ax);
+		const cj = toCell(az);
+		for (let j = Math.max(0, cj - span); j <= Math.min(SIDE - 1, cj + span); j++) {
+			const z = fromCell(j);
 			for (let i = Math.max(0, ci - span); i <= Math.min(SIDE - 1, ci + span); i++) {
-				const [x, z] = [fromCell(i), fromCell(j)];
-				const t = Math.min(1, Math.max(0, ((x - a.x) * abx + (z - a.z) * abz) / length2));
-				const edge = hypot(x - (a.x + abx * t), z - (a.z + abz * t)) - half;
+				const x = fromCell(i);
+				const t = Math.min(1, Math.max(0, ((x - ax) * abx + (z - az) * abz) / length2));
+				const edge = hypot(x - (ax + abx * t), z - (az + abz * t)) - half;
 				const at = cellAt(i, j);
-				const y = a.y + (b.y - a.y) * t;
+				const y = ay + rise * t;
 				// Where two roads overlap at a junction, the ground stays under the lower of them.
 				if (edge < 3 && (edgeGrid[at] as number) < 3)
 					roadHeight[at] = Math.min(roadHeight[at] as number, y);
 				else if (edge < (edgeGrid[at] as number)) roadHeight[at] = y;
 				if (edge < (edgeGrid[at] as number)) edgeGrid[at] = edge;
 			}
+		}
 	}
 	if (end === 'circle') {
 		const last = points[points.length - 1] as RoadPoint;
@@ -288,13 +297,21 @@ function holdDrive(out: Float32Array, pinned: Uint8Array, lot: Lot): void {
 		}
 }
 
-/** The ground's natural height at each cell, with the worked terraces stepped into it. */
-export const natural = new Float32Array(SIDE * SIDE);
-function readNatural(): void {
-	for (let j = 0; j < SIDE; j++)
-		for (let i = 0; i < SIDE; i++) natural[cellAt(i, j)] = naturalHeight(fromCell(i), fromCell(j));
+/**
+ * The land's grids that every bake reads: its natural height at each cell, which cells are worked
+ * in terraces, and the small bumps of the open ground. They are made at their first read, so a
+ * scene's code loads before they run.
+ */
+interface LandCells {
+	readonly natural: Float32Array;
+	readonly worked: Uint8Array;
+	readonly bumps: Float32Array;
 }
-readNatural();
+let landCells: LandCells | undefined;
+const land = (): LandCells => (landCells ??= readLand());
+
+/** The ground's natural height at each cell, before roads, plots and terraces cut it. */
+export const naturalGrid = (): Float32Array => land().natural;
 
 /** Blends one level pad into the running sums of the cells around it. */
 function rasterPad(
@@ -310,6 +327,7 @@ function rasterPad(
 	front: number,
 	record?: Float32Array,
 ): void {
+	const natural = naturalGrid();
 	const [c, s] = [Math.cos(yaw), Math.sin(yaw)];
 	const reach = hypot(w, Math.max(back, front)) + MOST_BANK;
 	const span = Math.ceil(reach / CELL);
@@ -343,14 +361,16 @@ const CROWN_WORKED = 0.85;
 
 /** Where a slope is worked in terraces. */
 export function worked(x: number, z: number): boolean {
+	return workedBy(x, z, naturalHeight);
+}
+
+/** Whether a place lies on a worked slope, by the land's form that `height` gives. */
+function workedBy(x: number, z: number, height: (x: number, z: number) => number): boolean {
 	// A village's crown is worked in stepped gardens right up to its tower.
 	if (VILLAGES.some(([vx, vz, , r]) => hypot(x - vx, z - vz) < r * CROWN_WORKED)) return true;
 	return (
-		naturalHeight(x, z) < 115 &&
-		hypot(
-			naturalHeight(x + 6, z) - naturalHeight(x, z),
-			naturalHeight(x, z + 6) - naturalHeight(x, z),
-		) < 4.6 &&
+		height(x, z) < 115 &&
+		hypot(height(x + 6, z) - height(x, z), height(x, z + 6) - height(x, z)) < 4.6 &&
 		townShare(x, z) < 0.3 &&
 		golfShare(x, z) < 0.01 &&
 		inland(x, z) > 40 &&
@@ -359,29 +379,73 @@ export function worked(x: number, z: number): boolean {
 	);
 }
 
+/**
+ * Whether a place lies on a worked slope, as `worked` answers it. A cell's own place that stands
+ * above the shore's flats takes the answer that the land's grids already hold; any other place
+ * reads the land.
+ */
+export function workedAt(x: number, z: number): boolean {
+	const i = (x + GROUND / 2) / CELL;
+	const j = (z + GROUND / 2) / CELL;
+	if (!Number.isInteger(i) || !Number.isInteger(j) || i >= SIDE || j >= SIDE) return worked(x, z);
+	const at = cellAt(i, j);
+	const cells = land();
+	return (cells.natural[at] as number) > 1.5 ? cells.worked[at] === 1 : worked(x, z);
+}
+
 /** The passes in which a slope too steep for a bank spreads across the ground around it. */
 const SPREAD_PASSES = 60;
 
 /** The height between two terraces of a worked slope, in meters. */
 export const TERRACE_RISE = 1.7;
 
-/** Which cells are worked in terraces, and the small bumps of the open ground, read once for every bake. */
-const workedCells = new Uint8Array(SIDE * SIDE);
-const openBumps = new Float32Array(SIDE * SIDE);
-for (let j = 0; j < SIDE; j++)
-	for (let i = 0; i < SIDE; i++) {
-		const at = cellAt(i, j);
-		if ((natural[at] as number) <= 1.5) continue;
-		const [x, z] = [fromCell(i), fromCell(j)];
-		if (worked(x, z)) workedCells[at] = 1;
-		else
-			openBumps[at] =
+/**
+ * Reads the land's grids. Each cell's form is kept to full precision while the grids are read, so
+ * the test of a worked slope, which reads the form three cells along each axis, takes it from there
+ * rather than from the land again.
+ */
+function readLand(): LandCells {
+	const natural = new Float32Array(SIDE * SIDE);
+	const exact = new Float64Array(SIDE * SIDE);
+	for (let j = 0; j < SIDE; j++)
+		for (let i = 0; i < SIDE; i++) {
+			const at = cellAt(i, j);
+			const h = naturalHeight(fromCell(i), fromCell(j));
+			exact[at] = h;
+			natural[at] = h;
+		}
+	// A place on the grid reads its form from the grid; any other place reads the land.
+	const formAt = (x: number, z: number): number => {
+		const i = (x + GROUND / 2) / CELL;
+		const j = (z + GROUND / 2) / CELL;
+		return Number.isInteger(i) && Number.isInteger(j) && i < SIDE && j < SIDE
+			? (exact[cellAt(i, j)] as number)
+			: naturalHeight(x, z);
+	};
+	const worked = new Uint8Array(SIDE * SIDE);
+	const bumps = new Float32Array(SIDE * SIDE);
+	for (let j = 0; j < SIDE; j++)
+		for (let i = 0; i < SIDE; i++) {
+			const at = cellAt(i, j);
+			if ((natural[at] as number) <= 1.5) continue;
+			const x = fromCell(i);
+			const z = fromCell(j);
+			if (workedBy(x, z, formAt)) {
+				worked[at] = 1;
+				continue;
+			}
+			// The bumps fade in from the shore, so a cell near it keeps none and needs no noise.
+			const shore = smoothstep(inland(x, z), 30, 50);
+			if (shore === 0) continue;
+			bumps[at] =
 				(1 - beachShare(x, z)) *
 				(1 - townShare(x, z)) *
-				smoothstep(inland(x, z), 30, 50) *
+				shore *
 				0.5 *
 				fine.fbm2(x * 0.09, z * 0.09, 2);
-	}
+		}
+	return { natural, worked, bumps };
+}
 
 /** The final height of the ground at each cell of the grid. */
 let ground = new Float32Array(SIDE * SIDE);
@@ -391,6 +455,7 @@ export const currentGround = (): Float32Array => ground;
 
 /** Bakes the ground from the natural land, the terraces, the plots and the roads. */
 export function bake(lots: readonly Lot[], stairs: readonly (readonly Tread[])[]): void {
+	const { natural, worked: workedCells, bumps: openBumps } = land();
 	const sum = new Float32Array(SIDE * SIDE);
 	const weight = new Float32Array(SIDE * SIDE);
 	const share = new Float32Array(SIDE * SIDE);
@@ -540,26 +605,48 @@ export function bake(lots: readonly Lot[], stairs: readonly (readonly Tread[])[]
 	}
 	// Where two held places stand too close for their height, the slope that no bank can hold spreads
 	// across the ground between them, and does not stand as a wall at the edge of one.
-	let tight = new Set<number>();
-	const steps = [1, -1, SIDE, -SIDE];
+	// Each pass works through its cells in the order they joined it, and a cell joins the next pass
+	// once: a list and a mark of the pass that holds each cell keep that order.
+	let tight: number[] = [];
+	const held = new Uint8Array(SIDE * SIDE);
+	const steps = [1, -1, SIDE, -SIDE] as const;
 	const tooSteep = (at: number, near: number) =>
 		Math.abs((offset[at] as number) - (offset[near] as number)) > limit * 1.05;
 	for (let j = 1; j < SIDE - 1; j++)
 		for (let i = 1; i < SIDE - 1; i++) {
 			const at = cellAt(i, j);
-			if (pinned[at] === 0 && steps.some((step) => tooSteep(at, at + step))) tight.add(at);
+			if (
+				pinned[at] === 0 &&
+				(tooSteep(at, at + 1) ||
+					tooSteep(at, at - 1) ||
+					tooSteep(at, at + SIDE) ||
+					tooSteep(at, at - SIDE))
+			)
+				tight.push(at);
 		}
-	for (let pass = 0; pass < SPREAD_PASSES && tight.size > 0; pass++) {
-		const next = new Set<number>();
+	for (let pass = 0; pass < SPREAD_PASSES && tight.length > 0; pass++) {
+		const next: number[] = [];
+		const mark = (pass % 255) + 1;
+		const join = (at: number): void => {
+			if (held[at] === mark) return;
+			held[at] = mark;
+			next.push(at);
+		};
 		for (const at of tight) {
 			offset[at] =
-				steps.reduce((sum, step) => sum + (offset[at + step] as number), 0) / steps.length;
+				(0 +
+					(offset[at + 1] as number) +
+					(offset[at - 1] as number) +
+					(offset[at + SIDE] as number) +
+					(offset[at - SIDE] as number)) /
+				steps.length;
 			for (const step of steps) {
 				const near = at + step;
 				if (!tooSteep(at, near)) continue;
-				next.add(at);
-				const [i, j] = [near % SIDE, Math.floor(near / SIDE)];
-				if (pinned[near] === 0 && i > 0 && j > 0 && i < SIDE - 1 && j < SIDE - 1) next.add(near);
+				join(at);
+				const i = near % SIDE;
+				const j = Math.floor(near / SIDE);
+				if (pinned[near] === 0 && i > 0 && j > 0 && i < SIDE - 1 && j < SIDE - 1) join(near);
 			}
 		}
 		tight = next;

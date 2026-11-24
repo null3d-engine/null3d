@@ -18,7 +18,7 @@ import { Noise, random } from '../../lib/procedural';
 import { NIGHT_HOURS, nightAlbedo } from '../../lib/stage';
 import { ROOST_LAMPS } from './birds';
 import { FOUNTAIN_WATER, STAIR_HALF, WAY_HALF } from './ground';
-import { type HouseLot, loadHouses, standHouse, standsByKind } from './houses';
+import { HOUSES_MODEL, type HouseLot, loadHouses, standHouse, standsByKind } from './houses';
 import {
 	BAY,
 	formHeight,
@@ -60,7 +60,7 @@ import {
 	shrub,
 	streetLamp,
 } from './kit';
-import { loadLandmarks } from './landmarks';
+import { loadLandmarks, TOWN_MODEL } from './landmarks';
 import {
 	bunkerSpots,
 	CHURCH_AT,
@@ -79,7 +79,8 @@ import {
 	STAIRS,
 	slopeAt,
 	stairTreads,
-	TERRACES,
+	type TerraceWall,
+	terraceWalls,
 	WALL_EDGE,
 	wayOf,
 } from './plan';
@@ -87,6 +88,7 @@ import {
 	loadProps,
 	loungerStands,
 	type ModelStanding,
+	PROPS_MODEL,
 	type PropForm,
 	replaceBatch,
 	replaceWithForms,
@@ -885,11 +887,12 @@ export function stoneWalls(): {
 		}
 	}
 	// A terrace's chain of walls slopes down into the ground at each end, with no cut face.
-	const continues = (x: number, z: number, self: (typeof TERRACES)[0]) =>
-		TERRACES.some(
+	const terraces = terraceWalls();
+	const continues = (x: number, z: number, self: TerraceWall) =>
+		terraces.some(
 			(t) => t !== self && (hypot(t.ax - x, t.az - z) < 0.5 || hypot(t.bx - x, t.bz - z) < 0.5),
 		);
-	for (const terrace of TERRACES) {
+	for (const terrace of terraces) {
 		const { ax, ay, az, bx, by, bz } = terrace;
 		if (crossesWay(ax, az, bx, bz)) continue;
 		wallStretch(
@@ -1835,8 +1838,14 @@ function nearestRoadPoint(road: Road, x: number, z: number): RoadPoint {
 	return best;
 }
 
+let harbourPath: readonly { x: number; y: number; z: number }[] | undefined;
+
 /** The paved way from the square's north edge down the bank to the harbour street. */
-export const SQUARE_HARBOUR_PATH: readonly { x: number; y: number; z: number }[] = (() => {
+export const squareHarbourPath = (): readonly { x: number; y: number; z: number }[] =>
+	(harbourPath ??= layHarbourPath());
+
+/** Lays the paved way on the ground as the plan bakes it. */
+function layHarbourPath(): { x: number; y: number; z: number }[] {
 	const quay = ROADS.find((road) => road.half === STREET + 0.5) as Road;
 	const x = -94.2;
 	const from = SQUARE.z + SQUARE.hz;
@@ -1853,7 +1862,7 @@ export const SQUARE_HARBOUR_PATH: readonly { x: number; y: number; z: number }[]
 	}
 	(path[path.length - 1] as { y: number }).y = to.y + ROAD_LIFT;
 	return path;
-})();
+}
 
 /** The stone flight from the harbour street's shoulder down to the quay apron, west of the harbour's head. */
 export const HARBOUR_STAIR: readonly { x: number; y: number; z: number }[] = (() => {
@@ -1926,8 +1935,14 @@ function hullsMeet(
 	return true;
 }
 
+let moored: readonly (readonly [number, number, number])[] | undefined;
+
 /** Where the boats lie: stern-to along the quay and both sides of the moles, with a few out at anchor. */
-export const MOORINGS: readonly (readonly [number, number, number])[] = (() => {
+export const mooringSpots = (): readonly (readonly [number, number, number])[] =>
+	(moored ??= placeMoorings());
+
+/** Places the boats, each stood off into water deep enough for its hull. */
+function placeMoorings(): [number, number, number][] {
 	const next = random(907);
 	const moorings: [number, number, number][] = [];
 	const clearOfMole = (x: number) => Math.abs(x + 92) > 12 && Math.abs(x - 10) > 22;
@@ -1974,7 +1989,7 @@ export const MOORINGS: readonly (readonly [number, number, number])[] = (() => {
 	for (const mooring of adjusted)
 		if (!placed.some((other) => hullsMeet(mooring, other))) placed.push(mooring);
 	return placed;
-})();
+}
 
 function createHarbour(
 	ctx: SketchContext,
@@ -2118,7 +2133,7 @@ function createHarbour(
 			edge,
 		);
 	}
-	strip(b, SQUARE_HARBOUR_PATH, 0.8, paving, 0);
+	strip(b, squareHarbourPath(), 0.8, paving, 0);
 	const [tipX, tipZ] = [-82, 424];
 	const [startX, startZ] = [-250, 392];
 	// The breakwater's paved top, with a low wall along its sea side.
@@ -2195,7 +2210,7 @@ function createHarbour(
 		receiveShadows: true,
 	});
 
-	const moorings = MOORINGS;
+	const moorings = mooringSpots();
 	// The boats cast no shadow: through the clear water theirs read as hard dark blobs on the harbour's floor.
 	const yachts = scene.createInstances(geometry.fromArrays(finish(sailboat())), moorings.length, {
 		material: materials.standard({ vertexColors: true, roughness: 0.55, doubleSided: true }),
@@ -3549,8 +3564,21 @@ function createLamps(ctx: SketchContext, night: Nightwork): void {
 	standHeads(ctx, night, places);
 }
 
+/** The town that the plan places, drawn in its code-built kit until its model files land. */
+export interface Town {
+	/**
+	 * Downloads the landmark, house and prop models and stands them in the kit's place, and resolves
+	 * with the town's night once they stand. A file that fails leaves its kit standing. The first
+	 * call starts the downloads, and every call answers the same promise.
+	 */
+	settle(): Promise<TownNight>;
+}
+
+/** The town's model files, which a page that waits for the town downloads ahead of their loads. */
+export const TOWN_FILES: readonly string[] = [TOWN_MODEL, HOUSES_MODEL, PROPS_MODEL];
+
 /** Draws everything that the town plan places, apart from its trees. */
-export function createTown(ctx: SketchContext, options: TownOptions = {}): Promise<TownNight> {
+export function createTown(ctx: SketchContext, options: TownOptions = {}): Town {
 	const { scene, geometry, materials } = ctx;
 	const surfaces: Surfaces = {
 		plaster: materials.standard({
@@ -3608,26 +3636,26 @@ export function createTown(ctx: SketchContext, options: TownOptions = {}): Promi
 	const coast = createRocks(ctx);
 	createKnob(ctx);
 	createLamps(ctx, night);
-	return settleLandmarks(
-		ctx,
-		{
-			church: square.church,
-			churchY: square.churchY,
-			lighthouse: harbour.lighthouse,
-			lighthouseAt: harbour.at,
-			keeps,
-			houses,
-			props: {
-				sailboats: harbour.sailboats,
-				skiffs: harbour.skiffs,
-				stones: harbour.stones,
-				parasols,
-				benches,
-				coast,
-			},
+	const kit: KitLandmarks = {
+		church: square.church,
+		churchY: square.churchY,
+		lighthouse: harbour.lighthouse,
+		lighthouseAt: harbour.at,
+		keeps,
+		houses,
+		props: {
+			sailboats: harbour.sailboats,
+			skiffs: harbour.skiffs,
+			stones: harbour.stones,
+			parasols,
+			benches,
+			coast,
 		},
-		night,
-	).then(() => night);
+	};
+	let settled: Promise<TownNight> | undefined;
+	return {
+		settle: () => (settled ??= settleLandmarks(ctx, kit, night).then(() => night)),
+	};
 }
 
 /** What the code-built kit stands for each landmark until the models arrive. */
@@ -3650,8 +3678,7 @@ interface KitLandmarks {
 
 /**
  * Replaces the code-built landmarks with the model file's parts once it lands. A page without the
- * sample file keeps the kit, so the demo runs before the asset is published. The load starts after
- * the town is built, so it never holds up the first frame.
+ * sample file keeps the kit, so the demo runs before the asset is published.
  */
 async function settleLandmarks(
 	ctx: SketchContext,

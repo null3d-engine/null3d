@@ -263,8 +263,25 @@ function distanceTo(mask: Uint8Array, want: number): Float32Array {
 	return result;
 }
 
+/**
+ * The grids that the land's form reads, each made at its first read: a scene's code then loads
+ * before any of them runs, so its first loading message shows while they are made.
+ */
+let fieldGrid: Float32Array | undefined;
+let smoothGrid: Float32Array | undefined;
+let ridgeCells: Float32Array | undefined;
+
 /** How far each cell lies inside the shore, in meters, and below 0 out at sea. */
-const field = (() => {
+const field = (): Float32Array => (fieldGrid ??= shoreField());
+
+/** The distance field with its ridges rounded off, so that the hills rise from a smooth outline. */
+const smoothField = (): Float32Array => (smoothGrid ??= blur(field(), SIDE, 13, 3));
+
+/** The ridge's land on its own grid, before the coast shapes it. */
+const ridgeGrid = (): Float32Array => (ridgeCells ??= ridgeField());
+
+/** Makes the distance field from the shoreline. */
+function shoreField(): Float32Array {
 	const line = shoreLine();
 	const points = line.length / 2;
 	const mask = new Uint8Array(SIDE * SIDE);
@@ -299,7 +316,7 @@ const field = (() => {
 	}
 	// A small blur takes the grid's steps out of the edge.
 	return blur(raw, SIDE, 1, 2);
-})();
+}
 
 /** A box blur of a square grid, over a radius in cells, in passes along each axis. */
 function blur(grid: Float32Array, side: number, radius: number, passes: number): Float32Array {
@@ -334,9 +351,6 @@ function blur(grid: Float32Array, side: number, radius: number, passes: number):
 	return from;
 }
 
-/** The distance field with its ridges rounded off, so that the hills rise from a smooth outline. */
-const smoothField = blur(field, SIDE, 13, 3);
-
 /** A value of a grid of the field's size at a point, between its nearest cells. */
 function read(grid: Float32Array, x: number, z: number): number {
 	const u = Math.min(SIDE - 1.001, Math.max(0, (x + GROUND / 2) / CELL));
@@ -354,7 +368,7 @@ function read(grid: Float32Array, x: number, z: number): number {
 
 /** How far a point lies inside the shore, in meters, and below 0 out at sea. */
 export function inland(x: number, z: number): number {
-	return read(field, x, z);
+	return read(field(), x, z);
 }
 
 /** How much of the point's stretch of shore is beach: 1 on the beach and 0 on the rocky coast. */
@@ -475,24 +489,28 @@ function ridgeHeight(x: number, z: number): number {
 /** The cell of the grid that holds the ridge's land, in meters, and its cells along a side. */
 const FORM_CELL = 6;
 const FORM_SIDE = Math.ceil(GROUND / FORM_CELL) + 1;
-const ridgeGrid = (() => {
+function ridgeField(): Float32Array {
 	const grid = new Float32Array(FORM_SIDE * FORM_SIDE);
 	for (let j = 0; j < FORM_SIDE; j++)
 		for (let i = 0; i < FORM_SIDE; i++)
 			grid[j * FORM_SIDE + i] = ridgeHeight(i * FORM_CELL - GROUND / 2, j * FORM_CELL - GROUND / 2);
 	return grid;
-})();
+}
 
 /** The ridge's land at a point, between the grid's nearest cells. */
 function ridgeAt(x: number, z: number): number {
+	const grid = ridgeGrid();
 	const u = Math.min(FORM_SIDE - 1.001, Math.max(0, (x + GROUND / 2) / FORM_CELL));
 	const v = Math.min(FORM_SIDE - 1.001, Math.max(0, (z + GROUND / 2) / FORM_CELL));
-	const [i, j] = [Math.floor(u), Math.floor(v)];
-	const [s, t] = [u - i, v - j];
+	// Scalars, not destructured pairs, so a read for every cell of the ground makes no array.
+	const i = Math.floor(u);
+	const j = Math.floor(v);
+	const s = u - i;
+	const t = v - j;
 	const at = j * FORM_SIDE + i;
-	const top = (ridgeGrid[at] as number) * (1 - s) + (ridgeGrid[at + 1] as number) * s;
+	const top = (grid[at] as number) * (1 - s) + (grid[at + 1] as number) * s;
 	const bottom =
-		(ridgeGrid[at + FORM_SIDE] as number) * (1 - s) + (ridgeGrid[at + FORM_SIDE + 1] as number) * s;
+		(grid[at + FORM_SIDE] as number) * (1 - s) + (grid[at + FORM_SIDE + 1] as number) * s;
 	return top * (1 - t) + bottom * t;
 }
 
@@ -548,20 +566,28 @@ function quayBed(x: number, z: number, height: number): number {
 /** How deep the water stands right at the quay's wall, in meters. */
 const QUAY_BED = 4;
 
+/** How far past the bay's circle the shoal's sand reaches before the wander moves it, in meters. */
+const SHOAL_EDGE = 50;
+/**
+ * The least that the shoal's wander scales a distance by: the noise's octaves stay inside the sum
+ * of their strengths, and the wander takes a share of that, so a stretch never falls below this.
+ */
+const SHOAL_LEAST_STRETCH = 0.86;
+
 /**
  * How much a point of the sea is the bay's shallow sandy shoal, from 0 to 1. Its sides fade slowly and
  * wander, so its edge against the deep follows no straight bearing.
  */
 export function bayShoal(x: number, z: number): number {
+	const fromBay = hypot(x - BAY.x, z - BAY.z);
+	// The wander shrinks a place's distance from the bay by less than a set share, since its noise
+	// stays within the sum of its octaves' strengths. A place past the shoal's edge at that share lies
+	// in the deep whatever the noise, so it needs none.
+	if (fromBay * SHOAL_LEAST_STRETCH >= BAY.radius + SHOAL_EDGE) return 0;
 	const wander = 0.3 * noise.fbm2(x * 0.009 + 3, z * 0.009 + 11, 3);
 	const along = bayArc(x, z);
 	return (
-		(1 -
-			smoothstep(
-				hypot(x - BAY.x, z - BAY.z) * (1 + wander * 0.5),
-				BAY.radius * 0.35,
-				BAY.radius + 50,
-			)) *
+		(1 - smoothstep(fromBay * (1 + wander * 0.5), BAY.radius * 0.35, BAY.radius + SHOAL_EDGE)) *
 		smoothstep(along + wander, -0.75, 0.2) *
 		(1 - smoothstep(along - wander, 0.8, 1.75))
 	);
@@ -572,6 +598,12 @@ export function sandyBed(x: number, z: number): number {
 	return Math.max(smoothstep(bayShoal(x, z), 0.1, 0.6), harbourShare(x, z));
 }
 
+/**
+ * How far past the bay's circle the plain behind the sand reaches, in meters. The beach's own sand
+ * stops nearer, where `beachShare` falls to nothing.
+ */
+const PLAIN_REACH = 150;
+
 /** The land's form at a point, in meters: its hills, coast and flats, before the shelves are cut. */
 export function formHeight(x: number, z: number): number {
 	const d = inland(x, z);
@@ -581,15 +613,19 @@ export function formHeight(x: number, z: number): number {
 		// bay's innermost water stays shallow over sand, and the harbour keeps a steady depth up to its quay.
 		const off = -d;
 		const bay = bayShoal(x, z);
-		const reef = noise.fbm2(x * 0.05 + 21, z * 0.05 + 4, 3);
+		// The shelf's width counts only past its narrowest, and the reef's noise only where its
+		// patches lie, so the water nearer the rocks and farther out reads neither.
 		const width =
-			REEF_LEAST + REEF_RANGE * smoothstep(noise.fbm2(x * 0.008 + 31, z * 0.008, 2), -0.3, 0.3);
+			off <= REEF_LEAST
+				? REEF_LEAST
+				: REEF_LEAST + REEF_RANGE * smoothstep(noise.fbm2(x * 0.008 + 31, z * 0.008, 2), -0.3, 0.3);
 		const shelf = 3 + off * 0.09 + Math.max(0, off - width) * 0.3;
 		// The reef's patches stop where the sand starts: a lump under the bay's clear water hides the bed behind it
 		// from a low view, and the water's color would jump along its outline.
 		const patches =
 			smoothstep(off, 4, 20) * (1 - smoothstep(off, 60, 130)) * (1 - smoothstep(bay, 0, 0.3));
-		const rock = shelf + 7 * reef * patches;
+		const rock =
+			patches === 0 ? shelf : shelf + 7 * noise.fbm2(x * 0.05 + 21, z * 0.05 + 4, 3) * patches;
 		const shoal = off * 0.035 + Math.max(0, off - 70) * 0.28;
 		const depth = rock + (shoal - rock) * bay;
 		const harbour = harbourShare(x, z);
@@ -605,12 +641,19 @@ export function formHeight(x: number, z: number): number {
 	const cliff =
 		34 * crag * (1 - Math.exp(-d / 11)) +
 		strata * smoothstep(d, 2, 10) * (1 - smoothstep(d, 26, 40));
-	const width = sandWidth(x, z);
-	const dune = d < width ? d * 0.045 : width * 0.045 + (d - width) * 0.06;
-	const low = cliff + (dune - cliff) * sand;
+	// The sand and the plain behind it lie only within a reach of the bay's middle, so the dune's
+	// height, and the sand's width that it needs, count only there.
+	const fromBay = hypot(x - BAY.x, z - BAY.z);
+	const nearBay = fromBay < BAY.radius + PLAIN_REACH;
+	let dune = 0;
+	if (nearBay) {
+		const width = sandWidth(x, z);
+		dune = d < width ? d * 0.045 : width * 0.045 + (d - width) * 0.06;
+	}
+	const low = nearBay ? cliff + (dune - cliff) * sand : cliff;
 	const shelter = harbourShare(x, z);
 	const coast = low + (2.2 + Math.min(d, 60) * 0.03 - low) * shelter;
-	const inner = smoothstep(read(smoothField, x, z), 8, 80) * smoothstep(d, 4, 60);
+	const inner = smoothstep(read(smoothField(), x, z), 8, 80) * smoothstep(d, 4, 60);
 	let height = Math.max(coast, coast * (1 - 0.93 * smoothstep(d, 40, 130)) + inner * ridgeAt(x, z));
 	// Broad spurs run off the hills and carry the main road's swing above the gullies beside them.
 	for (const [sx, sz, rise, inner, outer] of SPURS)
@@ -630,9 +673,11 @@ export function formHeight(x: number, z: number): number {
 		golf *
 		smoothstep(d, 4, 30);
 	// Behind the sand, the plain stays low and rises slowly to the town and the hills.
-	const plain =
-		onSand(x, z) * (1 - smoothstep(hypot(x - BAY.x, z - BAY.z), BAY.radius + 40, BAY.radius + 150));
-	height += (dune - height) * plain;
+	if (nearBay) {
+		const plain =
+			onSand(x, z) * (1 - smoothstep(fromBay, BAY.radius + 40, BAY.radius + PLAIN_REACH));
+		height += (dune - height) * plain;
+	}
 	const across = Math.abs(x - townMiddle(z)) / townWidth(z);
 	const town = (1 - smoothstep(across, 1, 2.6)) * smoothstep(z, 10, 80);
 	const level = Math.min(townLevel(z), 2.2 + d * 0.45);

@@ -25,7 +25,11 @@ import {
 	STARTLE_RANGE,
 } from './birds';
 import { TOWN, VILLAGES } from './island';
-import { FILL_SPOTS, KEEPS, TREE_SPOTS } from './plan';
+import { fillSpots, KEEPS, treeSpots } from './plan';
+
+/** The plan's trees, read once for every test. */
+const TREE_SPOTS = treeSpots();
+const FILL_SPOTS = fillSpots();
 
 /** Long enough for every bird to have flown and landed at least once, in seconds. */
 const SETTLE = 200;
