@@ -1,0 +1,61 @@
+{
+	"name": "@null3d/sound",
+	"version": "0.0.0",
+	"description": "Positional sound for null3D sketches: loops, groups of many emitters that share a few voices, and one-shots, placed in the scene and played with the browser's audio on the audio thread, built on the engine's public API.",
+	"license": "MIT OR Apache-2.0",
+	"author": "Ramesh Nair (https://hiddentao.com)",
+	"homepage": "https://github.com/null3d-engine/null3d#readme",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/null3d-engine/null3d.git",
+		"directory": "packages/sound"
+	},
+	"bugs": {
+		"url": "https://github.com/null3d-engine/null3d/issues"
+	},
+	"keywords": [
+		"null3d",
+		"3d",
+		"sound",
+		"audio",
+		"spatial-audio",
+		"web-audio",
+		"webgpu",
+		"webgl2"
+	],
+	"type": "module",
+	"exports": {
+		".": {
+			"null3d-source": "./src/index.ts",
+			"types": "./lib/index.d.ts",
+			"default": "./lib/index.js"
+		},
+		"./page": {
+			"null3d-source": "./src/page.ts",
+			"types": "./lib/page.d.ts",
+			"default": "./lib/page.js"
+		},
+		"./package.json": "./package.json"
+	},
+	"files": [
+		"lib",
+		"dist",
+		"LICENSE-MIT",
+		"LICENSE-APACHE"
+	],
+	"publishConfig": {
+		"access": "public",
+		"provenance": true
+	},
+	"scripts": {
+		"prepack": "bun ../../tools/build-package.ts sound"
+	},
+	"peerDependencies": {
+		"@null3d/engine": "workspace:*"
+	},
+	"devDependencies": {
+		"@null3d/engine": "workspace:*",
+		"@null3d/vite-plugin": "workspace:*",
+		"@webgpu/types": "0.1.74"
+	}
+}

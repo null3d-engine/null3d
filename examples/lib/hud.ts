@@ -25,6 +25,8 @@ const POSTED_WAIT_MS = 1000;
 export interface Hud {
 	/** Draws the model, and shows or hides the whole control. */
 	render(model: HudModel, visible: boolean): void;
+	/** Names a line at the top of the view for a moment, as a changed setting does. */
+	notify(text: string): void;
 	/** Removes the HUD's nodes and its listeners, so a page may start another demo in the same one. */
 	dispose(): void;
 }
@@ -616,6 +618,7 @@ export function createHud(
 		shown = next;
 	};
 	return {
+		notify: showToast,
 		render(model, visible) {
 			element.hidden = !visible;
 			draw(model);

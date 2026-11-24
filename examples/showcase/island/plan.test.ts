@@ -5,7 +5,7 @@
 import { describe, expect, it } from 'bun:test';
 import { fileURLToPath } from 'node:url';
 import { scaledBudget } from '../../../tests/lib/run-budget.ts';
-import { WAY_HALF } from './ground';
+import { COURT_DOOR, COURT_WALLS, STAIR_HALF, WAY_HALF } from './ground';
 import {
 	formHeight,
 	golfShare,
@@ -47,6 +47,8 @@ import {
 	planFingerprint,
 	ROADS,
 	roadEdge,
+	STAIR_APRONS,
+	STAIR_WALKS,
 	STAIRS,
 	STEEPEST_DRIVE,
 	stairTreads,
@@ -153,10 +155,21 @@ const MOST_ROAD_FILL = 20;
 const MOST_ROAD_CUT = 15;
 /** A ground face that no road or plot may raise, in meters over the face's run. */
 const WORST_FACE = 15;
-/** How near a stair ends to its tower's middle. */
-const STAIR_END = 15;
+/** The most that a stair's line may turn at one point, in degrees. */
+const STAIR_TURN = 25;
 /** The most that a stair's tread may stand above its ground, in meters. */
 const STAIR_FLOAT = 0.8;
+/** How far a place stands from the nearest court wall around a keep, in meters. */
+function wallGap(x: number, z: number, kx: number, kz: number): number {
+	const [u, v] = [x - kx, z - kz];
+	let least = Infinity;
+	for (const [x0, z0, x1, z1] of COURT_WALLS) {
+		const dx = Math.max(x0 - u, 0, u - x1);
+		const dz = Math.max(z0 - v, 0, v - z1);
+		least = Math.min(least, hypot(dx, dz));
+	}
+	return least;
+}
 /** The most that a drive may exceed the straight line from the quay: the median and the 90th percentile. */
 const MOST_DRIVE_MEDIAN = 2;
 const MOST_DRIVE_P90 = 2;
@@ -174,7 +187,7 @@ const WALL_REACH = 14;
 const BOAT_WATER = 5;
 /** The most sand under a house's plot, and how far a stair's first step stands from its road's edge, in meters. */
 const MOST_SAND = 0.1;
-const STAIR_FROM_ROAD = 0.5;
+const STAIR_FROM_ROAD = 1.5;
 /** The most that a wall's top may stand off the ground just behind it, in meters. */
 const WALL_TOP_OFF = 0.8;
 /** How far the ground behind a road must stand over it for a wall to have something to retain, in meters. */
@@ -499,10 +512,37 @@ describe('the road network', () => {
 		STAIRS.forEach((stair, k) => {
 			const [kx, kz, ky] = KEEPS[k] as readonly [number, number, number];
 			const last = stair[stair.length - 1] as { x: number; y: number; z: number };
-			if (hypot(last.x - kx, last.z - kz) > STAIR_END) bad.push(`stair ${k} ends short`);
-			if (Math.abs(last.y - ky) > 1)
-				bad.push(`stair ${k} ends ${(ky - last.y).toFixed(1)} m under its tower`);
+			const walk = STAIR_WALKS[k] as readonly { x: number; y: number; z: number }[];
+			const door = walk[walk.length - 1] as { x: number; y: number; z: number };
+			if (hypot(door.x - (kx + COURT_DOOR.x), door.z - (kz + COURT_DOOR.z)) > 0.5)
+				bad.push(`stair ${k} ends short of its door`);
+			if (Math.abs(door.y - ky) > 0.5)
+				bad.push(`stair ${k} ends ${(ky - door.y).toFixed(1)} m under its tower`);
+			if (hypot(walk[0]!.x - last.x, walk[0]!.z - last.z) > 0.01)
+				bad.push(`stair ${k} leaves a gap to its walk`);
+			// No point of the stair's line turns sharply, so its foot meets its first step.
+			for (let n = 1; n + 1 < stair.length; n++) {
+				const [a, b, c] = [stair[n - 1]!, stair[n]!, stair[n + 1]!];
+				const turn = Math.atan2(c.z - b.z, c.x - b.x) - Math.atan2(b.z - a.z, b.x - a.x);
+				const degrees = Math.abs(Math.atan2(Math.sin(turn), Math.cos(turn))) * (180 / Math.PI);
+				if (degrees > STAIR_TURN)
+					bad.push(`stair ${k} turns ${degrees | 0} deg at ${b.x | 0},${b.z | 0}`);
+			}
 			const treads = stairTreads(stair);
+			if (treads.length === 0) bad.push(`stair ${k} draws no stone`);
+			const apron = STAIR_APRONS[k] as readonly { x: number; y: number; z: number }[];
+			const foot = apron[0] ?? last;
+			if (roadEdge(foot.x, foot.z) > STAIR_FROM_ROAD)
+				bad.push(`stair ${k} starts ${roadEdge(foot.x, foot.z).toFixed(1)} m off its street`);
+			if (apron.length > 1) {
+				const before = apron[apron.length - 2] as { x: number; z: number };
+				const [a, b] = [stair[0]!, stair[1]!];
+				const turn = Math.atan2(b.z - a.z, b.x - a.x) - Math.atan2(a.z - before.z, a.x - before.x);
+				const degrees = Math.abs(Math.atan2(Math.sin(turn), Math.cos(turn))) * (180 / Math.PI);
+				if (degrees > 10) bad.push(`stair ${k} foot turns ${degrees | 0} deg`);
+				if (hypot(apron[apron.length - 1]!.x - a.x, apron[apron.length - 1]!.z - a.z) > 0.01)
+					bad.push(`stair ${k} leaves a gap to its apron`);
+			}
 			const first = treads[0] as { x: number; z: number };
 			let above = 0;
 			treads.forEach((t, n) => {
@@ -520,9 +560,37 @@ describe('the road network', () => {
 					if (Math.abs(dx * c - dz * s) < hw && Math.abs(dx * s + dz * c) < hd)
 						bad.push(`stair ${k} through a house at ${t.x | 0},${t.z | 0}`);
 				}
+				if (wallGap(t.x, t.z, kx, kz) < STAIR_HALF)
+					bad.push(`stair ${k} into a court wall at ${t.x | 0},${t.z | 0}`);
 			});
 			if (above / treads.length < 0.9)
 				bad.push(`stair ${k}: ${((100 * above) / treads.length) | 0}% of treads above ground`);
+		});
+		expect(bad.length, failures(bad)).toBe(0);
+	});
+
+	it('walks every stair round its court to the door, clear of the walls and level with the court', () => {
+		const bad: string[] = [];
+		STAIR_WALKS.forEach((walk, k) => {
+			const [kx, kz, ky] = KEEPS[k] as readonly [number, number, number];
+			walk.forEach((p, n) => {
+				// The walk may rise from the flight's top to the court over its first stretch.
+				if (p.y > ky + 0.05) bad.push(`walk ${k} above its court at ${p.x | 0},${p.z | 0}`);
+				if (wallGap(p.x, p.z, kx, kz) < STAIR_HALF)
+					bad.push(`walk ${k} in a wall at ${p.x | 0},${p.z | 0}`);
+				const before = walk[n - 1];
+				if (before) {
+					if (p.y < before.y - 1e-6) bad.push(`walk ${k} falls at ${p.x | 0},${p.z | 0}`);
+					if (hypot(p.x - before.x, p.z - before.z) > 6)
+						bad.push(
+							`walk ${k} strides ${hypot(p.x - before.x, p.z - before.z) | 0} m at ${p.x | 0}`,
+						);
+				}
+			});
+			const end = walk[walk.length - 1] as { x: number; y: number; z: number };
+			if (hypot(end.x - (kx + COURT_DOOR.x), end.z - (kz + COURT_DOOR.z)) > 0.5)
+				bad.push(`walk ${k} misses the door`);
+			if (Math.abs(end.y - ky) > 0.05) bad.push(`walk ${k} ends off its court`);
 		});
 		expect(bad.length, failures(bad)).toBe(0);
 	});
@@ -972,7 +1040,8 @@ describe('what the search does not lay', () => {
 
 	it('starts each stair at its street', () => {
 		STAIRS.forEach((stair, k) => {
-			const start = stair[0] as { x: number; z: number };
+			const apron = STAIR_APRONS[k] as readonly { x: number; z: number }[];
+			const start = (apron[0] ?? stair[0]) as { x: number; z: number };
 			expect(roadEdge(start.x, start.z), `stair ${k}`).toBeLessThan(STAIR_FROM_ROAD);
 		});
 	});

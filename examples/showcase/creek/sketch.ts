@@ -17,7 +17,6 @@ import {
 	math,
 	type QualityPreset,
 	type SketchContext,
-	timeOfDay,
 } from '@null3d/engine';
 import {
 	createUnderwater,
@@ -56,10 +55,10 @@ import {
 	WATER,
 } from './land';
 import { createMoodSkies, SPRAY, sprayLight as sprayLightOf } from './lights';
-import { createCreekStage, HEADING } from './look';
+import { createCreekStage } from './look';
 import { createPlants, loadPlants } from './plants';
 import { SHOTS, WIDE, WIDE_LOOK } from './route';
-import { createShafts } from './shafts';
+import { createCreekSound } from './sound';
 import { createSteps } from './steps';
 import { createStones, type Obstacle } from './stones';
 import { placeValley } from './valley';
@@ -96,8 +95,6 @@ const CAUSTICS: Record<Mood, [number, number, number]> = {
 	Night: [0, 0, 0],
 	Studio: [0.08, 0.08, 0.08],
 };
-/** The color of the shafts of light at golden hour. */
-const SHAFT_TINT = [1.0, 0.62, 0.3] as const;
 /** The least change of a look's share that Auto writes to the scene. */
 const LOOK_STEP = 0.005;
 /** The point that the camera looks at, over the garden's middle. */
@@ -127,6 +124,13 @@ export const BOUNDS: Omit<CameraBounds, 'ground'> = {
 
 const { smoothstep } = math;
 const params = new URL(import.meta.url).searchParams;
+
+/** The effects that the Creek's HUD offers, which its controls answer. */
+export const SUPPORTED = {
+	atmosphere: ['sky', 'fog', 'shafts', 'fireflies'],
+	lighting: ['shadows', 'ao', 'environment'],
+	post: ['bloom', 'dof', 'exposure', 'vignette'],
+} as const;
 /** True draws the water's reflection in every frame, for the bisect of the Apple WebGPU stall. */
 const ALWAYS_REFLECT = params.get('reflect') === 'always';
 /** The reflection target's share of the render size that the address names, for the same bisect. */
@@ -159,10 +163,9 @@ const RENDER_SCALE = Number(params.get('render-scale')) || undefined;
  */
 const EFFECTS = params.get('effects') === 'on';
 /**
- * The strength of a gust that the address sends, and the sketch time when it sends it. The demo's
- * own gust answers the G key, and a held frame presses no key, so a picture test names the send in
- * its address. The place is the camera's, as the key's is, and the route is a function of the
- * sketch time, so both hold still.
+ * The strength of a gust that the address sends, and the sketch time when it sends it. A held frame
+ * runs no update, so a picture test names the send in its address. The place is the camera's, and
+ * the route is a function of the sketch time, so both hold still.
  */
 const GUST_STRENGTH = Number(params.get('gust')) || 0;
 const GUST_SEND_AT = Number(params.get('gust-at')) || 0;
@@ -357,8 +360,7 @@ export default defineSketch(async (ctx) => {
 		target: WIDE_LOOK,
 	});
 	scene.setActiveCamera(camera);
-	// The garden's one wind field. The falling leaves and the water read it, and G sends a gust that
-	// a person can watch cross the creek.
+	// The garden's one wind field. The falling leaves and the water read it.
 	const wind = createWind(ctx, { camera, box: 128 });
 	const target: [number, number, number] = [TARGET[0], TARGET[1], TARGET[2]];
 	/** A scratch place for the camera, which the gust control reads. */
@@ -422,7 +424,8 @@ export default defineSketch(async (ctx) => {
 	const flora = await createFlora(ctx);
 	// The bare garden has no crowns yet, so no leaves fall; the mist and the motes still drift.
 	const air = await createAir(ctx, [], wind.field);
-	const shafts = createShafts(ctx, camera);
+	// The creek, the falls, the wind and the leaves, which the page's speaker button starts.
+	const sound = createCreekSound(ctx, camera, wind);
 	const fit = () => {
 		stones.fit(quality.preset);
 		clouds.fit(quality.preset);
@@ -431,8 +434,7 @@ export default defineSketch(async (ctx) => {
 
 	// The mood and the lens: from the address at the start, then from the HUD. The physical sky
 	// draws the real sun by day and the moon at night; Auto moves them across the sky.
-	const stage = createCreekStage(ctx, sun, sky, room);
-	const golden = timeOfDay('goldenHour', { heading: HEADING });
+	const stage = createCreekStage(ctx, sun, sky, room, Number(params.get('background-fog')) || 0);
 	/**
 	 * The look the scene shows: two moods and the share of the second. An hour's look blends between
 	 * the moods on either side, so the fireflies, the air and the caustics change with the light.
@@ -444,23 +446,12 @@ export default defineSketch(async (ctx) => {
 	const STUDIO: MoodMix = { from: 'Studio', to: 'Studio', share: 0 };
 	/** The light of the caustics on the stream's bed, blended between the look's moods. */
 	const caustics: [number, number, number] = [0, 0, 0];
-	// Shafts of light at golden hour, at High and above: below, their march costs too much. They
-	// fade with golden hour's share of the look.
-	const shaftTint: [number, number, number] = [0, 0, 0];
-	const light = () => {
-		const share = moodShare(look, 'Golden');
-		const on =
-			controls.on.shafts && share > 0 && (quality.preset === 'high' || quality.preset === 'ultra');
-		for (let c = 0; c < 3; c++) shaftTint[c] = (SHAFT_TINT[c] as number) * share;
-		shafts.set(on ? golden.light.direction : undefined, shaftTint);
-	};
 	quality.onChange(() => {
 		fit();
-		light();
 	});
 	// The moods' own sky lights, which only dusk, dawn and golden hour turn up.
 	const moodSkies = createMoodSkies(scene);
-	/** Gives the scene a look: its fireflies, its air, its water's caustics and its shafts. */
+	/** Gives the scene a look: its fireflies, its air and its water's caustics. */
 	const showLook = (mix: MoodMix): void => {
 		look.from = mix.from;
 		look.to = mix.to;
@@ -472,7 +463,6 @@ export default defineSketch(async (ctx) => {
 		const b = CAUSTICS[look.to];
 		for (let c = 0; c < 3; c++) caustics[c] = math.lerp(a[c] as number, b[c] as number, look.share);
 		water?.setCaustics(caustics);
-		light();
 	};
 	const choose = (mood: Mood) => {
 		stage.set(mood);
@@ -489,8 +479,10 @@ export default defineSketch(async (ctx) => {
 		stage,
 		start: {
 			sky: true,
-			fog: !WITHOUT.has('fog'),
-			shafts: false,
+			// Every showcase starts with the air clear, and the HUD's Fog switch adds the haze.
+			// `?fog=on` starts the haze on, as a cost run and a picture need it with the shafts.
+			fog: params.get('fog') === 'on',
+			shafts: params.get('shafts') === 'on',
 			fireflies: false,
 			shadows: tierCastShadows,
 			ao: true,
@@ -500,16 +492,9 @@ export default defineSketch(async (ctx) => {
 			exposure: false,
 			vignette: false,
 		},
-		supported: {
-			atmosphere: ['sky', 'fog', 'shafts', 'fireflies'],
-			lighting: ['shadows', 'ao', 'environment'],
-			post: ['bloom', 'dof', 'exposure', 'vignette'],
-		},
+		supported: SUPPORTED,
 		apply(id, on) {
 			switch (id) {
-				case 'shafts':
-					light();
-					break;
 				case 'fireflies':
 					air.setFireflies(on);
 					break;
@@ -574,27 +559,25 @@ export default defineSketch(async (ctx) => {
 		shots: WATER_CLOSE ? [CLOSE_SHOT] : SHOTS,
 		target,
 		groups: controls.groups,
-		keys: [
-			{
-				code: 'KeyG',
-				does: 'send a gust across the garden',
-				// From where the camera stands, so a person can watch the air travel across the creek.
-				press() {
-					camera.getPosition(here);
-					wind.gust([here[0] as number, here[2] as number], 10);
-				},
-			},
-		],
 		bounds: { ...BOUNDS, ground: cameraFloor },
 	});
 	// The camera stands at the route's opening pose now, so the shadows reach as far as it needs.
 	controls.fitShadows();
 	/** True once the address's gust has been sent, so one send reaches the field. */
 	let gustSent = false;
+	/** The sketch time of the next gust that the air brings over the garden. */
+	let nextGust = 0;
 
 	return {
 		onUpdate(dt) {
 			const t = time.now;
+			// The air comes in waves: a gust rolls over the garden every several seconds, so the
+			// trees, the grass and the water's ripples move in swells rather than in a steady push.
+			if (t >= nextGust) {
+				camera.getPosition(here);
+				wind.gust([here[0] as number, here[2] as number], 5 + 4 * Math.sin(t * 1.7) ** 2);
+				nextGust = t + 7 + 4 * Math.sin(t * 0.9) ** 2;
+			}
 			// The address's gust goes in before the field steps, so the frame that draws carries it
 			// and the readers see its settings at once.
 			if (GUST_STRENGTH > 0 && !gustSent && t >= GUST_SEND_AT) {
@@ -638,13 +621,15 @@ export default defineSketch(async (ctx) => {
 			if (lens) post.set(lens);
 			water?.update();
 		},
-		onLateUpdate() {
+		onLateUpdate(dt) {
 			// The particles start where the frame's objects stand, after the wind's field has stepped.
 			flora.update();
 			air.update();
 			clouds.step();
 			for (const fall of falls) fall.update();
-			shafts.update();
+			// Under the surface, only the creek is heard, so the sound needs to know where the eye is.
+			camera.getPosition(here);
+			sound.update(dt, (here[1] as number) < WATER + 0.05);
 		},
 	};
 });

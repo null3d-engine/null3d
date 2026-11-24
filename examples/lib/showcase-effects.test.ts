@@ -3,6 +3,9 @@
 // that the scene supports.
 import { describe, expect, it } from 'bun:test';
 import type { SketchContext } from '@null3d/engine';
+import { SUPPORTED as CREEK } from '../showcase/creek/sketch';
+import { SUPPORTED as ISLAND } from '../showcase/island/sketch';
+import { SUPPORTED as SKYWAY } from '../showcase/skyway/sketch';
 import { type HudGroup, TIME_NAMES, TIME_SKY } from './controls';
 import { shadowStep } from './shadow-range';
 import { createShowcaseEffects } from './showcase-effects';
@@ -42,7 +45,13 @@ function stub(
 	const quality = {
 		preset: options.preset ?? 'high',
 		highest: options.highest ?? 'ultra',
-		settings: { lodThreshold: options.lodThreshold ?? 0 },
+		// The fog's slices follow the preset, as the engine's presets give them: none on Low.
+		settings: {
+			lodThreshold: options.lodThreshold ?? 0,
+			fogSlices: ({ low: 0, medium: 32, high: 64, ultra: 96 } as Record<string, number>)[
+				options.preset ?? 'high'
+			] as number,
+		},
 		set: (settings: { lodThreshold?: number }) => {
 			if (settings.lodThreshold !== undefined) {
 				quality.settings.lodThreshold = settings.lodThreshold;
@@ -55,6 +64,9 @@ function stub(
 		setPreset: (preset: string) => {
 			quality.preset = preset;
 			quality.settings.lodThreshold = preset === 'low' ? 2 : 1;
+			quality.settings.fogSlices = (
+				{ low: 0, medium: 32, high: 64, ultra: 96 } as Record<string, number>
+			)[preset] as number;
 			seen.push(`preset ${preset}`);
 		},
 	};
@@ -80,6 +92,7 @@ function stub(
 		auto: false,
 		hours: 23,
 		show: (part: string, on: boolean) => shown.push(`${part} ${on}`),
+		setShafts: (on: boolean) => shown.push(`shafts ${on}`),
 		preset: 'high',
 	};
 	const ranges: number[] = [];
@@ -315,9 +328,9 @@ describe('createShowcaseEffects', () => {
 		expect(ultra?.reason).toContain('held to Medium');
 	});
 
-	it('keeps a feature that needs a heavier preset, disabled, with its reason', () => {
+	it('keeps the light shafts disabled where the fog has no slices, with its reason', () => {
 		const { effects } = stub({
-			preset: 'medium',
+			preset: 'low',
 			highest: 'ultra',
 			supported: {
 				atmosphere: ['sky', 'fog', 'shafts'],
@@ -329,14 +342,14 @@ describe('createShowcaseEffects', () => {
 		const shafts = group?.buttons.find((button) => button.id === 'shafts');
 		expect(shafts).toBeDefined();
 		expect(shafts?.disabled).toBe(true);
-		expect(shafts?.reason).toContain('Needs High or Ultra');
+		expect(shafts?.reason).toContain('Needs a preset with fog slices');
 		expect(shafts?.reason).toContain('Choose a higher quality preset');
 	});
 
-	it('names the device’s cap when a feature needs a preset that is above it', () => {
+	it('names the device’s cap when the fog has no slices at the preset it is held to', () => {
 		const { effects } = stub({
-			preset: 'medium',
-			highest: 'medium',
+			preset: 'low',
+			highest: 'low',
 			supported: {
 				atmosphere: ['sky', 'fog', 'shafts'],
 				lighting: ['shadows'],
@@ -346,8 +359,8 @@ describe('createShowcaseEffects', () => {
 		const group = effects.groups().find((entry) => entry.name === 'atmosphere');
 		const shafts = group?.buttons.find((button) => button.id === 'shafts');
 		expect(shafts?.disabled).toBe(true);
-		expect(shafts?.reason).toContain('Needs High or Ultra');
-		expect(shafts?.reason).toContain('held to Medium');
+		expect(shafts?.reason).toContain('Needs a preset with fog slices');
+		expect(shafts?.reason).toContain('held to Low');
 	});
 
 	it('disables an effect that the preset leaves out, and enables it at the preset it needs', () => {
@@ -366,9 +379,70 @@ describe('createShowcaseEffects', () => {
 		expect(dof?.reason).toContain('Needs Medium, High or Ultra');
 	});
 
+	it('offers the light shafts in every showcase', () => {
+		for (const [name, supported] of Object.entries({
+			creek: CREEK,
+			island: ISLAND,
+			skyway: SKYWAY,
+		}))
+			expect({ name, shafts: supported.atmosphere.includes('shafts') }).toEqual({
+				name,
+				shafts: true,
+			});
+	});
+
+	it("turns a scene's shafts through the stage, once for every scene", () => {
+		const { effects, seen, shown, scene } = stub({
+			start: { sky: true, fog: true, shafts: false },
+			supported: {
+				atmosphere: ['sky', 'fog', 'shafts'],
+				lighting: [],
+				post: [],
+			},
+		});
+		// The start's state reaches the fog's lit part at creation.
+		expect(shown).toContain('shafts false');
+		scene.handler?.('atmosphere', 'shafts');
+		expect(effects.on.shafts).toBe(true);
+		expect(shown).toContain('shafts true');
+		// One implementation: the scene's own apply never sees the switch.
+		expect(seen).not.toContain('shafts true');
+	});
+
+	it('turns the fog on with the shafts, on every showcase, and leaves it alone when they go off', () => {
+		for (const [name, supported] of Object.entries({
+			creek: CREEK,
+			island: ISLAND,
+			skyway: SKYWAY,
+		})) {
+			const { effects, seen, shown, scene } = stub({
+				start: { sky: true, fog: false, shafts: false },
+				supported,
+			});
+			// The opening state is the owner's: no fog, no shafts.
+			expect({ name, fog: effects.on.fog, shafts: effects.on.shafts }).toEqual({
+				name,
+				fog: false,
+				shafts: false,
+			});
+			// A press on the shafts brings the fog back with them, at the hour's own values.
+			scene.handler?.('atmosphere', 'shafts');
+			expect(effects.on.shafts).toBe(true);
+			expect(effects.on.fog).toBe(true);
+			expect(shown).toContain('fog true');
+			expect(shown).toContain('shafts true');
+			expect(seen).toContain('fog true');
+
+			// Turning the shafts off leaves the fog as the visitor set it.
+			scene.handler?.('atmosphere', 'shafts');
+			expect(effects.on.shafts).toBe(false);
+			expect(effects.on.fog).toBe(true);
+		}
+	});
+
 	it('enables a feature at a preset that reaches it', () => {
 		const { effects } = stub({
-			preset: 'high',
+			preset: 'medium',
 			highest: 'ultra',
 			supported: {
 				atmosphere: ['sky', 'fog', 'shafts'],

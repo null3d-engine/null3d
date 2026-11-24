@@ -187,6 +187,18 @@ export { defineFeature, FeatureRegistry } from './scene/features';
 export type { FogCurve, FogOptions, FogVolumeOptions } from './scene/fog';
 export type { Ray } from './scene/frame-cameras';
 export { registerGltfExtension } from './scene/gltf-extensions';
+export type {
+	LevelBounds,
+	LevelDistances,
+	LevelSwitch,
+	LevelView,
+} from './scene/level-rule';
+export {
+	LEAST_LEVEL_DISTANCE,
+	levelAt,
+	levelDistances,
+	levelSwitchDistance,
+} from './scene/level-rule';
 export type { LightImagePixels } from './scene/light-images';
 export type { BakeProbesOptions, LightProbeGridOptions } from './scene/light-probes';
 export { bakeProbes, LightProbeGridData, ProbeBake } from './scene/light-probes';

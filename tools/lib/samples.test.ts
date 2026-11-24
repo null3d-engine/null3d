@@ -124,7 +124,7 @@ describe('sampleProblems', () => {
 		return manifest;
 	};
 
-	it('accepts CC BY-NC on a generative service’s model that names its generator', () => {
+	it('accepts CC BY-NC on a generated asset that names its generator', () => {
 		const named = [{ ...at, path: 'sources/khronos/Box/Box.glb' }];
 		expect(sampleProblems(generated('Tripo3D'), named)).toEqual([]);
 		expect(manifestProblems(generated('Tripo3D'))).toEqual([]);

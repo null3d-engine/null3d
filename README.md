@@ -171,7 +171,7 @@ const p = rocks.positions; // Float32Array, 3 floats per row
 for (let i = 0; i < rocks.count; i++) p[i * 3 + 1] += 0.5 * dt;
 ```
 
-On WebGPU, the GPU then culls the objects and counts the draws itself. The core's WebAssembly file stays under 600 KB after Brotli compression, and the build fails a larger one.
+On WebGPU, the GPU then culls the objects and counts the draws itself. The core's WebAssembly file stays under 640 KB after Brotli compression, and the build fails a larger one.
 
 ## How it works
 

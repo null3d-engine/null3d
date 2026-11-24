@@ -54,7 +54,7 @@ The note under a page's title opens with its page's step and release, such as "R
 
 ## The npm packages
 
-Thirteen packages are public. The vegetation add-on and its textures package are private: they stay in the repository for work on the add-on, and no release packs, builds or publishes them ([D-378](decisions/D-378-vegetation-add-on-unpublished.md)). Each one's `prepack` script runs `bun tools/build-package.ts <folder>`, which makes what its tarball holds besides the files that git keeps (`tools/lib/pack.ts`). Every tarball also holds both license files. The WebAssembly files come from `bun run build`, which runs first.
+Fourteen packages are public. The vegetation add-on and its textures package are private: they stay in the repository for work on the add-on, and no release packs, builds or publishes them ([D-378](decisions/D-378-vegetation-add-on-unpublished.md)). Each one's `prepack` script runs `bun tools/build-package.ts <folder>`, which makes what its tarball holds besides the files that git keeps (`tools/lib/pack.ts`). Every tarball also holds both license files. The WebAssembly files come from `bun run build`, which runs first.
 
 | Package | What its tarball holds | What its pack step makes |
 | --- | --- | --- |
@@ -69,6 +69,7 @@ Thirteen packages are public. The vegetation add-on and its textures package are
 | `@null3d/splats` | `lib/`, with its two shaders compiled into modules and their build sets beside them, the task module that the job workers import, and no raw `.wgsl` file | The engine's and the Vite plugin's `lib/`, whose declarations it reads, then its own, with its WGSL compiled |
 | `@null3d/water` | `lib/`, with its surface and underwater shaders compiled into modules and the sets of their builds beside them, and no raw `.wgsl` file | The engine's and the Vite plugin's `lib/`, whose declarations it reads, then its own, with its WGSL compiled |
 | `@null3d/wind` | `lib/`, with its field, grid and projection shaders compiled into modules and the sets of their builds beside them, and no raw `.wgsl` file | The engine's and the Vite plugin's `lib/`, whose declarations it reads, then its own, with its WGSL compiled |
+| `@null3d/sound` | `lib/`, with its page entry and the worklet module that the page loads into the audio thread beside it, and the mixer's WebAssembly in `dist/sound.wasm` | The engine's `lib/`, whose declarations it reads, then its own |
 | `@null3d/three-compat` | `lib/`, with its two tone curves and three outline passes compiled into modules and the sets of their builds beside them, no raw `.wgsl` file, and `THIRD-PARTY-NOTICES.txt` with the three.js licence, which the Vite plugin adds to a build's notices. The plugin finds the file through the package's `./package.json` export, so the package keeps that export | The engine's and the Vite plugin's `lib/`, whose declarations it reads, then its own, with its WGSL compiled |
 | `@null3d/cli` | `bin/` and `src/`, plain JavaScript with JSDoc types. The Basis Universal encoder in `vendor/`, and the asset tool's formats in `dist/assets.wasm` | Nothing |
 
@@ -135,7 +136,7 @@ In the dev server, Vite keeps the engine out of its prebundled copy of the contr
 
 ### The first version of a new package
 
-This is part of making 0.1.0. npm cannot publish a package's first version through trusted publishing. So the owner publishes the first version of `@null3d/engine`, `@null3d/vite-plugin`, `@null3d/controls`, `@null3d/geometry`, `@null3d/grass`, `@null3d/impostors`, `@null3d/particles`, `@null3d/splats`, `@null3d/terrain`, `@null3d/water`, `@null3d/wind` and `@null3d/three-compat` by hand. Each new add-on package, such as `@null3d/rapier`, needs the same steps. `@null3d/cli` is on npm at 0.0.0 already. A test in `tools/lib/release.test.ts` fails when a public package has no row in the table above or no command below.
+This is part of making 0.1.0. npm cannot publish a package's first version through trusted publishing. So the owner publishes the first version of `@null3d/engine`, `@null3d/vite-plugin`, `@null3d/controls`, `@null3d/geometry`, `@null3d/grass`, `@null3d/impostors`, `@null3d/particles`, `@null3d/splats`, `@null3d/terrain`, `@null3d/water`, `@null3d/wind`, `@null3d/sound` and `@null3d/three-compat` by hand. Each new add-on package, such as `@null3d/rapier`, needs the same steps. `@null3d/cli` is on npm at 0.0.0 already. A test in `tools/lib/release.test.ts` fails when a public package has no row in the table above or no command below.
 
 1. On a clean checkout of main, run `bun install` and `bun run build`.
 2. Run `bun tools/pack-packages.ts`, which writes the tarballs to `target/packages/`.
@@ -150,6 +151,7 @@ This is part of making 0.1.0. npm cannot publish a package's first version throu
    npm publish target/packages/null3d-grass-0.0.0.tgz --access public --provenance=false
    npm publish target/packages/null3d-impostors-0.0.0.tgz --access public --provenance=false
    npm publish target/packages/null3d-particles-0.0.0.tgz --access public --provenance=false
+   npm publish target/packages/null3d-sound-0.0.0.tgz --access public --provenance=false
    npm publish target/packages/null3d-terrain-0.0.0.tgz --access public --provenance=false
    npm publish target/packages/null3d-splats-0.0.0.tgz --access public --provenance=false
    npm publish target/packages/null3d-three-compat-0.0.0.tgz --access public --provenance=false
@@ -159,10 +161,10 @@ This is part of making 0.1.0. npm cannot publish a package's first version throu
 
    npm publishes a new package in two parts. It adds a stand-in version, `0.0.0-stage`, at once, and it publishes 0.0.0 only after the owner approves it in the browser. If an approval is missed or refused, npm keeps the number 0.0.0 for that package and refuses to publish it again. This happened to `@null3d/water`, so its only early version is the stand-in. The package exists, so step 6 still publishes it through trusted publishing.
 
-5. Let the Release workflow publish each of the thirteen packages through trusted publishing. npm asks for a one-time approval on each call:
+5. Let the Release workflow publish each of the fourteen packages through trusted publishing. npm asks for a one-time approval on each call:
 
    ```sh
-   for p in engine vite-plugin cli controls geometry grass impostors particles splats terrain three-compat water wind; do
+   for p in engine vite-plugin cli controls geometry grass impostors particles sound splats terrain three-compat water wind; do
      npm trust github "@null3d/$p" --repo null3d-engine/null3d --file release.yml --allow-publish --yes
    done
    ```
@@ -185,7 +187,7 @@ If item 1 or item 3 fails, feature work stops. Fix the cause, then run the gate 
 | 1. Image tests | Every test in the image test manifest matches its references. This holds in CI on SwiftShader, which the gate reads for the gate commit, and in Chrome on the Mac's GPU, on all three tiers. It holds through the device runner in Safari and Firefox on the Mac, Safari on the iPad, and Chrome on the S24+. | Steps `images-gpu`, `images-swiftshader` and `workflows`. The device runner, through `bun run test:real-browsers Safari Firefox` and `bun run devices` |
 | 2. Parity | The parity scenes match their three.js twins on core WebGPU and on WebGL2, within three.js's threshold. The shadow scenes match within 0.5%. | Step `parity` |
 | 3. Speed | The CI benchmark job passes on the gate commit. S1's own work on the busiest thread is at most 50% of three.js's, in Chrome on the Mac on WebGPU. S1 at phone scale is at most 100% of three.js on the S24+ and the iPad. S4 holds its preset's target frame rate in at least 95% of the seconds of a 10-minute run on both devices. S3 and S1-cells are measured against three.js on the three devices. | Steps `workflows`, `desktop-target` and `scenes`. Benchmark runs and the governor plan on the devices |
-| 4. Budgets | Each WebAssembly build stays within 600 KB after Brotli, and the engine's JavaScript within 100 KB in each thread mode. `bun run bench:allocation` passes on S4 on both GPU paths. `bun run bench:soak` passes on S4 in Chrome on the Mac and in Safari on the iPad. | Steps `budgets`, `allocation-s4-webgpu`, `allocation-s4-webgl2` and `soak-s4`. The soak plan on the iPad |
+| 4. Budgets | Each WebAssembly build stays within 640 KB after Brotli, and the engine's JavaScript within 100 KB in each thread mode. `bun run bench:allocation` passes on S4 on both GPU paths. `bun run bench:soak` passes on S4 in Chrome on the Mac and in Safari on the iPad. | Steps `budgets`, `allocation-s4-webgpu`, `allocation-s4-webgl2` and `soak-s4`. The soak plan on the iPad |
 | 5. Decisions | Records D-08 to D-13 are written. Tests T-11, T-12, T-21, T-22, T-24, T-25, T-26 and T-29 are closed with their dates and results. T-28, the time to first frame, is measured again with the pipeline warm-up. | Step `startup` on the Mac. `bun run bench:startup -- --android` on the S24+, and the startup plan on the iPad |
 | 6. Docs | Every docs page with `since: "0.1"` is `experimental` or `stable`, or has moved to a later version with a written reason. The docs and skills checks pass, and the release script prints 0.1.0. | Steps `docs`, `docs-style`, `skills` and `release` |
 

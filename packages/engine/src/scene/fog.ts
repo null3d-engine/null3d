@@ -1,7 +1,8 @@
 // The scene's fog. The core keeps it, and the lit and unlit shaders mix each object's linear color
 // toward the fog color by its straight-line distance from the camera, along a curve. The fog can
-// thin with height and glow toward the main directional light. The background takes no fog. The
-// volumetric fog lights the same fog with the sun and the point and spot lights, through their
+// thin with height and glow toward the main directional light. The sky and the background take the
+// fog that a surface at the camera's far plane takes, at the share that a scene sets with its
+// `background` option. The volumetric fog lights the same fog with the sun and the point and spot lights, through their
 // shadows, in a grid that follows the camera's view (D-133).
 
 import { checkNumber, DEV, type Described } from '../errors/checks';
@@ -33,7 +34,7 @@ export type FogCurve = 'exponential' | 'exp2' | 'linear';
  * @category api/scene
  */
 export interface FogOptions {
-	/** The fog's color. Give the background the same color, because the background takes no fog. */
+	/** The fog's color. A scene whose background takes the fog needs no other color for it. */
 	color: ColorInput;
 	/** How the fog thickens with distance. The default is `'exponential'`. */
 	curve?: FogCurve;
@@ -68,6 +69,13 @@ export interface FogOptions {
 	 * smaller glow. The default is 8.
 	 */
 	sunGlowExponent?: number;
+	/**
+	 * How much of the fog the background takes, 0 to 1. At 1, the sky and a cube-map background take
+	 * the same fog as a surface at the camera's far plane, so a scene's haze carries on over the sky
+	 * it meets and the far edge of the land and the sky read as one. The camera's far plane must be
+	 * within the fog's reach for the haze to be full. The default is 0: the background takes no fog.
+	 */
+	background?: number;
 	/**
 	 * Lights the fog with the main directional light and the point and spot lights, through their
 	 * shadows: sun rays through gaps in trees, and glowing cones under lamps and headlights. `true`
@@ -132,6 +140,7 @@ const VALUE_NAMES = [
 	'heightFalloff',
 	'sunGlow',
 	'sunGlowExponent',
+	'background',
 ] as const;
 
 const CALL = 'setFog';
@@ -179,6 +188,12 @@ function checkFog(fog: FogOptions, values: Float64Array): void {
 		throw new EngineError(
 			'E1108',
 			`${CALL}() got the sun glow exponent ${sunGlowExponent}; it takes a number above 0.`,
+		);
+	const background = fog.background;
+	if (background !== undefined && !(background >= 0 && background <= 1))
+		throw new EngineError(
+			'E1108',
+			`${CALL}() got the background share ${background}; it takes a number from 0 to 1.`,
 		);
 }
 
@@ -237,6 +252,7 @@ export function setSceneFog(core: CoreMemory, fog: FogOptions | null): boolean {
 	values[FIRST + 4] = fog.heightFalloff ?? 0;
 	values[FIRST + 5] = fog.sunGlow ?? 0;
 	values[FIRST + 6] = fog.sunGlowExponent ?? DEFAULT_SUN_GLOW_EXPONENT;
+	values[FIRST + 7] = Math.min(1, Math.max(0, fog.background ?? 0));
 	// `volumetric: true` takes every default. Each number of the sketch's own options goes into a
 	// local, read only where the object holds it: a read that can give `undefined` boxes a fraction.
 	const { volumetric } = fog;

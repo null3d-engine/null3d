@@ -613,6 +613,41 @@ impl LevelRule {
             !(near.camera > far.camera || near.error > far.error),
             "the near distance lies past the far one"
         );
+        let ((near_level, near_before), (far_level, far_before)) =
+            self.walk_both(links, home, scale, radius, near, far, bias);
+        [
+            self.settle(
+                links,
+                home,
+                near_level,
+                near_before,
+                scale,
+                radius,
+                near,
+                bias,
+                range,
+            ),
+            self.settle(
+                links, home, far_level, far_before, scale, radius, far, bias, range,
+            ),
+        ]
+    }
+
+    /// The levels where the walk for [`Self::pick_both`] stops at each edge, each with the level
+    /// before it: the level whose switch last passed, before [`Self::settle`] places the source in
+    /// its distance range, its fade bands and its hide distance.
+    #[inline]
+    #[allow(clippy::too_many_arguments)]
+    fn walk_both(
+        &self,
+        links: &[LevelLink],
+        home: u32,
+        scale: f32,
+        radius: f32,
+        near: Distances,
+        far: Distances,
+        bias: f32,
+    ) -> ((u32, u32), (u32, u32)) {
         let mut before = home;
         let mut level = home;
         let mut stop_near = None;
@@ -634,21 +669,106 @@ impl LevelRule {
             level = next;
             next = links[level as usize].next;
         }
-        let (near_level, near_before) = stop_near.unwrap_or((level, before));
-        [
-            self.settle(
-                links,
-                home,
-                near_level,
-                near_before,
-                scale,
-                radius,
-                near,
-                bias,
-                range,
-            ),
-            self.settle(links, home, level, before, scale, radius, far, bias, range),
-        ]
+        (stop_near.unwrap_or((level, before)), (level, before))
+    }
+
+    /// The buckets that a source of base bucket `home` may draw at any distance from `near` to
+    /// `far`, with a world matrix of largest axis scale `scale` and a bounding sphere of world
+    /// radius `radius`: the buckets that [`Self::pick_both`] gives at both ends, and the bucket and
+    /// fade buckets of every level that the walk passes between the two ends' levels. A window
+    /// that holds two decision points can leave the shader on a level that neither end names, so a
+    /// count that reads the ends alone can fall short of the copy that the shader appends.
+    #[allow(clippy::too_many_arguments)]
+    pub fn pick_span(
+        &self,
+        links: &[LevelLink],
+        home: u32,
+        scale: f32,
+        radius: f32,
+        near: Distances,
+        far: Distances,
+        bias: f32,
+        range: DrawRange,
+        codes: bool,
+        mut each: impl FnMut(u32),
+    ) {
+        let ((first, first_before), (last, last_before)) =
+            self.walk_both(links, home, scale, radius, near, far, bias);
+        // The buckets that each end names: the level's own bucket and, inside a band, its fade
+        // bucket and the one before it.
+        let mut starts = [u32::MAX; 2];
+        let mut starts_len = 0;
+        let mut ends = [u32::MAX; 2];
+        let mut ends_len = 0;
+        for (index, (level, before)) in [(first, first_before), (last, last_before)]
+            .into_iter()
+            .enumerate()
+        {
+            let distance = if index == 0 { near } else { far };
+            let picked = self.settle(
+                links, home, level, before, scale, radius, distance, bias, range,
+            );
+            let (entries, len, _) = picked.entries(home, codes);
+            for entry in &entries[..len] {
+                let (buckets, count) = if index == 0 {
+                    (&mut starts, &mut starts_len)
+                } else {
+                    (&mut ends, &mut ends_len)
+                };
+                buckets[*count] = entry.bucket;
+                *count += 1;
+                each(entry.bucket);
+            }
+        }
+        // The two ends name the same level. Their buckets differ when the window crosses an edge
+        // that changes the shader's state without changing its level: a fade band's end meeting a
+        // draw range's fade, for one. Between such edges the level draws whole while both ends
+        // name only a fade bucket or nothing, so the level's own bucket must hold the copy too. A
+        // source that both ends hide draws whole between them only inside a draw range that starts
+        // above zero and ends within the window.
+        if first == last {
+            let same = starts_len == ends_len
+                && starts[..starts_len]
+                    .iter()
+                    .all(|bucket| ends[..ends_len].contains(bucket));
+            if !same || (starts_len == 0 && ends_len == 0 && range.start > 0.0) {
+                each(first);
+                let fade = links[first as usize].fade;
+                if fade != NO_LINK && fade != first {
+                    each(fade);
+                }
+                let before_fade = links[first_before as usize].fade;
+                if before_fade != NO_LINK && before_fade != first {
+                    each(before_fade);
+                }
+            }
+            return;
+        }
+        let mut prev = first_before;
+        // Each level that the walk passed on its way from the near answer to the far one can be
+        // the shader's level, and its own bucket or a fade bucket of it or of the level before it
+        // draws the source. Naming all of them keeps the shader's copy inside the slice however
+        // the window's two decisions fall.
+        let mut at = first;
+        loop {
+            each(at);
+            let fade = links[at as usize].fade;
+            if fade != NO_LINK && fade != at {
+                each(fade);
+            }
+            let before_fade = links[prev as usize].fade;
+            if before_fade != NO_LINK && before_fade != at {
+                each(before_fade);
+            }
+            if at == last {
+                return;
+            }
+            prev = at;
+            at = links[at as usize].next;
+            if at == NO_LINK {
+                return;
+            }
+        }
     }
 
     /// The first link that a source of base bucket `home` walks: none for a rule without a
@@ -1522,6 +1642,77 @@ mod tests {
             panic!("no fade in at 101 m");
         };
         assert_eq!(bucket, 7);
+    }
+
+    /// Two switches inside the count's slack window: the span names the level between them, which
+    /// the shader draws at a distance between the two ends while neither end names it.
+    #[test]
+    fn a_pick_span_names_the_level_between_two_switches() {
+        let links = [
+            LevelLink {
+                value: 0.0,
+                switch: Switch::Distance,
+                next: 1,
+                fade: NO_LINK,
+            },
+            LevelLink {
+                value: 10.0,
+                switch: Switch::Distance,
+                next: 2,
+                fade: NO_LINK,
+            },
+            LevelLink {
+                value: 10.01,
+                switch: Switch::Distance,
+                next: NO_LINK,
+                fade: NO_LINK,
+            },
+        ];
+        let rule = LevelRule::new(1000.0, 1.0, false, 1.0, 0.0);
+        let distance = 10.005;
+        let (near, far) = (
+            Distances::from(distance * (1.0 - 1.0e-3)),
+            Distances::from(distance * (1.0 + 1.0e-3)),
+        );
+        assert_eq!(
+            rule.pick(&links, 0, 1.0, 1.0, distance, 1.0, DrawRange::NONE),
+            Picked::One(1),
+            "the shader draws the level between the two switches"
+        );
+        let mut span = Vec::new();
+        rule.pick_span(
+            &links,
+            0,
+            1.0,
+            1.0,
+            near,
+            far,
+            1.0,
+            DrawRange::NONE,
+            false,
+            |bucket| span.push(bucket),
+        );
+        assert!(
+            span.contains(&1),
+            "the span leaves out the level that the shader draws: {span:?}"
+        );
+        // The premise: neither end of the window names level 1 on its own.
+        let ends: Vec<u32> = [near, far]
+            .into_iter()
+            .flat_map(|at| {
+                let (entries, len, _) = rule
+                    .pick(&links, 0, 1.0, 1.0, at, 1.0, DrawRange::NONE)
+                    .entries(0, false);
+                entries[..len]
+                    .iter()
+                    .map(|entry| entry.bucket)
+                    .collect::<Vec<_>>()
+            })
+            .collect();
+        assert!(
+            !ends.contains(&1),
+            "the window's ends name the level already: {ends:?}"
+        );
     }
 
     /// The count of a level's copies picks at both edges of its slack in one walk. Over random

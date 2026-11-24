@@ -187,8 +187,8 @@ fn apply(@builtin(position) position: vec4f) -> @location(0) vec4f {
     let near = summed_smooth(place.cell, place.slices.x);
     let far = summed_smooth(place.cell, place.slices.y);
     var scattered = fog_volume_blend(near, far, place).rgb;
-    // The background takes no fog (null3d::fog): its sky holds its own haze around the sun. So
-    // it takes the grid's light in front of it, and no light from past the grid's reach.
+    // The background's own fog comes from null3d::fog, which its shader mixes in before this pass.
+    // So it takes the grid's light in front of it, and no light from past the grid's reach.
     let reach = settings.grid.cells.w;
     if along > reach && depth > 0.0 {
         let ray = fog_ray(settings, screen);

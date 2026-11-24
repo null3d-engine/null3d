@@ -85,7 +85,11 @@ export const DEV_SERVER = {
 	// it reached 3,542 MB of resident memory there and died at Node's default heap limit, after which
 	// every later page failed as E1410 with a refused connection rather than as itself. The limit
 	// leaves room above that measured peak so the server outlives the last page.
-	env: { ...SERVER_HEAP_ENV, ...LOOPBACK_HTTP },
+	//
+	// NULL3D_HMR=0 turns the server's live reload off: another session's edit in this shared checkout
+	// would otherwise reload a measured page mid-test, detaching the controls a test clicks and
+	// leaving the canvas at its default size. A page still loads the files as they are.
+	env: { ...SERVER_HEAP_ENV, ...LOOPBACK_HTTP, NULL3D_HMR: '0' },
 };
 
 /** The production build of the test pages, and the preview that serves it. */

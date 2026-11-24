@@ -38,10 +38,11 @@ const MAX_COMPATIBILITY = 500;
 const MAX_BODY_LINES = 500;
 /**
  * About 5,000 tokens: the budget for a skill body. It fits the feature rows, the feature-intake
- * section and the table that names all twelve foundation add-ons, each of which belongs in the
- * body. A body that outgrows it trims, or raises this figure with its reason beside it.
+ * section and the table that names every foundation add-on, the sound add-on's among them, each
+ * of which belongs in the body. A body that outgrows it trims, or raises this figure with its
+ * reason beside it.
  */
-const BODY_WORD_BUDGET = 4025;
+const BODY_WORD_BUDGET = 4050;
 
 export function skillNames(root: string): string[] {
 	const dir = join(root, SKILLS_DIR);

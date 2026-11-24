@@ -29,6 +29,7 @@ Each recipe states the goal, gives the code, explains why it is written that way
 23. Outdoor land with an edge the camera never sees
 24. Trees that sway in the wind
 25. A game whose simulation a server replays (0.3)
+26. Sound that fits the scene
 
 ## 1. Start a new project
 
@@ -402,6 +403,8 @@ return {
 
 `timeOfDay` returns a new object, so this updates a few times a second, not in every frame. The sky's environment takes about 20 frames to follow a change anyway. After sunset the light is the moon, and `skyIntensity` dims the sky to a deep blue. Then the sunset's sky fades into a navy night sky lit from the moon, whose disc the sky draws. Copy every field of `day.sky` each time: it holds the moon's sky as a second sky while night falls. The sky lights nothing by itself, so the sun light and the sky's environment light the scene.
 
+An ambient or hemisphere light that stands for the sky follows the hour too. A fixed one lights sand, walls and roads as brightly under a starry sky as at noon. Scale it and cool it at night, and keep a faint share so shadows keep their shape. Choose exposure at the hour the scene shows longest. A demo stage gives the share of a town's lamps as `stage.lamps`. Docs: `concepts/lighting` ("A scene that shows a time of day").
+
 For a landscape, use the physical sky instead. Its air hazes far hills blue and pale, its twilight lasts after sunset, and at night it shows the moon's phase and the stars. Pass `{ model: 'physical' }`, then in place of the two `setBackground` and `setEnvironment` lines and the fog:
 
 ```ts
@@ -676,7 +679,7 @@ export default defineSketch(({ scene, geometry, materials, textures, render }) =
 });
 ```
 
-The engine lights `s.reflection` with the material's Fresnel, so water reflects little straight down and much at a low angle. For a mirror floor, drop the ripples and give the material `metalness: 1, roughness: 0` (a dark polished floor keeps `metalness: 0`). The pass draws the sky, the sun's light and shadows, and the point and spot lights that it sees. The preset sets its size (`quality.set({ reflectionScale })`): pass `scale: 1` for a sharp mirror, or `every: 2` to draw it in every other frame. Depth tint, foam and soft shores: read the depth behind the sheet with `sceneInputs: ['sceneDepth']` (0.3). The water's depth is the gap between the sheet and the surface behind it: convert `input.fragCoord.z` with `engine_frame.camera_range` and subtract it from `sceneDistance(uv)`. Fade the alpha over the end of that gap and the shore ends softly. Or use the height-field water recipe in `guides/custom-passes`. For a river or a lake, use `createWater` from `@null3d/water` instead: one shape gives either body, with waves that the current carries, foam, a soft shore or a bed of the shape's own, caustics, a reflection whose cadence follows the preset, and `createUnderwater` for the view from below. A slow stream takes a small `waveAmplitude`, which leaves the surface nearly flat while its fine ripples stay. Build water by hand only for a shape the add-on does not take. A sheet that reads the depth takes up to seven textures of its own, so the mirror joins it. Docs: `api/water`, `api/render`, `shaders/surface-functions`.
+The engine lights `s.reflection` with the material's Fresnel, so water reflects little straight down and much at a low angle. For a mirror floor, drop the ripples and give the material `metalness: 1, roughness: 0` (a dark polished floor keeps `metalness: 0`). The pass draws the sky, the sun's light and shadows, and the point and spot lights that it sees. The preset sets its size (`quality.set({ reflectionScale })`): pass `scale: 1` for a sharp mirror, or `every: 2` to draw it in every other frame. Depth tint, foam and soft shores: read the depth behind the sheet with `sceneInputs: ['sceneDepth']` (0.3). The water's depth is the gap between the sheet and the surface behind it: convert `input.fragCoord.z` with `engine_frame.camera_range` and subtract it from `sceneDistance(uv)`. Fade the alpha over the end of that gap and the shore ends softly. Or use the height-field water recipe in `guides/custom-passes`. For a river or a lake, use `createWater` from `@null3d/water` instead: one shape gives either body, with waves that the current carries, foam, a soft shore or a bed of the shape's own, caustics, a reflection whose cadence follows the preset, and `createUnderwater` for the view from below. A slow stream takes a small `waveAmplitude`, which leaves the surface nearly flat while its fine ripples stay. A pool, a basin or a fountain is small beside a long swell. Give such a body `windRipple`, and a gust shows as short crests of its own rather than one flat tilt of the whole surface. Build water by hand only for a shape the add-on does not take. A sheet that reads the depth takes up to seven textures of its own, so the mirror joins it. Docs: `api/water`, `api/render`, `shaders/surface-functions`.
 
 ## 21. Fire, smoke and sparks with particles
 
@@ -807,7 +810,7 @@ The quadtree splits a block by the screen error of its cells. The camera's posit
 
 ## 23. Outdoor land with an edge the camera never sees
 
-The background takes no fog. So past the edge of the land, the camera sees the plain background below the horizon, and fog cannot hide it. Hide the edge with geometry, and keep the camera inside it:
+Past the edge of the land, the camera sees the plain background below the horizon. Set the fog's `background` share to 1 to give the sky and the background the fog of a surface at the camera's far plane. The fog then blends that edge. At `background: 0` (the default) the background takes no fog, so hide the edge with geometry, and keep the camera inside it:
 
 ```ts
 import { createOrbitControls } from '@null3d/controls';
@@ -972,3 +975,19 @@ exact.quat.fromEuler(state.look, state.pitch, state.yaw, 0, 'YXZ');
 
 To ship the engine as a folder of files that the game's own module imports, build a two-line entry with Vite and the null3D plugin. The entry is `export { createEngine } from '@null3d/engine'` and `export const SKETCH = new URL('./sketch.ts', import.meta.url)`. Set `base: './'`, `build.modulePreload: false`, `preserveEntrySignatures: 'exports-only'` and `entryFileNames: 'entry.js'`. Record the game's shader permutation words on both GPU paths and at the low and high presets. Use `--live` pages and `--click <selector>` when the page starts its engine on a click. Record against a development build of the folder (`vite build --mode development`), because a production build ignores `?permutations`, `?gpu` and `?preset`. Build the shader modules from the list in a null3D checkout with `NULL3D_SHADER_PERMUTATIONS=<list> bun run shaders`. Then build the game with `NULL3D_ENGINE_SHADERS` naming the checkout's `packages/engine/src/generated`. A game that drew with 5 words held 300 files and 26 MB. The 172 words of null3D's examples make 762 files and 226 MB. A release asset holds the full set, so narrow first. Docs: `guides/deterministic-simulation`, `guides/assets-pipeline`.
 
+
+## 26. Sound that fits the scene
+
+Lay the sound out in `sketch.ts` with `createSound`, update it in `onLateUpdate`, and start it from the page's speaker button (`examples/lib/sound-button.ts` shows the page's half). Four rules keep a mix from reading as noise.
+
+Give every source a reach that matches what makes it. A loop's `far` is the end of its audibility: waves near water, an engine near its car, and nothing across the map. A bed that reaches a kilometer makes an opening view over open water roar, so set the same distances for a demo that a listener would expect standing there.
+
+Never write a level as a step. A car that stops keeps its voice until its speed crosses a threshold, and the level then snaps from running to silence. Write the level along a curve that passes through zero, such as a smoothstep up from standstill. Smooth what the scene writes over the frame's own time: `level += (target - level) * Math.min(1, dt * 6)`.
+
+Count the voices of a group. Its voices add as power, so three points at full level sound about 5 dB louder than a loop's one file. Give a group's points a lower level than a loop's. Write massed ambience, such as a wood's leaves, a crowd or rain on roofs, as one loop. Its level follows the density around the camera, never one source for each object.
+
+Leave a group's members at one rate unless each source really differs. Each voice plays the file from its own point, so the copies never sound in step and do not comb. Spreading the rates buys nothing, and the group's pitch then changes as the nearest members change.
+
+Check the mix at fixed camera places, not by ear alone. The opening pose should be silent where nothing makes a sound, each place should lead with the sound its view shows, and no level should move faster between frames than a listener would expect. An app can read each voice's gain while it drives the scene, as the add-on's own tests do.
+
+Docs: `guides/audio`, `api/sound`.

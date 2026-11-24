@@ -20,6 +20,11 @@ export const hypot = (x: number, y: number) => Math.sqrt(x * x + y * y);
 export const GROUND = 1800;
 /** The sea's level, in meters. */
 export const SEA_LEVEL = 0;
+/**
+ * How far above the sea the beach's sand stays wet, in meters. Nothing dry stands where the ground
+ * lies below this on the beach.
+ */
+export const WET_SAND = 0.6;
 /** The town's middle, x and z, and the radius of its core, in meters. */
 export const TOWN = { x: -85, z: 190, radius: 110, height: 9 } as const;
 /** The golf course's middle, x and z, and the radius of its gentle ground, in meters. */
@@ -336,8 +341,11 @@ const smoothField = blur(field, SIDE, 13, 3);
 function read(grid: Float32Array, x: number, z: number): number {
 	const u = Math.min(SIDE - 1.001, Math.max(0, (x + GROUND / 2) / CELL));
 	const v = Math.min(SIDE - 1.001, Math.max(0, (z + GROUND / 2) / CELL));
-	const [i, j] = [Math.floor(u), Math.floor(v)];
-	const [s, t] = [u - i, v - j];
+	// Scalars, not destructured pairs, so a read in every frame makes no array.
+	const i = Math.floor(u);
+	const j = Math.floor(v);
+	const s = u - i;
+	const t = v - j;
 	const at = j * SIDE + i;
 	const top = (grid[at] as number) * (1 - s) + (grid[at + 1] as number) * s;
 	const bottom = (grid[at + SIDE] as number) * (1 - s) + (grid[at + SIDE + 1] as number) * s;

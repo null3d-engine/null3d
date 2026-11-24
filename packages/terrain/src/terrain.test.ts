@@ -42,6 +42,8 @@ function sideOf(positions: Float32Array): number {
 function fakeContext() {
 	const blocks: FakeBlock[] = [];
 	const selections: { selection: [number, number] }[] = [];
+	/** Each colour that a material was given, which a scene's night tint writes. */
+	const tints: (readonly [number, number, number])[] = [];
 	/** The uniforms that each material was made with. */
 	const uniforms: Record<string, unknown>[] = [];
 	const texture = () => ({ destroy: () => {} }) as unknown as Texture;
@@ -52,8 +54,13 @@ function fakeContext() {
 				uniforms.push(options.uniforms);
 				return {
 					destroy: () => {},
-					set: (values: { selection: [number, number] }) => {
-						selections.push({ selection: [values.selection[0], values.selection[1]] });
+					set: (values: {
+						selection?: [number, number];
+						color?: readonly [number, number, number];
+					}) => {
+						if (values.selection)
+							selections.push({ selection: [values.selection[0], values.selection[1]] });
+						if (values.color) tints.push(values.color);
 					},
 				};
 			},
@@ -113,7 +120,7 @@ function fakeContext() {
 	} as unknown as SketchContext;
 	const visible = () => blocks.filter((b) => b.visible && !b.destroyed);
 	const area = () => visible().reduce((sum, b) => sum + b.mesh.side * b.mesh.side, 0);
-	return { context, blocks, selections, uniforms, visible, area };
+	return { context, blocks, selections, tints, uniforms, visible, area };
 }
 
 const SIZE = 1024;
@@ -358,6 +365,20 @@ describe('terrain block spheres', () => {
 		}
 		// The selection holds more than one level, so the blocks differ in size.
 		expect(sizes.size).toBeGreaterThan(1);
+	});
+
+	test('setTint darkens the shared material, and a value that holds still writes nothing', async () => {
+		const t = terrain();
+		await settle(t, 10, 10);
+		const before = t.tints.length;
+		t.ground.setTint([0.5, 0.6, 0.7]);
+		expect(t.tints.length).toBe(before + 1);
+		expect(t.tints.at(-1)).toEqual([0.5, 0.6, 0.7]);
+		// A sketch calls this every frame, so an unchanged night costs no uniform write.
+		t.ground.setTint([0.5, 0.6, 0.7]);
+		expect(t.tints.length).toBe(before + 1);
+		t.ground.setTint([1, 1, 1]);
+		expect(t.tints.length).toBe(before + 2);
 	});
 
 	test('moves the selection scale with setMorph', async () => {

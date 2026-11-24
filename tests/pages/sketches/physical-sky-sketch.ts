@@ -10,16 +10,31 @@ import { defineSketch, type TimeOfDayPreset, timeOfDay } from '@null3d/engine';
 const params = new URL(import.meta.url).searchParams;
 const time = (params.get('time') ?? 'afternoon') as TimeOfDayPreset;
 const aerialPerspective = Number(params.get('haze') ?? 1);
+// `?heading=` turns the sky's sun and light to another azimuth, so a sweep can find the headings
+// where the backdrop leaves a gap.
+const heading = Number(params.get('heading') ?? 2.2);
+// `?yaw=` turns the camera about the world's up axis, so a sweep looks across every world heading
+// the box around the camera draws in.
+const yaw = Number(params.get('yaw') ?? 0);
+
+/** A place turned about the world's up axis by the yaw. */
+function turned(at: readonly [number, number, number]): [number, number, number] {
+	return [
+		at[0] * Math.cos(yaw) + at[2] * Math.sin(yaw),
+		at[1],
+		-at[0] * Math.sin(yaw) + at[2] * Math.cos(yaw),
+	];
+}
 
 export default defineSketch(async ({ scene, assets, geometry, materials, post, quality }) => {
 	if (params.has('analytic')) quality.set({ physicalSky: false });
-	const day = timeOfDay(time, { heading: 2.2, model: 'physical' });
+	const day = timeOfDay(time, { heading, model: 'physical' });
 	scene.setActiveCamera(
 		scene.createPerspectiveCamera({
 			fov: 50,
 			far: 40000,
-			position: [0, 1.6, 7],
-			target: [0, 1.2, 0],
+			position: turned([0, 1.6, 7]),
+			target: turned([0, 1.2, 0]),
 		}),
 	);
 	scene.setBackground({

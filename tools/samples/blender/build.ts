@@ -8,7 +8,7 @@
 //    whole model. A page then loads it by its address alone, and a build copies one file.
 //
 // BLENDER names Blender's executable, which defaults to the one on the path.
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { run as optimize } from '../../../packages/cli/src/assets/optimize.js';
@@ -23,7 +23,10 @@ interface Gltf {
 	bufferViews?: { buffer: number; byteOffset?: number; byteLength: number }[];
 	buffers?: { byteLength: number; uri?: string }[];
 	nodes?: { name?: string; mesh?: number; extensions?: { MSFT_lod?: { ids: number[] } } }[];
-	meshes?: { primitives: { indices?: number; attributes: Record<string, number> }[] }[];
+	meshes?: {
+		primitives: { indices?: number; attributes: Record<string, number> }[];
+		extras?: Record<string, unknown>;
+	}[];
 	accessors?: { count: number; componentType?: number; normalized?: boolean; type?: string }[];
 }
 
@@ -94,6 +97,28 @@ function pack(file: string): Uint8Array {
 	return writeGlb(json, merged);
 }
 
+/**
+ * Marks the mesh of every node whose name starts with one of `prefixes` to keep its positions as
+ * floats. The asset tool quantizes a mesh into its own bounds and moves that offset into the node,
+ * which moves the node's origin; a part whose origin a scene reads, such as a wheel on its axle,
+ * keeps it this way.
+ */
+function keepOrigins(file: string, prefixes: readonly string[]): void {
+	if (prefixes.length === 0) return;
+	const { json, bin } = readGlb(readFileSync(file));
+	let marked = 0;
+	for (const node of json.nodes ?? []) {
+		if (node.mesh === undefined || !node.name) continue;
+		if (!prefixes.some((prefix) => (node.name as string).startsWith(prefix))) continue;
+		const mesh = json.meshes?.[node.mesh];
+		if (!mesh) continue;
+		mesh.extras = { ...mesh.extras, quantizePositions: false };
+		marked++;
+	}
+	if (marked === 0) throw new Error(`No node of ${file} starts with ${prefixes.join(', ')}`);
+	writeFileSync(file, writeGlb(json, bin));
+}
+
 /** Each named node's triangles in a binary glTF file, and whether its mesh carries the sway. */
 function parts(bytes: Uint8Array): { name: string; triangles: number; sway: boolean }[] {
 	const { json } = readGlb(bytes);
@@ -156,11 +181,18 @@ export interface SceneModels {
 	readonly blockers?: readonly string[];
 	/** The models whose every part sways, which the build checks after the asset tool. */
 	readonly swaying: readonly string[];
+	/** Node name prefixes whose meshes keep float positions, so their node origins stay put. */
+	readonly floatPositions?: readonly string[];
 	/**
 	 * Options that the script gets when the command line does not give them, such as the folder of
 	 * a scene's inputs.
 	 */
 	readonly options?: Readonly<Record<string, string>>;
+	/**
+	 * Bakes far cards from a model's raw file, before the optimizer packs it, and writes the
+	 * atlases into the output folder. The raw file is still readable at this point in the build.
+	 */
+	readonly cards?: (raw: string, model: string, out: string) => Promise<unknown> | unknown;
 }
 
 /**
@@ -187,7 +219,7 @@ export function chosenModels(
  * those models, and a script that reads inputs names its own, such as `--raw`.
  */
 export async function buildScene(
-	{ script, models, blockers = [], swaying, options = {} }: SceneModels,
+	{ script, models, blockers = [], swaying, floatPositions = [], options = {}, cards }: SceneModels,
 	args: readonly string[] = process.argv.slice(2),
 ): Promise<void> {
 	const out = args[0];
@@ -219,11 +251,22 @@ export async function buildScene(
 			{ stdout: 'pipe', stderr: 'pipe' },
 		);
 		if (built.exitCode !== 0) throw new Error(`Blender failed:\n${built.stdout}\n${built.stderr}`);
+		// Blender quits with status 0 when a script raises before it writes anything, so the build
+		// checks each model that the script promised instead of trusting its status alone.
+		for (const model of models) {
+			const written = join(scratch, 'blender', `${model}.glb`);
+			if (!existsSync(written))
+				throw new Error(`Blender wrote no ${model}.glb:\n${built.stdout}\n${built.stderr}`);
+			keepOrigins(written, floatPositions);
+		}
 		mkdirSync(resolve(out), { recursive: true });
 		for (const model of chosen) {
+			const raw = join(scratch, 'blender', `${model}.glb`);
+			// A card bake reads the arrays that the optimizer would compress away, so it runs first.
+			if (cards) await cards(raw, model, resolve(out));
 			const optimized = join(scratch, 'optimized', model);
 			const code = await optimize([
-				join(scratch, 'blender', `${model}.glb`),
+				raw,
 				optimized,
 				...(blockers.includes(model) ? [] : ['--no-blockers']),
 			]);

@@ -90,8 +90,12 @@ function nightEdge(from: number, to: number): number {
 	return (a + b) / 2;
 }
 
-/** The hours at which the night begins, after dusk, and ends, before dawn. */
-const NIGHT = { start: nightEdge(HOURS.Dusk, 24), end: nightEdge(0, HOURS.Dawn) };
+/**
+ * The hours at which the night begins, after dusk, and ends, before dawn. A scene that switches
+ * something by hand at night, such as a town's windows, reads the start so that it comes on with
+ * the dark hours however the hour is reached.
+ */
+export const NIGHT_HOURS = { start: nightEdge(HOURS.Dusk, 24), end: nightEdge(0, HOURS.Dawn) };
 /** The fixed moods of the lit hours, in the order of their hours. */
 const LIT_MOODS = (Object.entries(HOURS) as [FixedMood, number][])
 	.filter(([mood]) => mood !== 'Night')
@@ -109,8 +113,8 @@ export function moodMix(hours: number, out: MoodMix = { from: 'Night', to: 'Nigh
 	out.from = 'Night';
 	out.to = 'Night';
 	out.share = 0;
-	if (h >= NIGHT.start || h <= NIGHT.end) return out;
-	let at = NIGHT.end;
+	if (h >= NIGHT_HOURS.start || h <= NIGHT_HOURS.end) return out;
+	let at = NIGHT_HOURS.end;
 	for (const [mood, hour] of LIT_MOODS) {
 		if (h < hour) {
 			out.to = mood;
@@ -120,7 +124,7 @@ export function moodMix(hours: number, out: MoodMix = { from: 'Night', to: 'Nigh
 		out.from = mood;
 		at = hour;
 	}
-	out.share = smoothstep(at, NIGHT.start, h);
+	out.share = smoothstep(at, NIGHT_HOURS.start, h);
 	return out;
 }
 
@@ -171,6 +175,29 @@ export function lampShare(sunHeight: number): number {
 	return LAMPS_DUSK + (1 - LAMPS_DUSK) * smoothstep(0, LAMPS_FULL, sunHeight);
 }
 
+/**
+ * The multiplier that a surface's own colour takes at full night. A pale surface, such as sand or
+ * mown turf, throws back much more moonlight than a roof or a hillside, so without it the brightest
+ * open ground reads as a lit patch in a dark island. It leans cool, as moonlight does.
+ */
+const NIGHT_ALBEDO: readonly [number, number, number] = [0.06, 0.07, 0.1];
+
+/**
+ * The multiplier of a surface's colour at a share of the town's lights, from its day colour at 0 to
+ * its night colour at 1, so open ground darkens with the hour as the lamps come on. It writes into
+ * `out` when a frame calls it every time.
+ */
+export function nightAlbedo(
+	share: number,
+	out: [number, number, number] = [1, 1, 1],
+): [number, number, number] {
+	const t = Math.min(1, Math.max(0, share));
+	out[0] = blend(1, NIGHT_ALBEDO[0], t);
+	out[1] = blend(1, NIGHT_ALBEDO[1], t);
+	out[2] = blend(1, NIGHT_ALBEDO[2], t);
+	return out;
+}
+
 /** True when two vectors match to within a step nothing can see. */
 function near(a: Vec3, b: Vec3): boolean {
 	for (let k = 0; k < 3; k++)
@@ -184,6 +211,12 @@ export interface StageOptions {
 	heading: number;
 	/** The density of the outdoor fog. */
 	fogDensity: number;
+	/**
+	 * How much of the fog the sky and the background take, from 0 to 1: 1 gives them the fog of a
+	 * surface at the camera's far plane, so the haze over the land continues over the sky it meets.
+	 * The default is 0, the engine's own default.
+	 */
+	backgroundFog?: number;
 	/** The share of the sky that clouds cover, from 0 to 1. */
 	cloudCoverage: number;
 	/** A factor of the fog's density in some moods, such as a haze at golden hour. */
@@ -211,6 +244,12 @@ export interface StageOptions {
 	 * keeps its even fog. The default is the exponential curve.
 	 */
 	fogCurve?: 'exponential' | 'exp2';
+	/**
+	 * The studio's fog density, for a scene that reaches far enough that the studio's own thick haze
+	 * would hide it: an island seen from hundreds of meters stands inside a near-black fog, and its
+	 * frame holds nothing but the backdrop. The default is the studio's thick haze.
+	 */
+	studioFog?: number;
 	/**
 	 * A factor on the exposure of every outdoor mood, for a scene whose own lights carry it: a city
 	 * at night asks for more than a moonlit field. The default is 1, and the studio keeps its own.
@@ -293,6 +332,11 @@ export interface Stage {
 	update(dt: number): void;
 	/** Turns a part of the look on or off; every part starts on. It stays so in every later mood. */
 	show(part: StagePart, on: boolean): void;
+	/**
+	 * Turns the fog's lit part on or off: the sun and the lamps show through the haze. The rest of
+	 * the fog stays as the hour sets it, and a scene without lit fog keeps no shafts.
+	 */
+	setShafts(on: boolean): void;
 }
 
 /** True for a mood name. */
@@ -327,6 +371,7 @@ export function createMoods(
 		cloudCoverage,
 		backdrop,
 		haze = {},
+		backgroundFog = 0,
 		fogGrey = 0,
 		exposureScale = 1,
 		environmentScale = 1,
@@ -377,6 +422,8 @@ export function createMoods(
 	let targetHours = Number.NaN;
 	/** The parts of the look that are on. A part that is off is written once, when it turns off. */
 	const shown: Record<StagePart, boolean> = { sky: true, fog: true, environment: true };
+	/** True while the fog's lit part draws; the scene's light-shaft switch sets it. */
+	let shafts = options.volumetric !== undefined;
 	/** True while the scene takes its environment light from the background. */
 	const lit = () => shown.sky && shown.environment;
 	/**
@@ -403,6 +450,7 @@ export function createMoods(
 			color: [0, 0, 0] as Vec3,
 			density: fogDensity,
 			sunGlow: 0,
+			background: Math.min(1, Math.max(0, backgroundFog)),
 			...(options.volumetric === undefined ? {} : { volumetric: options.volumetric }),
 			...(options.fogHeight === undefined
 				? {}
@@ -569,6 +617,7 @@ export function createMoods(
 			look.fog.sunGlow = current.glow;
 			if (options.fogHeight) look.fog.heightFalloff = options.fogHeight.falloff;
 			if (options.fogCurve) look.fog.curve = options.fogCurve;
+			writeShafts();
 			scene.setFog(look.fog);
 		}
 		look.post.exposure = current.exposure;
@@ -589,16 +638,23 @@ export function createMoods(
 		sun.setColor('#fff4e6');
 		sun.setIntensity(3);
 		if (shown.fog) {
-			look.fog.density = STUDIO_FOG_DENSITY;
+			look.fog.density = options.studioFog ?? STUDIO_FOG_DENSITY;
 			if (options.fogHeight) look.fog.heightFalloff = 0;
 			if (options.fogCurve) look.fog.curve = 'exponential';
 			look.fog.color[0] = STUDIO_FOG[0];
 			look.fog.color[1] = STUDIO_FOG[1];
 			look.fog.color[2] = STUDIO_FOG[2];
+			writeShafts();
 			scene.setFog(look.fog);
 		}
 		look.post.exposure = 1;
 		post.set(look.post);
+	};
+
+	/** Puts the fog's lit part into the look that the frame writes, or takes it out. */
+	const writeShafts = (): void => {
+		if (shafts && options.volumetric) look.fog.volumetric = options.volumetric;
+		else delete look.fog.volumetric;
 	};
 
 	/** The hour that the look holds now, for a change that re-aims it. */
@@ -688,6 +744,14 @@ export function createMoods(
 			}
 			ease(dt);
 			apply();
+		},
+		setShafts(on) {
+			shafts = on && options.volumetric !== undefined;
+			// The frame writes the fog every time the look moves, so ask for it now.
+			needsLook = true;
+			still = false;
+			if (mood === 'Studio') toStudio();
+			else apply();
 		},
 		show(part, on) {
 			shown[part] = on;

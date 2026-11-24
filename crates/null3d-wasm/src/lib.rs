@@ -5792,12 +5792,12 @@ pub fn set_override_material(material: u32) -> u32 {
 
 /// The scene's fog: its curve (`constants::fog_curve`), or no fog. The call values give its linear
 /// color, the density of exponential and exponential squared fog, the near and far distances of
-/// linear fog, the height where the fog has that density, its height falloff, its sun glow and the
-/// glow's exponent.
+/// linear fog, the height where the fog has that density, its height falloff, its sun glow, the
+/// glow's exponent and the background's share of the fog.
 #[wasm_bindgen(js_name = setFog)]
 pub fn set_fog(curve: u32) -> u32 {
     with_engine(|e| {
-        let [r, g, b, values @ ..]: [f32; 10] = e.call_values();
+        let [r, g, b, values @ ..]: [f32; 11] = e.call_values();
         let fog = Fog::from_code(curve, [r, g, b], values);
         e.renderer.settings_mut().set_fog(fog);
         0

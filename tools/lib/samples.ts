@@ -429,6 +429,7 @@ const CONTENT_TYPES: Record<string, string> = {
 	'.3dl': 'text/plain; charset=utf-8',
 	'.obj': 'text/plain; charset=utf-8',
 	'.mtl': 'text/plain; charset=utf-8',
+	'.mp3': 'audio/mpeg',
 };
 
 /** The pinned file that a sample address names, or null when the address names no pinned file. */

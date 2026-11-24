@@ -3,8 +3,9 @@
 //! The lit and unlit shaders mix each fragment's exposed linear color toward the fog color, by a
 //! factor that grows with the fragment's straight-line distance from the camera (`null3d::fog` in
 //! the shader library). A curve sets how the factor grows. The fog can thin with height, as air
-//! does over a valley, and can glow toward the main directional light. The background takes no
-//! fog, and a material can opt out.
+//! does over a valley, and can glow toward the main directional light. A material can opt out. The
+//! sky and the background take the fog that a surface at the camera's far plane takes, at a share
+//! that a scene sets, so the haze over the land continues over the sky it meets.
 //!
 //! Height fog follows an exponential density, `density × exp(-falloff × (y - height))`, and the
 //! shaders integrate it exactly along each view ray, as Filament does. The integral splits into a
@@ -56,13 +57,17 @@ pub struct Fog {
     /// The power of the glow's fall away from the light's direction: higher values make the glow
     /// smaller.
     pub sun_exponent: f32,
+    /// How much of the fog the background takes, from 0 to 1: 1 gives the sky and a cube map the
+    /// same fog as a surface at the camera's far plane, 0 leaves them unfogged.
+    pub background: f32,
 }
 
 impl Fog {
     /// The fog of a curve code (`curve::*`) with its values: the density of exponential and
     /// exponential squared fog, the near and far distances of linear fog, then the height, the
-    /// height falloff, the sun glow and its exponent. A code that names no curve gives no fog.
-    pub fn from_code(code: u32, color: [f32; 3], values: [f32; 7]) -> Option<Self> {
+    /// height falloff, the sun glow, its exponent and the background's share of the fog. A code
+    /// that names no curve gives no fog.
+    pub fn from_code(code: u32, color: [f32; 3], values: [f32; 8]) -> Option<Self> {
         let [
             density,
             near,
@@ -71,6 +76,7 @@ impl Fog {
             height_falloff,
             sun_glow,
             sun_exponent,
+            background,
         ] = values;
         let curve = match code {
             curve::EXPONENTIAL => Curve::Exponential { density },
@@ -85,6 +91,7 @@ impl Fog {
             height_falloff,
             sun_glow,
             sun_exponent,
+            background: background.clamp(0.0, 1.0),
         })
     }
 
@@ -117,7 +124,7 @@ impl Fog {
             ],
             sun_glow: self.sun_glow,
             sun_exponent: self.sun_exponent,
-            spare: 0.0,
+            background: self.background,
             curve: code,
         }
     }
@@ -146,8 +153,9 @@ pub struct FogUniform {
     pub sun_glow: f32,
     /// The power of the glow's fall away from the light's direction.
     pub sun_exponent: f32,
-    /// Fills the block to a multiple of 16 bytes, as WGSL lays out a struct in a uniform buffer.
-    pub spare: f32,
+    /// How much of the fog the background takes, from 0 to 1. The block's last word before the
+    /// curve fills it to a multiple of 16 bytes, as WGSL lays out a struct in a uniform buffer.
+    pub background: f32,
     /// The fog's curve (`curve::*`).
     pub curve: u32,
 }
@@ -159,10 +167,32 @@ mod tests {
     use super::*;
 
     const GREY: [f32; 3] = [0.5, 0.5, 0.5];
-    const VALUES: [f32; 7] = [0.1, 1.0, 2.0, 3.0, 0.5, 0.25, 8.0];
+    const VALUES: [f32; 8] = [0.1, 1.0, 2.0, 3.0, 0.5, 0.25, 8.0, 0.0];
 
     fn close(a: f32, b: f32) -> bool {
         (a - b).abs() <= 1e-6 * b.abs().max(1.0)
+    }
+
+    #[test]
+    fn the_background_share_reaches_the_uniform_and_stays_between_none_and_all() {
+        let uniform = |share: f32| {
+            let mut values = VALUES;
+            values[7] = share;
+            Fog::from_code(curve::EXPONENTIAL, GREY, values)
+                .unwrap()
+                .uniform(0.0, 1.0)
+                .background
+        };
+        assert_eq!(
+            uniform(0.0),
+            0.0,
+            "a scene at the default takes no fog behind it"
+        );
+        assert_eq!(uniform(1.0), 1.0);
+        assert_eq!(uniform(0.4), 0.4);
+        // A share past either end takes that end, so a scene cannot turn the fog negative or over.
+        assert_eq!(uniform(2.0), 1.0);
+        assert_eq!(uniform(-1.0), 0.0);
     }
 
     #[test]

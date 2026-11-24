@@ -3,6 +3,7 @@
 // shows its phase, the stars, and the clouds. It draws as the analytic sky does, as a box around
 // the camera at the far plane (null3d::backdrop), and writes linear color as the mesh shaders
 // write theirs: into the HDR scene color, or tone mapped and encoded on the 8-bit path.
+#import null3d::fog
 #import null3d::globals::Frame
 #import null3d::noise::{lattice, to_unit}
 #import null3d::tonemap
@@ -159,8 +160,18 @@ fn fs(in: SkyOut) -> @location(0) vec4f {
         }
     }
     let scale = values.view.z * frame.output.exposure;
-    return null3d::tonemap::finish(
+    // The sky takes the same fog as a surface at the camera's far plane, so the haze over the land
+    // continues over the sky it meets.
+    let fogged = null3d::fog::fogged_background(
+        frame.fog,
         color * scale,
+        d,
+        frame.camera_range.y,
+        frame.sun_direction.xyz,
+        frame.sun_color.xyz,
+    );
+    return null3d::tonemap::finish(
+        fogged,
         in.clip.xy,
         frame.occlusion.y,
         frame.output,

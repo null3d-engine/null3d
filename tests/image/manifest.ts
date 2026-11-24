@@ -3840,6 +3840,12 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 			// it applies only where a browser or a device compares with the Mac's pictures.
 			...(demo.name === 'skyway' && {
 				deviceTolerance: { threshold: 0.1, maxDiffRatio: 0.017 },
+				// The Linux Firefox draws on a software GPU, which settles on different pixels
+				// wherever bright detail is a pixel or two wide, such as the rain streaks, and the window
+				// and sign edges: two draws on one browser agree exactly, while its picture and
+				// the Mac's differ by 2.358 per cent, all of it on that detail. Its pictures
+				// compare with their own, so a real change still fails.
+				devices: ['linux'],
 			}),
 			...(demo.group === 'Showcase' && { swiftShaderSwitches: ['preset=low'] }),
 			// The hero shadow is fine detail on one object, so its demo draws larger than the
@@ -3905,6 +3911,11 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		size: CREEK_WATER_SIZE,
 		hold: 0.5,
 		swiftShaderSwitches: ['preset=low'],
+		// Linux Firefox rounds the softened mirror of the close-up another way, past the tolerance
+		// the other devices take against the Mac's picture, so it keeps its own reference. The
+		// device's first run after the mirror change failed in CI's Firefox shard 12 while every
+		// page in that shard reported and passed, which is the shape of a device-side comparison.
+		devices: ['linux'],
 		timeoutSeconds: 600,
 	},
 	// The hero demo at both tile sizes. The car stands in the same place and its shadow falls the

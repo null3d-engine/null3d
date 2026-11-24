@@ -1,6 +1,14 @@
 import { describe, expect, test } from 'bun:test';
 import type { InstanceBatch } from '@null3d/engine';
-import { EDGE_BAND, handOverToCards } from './hand-over';
+import {
+	EDGE_BAND,
+	HAND_OVER_GROUPS,
+	HAND_OVER_SPREAD,
+	handOverCards,
+	handOverMeshes,
+	handOverSwitches,
+	handOverToCards,
+} from './hand-over';
 
 /** A stand-in for the engine's instance batch: its sizes, and the draw range it was given. */
 function fakeBatch(sizes: readonly (readonly [number, number])[]) {
@@ -49,5 +57,53 @@ describe('handOverToCards', () => {
 		expect(() => handOverToCards(meshes, cards, Number.NaN)).toThrow(RangeError);
 		expect(() => handOverToCards(meshes, cards, 100, 100)).toThrow(RangeError);
 		expect(() => handOverToCards(meshes, cards, 100, -1)).toThrow(RangeError);
+	});
+});
+
+describe('the groups of a plant', () => {
+	test('the switches straddle the plant distance evenly, and their mean is that distance', () => {
+		const switches = handOverSwitches(268);
+		expect(switches).toHaveLength(HAND_OVER_GROUPS);
+		expect(switches[0]).toBeCloseTo(268 * (1 - HAND_OVER_SPREAD), 9);
+		expect(switches.at(-1)).toBeCloseTo(268 * (1 + HAND_OVER_SPREAD), 9);
+		const mean = switches.reduce((sum, value) => sum + value, 0) / switches.length;
+		expect(mean).toBeCloseTo(268, 9);
+		// Each switch is later than the one before it, so the groups hand over one after another.
+		for (let k = 1; k < switches.length; k++)
+			expect(switches[k] as number).toBeGreaterThan(switches[k - 1] as number);
+	});
+
+	test('one group hands over at the plant distance itself', () => {
+		expect(handOverSwitches(268, 1)).toEqual([268]);
+	});
+
+	test('a group draws its meshes to its own switch, and the cards stand behind the earliest', () => {
+		const switches = handOverSwitches(268);
+		const cards = fakeBatch([[10, 12]]);
+		handOverCards(cards.batch, switches[0] as number);
+		const [cardsNear = 0] = cards.range;
+		for (const distance of switches) {
+			const meshes = fakeBatch([]);
+			handOverMeshes(meshes.batch, distance);
+			expect(meshes.range).toEqual([0, distance]);
+			// The cards' own faded edge ends before this group's mesh begins to thin.
+			expect(cardsNear * (1 + EDGE_BAND)).toBeLessThanOrEqual(distance * (1 - EDGE_BAND) + 1e-9);
+		}
+	});
+
+	test('refuses a count or a spread that cannot make groups', () => {
+		expect(() => handOverSwitches(100, 0)).toThrow(RangeError);
+		expect(() => handOverSwitches(100, 2.5)).toThrow(RangeError);
+		expect(() => handOverSwitches(100, 4, 1)).toThrow(RangeError);
+		expect(() => handOverSwitches(100, 4, -0.1)).toThrow(RangeError);
+		expect(() => handOverSwitches(0)).toThrow(RangeError);
+	});
+
+	test('a spread has a later group than the plant distance and an earlier one, never both on one side', () => {
+		for (const spread of [0.02, 0.06, 0.2]) {
+			const switches = handOverSwitches(200, 4, spread);
+			expect((switches[0] as number) < 200).toBe(true);
+			expect((switches.at(-1) as number) > 200).toBe(true);
+		}
 	});
 });

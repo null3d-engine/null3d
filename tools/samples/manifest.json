@@ -5767,8 +5767,8 @@
 		},
 		{
 			"id": "showcase/island",
-			"title": "Island trees and oleander",
-			"purpose": "The plants of the engine's island showcase scene: a Mediterranean stone pine, an olive, a holm oak and a flowering oleander, each with lower levels of detail and a card for its far copies",
+			"title": "Island cypress, trees and oleander",
+			"purpose": "The plants of the engine's island showcase scene: a Mediterranean cypress, stone pine, an olive, a holm oak and a flowering oleander, each with lower levels of detail, and two octahedral impostor atlases that carry the plant from every direction for its far copies",
 			"authors": [
 				{
 					"name": "null3D contributors"
@@ -5778,8 +5778,8 @@
 				"CC0-1.0"
 			],
 			"source": "https://github.com/null3d-engine/null3d/blob/main/tools/samples/blender/island.py",
-			"fetched": "2026-11-18",
-			"changes": "Built in Blender 5.3 by tools/samples/blender/island.py in the engine repository, with every texture made by the script. Each plant carries its sway in its second texture coordinates: the bend weight from its root to its tips, and a phase for each branch. Optimized by the engine's asset tool (meshopt, KTX2), with the textures packed into each file, by tools/samples/blender/island.ts.",
+			"fetched": "2026-11-23",
+			"changes": "Built in Blender 5.3 by tools/samples/blender/island.py in the engine repository, with every texture made by the script. Each plant carries its sway in its second texture coordinates: the bend weight from its root to its tips, and a phase for each branch. The cypress joined the trees file as a short trunk under a tall, dense dark-green spire, its foliage and bark painted by the script. Optimized by the engine's asset tool (meshopt, KTX2), with the textures packed into each file, by tools/samples/blender/island.ts. The far cards are no longer part of the models: island.ts bakes each plant's colour and surface atlases with the engine's own bakeImpostorAtlas, a five by five octahedral grid of 128-texel views, so the cards blend the views nearest the eye and light from stored normals. The figures that stand the cards are in <model>-cards.json.",
 			"dir": "sources/showcase/island",
 			"origin": {
 				"kind": "blender",
@@ -5787,14 +5787,102 @@
 			},
 			"files": [
 				{
+					"path": "sources/showcase/island/cypress-card-color.png",
+					"bytes": 312113,
+					"sha256": "00fd8d227ef2130ab3603f42792ab29465a48aa846ca81b63ea22a4d7e75e61f"
+				},
+				{
+					"path": "sources/showcase/island/cypress-card-surface.png",
+					"bytes": 458101,
+					"sha256": "fd5630253601182b5597c68e73a9a401e31e080a646e6b30a6f11b218ce98a67"
+				},
+				{
+					"path": "sources/showcase/island/holm-oak-card-color.png",
+					"bytes": 194067,
+					"sha256": "89bfe7ab0a7b0ee37e4342fe67f1ac4543bcc6b22ddccdf7b6de8d0ad5e20908"
+				},
+				{
+					"path": "sources/showcase/island/holm-oak-card-surface.png",
+					"bytes": 299626,
+					"sha256": "6bb332206e89285468ca9eddb9daee03f9e23258da48f02bceda8e30ab3d586c"
+				},
+				{
+					"path": "sources/showcase/island/oleander-card-color.png",
+					"bytes": 190493,
+					"sha256": "cfc0e7d834356b902321d41c2dbbb50a47aab8d34c6cc049721d92ac7b27149f"
+				},
+				{
+					"path": "sources/showcase/island/oleander-card-surface.png",
+					"bytes": 280599,
+					"sha256": "b3ac06f555ef60d82f3ef3e02328b4e1f313bd11d42891b241d6e73661b3493a"
+				},
+				{
+					"path": "sources/showcase/island/olive-card-color.png",
+					"bytes": 151701,
+					"sha256": "3ba4d29f03b0099bebbefa7fc55303abb009b9c4f62623a75e7a1e6de8f1641e"
+				},
+				{
+					"path": "sources/showcase/island/olive-card-surface.png",
+					"bytes": 201207,
+					"sha256": "3dbb81a4018e18211b166a6b999c5771ea9c9be2b8d91bb8791d044ac1b55416"
+				},
+				{
+					"path": "sources/showcase/island/shrubs-cards.json",
+					"bytes": 210,
+					"sha256": "c8091055c4af3a5f844c7b785f3a14bb2b64d0710d658eae9c4643ce834b095c"
+				},
+				{
 					"path": "sources/showcase/island/shrubs.glb",
-					"bytes": 261660,
-					"sha256": "1e4a00c832eddc57732e139ac1740d0b757f2a65e763f2a6c0d6fec2a8284a3e"
+					"bytes": 226160,
+					"sha256": "0caa7f22f5dc70dedbd90d63a623929e6204221911d9a21800f74df3e5bfb932"
+				},
+				{
+					"path": "sources/showcase/island/stone-pine-card-color.png",
+					"bytes": 135130,
+					"sha256": "467efc3997cb655074e93c57360e62eccccf34890904363ccc52dc98aabdfa52"
+				},
+				{
+					"path": "sources/showcase/island/stone-pine-card-surface.png",
+					"bytes": 180366,
+					"sha256": "105485fed150dc834712d15be61e3a649620c259120b8003c25bac56f80eb097"
+				},
+				{
+					"path": "sources/showcase/island/trees-cards.json",
+					"bytes": 654,
+					"sha256": "dc98516989103a83934f353866a44f1a8d9e7917a1647ee2f3ff307e1981ab20"
 				},
 				{
 					"path": "sources/showcase/island/trees.glb",
-					"bytes": 1266944,
-					"sha256": "9a3e998d57fd6ac1011da80f469a36cc9c485e3bd3bd02a3c50dc05027693d4c"
+					"bytes": 1506068,
+					"sha256": "2efa2a9d47fb7df649beb882b976a7a567b7f06d34d4d0b00f5f81e948b9d31c"
+				}
+			]
+		},
+		{
+			"id": "showcase/island-town",
+			"title": "Island town landmarks",
+			"purpose": "The landmarks of the engine's island showcase scene: a whitewashed church with a blue ribbed dome, an arched front and a bell tower, a hilltop keep, a harbour lighthouse and three waterfront houses, each with its own levels of detail",
+			"authors": [
+				{
+					"name": "null3D contributors"
+				}
+			],
+			"license": [
+				"CC0-1.0"
+			],
+			"source": "https://github.com/null3d-engine/null3d/blob/main/tools/samples/blender/island-town.py",
+			"fetched": "2026-11-22",
+			"changes": "Built in Blender 5.3 by tools/samples/blender/island-town.py in the engine repository, with every texture painted by the script: whitewashed walls, ashlar stone, terracotta roofs, a blue dome, timber and glazing. Each part carries one or two lower levels of detail at a stated surface error. Optimized by the engine asset tool (meshopt, KTX2), with the textures packed into the file, by tools/samples/blender/island-town.ts.",
+			"dir": "sources/showcase/island-town",
+			"origin": {
+				"kind": "blender",
+				"script": "https://github.com/null3d-engine/null3d/blob/main/tools/samples/blender/island-town.ts"
+			},
+			"files": [
+				{
+					"path": "sources/showcase/island-town/town.glb",
+					"bytes": 484436,
+					"sha256": "cb69680180b366c443762cd3e43e4c620c041d370b2f44a7a22ef83ac6027ecc"
 				}
 			]
 		},
@@ -7095,6 +7183,657 @@
 					"path": "sources/splats/bolton-priory-stream/index.json",
 					"bytes": 16358,
 					"sha256": "8b3c6efa646174755186b2f1d1949d059676c4854873752356bde8660947880f"
+				}
+			]
+		},
+		{
+			"id": "showcase/island-houses",
+			"title": "Island Mediterranean houses",
+			"purpose": "The houses of the engine's island showcase scene: thirteen whitewashed and stone Mediterranean forms with terracotta roofs, shuttered dark windows, framed doors, chimneys and, where a form has one, a balcony, an arcade, a pergola, a veranda or a roof terrace, each with two lower levels of detail",
+			"authors": [
+				{
+					"name": "null3D contributors"
+				}
+			],
+			"license": [
+				"CC0-1.0"
+			],
+			"source": "https://github.com/null3d-engine/null3d/blob/main/tools/samples/blender/island-houses.py",
+			"fetched": "2026-11-22",
+			"changes": "Built in Blender 5.3 by tools/samples/blender/island-houses.py in the engine repository, with every texture painted by the script: lime whitewash, rubble stone, ashlar trim, terracotta roof tiles, painted timber, dark glazing and a cutout ivy card for the vines. Each house form carries two lower levels of detail with its measured surface error, 0.25 m and 0.80 m. Optimized by the engine's asset tool (meshopt, KTX2), with the textures packed into the file, by tools/samples/blender/island-houses.ts.",
+			"dir": "sources/showcase/island-houses",
+			"origin": {
+				"kind": "blender",
+				"script": "https://github.com/null3d-engine/null3d/blob/main/tools/samples/blender/island-houses.ts"
+			},
+			"files": [
+				{
+					"path": "sources/showcase/island-houses/houses.glb",
+					"bytes": 2036900,
+					"sha256": "68e5ccf3f2aa890c93b97d5233dfa7b341f0e9ea4348ea2eabdf85a740f14e6e"
+				}
+			]
+		},
+		{
+			"id": "showcase/island-props",
+			"title": "Island harbour and beach props",
+			"purpose": "The harbour and beach props of the engine's island showcase scene: a sailing yacht with a coachroof, mast, boom and furled sail, an open fishing boat with thwarts and an outboard, three irregular boulders, a canvas parasol, a timber sun lounger and a harbour bench, with painted gelcoat, teak, canvas, metal, glazing and stone textures",
+			"authors": [
+				{
+					"name": "null3D contributors"
+				}
+			],
+			"license": [
+				"CC0-1.0"
+			],
+			"source": "https://github.com/null3d-engine/null3d/blob/main/tools/samples/blender/island-props.py",
+			"fetched": "2026-11-22",
+			"changes": "Built in Blender 5.3 by tools/samples/blender/island-props.py in the engine repository, with every texture painted by the script: white gelcoat, golden teak planks, woven canvas, brushed metal, dark glazing and weathered stone. The yacht, the fishing boat and the three boulders carry two lower levels of detail with their measured surface error, 0.40 m and 0.80 m. Optimized by the engine's asset tool (meshopt, KTX2), with the textures packed into the file, by tools/samples/blender/island-props.ts.",
+			"dir": "sources/showcase/island-props",
+			"origin": {
+				"kind": "blender",
+				"script": "https://github.com/null3d-engine/null3d/blob/main/tools/samples/blender/island-props.ts"
+			},
+			"files": [
+				{
+					"path": "sources/showcase/island-props/props.glb",
+					"bytes": 331568,
+					"sha256": "a68084cc88bc8aaa732f7262a8e6457e8b730caabfefa18a6b3707c37bf35c6f"
+				}
+			]
+		},
+		{
+			"id": "showcase/island-life-raw",
+			"title": "Island villager and vehicles, raw",
+			"purpose": "The raw Tripo3D models of the island showcase's villager, hatchback and minibus, with the villager's in-place walk clip. The engine's island-life.py finishes them into the people and traffic models; the engine does not name these files and does not load them.",
+			"authors": [
+				{
+					"name": "null3D contributors"
+				}
+			],
+			"license": [
+				"CC-BY-NC-4.0"
+			],
+			"source": "https://developers.tripo3d.ai",
+			"fetched": "2026-11-22",
+			"changes": "Generated by Tripo3D image to model, model v3.1-20260211 and texture v3.5-20260815 at standard quality with a face limit of 8,000: the villager (7,598 triangles, task 33d0b431-b4c7-41d4-9735-c4b1d48b3415, 30 credits), the hatchback (7,256 triangles, task a31f3e57-1f42-4be9-8d9d-f8a6403d9e27, 30 credits), the minibus (7,009 triangles, task 28093e96-b897-4eed-86f3-2ba3a68f5a1a, 30 credits), the woman (task e159d895-a455-452a-a26c-8e4da5abf9a7, 30 credits) and the young man (task 36a8a355-ba3d-4bb9-a3b5-a058d926f9c9, 30 credits). The three people were each rigged with Tripo3D's biped, tasks 0ce39537-7dd3-4704-b79d-c72c1e10fa64, 36bdf43e-ec4b-43f2-8fef-155308fbb774 and 2e866ec2-5e7b-4295-881c-cc3c7631cfaf (25 credits each), and retargeted with an in-place preset:walk clip, with geometry, as tasks c05316a7-e62d-4b5b-ae74-6b9a913eaf71, 3dbee63f-6ab0-4759-addf-6e57b72ff6cb and 64cfc449-1127-4e23-a519-69f79dae6a9b (10 credits each). Only the walk outputs are copied: the base models and rigs were intermediates. The tasks behind the six copied files cost 120 credits, the pipeline cost 255, and the balance is 335. The inputs were the reference shots in the scene-references repository at 18e8e33 and 5ccaf23, under generated/island, made with google/nano-banana-2.1 on fal.ai; their prompts are in prompts/. Files as downloaded: model.glb for each; task.json with the account storage path replaced by a placeholder; preview.webp, Tripo3D's WebP preview; and RAW.md, which records each shot's path, SHA-256, fal request id, task ids and credits.",
+			"dir": "sources/showcase/island-life-raw",
+			"origin": {
+				"kind": "manual",
+				"url": "https://developers.tripo3d.ai"
+			},
+			"generator": "Tripo3D",
+			"files": [
+				{
+					"path": "sources/showcase/island-life-raw/RAW.md",
+					"bytes": 3845,
+					"sha256": "eb63ed48323c6b56a933b648ef208cdc49ac07a6ad2f13882f919abc8c88f853"
+				},
+				{
+					"path": "sources/showcase/island-life-raw/hatchback/model.glb",
+					"bytes": 1109160,
+					"sha256": "2968bff94ffd3820166903fd8ee5fe4af4ab446b7fe46f86bfd66c5e0f937ec4"
+				},
+				{
+					"path": "sources/showcase/island-life-raw/hatchback/preview.webp",
+					"bytes": 139950,
+					"sha256": "ef88a3c61477030d1f155c0558260a38d959e5a02022bfb860a94b209dfe5c76"
+				},
+				{
+					"path": "sources/showcase/island-life-raw/hatchback/task.json",
+					"bytes": 767,
+					"sha256": "30019e24cbe9b96ccb7dbb1591865feb8182f3ca9430930a72e165dc9932c6f9"
+				},
+				{
+					"path": "sources/showcase/island-life-raw/minibus/model.glb",
+					"bytes": 1090100,
+					"sha256": "81df03e556ec33fbea737e9b5464642b1dcfaf8eb41395306e9b70389c5463be"
+				},
+				{
+					"path": "sources/showcase/island-life-raw/minibus/preview.webp",
+					"bytes": 172216,
+					"sha256": "e9cb5c1a2df0b0106f20d1c53b4b491358f090b3927d75383c0f7fc84114aa75"
+				},
+				{
+					"path": "sources/showcase/island-life-raw/minibus/task.json",
+					"bytes": 767,
+					"sha256": "186a0d342215af81c35c8458d6992cc201f5dcfbc488bf68d131f86e0c6ebeeb"
+				},
+				{
+					"path": "sources/showcase/island-life-raw/prompts/hatchback-front.txt",
+					"bytes": 891,
+					"sha256": "7f69ba7e40490f034cb932ae07e587bce5523afd208b844644b2c3e84e6f83fc"
+				},
+				{
+					"path": "sources/showcase/island-life-raw/prompts/minibus-front.txt",
+					"bytes": 923,
+					"sha256": "25afaa4e58f64a6d5f2c67cefc1d56758e8ba2171591a87b1f965b694dc918db"
+				},
+				{
+					"path": "sources/showcase/island-life-raw/prompts/villager-front.txt",
+					"bytes": 1065,
+					"sha256": "558a39d2457f569969cc5c8b82403594a62eccef7a4dfd976c89efd7687a44d5"
+				},
+				{
+					"path": "sources/showcase/island-life-raw/prompts/woman-front.txt",
+					"bytes": 899,
+					"sha256": "5da2ac3c1532e119da66879e051b38095ac9b83301fe87198ec5637ff9b3b427"
+				},
+				{
+					"path": "sources/showcase/island-life-raw/prompts/youngman-front.txt",
+					"bytes": 879,
+					"sha256": "5e906d5eb45f0cc3967aad08cabd7f013f54232e34c5c2fdc6fb384c3ba229f5"
+				},
+				{
+					"path": "sources/showcase/island-life-raw/villager-walk/model.glb",
+					"bytes": 1136064,
+					"sha256": "eab971a7831ce759d49ea1fd2737bb5ac8744a54f11e803b2009788e82ae6591"
+				},
+				{
+					"path": "sources/showcase/island-life-raw/villager-walk/task.json",
+					"bytes": 510,
+					"sha256": "e33aa4d051bd2ab68c8a3c35a7418d88b30210d33a535c351007eb6e670ca6f2"
+				},
+				{
+					"path": "sources/showcase/island-life-raw/villager/model.glb",
+					"bytes": 975812,
+					"sha256": "66477dc89da1baecc482d895d45384c4f190daadc91f7723d59271e9fd4eb7a8"
+				},
+				{
+					"path": "sources/showcase/island-life-raw/villager/preview.webp",
+					"bytes": 74354,
+					"sha256": "d6011778106e90a2f9f5e6565ec013f984c80eef987523a932ba9e91ee41179a"
+				},
+				{
+					"path": "sources/showcase/island-life-raw/villager/task.json",
+					"bytes": 767,
+					"sha256": "ba8d2f5035bf8a5d2c6026419cc66df7b67e30696b7bc3bb59b1b83c4386b251"
+				},
+				{
+					"path": "sources/showcase/island-life-raw/woman/model.glb",
+					"bytes": 1033288,
+					"sha256": "e5e9f97708d0a3cca3b7ba9925f75962378b41dbc9607a9274557fa3d1762b64"
+				},
+				{
+					"path": "sources/showcase/island-life-raw/woman/task.json",
+					"bytes": 510,
+					"sha256": "3061490e84f9dab588e0c60eaf116bb1d1ec36042dae13cf9eb7a63a1e42a11c"
+				},
+				{
+					"path": "sources/showcase/island-life-raw/youngman/model.glb",
+					"bytes": 1046204,
+					"sha256": "e3f13ec5da8954150eadce086c17403341fce6eb3f76b0dab0485f3c8b7ffc56"
+				},
+				{
+					"path": "sources/showcase/island-life-raw/youngman/task.json",
+					"bytes": 510,
+					"sha256": "d55f2666ccb14de9c108d0d23a61b7bc6d5bfd51994ad07398df62cdf87dc064"
+				}
+			]
+		},
+		{
+			"id": "showcase/island-life",
+			"title": "Island villager and vehicles",
+			"purpose": "The people and traffic of the engine's island showcase scene: the villager, the woman in her dress and the young man in his T-shirt and shorts, each with a walk clip and split into body, hair, shirt, trousers and shoes; their standing parts with two lower levels of detail, for the copies that a scene draws far off; a hatchback split into hull, glass, trim and four wheels; and a minibus split into hull, band, glass, trim and four wheels. Each wheel's origin stands on its axle, so a scene turns it by the distance travelled over its radius, and each vehicle part carries two lower levels of detail. The clothing and the vehicle bodies carry a plain, light base colour, so one material takes each copy's own colour; the wheels, skin, hair, glass and trim keep the raw texture.",
+			"authors": [
+				{
+					"name": "null3D contributors"
+				}
+			],
+			"license": [
+				"CC-BY-NC-4.0"
+			],
+			"source": "https://github.com/null3d-engine/null3d/blob/main/tools/samples/blender/island-life.py",
+			"fetched": "2026-11-22",
+			"changes": "Built in Blender 5.3 by tools/samples/blender/island-life.py in the engine repository from the raw Tripo3D models in showcase/island-life-raw, whose SHA-256 the script checks. The script turns each raw model -90 degrees about the vertical axis to the engine's forward axis, sets the villager at 1.75 m, keeps the woman at 1.70 m and the young man at 1.80 m, and sets the hatchback at 3.7 m and the minibus at 4.9 m, standing each on its feet or tyres. It cuts each mesh into the parts a scene can tint, by the colour each face samples from its own texture atlas and its height, and smooths the cut across neighbouring faces. It finds each vehicle's four wheels from the tyre-coloured faces, gives every face inside a wheel's cylinder to that wheel so the tyre, rim and hub turn together, gives the other tyre-coloured faces to the trim, and prints each wheel's radius. The clothing and the vehicle bodies carry a plain, white base colour with no texture, which a scene multiplies by each copy's colour; skin, hair, glass, wheels and trim keep the raw texture. The three walking people keep their skeletons and clips, named for each person because the engine builds one skeleton for a file and refuses two clips of one name. A skinned mesh cannot take levels of detail, so each person's standing parts are the far copy's proxy, with two levels whose surface errors the script measures. Optimized by the engine's asset tool (meshopt, KTX2), with the textures packed into the file, by tools/samples/blender/island-life.ts.",
+			"dir": "sources/showcase/island-life",
+			"origin": {
+				"kind": "blender",
+				"script": "https://github.com/null3d-engine/null3d/blob/main/tools/samples/blender/island-life.ts"
+			},
+			"generator": "Tripo3D",
+			"files": [
+				{
+					"path": "sources/showcase/island-life/life.glb",
+					"bytes": 3749604,
+					"sha256": "391fd6bd3ededd91ccac3ca2e2fd9e0ac218d5a4d741f9572ff843484b8923f9"
+				}
+			]
+		},
+		{
+			"id": "sound/wind",
+			"title": "Wind loop",
+			"purpose": "A 20 s stereo loop of steady wind over open ground, ready to play as it is: its end runs on into its start",
+			"authors": [
+				{
+					"name": "null3D contributors"
+				}
+			],
+			"license": [
+				"CC-BY-NC-4.0"
+			],
+			"source": "https://elevenlabs.io/sound-effects",
+			"fetched": "2026-11-23",
+			"changes": "Generated with ElevenLabs Sound Effects as a seamless loop, and used as generated: an MP3 at 192 kbps and 48 kHz.",
+			"dir": "sources/sound/wind",
+			"origin": {
+				"kind": "manual",
+				"url": "https://elevenlabs.io/sound-effects"
+			},
+			"generator": "ElevenLabs",
+			"files": [
+				{
+					"path": "sources/sound/wind/wind.mp3",
+					"bytes": 481581,
+					"sha256": "745f186ae8078038a29619b47fab7757bdd4b1abfe45fb5d7f67d3a237ad413b"
+				}
+			]
+		},
+		{
+			"id": "sound/leaves",
+			"title": "Leaves loop",
+			"purpose": "An 8 s stereo loop of leaves rustling in the wind, ready to play as it is: its end runs on into its start",
+			"authors": [
+				{
+					"name": "null3D contributors"
+				}
+			],
+			"license": [
+				"CC-BY-NC-4.0"
+			],
+			"source": "https://elevenlabs.io/sound-effects",
+			"fetched": "2026-11-23",
+			"changes": "Generated with ElevenLabs Sound Effects as a seamless loop, and used as generated: an MP3 at 192 kbps and 48 kHz.",
+			"dir": "sources/sound/leaves",
+			"origin": {
+				"kind": "manual",
+				"url": "https://elevenlabs.io/sound-effects"
+			},
+			"generator": "ElevenLabs",
+			"files": [
+				{
+					"path": "sources/sound/leaves/leaves.mp3",
+					"bytes": 193581,
+					"sha256": "ee121634392f22e0a5939cfbcd447ef1c1fa1d7e516980a866ef51c2134300c4"
+				}
+			]
+		},
+		{
+			"id": "sound/sea",
+			"title": "Sea loop",
+			"purpose": "A 25 s stereo loop of the open sea, ready to play as it is: its end runs on into its start",
+			"authors": [
+				{
+					"name": "null3D contributors"
+				}
+			],
+			"license": [
+				"CC-BY-NC-4.0"
+			],
+			"source": "https://elevenlabs.io/sound-effects",
+			"fetched": "2026-11-23",
+			"changes": "Generated with ElevenLabs Sound Effects as a seamless loop, and used as generated: an MP3 at 192 kbps and 48 kHz.",
+			"dir": "sources/sound/sea",
+			"origin": {
+				"kind": "manual",
+				"url": "https://elevenlabs.io/sound-effects"
+			},
+			"generator": "ElevenLabs",
+			"files": [
+				{
+					"path": "sources/sound/sea/sea.mp3",
+					"bytes": 601389,
+					"sha256": "a0ced913e82b5bc0efc49b52f968ccf7c6cf0a83f586ae0985553ecf17640853"
+				}
+			]
+		},
+		{
+			"id": "sound/surf",
+			"title": "Surf loop",
+			"purpose": "A 25 s stereo loop of waves breaking on a beach, ready to play as it is: its end runs on into its start",
+			"authors": [
+				{
+					"name": "null3D contributors"
+				}
+			],
+			"license": [
+				"CC-BY-NC-4.0"
+			],
+			"source": "https://elevenlabs.io/sound-effects",
+			"fetched": "2026-11-23",
+			"changes": "Generated with ElevenLabs Sound Effects as a seamless loop, and used as generated: an MP3 at 192 kbps and 48 kHz.",
+			"dir": "sources/sound/surf",
+			"origin": {
+				"kind": "manual",
+				"url": "https://elevenlabs.io/sound-effects"
+			},
+			"generator": "ElevenLabs",
+			"files": [
+				{
+					"path": "sources/sound/surf/surf.mp3",
+					"bytes": 601389,
+					"sha256": "274daf775bcb0495c7b8160a1a3affb9a881b85df74e7e639881441a2bb9c463"
+				}
+			]
+		},
+		{
+			"id": "sound/car",
+			"title": "Car engine loop",
+			"purpose": "A 5 s stereo loop of a car engine running at a steady speed, ready to play as it is: its end runs on into its start",
+			"authors": [
+				{
+					"name": "null3D contributors"
+				}
+			],
+			"license": [
+				"CC-BY-NC-4.0"
+			],
+			"source": "https://elevenlabs.io/sound-effects",
+			"fetched": "2026-11-23",
+			"changes": "Generated with ElevenLabs Sound Effects as a seamless loop, and used as generated: an MP3 at 192 kbps and 48 kHz.",
+			"dir": "sources/sound/car",
+			"origin": {
+				"kind": "manual",
+				"url": "https://elevenlabs.io/sound-effects"
+			},
+			"generator": "ElevenLabs",
+			"files": [
+				{
+					"path": "sources/sound/car/car.mp3",
+					"bytes": 121581,
+					"sha256": "2cfc12721581634fcf4fb94a7b36e1f50d8cdd72fb68fb51e0ba7de16c1c553d"
+				}
+			]
+		},
+		{
+			"id": "sound/bus",
+			"title": "Bus engine loop",
+			"purpose": "A 5 s stereo loop of a bus engine running at a steady speed, ready to play as it is: its end runs on into its start",
+			"authors": [
+				{
+					"name": "null3D contributors"
+				}
+			],
+			"license": [
+				"CC-BY-NC-4.0"
+			],
+			"source": "https://elevenlabs.io/sound-effects",
+			"fetched": "2026-11-23",
+			"changes": "Generated with ElevenLabs Sound Effects as a seamless loop, and used as generated: an MP3 at 192 kbps and 48 kHz.",
+			"dir": "sources/sound/bus",
+			"origin": {
+				"kind": "manual",
+				"url": "https://elevenlabs.io/sound-effects"
+			},
+			"generator": "ElevenLabs",
+			"files": [
+				{
+					"path": "sources/sound/bus/bus.mp3",
+					"bytes": 121581,
+					"sha256": "dfca348a84bad2205ddb7ee7867a9f7e578ebd7030b4e380bd685fe39485cf07"
+				}
+			]
+		},
+		{
+			"id": "sound/stream",
+			"title": "Stream loop",
+			"purpose": "A 25 s stereo loop of a small stream running over stones, ready to play as it is: its end runs on into its start",
+			"authors": [
+				{
+					"name": "null3D contributors"
+				}
+			],
+			"license": [
+				"CC-BY-NC-4.0"
+			],
+			"source": "https://elevenlabs.io/sound-effects",
+			"fetched": "2026-11-23",
+			"changes": "Generated with ElevenLabs Sound Effects as a seamless loop, and used as generated: an MP3 at 192 kbps and 48 kHz.",
+			"dir": "sources/sound/stream",
+			"origin": {
+				"kind": "manual",
+				"url": "https://elevenlabs.io/sound-effects"
+			},
+			"generator": "ElevenLabs",
+			"files": [
+				{
+					"path": "sources/sound/stream/stream.mp3",
+					"bytes": 601389,
+					"sha256": "f266d55c317fb82a192d0ed4f04421d57c3b3a720af5c8492a4e118e5d46f01d"
+				}
+			]
+		},
+		{
+			"id": "sound/waterfall",
+			"title": "Waterfall loop",
+			"purpose": "A 25 s stereo loop of a waterfall's steady roar, ready to play as it is: its end runs on into its start",
+			"authors": [
+				{
+					"name": "null3D contributors"
+				}
+			],
+			"license": [
+				"CC-BY-NC-4.0"
+			],
+			"source": "https://elevenlabs.io/sound-effects",
+			"fetched": "2026-11-23",
+			"changes": "Generated with ElevenLabs Sound Effects as a seamless loop, and used as generated: an MP3 at 192 kbps and 48 kHz.",
+			"dir": "sources/sound/waterfall",
+			"origin": {
+				"kind": "manual",
+				"url": "https://elevenlabs.io/sound-effects"
+			},
+			"generator": "ElevenLabs",
+			"files": [
+				{
+					"path": "sources/sound/waterfall/waterfall.mp3",
+					"bytes": 601389,
+					"sha256": "b55ae8a6e41e5544e005e95a78a16adaa85aa69ff2fcfb96c60275bea2da1173"
+				}
+			]
+		},
+		{
+			"id": "sound/rain",
+			"title": "Rain loop",
+			"purpose": "A 20 s stereo loop of steady rain, ready to play as it is: its end runs on into its start",
+			"authors": [
+				{
+					"name": "null3D contributors"
+				}
+			],
+			"license": [
+				"CC-BY-NC-4.0"
+			],
+			"source": "https://elevenlabs.io/sound-effects",
+			"fetched": "2026-11-23",
+			"changes": "Generated with ElevenLabs Sound Effects as a seamless loop, and used as generated: an MP3 at 192 kbps and 48 kHz.",
+			"dir": "sources/sound/rain",
+			"origin": {
+				"kind": "manual",
+				"url": "https://elevenlabs.io/sound-effects"
+			},
+			"generator": "ElevenLabs",
+			"files": [
+				{
+					"path": "sources/sound/rain/rain.mp3",
+					"bytes": 481581,
+					"sha256": "936e3acc23a98381355072616a0a5dc3479c0981782c2f3e529b9458d6ef66cf"
+				}
+			]
+		},
+		{
+			"id": "sound/thunder-near",
+			"title": "Near thunder",
+			"purpose": "A 5 s stereo one-shot of a close clap of thunder, played once and not looped",
+			"authors": [
+				{
+					"name": "null3D contributors"
+				}
+			],
+			"license": [
+				"CC-BY-NC-4.0"
+			],
+			"source": "https://elevenlabs.io/sound-effects",
+			"fetched": "2026-11-23",
+			"changes": "Generated with ElevenLabs Sound Effects as a one-shot, and used as generated: an MP3 at 192 kbps and 48 kHz.",
+			"dir": "sources/sound/thunder-near",
+			"origin": {
+				"kind": "manual",
+				"url": "https://elevenlabs.io/sound-effects"
+			},
+			"generator": "ElevenLabs",
+			"files": [
+				{
+					"path": "sources/sound/thunder-near/thunder-near.mp3",
+					"bytes": 121581,
+					"sha256": "8f407f9e9c3006562df642906fc2b4a150d36822c0c3832b2bd73c19e8e64409"
+				}
+			]
+		},
+		{
+			"id": "sound/thunder-far",
+			"title": "Far thunder",
+			"purpose": "A 15 s stereo one-shot of distant thunder rolling, played once and not looped",
+			"authors": [
+				{
+					"name": "null3D contributors"
+				}
+			],
+			"license": [
+				"CC-BY-NC-4.0"
+			],
+			"source": "https://elevenlabs.io/sound-effects",
+			"fetched": "2026-11-23",
+			"changes": "Generated with ElevenLabs Sound Effects as a one-shot, and used as generated: an MP3 at 192 kbps and 48 kHz.",
+			"dir": "sources/sound/thunder-far",
+			"origin": {
+				"kind": "manual",
+				"url": "https://elevenlabs.io/sound-effects"
+			},
+			"generator": "ElevenLabs",
+			"files": [
+				{
+					"path": "sources/sound/thunder-far/thunder-far.mp3",
+					"bytes": 361197,
+					"sha256": "3a5ec90b7afadeea0cdd5d9ccecaf31e0fe563c1143af0d0069b951a2a8ddfcb"
+				}
+			]
+		},
+		{
+			"id": "sound/raw/hover",
+			"title": "Hover engine",
+			"purpose": "The recording that the hover loop is cut from: a designed anti-gravity hover engine that starts, hums and stops, made from recordings of a spinning hard drive, a vacuum cleaner and a fridge",
+			"authors": [
+				{
+					"name": "peridactyloptrix"
+				}
+			],
+			"license": [
+				"CC0-1.0"
+			],
+			"source": "https://freesound.org/people/peridactyloptrix/sounds/213384/",
+			"fetched": "2026-11-23",
+			"changes": "None to the sound. The file is the high-quality Ogg Vorbis preview, about 190 kbps, that Freesound serves without an account: a lossy copy of the original WAV upload, saved as peridactyloptrix-213384.ogg.",
+			"dir": "sources/sound/raw/hover",
+			"origin": {
+				"kind": "files",
+				"files": {
+					"https://cdn.freesound.org/previews/213/213384_2737063-hq.ogg": "peridactyloptrix-213384.ogg"
+				}
+			},
+			"files": [
+				{
+					"path": "sources/sound/raw/hover/peridactyloptrix-213384.ogg",
+					"bytes": 749125,
+					"sha256": "3801007d36c0617486c26b8ab7f9b76d83a98af30983731ff4a55ddc924e711b"
+				}
+			]
+		},
+		{
+			"id": "sound/raw/hover-pass",
+			"title": "Hover engine 2",
+			"purpose": "The recording that the hover-pass loop is cut from: a second take of the same designed hover engine, made from recordings of a spinning hard drive, a vacuum cleaner and a fridge",
+			"authors": [
+				{
+					"name": "peridactyloptrix"
+				}
+			],
+			"license": [
+				"CC0-1.0"
+			],
+			"source": "https://freesound.org/people/peridactyloptrix/sounds/213528/",
+			"fetched": "2026-11-23",
+			"changes": "None to the sound. The file is the high-quality Ogg Vorbis preview, about 190 kbps, that Freesound serves without an account: a lossy copy of the original WAV upload, saved as peridactyloptrix-213528.ogg.",
+			"dir": "sources/sound/raw/hover-pass",
+			"origin": {
+				"kind": "files",
+				"files": {
+					"https://cdn.freesound.org/previews/213/213528_2737063-hq.ogg": "peridactyloptrix-213528.ogg"
+				}
+			},
+			"files": [
+				{
+					"path": "sources/sound/raw/hover-pass/peridactyloptrix-213528.ogg",
+					"bytes": 709657,
+					"sha256": "71387117dc4a31d754d85a687a8bed51872c8422181d5bc79df094213ab261ab"
+				}
+			]
+		},
+		{
+			"id": "sound/loops/hover",
+			"title": "Hover engine loop",
+			"purpose": "A short seamless mono loop of a designed hover engine's steady hum, for a hover car whose playback rate follows its speed",
+			"authors": [
+				{
+					"name": "peridactyloptrix"
+				}
+			],
+			"license": [
+				"CC0-1.0"
+			],
+			"source": "https://freesound.org/people/peridactyloptrix/sounds/213384/",
+			"fetched": "2026-11-23",
+			"changes": "Cut from sound/raw/hover by tools/samples/sound/loops.ts in the engine repository: 6 s from 0:20; mixed to mono; a 30 Hz high-pass; resampled to 48 kHz; its tail crossfaded into its head over 0.4 s with equal power, so it loops without a seam; brought to -20 LUFS integrated; encoded as VBR MP3 by libmp3lame at quality 4.",
+			"dir": "sources/sound/loops/hover",
+			"origin": {
+				"kind": "converted",
+				"script": "https://github.com/null3d-engine/null3d/blob/main/tools/samples/sound/loops.ts",
+				"from": "sound/raw/hover"
+			},
+			"files": [
+				{
+					"path": "sources/sound/loops/hover/hover.mp3",
+					"bytes": 49316,
+					"sha256": "d24557bcc0a0be7a4159a3fd0b353992f0d0b62b59152a5c80614e5fa7fa0e4d"
+				}
+			]
+		},
+		{
+			"id": "sound/loops/hover-pass",
+			"title": "Hover pass loop",
+			"purpose": "A short seamless mono loop of a lighter hover engine hum, the whine and air without the low hum, for hover cars that pass at speed",
+			"authors": [
+				{
+					"name": "peridactyloptrix"
+				}
+			],
+			"license": [
+				"CC0-1.0"
+			],
+			"source": "https://freesound.org/people/peridactyloptrix/sounds/213528/",
+			"fetched": "2026-11-23",
+			"changes": "Cut from sound/raw/hover-pass by tools/samples/sound/loops.ts in the engine repository: 3 s from 0:25; mixed to mono; a steep 300 Hz high-pass; resampled to 48 kHz; its tail crossfaded into its head over 0.3 s with equal power, so it loops without a seam; brought to -20 LUFS integrated; encoded as VBR MP3 by libmp3lame at quality 4.",
+			"dir": "sources/sound/loops/hover-pass",
+			"origin": {
+				"kind": "converted",
+				"script": "https://github.com/null3d-engine/null3d/blob/main/tools/samples/sound/loops.ts",
+				"from": "sound/raw/hover-pass"
+			},
+			"files": [
+				{
+					"path": "sources/sound/loops/hover-pass/hover-pass.mp3",
+					"bytes": 27884,
+					"sha256": "8501dbe1bea145200a647f8fe34df54925fcc3512e4342c9d0f4f33c32e1786a"
 				}
 			]
 		}

@@ -45,6 +45,14 @@ const PICK_MS = 600;
 /** How long a live page may draw before its recording ends, in ms, so its scene and camera move. */
 const LIVE_MS = 5000;
 
+/**
+ * The address a demo's recorded pages take, for a scene whose state changes what it draws and
+ * whose own controls cannot reach that state. The island ships up to 18 skinned walkers, so its
+ * recording asks for the highest count: a page that raises the count then asks for no word that
+ * the recording missed.
+ */
+const RECORD_QUERY: Readonly<Record<string, string>> = { island: '&walkers=18' };
+
 interface Target {
 	/** The page's path from `--base`, such as `/?demo=creek`. */
 	path: string;
@@ -77,6 +85,9 @@ function options(): {
 	};
 	const base = value('--base') ?? 'https://localhost:5173';
 	const out = value('--out') ?? 'examples/shader-permutations.txt';
+	// The page that runs a demo: the examples preview serves it at the root, and the repository's
+	// dev server at its own path.
+	const pageRoot = value('--page-root') ?? '/';
 	const workers = Math.max(1, Math.min(16, Number(value('--workers') ?? 4)));
 	const pages: Target[] = [];
 	for (let at = 0; at < args.length; at++)
@@ -91,13 +102,16 @@ function options(): {
 			for (const gpu of ['webgpu', 'webgl2'] as const) {
 				for (const preset of PRESETS)
 					pages.push({
-						path: `/?demo=${demo.name}&hold=${demo.hold}&gpu=${gpu}&preset=${preset}`,
+						path: `${pageRoot}?demo=${demo.name}&hold=${demo.hold}&gpu=${gpu}&preset=${preset}${RECORD_QUERY[demo.name] ?? ''}`,
 						live: false,
 					});
 				// A live page advances the scene, and a showcase scene also offers its controls, so the
 				// run sweeps its HUD and moves through the scene, which reveals what a held frame may
 				// not show.
-				pages.push({ path: `/?demo=${demo.name}&gpu=${gpu}`, live: true });
+				pages.push({
+					path: `${pageRoot}?demo=${demo.name}&gpu=${gpu}${RECORD_QUERY[demo.name] ?? ''}`,
+					live: true,
+				});
 			}
 		}
 	const extra = (value('--extra') ?? '')

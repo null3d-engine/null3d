@@ -300,7 +300,7 @@ pub mod post_value {
 /// in every frame takes its numbers this way, and only whole numbers as arguments.
 pub mod call_value {
     /// The numbers in the block: as many as the setter with the most numbers takes.
-    pub const COUNT: u32 = 10;
+    pub const COUNT: u32 = 11;
 }
 
 /// The places of the environment's values in the block that `environmentValues` gives: 32-bit

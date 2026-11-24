@@ -155,6 +155,14 @@ An ambient light gives every surface the same light. A hemisphere light blends f
 
 Both lights are diffuse only: they light a surface's color and give no highlights. An environment's light adds to theirs. The environment's `intensity` and a material's `envIntensity` scale only the environment's own light. The occlusion map and ambient occlusion darken the light of all of them.
 
+### A scene that shows a time of day
+
+A light that stands for the sky must follow the hour. An ambient or hemisphere light with a fixed color and intensity is a day light. Under a night sky it lights sand, wall and road as brightly as at noon. The scene then reads as a dark sky over a lit town.
+
+Scale the light with the hour, shifting its colors cool at night. The island showcase holds its hemisphere light at 0.8 with warm sky and ground colors by day. By night it takes it to a cool 0.06, driven by the share of a town's lamps that are lit. The moon's directional light and the lamps then carry the night, and a faint ambient keeps the dark from going black.
+
+Exposure is one value for the whole scene. An exposure high enough for a bright day lifts a moonlit scene by the same factor, so choose it at the hour the scene shows longest. A demo stage offers the share of a town's lamps as `stage.lamps`, from 0 by day to 1 at night, which drives such a light.
+
 ## Lights far from the origin
 
 The engine keeps each object's position relative to a grid cell, a cube of space about 1 km wide. Scenes far from the origin then stay precise. Lights take part too. Each frame the engine finds every point and spot light's position relative to the camera, with the offset between their cells in 64-bit floats. A lamp 1,000 km from the origin is then as precise, next to the camera, as a lamp at the origin.
@@ -167,7 +175,7 @@ A curve sets how the fog thickens. The default, exponential fog, follows light t
 
 Real mist lies low and thins with height. With a `heightFalloff`, the fog's density falls by a factor of e every 1 / `heightFalloff` units up. The engine sums that density along each line of sight with an exact formula, as Filament does. A view down into the mist then sees thick fog, and a view across its top sees thin fog. With a `sunGlow`, the fog toward the main directional light takes some of that light's color, as haze around a low sun does. The glow follows the light and its intensity. Shadows do not block it.
 
-The engine mixes the fog into each pixel's color as it shades the pixel, after lighting and before the tone mapping. Fog therefore needs no pass and no texture. It costs about 15 arithmetic operations and one or two exponentials per pixel, and nothing in a scene without fog. The mix happens in linear color. The background takes no fog, so scenes with fog usually give the background the fog's color. A material created with `fog: false` keeps its color at every distance.
+The engine mixes the fog into each pixel's color as it shades the pixel, after lighting and before the tone mapping. Fog therefore needs no pass and no texture. It costs about 15 arithmetic operations and one or two exponentials per pixel, and nothing in a scene without fog. The mix happens in linear color. The sky and the background can take the same fog as a surface at the camera's far plane. They do so at the share that the fog's `background` option sets, above 0; the default is 0. The haze over the land can then continue over the sky it meets. A material created with `fog: false` keeps its color at every distance.
 
 ### Volumetric fog
 
@@ -406,7 +414,7 @@ export default defineSketch(async ({ scene, assets, time }) => {
 
 ### Where the land ends
 
-The background takes no fog. So where an outdoor scene's land ends, the camera sees the plain background below the horizon, with no haze to blend it in. Fog cannot hide that edge. Hide it with geometry, and keep the camera where the geometry hides it:
+With the fog's `background` share at its default of 0, the background takes no fog. Where an outdoor scene's land ends, the camera then sees the plain background below the horizon, with no haze to blend it in. Fog cannot hide that edge. Set `background: 1` to give the sky and the background the fog of a surface at the camera's far plane. The fog then blends the edge. Where that is not wanted, hide the edge with geometry, and keep the camera where the geometry hides it:
 
 - Put a ring of hills or mountains around the land. Make its lowest crest stand above the highest point that the camera can reach. Then every line of sight below the horizon meets ground.
 - Limit the camera. With [orbit controls](../api/controls.md), set `maxDistance` and `maxPolarAngle`, and keep `controls.target` inside the land.

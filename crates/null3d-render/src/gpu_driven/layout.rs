@@ -39,8 +39,8 @@ use crate::data_texture::{self, DataTexture, TextureRows, write_row_values};
 use crate::debug_view::DebugView;
 use crate::frame::{
     FrameInput, HIDDEN, KeyCounts, NO_MATERIAL, REBUILD_BYTES_PER_SOURCE, RecordError,
-    SceneSettings, UploadArena, address, bucket_of, collect_bucket_keys, drawn_rows,
-    floats_as_bytes, grown_size, joined_rows, words_as_bytes,
+    SceneSettings, UploadArena, bucket_of, collect_bucket_keys, drawn_rows, floats_as_bytes,
+    grown_size, joined_rows, words_as_bytes,
 };
 use crate::levels::{
     BucketKey, KeyLinks, expand_level_keys, is_fade_key, key_level, level_key, links_of,
@@ -2607,12 +2607,15 @@ impl Layout {
         Ok(())
     }
 
-    /// Uploads changed world matrices straight from the core's world buffers of this parity, or
-    /// every matrix after the layout changed. While the motion pass draws, `changed` takes the
-    /// byte ranges of the matrix buffer that the frame writes.
+    /// Uploads changed world matrices from a copy of the core's world buffers of this parity in the
+    /// frame's upload arena, or every matrix after the layout changed. The copy islands the bytes
+    /// from the sketch's next update: the page replays the list after the sketch may have moved the
+    /// live world arrays. While the motion pass draws, `changed` takes the byte ranges of the
+    /// matrix buffer that the frame writes.
     pub(super) fn upload_matrices(
         &self,
         list: &mut DrawList,
+        arena: &mut UploadArena,
         input: &FrameInput<'_>,
         parity: usize,
         everything: bool,
@@ -2624,19 +2627,14 @@ impl Layout {
             changed.add_everything();
         }
         let mut upload = |base: u32, matrices: &[f32], start: u32, count: u32| {
-            let floats =
-                &matrices[start as usize * MATRIX_FLOATS..(start + count) as usize * MATRIX_FLOATS];
-            if let Some(changed) = changed.as_deref_mut() {
-                changed.add((base + start) * MATRIX_BYTES, count * MATRIX_BYTES);
-            }
-            list.push(
-                Op::WriteBuffer,
-                &[
-                    ids::MATRICES,
-                    (base + start) * MATRIX_BYTES,
-                    address(floats_as_bytes(floats)),
-                    count * MATRIX_BYTES,
-                ],
+            Self::write_matrix_rows(
+                list,
+                arena,
+                base,
+                matrices,
+                start,
+                count,
+                changed.as_deref_mut(),
             )
         };
         if everything || input.snapshot.overflowed() {
@@ -2689,6 +2687,31 @@ impl Layout {
         }
         Ok(())
     }
+    /// Records the write of rows `start..start + count` of `matrices` at `base`, copying them into
+    /// the frame's upload arena first: the page replays the list after the sketch may have moved
+    /// the live world array, so the recorded address must not point at it.
+    #[allow(clippy::too_many_arguments)]
+    fn write_matrix_rows(
+        list: &mut DrawList,
+        arena: &mut UploadArena,
+        base: u32,
+        matrices: &[f32],
+        start: u32,
+        count: u32,
+        changed: Option<&mut ChangedRanges>,
+    ) -> Result<(), RecordError> {
+        let floats =
+            &matrices[start as usize * MATRIX_FLOATS..(start + count) as usize * MATRIX_FLOATS];
+        if let Some(changed) = changed {
+            changed.add((base + start) * MATRIX_BYTES, count * MATRIX_BYTES);
+        }
+        let (at, bytes) = arena.push(floats_as_bytes(floats))?;
+        list.push(
+            Op::WriteBuffer,
+            &[ids::MATRICES, (base + start) * MATRIX_BYTES, at, bytes],
+        )?;
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -2701,6 +2724,39 @@ mod tests {
     use crate::geometry::box_geometry;
     use crate::gpu_driven::{RendererConfig, scene_settings};
     use crate::materials::Shading;
+
+    /// A matrix write copies its rows into the upload arena: the page reads the bytes the sketch
+    /// had when the frame recorded them, not the live world rows that the sketch rewrites.
+    #[test]
+    fn a_matrix_write_reads_the_arena_not_the_live_rows() {
+        let mut list = DrawList::with_capacity(64);
+        let mut arena = UploadArena::default();
+        arena.begin_frame().unwrap();
+        let mut matrices = [0.0f32; MATRIX_FLOATS];
+        matrices[0] = 1.0;
+        matrices[3] = 2.0;
+        Layout::write_matrix_rows(&mut list, &mut arena, 3, &matrices, 0, 1, None).unwrap();
+        let base = arena.bytes().as_ptr() as usize;
+        let op = null3d_gpu::drawlist::decode(list.words())
+            .map(|command| command.unwrap())
+            .find(|command| command.op == Op::WriteBuffer && command.operands[0] == ids::MATRICES)
+            .map(|command| command.operands.to_vec())
+            .expect("the frame writes the matrices");
+        assert_eq!(op[1], 3 * MATRIX_BYTES);
+        let start = (op[2] as u32).wrapping_sub(base as u32) as usize;
+        assert!(
+            start + op[3] as usize <= arena.bytes().len(),
+            "the recorded address lies in the upload arena"
+        );
+        let copied = arena.bytes()[start..start + op[3] as usize].to_vec();
+        // The sketch moves the live rows after the frame recorded them.
+        matrices[0] = 99.0;
+        matrices[3] = 99.0;
+        let copied = |at: usize| f32::from_le_bytes(copied[at..at + 4].try_into().unwrap());
+        assert_eq!(copied(0), 1.0, "the arena holds the rows as recorded");
+        assert_eq!(copied(12), 2.0);
+        assert_eq!(matrices[0], 99.0, "the live rows moved");
+    }
 
     /// The texels of the ranges texture that a frame uploads, as the culling shader reads them.
     fn uploaded_ranges(layout: &mut Layout) -> Vec<[f32; 4]> {

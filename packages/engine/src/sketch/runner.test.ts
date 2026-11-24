@@ -437,17 +437,30 @@ describe('SketchRunner', () => {
 		expect(light.asked).toEqual([2]);
 	});
 
+	it('asks for job workers on a deadline when a slow page draws too few frames to fill the window', async () => {
+		const busy = { most: 6, handedMs: 0.25, asked: [] as number[], timing: [] as boolean[] };
+		const { runner } = await start(() => ({}), undefined, { jobs: busy });
+		// A frame a second: the runner caps a step at a quarter second, so the first frame and eight
+		// slow ones carry two seconds of its own time, too few for the 30-frame window.
+		for (let frame = 0; frame < 8; frame++) runner.step(frame * 1000);
+		expect(busy.asked).toEqual([]);
+		runner.step(8 * 1000);
+		expect(busy.asked).toEqual([2]);
+	});
+
 	it('times its parallel loops again after the same sketch time at a slow frame rate', async () => {
 		// About 9 frames a second, as CI's software GPU draws some pages. The first window has too
-		// little work, as a page's first frames before its heavy work starts.
+		// little work, as a page's first frames before its heavy work starts, so it ends at the two
+		// seconds of the runner's time, about its twentieth frame, and the loops pause for 4.5 s of
+		// that time: the pause ends at about 6.6 s, its sixty-first frame.
 		const slow = { most: 2, handedMs: 0.1, asked: [] as number[], timing: [] as boolean[] };
 		const { runner } = await start(() => ({}), undefined, { jobs: slow });
-		for (let frame = 0; frame < 70; frame++) runner.step(frame * 111);
+		for (let frame = 0; frame < 60; frame++) runner.step(frame * 111);
 		expect(slow.timing).toEqual([false]);
-		runner.step(70 * 111);
+		runner.step(60 * 111);
 		expect(slow.timing).toEqual([false, true]);
 		slow.handedMs = 5;
-		for (let frame = 71; frame < 101; frame++) runner.step(frame * 111);
+		for (let frame = 61; frame < 101; frame++) runner.step(frame * 111);
 		expect(slow.asked).toEqual([2]);
 	});
 

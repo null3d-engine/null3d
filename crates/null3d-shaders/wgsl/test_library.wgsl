@@ -101,7 +101,7 @@ fn transform(r: array<vec4f, 8>) -> null3d::vertex::Transform {
 /// A scene fog from the inputs: the color and density in the first texel, the curve in the second,
 /// the shape in the third, and the sun glow and its exponent in the fourth.
 fn test_fog(u: array<vec4u, 8>, r: array<vec4f, 8>) -> null3d::fog::Fog {
-    return null3d::fog::Fog(r[0], r[2], r[3].x, r[3].y, 0.0, u[1].x);
+    return null3d::fog::Fog(r[0], r[2], r[3].x, r[3].y, r[3].z, u[1].x);
 }
 #endif
 
@@ -380,6 +380,20 @@ fn run(function: u32, u: array<vec4u, 8>, f: array<vec4f, 8>) -> Results {
         }
         case 121u: {
             return triple(null3d::depth::toward_camera(f[0].xyz, mat4x4f(f[1], f[2], f[3], f[4])));
+        }
+#endif
+#ifdef FOG
+        case 122u: {
+            return scalar(null3d::fog::background_share(test_fog(u, f), f[4].xyz, f[5].x));
+        }
+        case 123u: {
+            return scalar(null3d::fog::background_clear(test_fog(u, f), f[4].xyz, f[5].x));
+        }
+        case 124u: {
+            // The surface's color takes the far texel's spare values: texel 1 holds the fog's curve
+            // as whole numbers, whose bits would otherwise be the color's.
+            return triple(null3d::fog::fogged_background(
+                test_fog(u, f), f[5].yzw, f[4].xyz, f[5].x, f[6].xyz, f[7].xyz));
         }
 #endif
         // Any other number gives back its first input texel. The page's probe draws such a row,

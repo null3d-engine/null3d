@@ -13,9 +13,11 @@ import {
 	hypot,
 	inland,
 	onOutcrop,
+	SEA_LEVEL,
 	sandWidth,
 	sandyBed,
 	VILLAGES,
+	WET_SAND,
 } from './island';
 import { canopyAt, groundHeight, slopeAt } from './plan';
 
@@ -74,7 +76,7 @@ function splat(x: number, z: number, out: number[]): void {
 	const under_trees = canopyAt(x, z);
 	const mottle = smoothstep(noise.fbm2(x * 0.09 + 3, z * 0.09, 3), -0.25, 0.25);
 	const kept = golfShare(x, z);
-	const wet = beach * (1 - smoothstep(y, 0, 0.6)) * (1 - under) * 0.55;
+	const wet = beach * (1 - smoothstep(y, SEA_LEVEL, SEA_LEVEL + WET_SAND)) * (1 - under) * 0.55;
 	const dry = Math.max(0, 1 - under_trees * 1.2) * (0.55 + 0.45 * mottle) * (1 - kept);
 	const earth = Math.max(dry, wet);
 	out[3] = sand * (1 - wet);
@@ -139,16 +141,18 @@ export function createLand(ctx: SketchContext): Terrain {
 		height: groundHeight,
 		resolution: detail.samples,
 		layers: [
-			// The dark floor under trees.
+			// The dark floor under trees: a mossy grey-olive, dark enough to sink into the crowns
+			// from above.
 			{
-				map: groundMap(ctx, size, [112, 98, 60], [72, 62, 38], 8),
+				map: groundMap(ctx, size, [76, 76, 52], [46, 47, 34], 8),
 				tile: 4,
 				heightFrom: 'alpha',
 				contrast: 0.25,
 			},
-			// Dry grass and warm earth in the open.
+			// Sun-dried grass and earth in the open: an olive straw, with the red held close to the
+			// green so the hills read green-brown rather than rust from above.
 			{
-				map: groundMap(ctx, size, [116, 106, 66], [76, 74, 44], 12),
+				map: groundMap(ctx, size, [96, 96, 70], [60, 62, 46], 12),
 				tile: 5,
 				heightFrom: 'alpha',
 				contrast: 0.25,

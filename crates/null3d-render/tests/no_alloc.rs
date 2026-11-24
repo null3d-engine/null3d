@@ -1524,7 +1524,7 @@ fn volumetric_fog_allocations<B: FrameBuilder>(mut world: World<B>) -> u64 {
     settings.set_fog(Fog::from_code(
         curve::EXPONENTIAL,
         [0.5, 0.5, 0.5],
-        [0.02, 0.0, 60.0, 0.0, 0.0, 0.0, 0.0],
+        [0.02, 0.0, 60.0, 0.0, 0.0, 0.0, 0.0, 0.0],
     ));
     feature_allocations(
         &mut world,
@@ -1535,7 +1535,7 @@ fn volumetric_fog_allocations<B: FrameBuilder>(mut world: World<B>) -> u64 {
             world.renderer.settings_mut().set_fog(Fog::from_code(
                 curve::EXPONENTIAL,
                 [0.5, 0.5, 0.5],
-                [density, 0.0, 60.0, 0.0, 0.0, 0.0, 0.0],
+                [density, 0.0, 60.0, 0.0, 0.0, 0.0, 0.0, 0.0],
             ));
         },
     )

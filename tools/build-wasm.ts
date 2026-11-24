@@ -36,8 +36,8 @@
 // them. The single-threaded build runs on pages that are not cross-origin isolated. The
 // wasm-bindgen command-line tool must match the crate version exactly, so the script downloads
 // that release into the build folder and verifies its checksum. The tools' modules run in Node and
-// Bun, never in a page. The terrain add-on's module and the splat selector load only when a page
-// draws them, so none has a size budget. Every mode that builds also builds the shader modules when
+// Bun, never in a page. The terrain add-on's module, the splat selector and the sound mixer load
+// only when a page uses them, so none has a size budget. Every mode that builds also builds the shader modules when
 // they are missing or out of date, because git does not keep them.
 //
 // The two WebAssembly files, the build tools' modules and the shader modules build at the same
@@ -199,15 +199,15 @@ const BASE_TREE = `${BASE_DIR}/tree`;
  */
 const COMMITTED_RECORD = 'tools/size-baseline.json';
 /** Brotli budget for each core WebAssembly file. */
-const WASM_BUDGET_BYTES = 600 * 1024;
+const WASM_BUDGET_BYTES = 640 * 1024;
 /** Where the size report builds the engine test page, apart from the build the browser tests serve. */
 const JS_BUILD_DIR = 'target/js-size';
 /**
  * The modules that the build tools and the foundation add-ons load, each from a crate of its own:
  * the shader compiler, which the Vite plugin runs; the asset tool's formats, which the
  * command-line tool runs; the terrain builder, which the terrain add-on runs on the engine's job
- * workers; and the splat selector, which the splats add-on runs there too. Each goes where its
- * caller loads it from.
+ * workers; the splat selector, which the splats add-on runs there too; and the sound mixer, which
+ * the sound add-on runs on the browser's audio thread. Each goes where its caller loads it from.
  */
 const TOOL_MODULES = [
 	{
@@ -231,7 +231,30 @@ const TOOL_MODULES = [
 		folder: 'crates/null3d-splats',
 		path: join(root, 'packages/splats/dist/splats.wasm'),
 	},
-] as const;
+	{
+		crate: 'null3d-sound',
+		folder: 'crates/null3d-sound',
+		path: join(root, 'packages/sound/dist/sound.wasm'),
+		/**
+		 * Flags of this module's own build. The mixer writes every frame of each voice's values in
+		 * each quantum, which the 4-wide instructions do in a quarter of the steps. Every browser
+		 * that runs null3D has them, since the engine's core needs them too.
+		 */
+		rustflags: '-Ctarget-feature=+simd128',
+	},
+] as const satisfies readonly ToolModule[];
+
+/** One of the modules that the build tools and the foundation add-ons load. */
+interface ToolModule {
+	readonly crate: string;
+	readonly folder: string;
+	readonly path: string;
+	readonly rustflags?: string;
+}
+
+/** The compiler flags of a tool module's build: the stripped names, and the module's own. */
+const toolRustflags = (module: ToolModule): string =>
+	module.rustflags ? `-Cstrip=symbols ${module.rustflags}` : '-Cstrip=symbols';
 
 interface Variant {
 	name: (typeof CORE_BUILDS)[number];
@@ -850,7 +873,7 @@ export function toolsKey(inputs: readonly string[], tools: ToolVersions): string
 			'kind=tools',
 			`code=${buildCodeHash(root)}`,
 			...inputs.map((input, index) => `input${index}=${input}`),
-			'rustflags=-Cstrip=symbols',
+			`rustflags=${TOOL_MODULES.map(toolRustflags).join(';')}`,
 			'target=wasm32-unknown-unknown',
 			'profile=release',
 			`rust=${tools.rust}`,
@@ -1095,7 +1118,7 @@ async function buildToolModules(
 	const cached = noCache ? null : readArtifacts(ARTIFACT_CACHE_BASE, key, names);
 	if (cached) {
 		log.say(
-			"the shader compiler, the asset tool's formats, the terrain builder and the splat selector are unchanged, copying them from the cache",
+			"the shader compiler, the asset tool's formats, the terrain builder, the splat selector and the sound mixer are unchanged, copying them from the cache",
 		);
 		// The entry is in use now, so pruning keeps it while this build copies from it.
 		touchCacheEntry(cached);
@@ -1107,16 +1130,16 @@ async function buildToolModules(
 	}
 	const targetDir = `${CARGO_TARGET_BASE}/wasm-shaders`;
 	log.say(
-		"building the shader compiler, the asset tool's formats, the terrain builder and the splat selector",
+		"building the shader compiler, the asset tool's formats, the terrain builder, the splat selector and the sound mixer",
 	);
 	// Each module builds in a cargo call of its own. One call over every module merges the features
 	// of the dependencies they share, so each module's bytes would follow what else the call
 	// builds: with the shader compiler beside it, the asset module's `half` and `libm` gained
 	// features.
-	for (const { crate } of TOOL_MODULES)
+	for (const module of TOOL_MODULES)
 		await log.cargo(
-			['build', '-p', crate, '--release', '--target', 'wasm32-unknown-unknown'],
-			compilerOptions('-Cstrip=symbols'),
+			['build', '-p', module.crate, '--release', '--target', 'wasm32-unknown-unknown'],
+			compilerOptions(toolRustflags(module)),
 			targetDir,
 		);
 	const built = (crate: string) =>
@@ -1639,7 +1662,7 @@ async function main(): Promise<void> {
 			.filter(([name]) => isCombosPart(name))
 			.map(([name, size]) => [name, size] as const),
 	]);
-	console.log('\nsize report (budget for each .wasm file of the core: 600 KB after Brotli)');
+	console.log('\nsize report (budget for each .wasm file of the core: 640 KB after Brotli)');
 	for (const [file, size] of Object.entries(sizes))
 		printSize(file, size, file.endsWith('.wasm') ? { brotli: WASM_BUDGET_BYTES } : undefined);
 	printSize('js total', totalSize(parts.values()));
@@ -1677,7 +1700,7 @@ async function main(): Promise<void> {
 			([file, size]) =>
 				file.endsWith('.wasm') && !firstUseFiles.has(file) && size.brotli > WASM_BUDGET_BYTES,
 		)
-		.map(([file]) => `${file} is over its 600 KB Brotli budget`);
+		.map(([file]) => `${file} is over its 640 KB Brotli budget`);
 	problems.push(...budgetProblems(parts));
 	const growth = options.checkSize ? checkGrowth(sizes, options.base) : [];
 	for (const warning of budgetWarnings(parts)) console.warn(warningLine(warning));

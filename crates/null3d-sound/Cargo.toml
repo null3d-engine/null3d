@@ -1,0 +1,19 @@
+[package]
+name = "null3d-sound"
+description = "The sound add-on's mixer: each voice's place, gain, rate and cutoff from the sketch's table, as a WebAssembly module for the browser's audio thread."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+# The float operations that core leaves to the standard library: the square root, the exponential
+# and the power. The WebAssembly build keeps no standard library, so it takes them from here.
+libm = "0.2.16"
+
+[lints]
+workspace = true

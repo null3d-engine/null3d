@@ -714,7 +714,7 @@ jobs:
         with:
           mode: upload
           name: page-wasm
-          paths: packages/cli/dist packages/engine/dist packages/engine/src/generated packages/splats/dist packages/terrain/dist packages/vite-plugin/dist packages/wind/dist target/shader-modules.json
+          paths: packages/cli/dist packages/engine/dist packages/engine/src/generated packages/sound/dist packages/splats/dist packages/terrain/dist packages/vite-plugin/dist packages/wind/dist target/shader-modules.json
 
   sketch-shaders:
     # The WGSL that the test pages load, compiled into the Vite plugin's cache with the requests that

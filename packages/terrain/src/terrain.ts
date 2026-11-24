@@ -257,6 +257,8 @@ export class Terrain {
 	private pending = false;
 	private visible = true;
 	private ended = false;
+	/** The tint that the material holds, which a value equal to it leaves alone. */
+	private readonly tint: [number, number, number] = [1, 1, 1];
 
 	/**
 	 * @internal A terrain is made by `createTerrain`. The builder is the add-on's own; a test
@@ -464,6 +466,20 @@ export class Terrain {
 			this.hasQueued = true;
 			this.pump();
 		}
+	}
+
+	/**
+	 * Multiplies every layer's colour, so a scene darkens its open ground with the hour: white
+	 * leaves the ground as its maps give it. It sets the material's own color, which every block
+	 * shares, so a value that holds still costs nothing.
+	 */
+	setTint(tint: readonly [number, number, number]): void {
+		const held = this.tint;
+		if (tint[0] === held[0] && tint[1] === held[1] && tint[2] === held[2]) return;
+		held[0] = tint[0];
+		held[1] = tint[1];
+		held[2] = tint[2];
+		this.material.set({ color: held });
 	}
 
 	/**

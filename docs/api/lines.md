@@ -114,7 +114,7 @@ The call `lines.material.set` changes the look of every segment at any time. It 
 
 Point `i` starts at index `i * 3` in both arrays. Both are `Float32Array` views of engine memory, and the rules of [instance batches](../concepts/instances.md#the-row-arrays) apply. Read the arrays from the batch each time you use them, such as at the start of `onUpdate`. A view from before the engine's memory grew can be empty.
 
-A segment blends from the color of its first point to the color of its second. The engine stores each point's color with 8 bits for each channel, in sRGB. So colors from 0 to 1 draw, and colors given as sRGB hex strings come back exactly. For a brighter line, for [bloom](post.md), set a `color` above 1 on the material, or use a lit line with `emissive`. Convert an sRGB color, such as a hex string, with `color.fromHex` from the [math helpers](math.md).
+A segment blends from the color of its first point to the color of its second. The engine stores each point's color with 8 bits for each channel, in sRGB. So colors from 0 to 1 draw, and colors given as sRGB hex strings come back exactly. A `color` on the material takes components from 0 to 1, as every color does. For a line brighter than 1, for [bloom](post.md), use a lit line with `emissive` and an `emissiveIntensity` above 1. Give it a black `color`, so the scene's lights add nothing. Convert an sRGB color, such as a hex string, with `color.fromHex` from the [math helpers](math.md).
 
 ## Static and dynamic batches
 
