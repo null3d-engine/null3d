@@ -104,7 +104,13 @@ On a phone, a start is mostly downloads, the round trips between them, and the G
 
 Phones often lose their network. A game that must play offline caches the engine's files and its own in a service worker, as [Hosting](../getting-started/hosting.md#offline-play) shows. The engine keeps each transcoded KTX2 texture in its [cache of derived data](../api/assets.md#the-cache-of-derived-data), so a repeat visit skips the transcoder. On phones that saves less time than on a tablet, because other start work takes most of a phone's start.
 
-<!-- TODO(tab-crash helper): a Galaxy Tab A9 Plus (Adreno 619, Chrome 152) fails to build some custom materials' pipelines with VK_ERROR_UNKNOWN, which stops drawing with E1404. Say what the engine does about it and what an app can do, once that work ends. -->
+## When the GPU's driver refuses a shader
+
+A phone's GPU driver can refuse to build one pipeline, such as a custom material's, though the shader is valid. The engine then builds that pipeline once more, alone. When the driver refuses it again, the engine leaves that pipeline's objects out of the frame and draws on. It reports [E1307](../errors/E1307.md) once, which does not stop the engine. A validation error, and a refused pipeline of a full-screen pass, still stop drawing with [E1404](../errors/E1404.md) ([Debugging](debugging.md)).
+
+On a Galaxy Tab A9 Plus, the driver refused the island demo's far tree cards, and the island then drew on without them. The garden demo reached its first frame at 71 seconds there, but the tablet ran out of GPU memory 4 seconds later ([E1302](../errors/E1302.md)).
+
+On phones and tablets, the engine also gives back its GPU device while the browser keeps the page in its back-forward cache. It starts a new one when the page comes back ([Page API](../api/engine.md#the-running-engine)).
 
 ## Browsers on iPhone and iPad
 

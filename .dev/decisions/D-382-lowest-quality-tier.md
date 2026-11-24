@@ -5,7 +5,8 @@ start switch, and the governor's entry, exit and cooldown are built, with their 
 prepass is a live setting in the core. The mandatory cuts change live settings, which the Creek
 scene reads. The further cuts are measured on the Galaxy Tab S8 and ranked below. Code: the quality
 presets, the governor, the quality settings, the page's settings bridge, the Creek scene's feature
-flags, the tests and the docs.
+flags, the tests and the docs. The preset check also enters the tier when Low draws far below its
+target ([D-392](D-392-check-fast-exit-and-governor-target.md)), and a stored check keeps it.
 
 Summary: A live lowest tier below the quality presets. The tier is entered when the render scale has
 sat at the preset's floor, and the judged frames still miss. In the tier the scale floor falls to a

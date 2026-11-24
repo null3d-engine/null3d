@@ -3,7 +3,7 @@ id: guides/loading-screens
 title: Loading screens and warm-up
 status: experimental
 since: "0.1"
-summary: "preload; onProgress; scene.warmUp; shader files that load up front; the preset check during play or before it; upload budgets; switching presets behind a loading screen."
+summary: "The download list; preload; onProgress; loads one after another; scene.warmUp; shader files that load up front; the preset check during play or before it; upload budgets; switching presets behind a loading screen."
 ---
 
 # Loading screens and warm-up
@@ -12,8 +12,8 @@ summary: "preload; onProgress; scene.warmUp; shader files that load up front; th
 
 ```mermaid
 flowchart LR
-    start["createEngine starts<br/>the core and the sketch"] --> preload["The sketch preloads its files<br/>and reports progress"]
-    preload --> setup["The sketch builds its scene<br/>from the files in memory"]
+    start["createEngine starts<br/>the core and the sketch"] --> preload["The sketch's listed files download<br/>while the engine starts"]
+    preload --> setup["The setup reports progress and<br/>builds its scene from the files"]
     setup --> warm["await scene.warmUp():<br/>the GPU builds its pipelines"]
     warm --> first["createEngine and engine.firstFrame<br/>resolve: remove the loading screen"]
     first --> uploads["Textures upload over<br/>the first frames"]
@@ -24,35 +24,47 @@ A loading screen covers the canvas while the engine starts and the sketch loads 
 
 ## Report progress from the sketch
 
-`assets.preload` downloads a list of files at once, and `assets.onProgress` counts them as they arrive. The loads that follow take the files from memory, so the scene builds without further waits.
+The `downloads` option of `defineSketch` names the files that the setup loads. A live start begins to download them as soon as the sketch's module has loaded, often while the engine's core still downloads. The handler of `assets.onProgress` counts them as they arrive, including the bytes that arrived before the setup added it. The setup's loads take the files that arrived or are on their way, so nothing downloads twice.
 
 ```ts
 // sketch.ts
 import { defineSketch } from '@null3d/engine';
 
-export default defineSketch(async ({ assets, page, scene }) => {
-  assets.onProgress((loaded, total) =>
-    page.post('loading', {
-      text: 'Downloading the scene files',
-      value: total > 0 ? loaded / Math.max(total, loaded) : undefined,
-    }),
-  );
-  await assets.preload(['/levels/one.json', '/tex/terrain.png', '/tex/rocks.png']);
+const LEVEL = '/levels/one.json';
+const TERRAIN = '/tex/terrain.png';
+const ROCKS = '/tex/rocks.png';
 
-  const level = await assets.loadJson('/levels/one.json');
-  const terrain = await assets.loadTexture('/tex/terrain.png', { wrap: 'repeat', anisotropy: 8 });
-  // Build the scene from the level and its textures here.
-  await scene.warmUp();
-});
+export default defineSketch(
+  async ({ assets, page, scene }) => {
+    assets.onProgress((loaded, total) =>
+      page.post('loading', {
+        text: 'Downloading the scene files',
+        value: total > 0 ? loaded / Math.max(total, loaded) : undefined,
+      }),
+    );
+    const [level, terrain, rocks] = await Promise.all([
+      assets.loadJson(LEVEL),
+      assets.loadTexture(TERRAIN, { wrap: 'repeat', anisotropy: 8 }),
+      assets.loadTexture(ROCKS),
+    ]);
+    // Build the scene from the level and its textures here.
+    await scene.warmUp();
+  },
+  { downloads: [LEVEL, TERRAIN, ROCKS] },
+);
 ```
+
+List the files in the order that the setup needs them, and name only the files that the first frame waits for. Two listed files download at a time, so the engine's own files, such as the first frame's shaders, still find free connections to the server. A load of a later file moves it to the front of the list. Up to four listed files then download while loads wait for them. [The download list](../api/sketch.md#the-download-list) gives the rules. Start the files that the first frame does not need when the sketch's `engine.firstFrame` resolves. They then leave the network to the first frame's files ([The engine field](../api/sketch.md#the-engine-field)). For a later stage that loads during play, `assets.preload` downloads its files together when the call runs.
+
+A development build watches the setup's loads. It warns once when a load started its download only after another load's file had arrived, while no other file downloaded. The warning names both files. Start both loads before you await either, as `Promise.all` does above, or name both in `downloads`. When the second address comes from the first file's contents, the order is needed: pass `serialLoadWarning: false` to turn the warning off ([Loads one after another](../api/sketch.md#loads-one-after-another)).
 
 The handler gets the bytes downloaded so far and the bytes expected so far. The total is the length of each response that announced one, so it grows as the scene starts more files. A file that fails counts as done, so the bar still reaches its end. The failed load rejects with an error that says what went wrong. [Assets](../api/assets.md) covers the loading calls and their errors.
 
-Start every download on the setup's first lines, as the sketch above does, so the files download together and not one after another. The first frame waits for the setup, so a large file that the first view does not need can load after the first frame instead. [A fast start](start-time.md#draw-the-first-frame-before-the-large-models) shows both.
+[A fast start](start-time.md) gives what each of these steps saved on a phone's connection.
 
 ## Show progress on the page
 
-The page passes `onSketchMessage` to `createEngine`, so it hears the messages that the sketch sends during its setup. It removes the loading screen when `engine.firstFrame` resolves: until the GPU has finished the first frame, the canvas is blank.
+The page passes `onSketchMessage` to `createEngine`, so it hears the messages that the sketch sends during its setup. It removes the loading screen when `engine.firstFrame` resolves: until the GPU has finished the first frame, the canvas is blank. When the promise rejects, the engine stopped before that frame, and the screen shows the error instead.
 
 A percentage must come from work that is counted. `onProgress` gives the engine core's bytes, measured against the length that the server announced. `assets.onProgress` gives a scene's files the same way. Neither knows how much of the whole start is left. So the page measures each phase on its own, and it names the phase beside its number. Within a phase the percentage never falls. A scene's total grows as it starts more files, so the bytes that arrived can be a smaller share than before. Across the whole start the figure can fall: a counted phase that ends returns the card to the engine's stage, and a later file starts a new measure under the same label.
 
@@ -88,8 +100,13 @@ const engine = await createEngine({
     if (name === 'loading') show(message.text ?? '', message.value);
   },
 });
-await engine.firstFrame;
-document.querySelector('#loading')?.remove();
+try {
+  await engine.firstFrame;
+  document.querySelector('#loading')?.remove();
+} catch (error) {
+  // The engine stopped before its first frame: say why on the loading screen.
+  show((error as Error).message);
+}
 ```
 
 A stage without a countable total shows no percentage. Keep the bar moving, or show a count that the engine does know. Do not take a number from a timer or from the stage's place in the start.
@@ -104,7 +121,7 @@ The GPU draws each object with a pipeline: compiled shaders, and the drawing sta
 
 Pipelines take time to build. In the engine's warm-up test, a scene of ten pipelines took up to 0.4 seconds to build in Chrome and Safari on a MacBook Pro. It took 0.8 seconds on WebGPU in Firefox.
 
-The engine's benchmark scenes and demos need 2 to 4 pipelines each. In the engine's warm-up time test, they took these times on a phone and a tablet:
+The engine's benchmark scenes need 2 to 4 pipelines each. In the engine's warm-up time test, they took these times on a phone and a tablet:
 
 | Device and GPU path | First visit | Repeat visit |
 | --- | --- | --- |
@@ -114,7 +131,7 @@ The engine's benchmark scenes and demos need 2 to 4 pipelines each. In the engin
 
 On a first visit, the browser compiles every shader. On a repeat visit, it reuses what it compiled before. The S4 benchmark, a town with a shadow-casting sun, was the slowest scene on each device.
 
-A larger scene needs more pipelines, and on a phone they take most of the start. The engine's showcase demos built 46 to 63 pipelines for their first frame. That took 1.8 to 5.4 seconds on a Galaxy S25, and 10.9 to 23.5 seconds on a Galaxy Tab A9 Plus. Their repeat visits built no faster, because Chrome on Android keeps only about 2 MB of a site's compiled GPU code. [A fast start](start-time.md#pipelines-on-phones) gives each figure.
+A larger scene needs many more pipelines, because each pass, effect and custom material adds its own. A custom material's shader holds the whole lit shading code around its own function, so its pipelines are among the slowest to build. The showcase scenes' first frames build 46 to 63 pipelines on a phone, and 73 to 84 on a MacBook Pro at High. On a phone they take most of the start. They took 1.8 to 5.4 seconds on a Galaxy S25, and 11.8 to 16.5 seconds on an iPhone 17. A Galaxy Tab A9 Plus took up to 23.5 seconds. Safari reused its compiled shaders on a repeat visit. Chrome's own cache of compiled pipelines on Android is too small to keep a scene's worth. There the engine's stored list does the work, as [Repeat visits](#repeat-visits) says. [A fast start](start-time.md#pipelines-on-phones) gives each figure.
 
 The engine builds pipelines without blocking any thread:
 
@@ -123,9 +140,17 @@ The engine builds pipelines without blocking any thread:
 
 The first frame waits until every pipeline that it needs is built, so it shows the whole scene. After the first frame, the engine draws each frame at once. An object whose pipeline is still building draws nothing until the pipeline is built, and the rest of the scene draws as usual.
 
+### Repeat visits
+
+The engine keeps a list of the pipelines that the first frame of each sketch built, in the page's `localStorage`. On the next start in the same browser, the thread that draws builds them as soon as it has its GPU. The engine downloads and the setup runs meanwhile. Without the list, the builds start only when the setup's first frame asks for them. A custom material's pipelines start when the setup creates the material and its shader arrives. The first frame then takes the pipelines that are built, or waits for the rest.
+
+On a Galaxy Tab A9 Plus in Chrome, the island showcase's repeat visits drew their first frame 8.8 to 11.2 seconds after the setup. Without the list, they took about 23.6 seconds.
+
+The list applies to a start of the same sketch on the same GPU path, at the same quality preset. A scene that changed since the last start builds some pipelines that no frame takes, and its first frame stores a new list. Hold mode neither reads nor stores a list. The `?builds=fresh` switch makes the first frame start every build itself, as on a first visit.
+
 ## The first frame
 
-`engine.firstFrame` resolves once the GPU has finished the first frame after the setup, with every pipeline built. The promise of `createEngine` resolves once the sketch's setup has run. Either can come first. So remove the loading screen only once both have resolved, as the page above does. Neither waits for the preset check, unless the page asks for the check before play, as the next section says.
+`engine.firstFrame` resolves once the GPU has finished the first frame after the setup, with every pipeline built. It rejects when the engine stops drawing first, with the failure that ended its frames. So a loading screen that waits for it can say why the scene never came. The promise of `createEngine` resolves once the sketch's setup has run. Either can come first. So remove the loading screen only once both have resolved, as the page above does. Neither waits for the preset check, unless the page asks for the check before play, as the next section says.
 
 A setup function that awaits `scene.warmUp()` after it creates the scene, as the sketch above does, lets the engine build the pipelines while the setup runs. The engine then draws the first frame as soon as they are built.
 
@@ -146,7 +171,7 @@ const engine = await createEngine({
 
 The engine then draws the scene that the setup built, and measures it before the sketch's `onUpdate` runs. The promise of `createEngine` resolves after the check, and the loading screen hides its frames. The viewer waits for them: the check takes most of the start on a tablet. An 11-inch iPad Pro measured this with the check before play. Each benchmark scene and demo showed its first frame about 1 second after the call to `createEngine`. It took about 2 seconds when the check lowered the preset once. During play, the first frame shows as soon as the GPU has drawn it. On a MacBook Pro, the instances demo's loading screen left 0.49 seconds after navigation on a first visit. With the check before play, it left after 1.18 seconds. A phone starts at Low, which has no lighter preset, so the engine skips the check. On a Galaxy S24+, the first frame showed after 0.23 to 0.43 seconds. [Quality presets](../concepts/quality-presets.md#the-preset-check) gives the rules.
 
-The engine stores the check's result in the page's `localStorage`. A repeat visit in the same browser on the same device takes that result. Its setup runs at the checked preset, and the check does not run. Only the first visit, and the first after a week, runs the check. On the iPad, the first frame of a repeat visit showed after 0.25 to 0.52 seconds. [Quality presets](../concepts/quality-presets.md#repeat-visits) says when a stored result applies, and [Caches between visits](../getting-started/hosting.md#caches-between-visits) shows the other caches that a repeat visit uses.
+The engine stores the check's result in the page's `localStorage`. A repeat visit in the same browser on the same device takes that result. Its setup runs at the checked preset, and the check does not run. Only the first visit, and the first after a week, runs the check. A viewer who leaves during the check loses none of the presets it measured. The next visit starts at the preset that the check had lowered to, and its check goes on from there. On the iPad, the first frame of a repeat visit showed after 0.25 to 0.52 seconds. [Quality presets](../concepts/quality-presets.md#repeat-visits) says when a stored result applies, and [Caches between visits](../getting-started/hosting.md#caches-between-visits) shows the other caches that a repeat visit uses.
 
 So build the whole first view in the setup, with its textures. The check measures the scene from its first frame, and waits while textures upload. A sketch whose setup leaves the scene empty gets a preset that the scene may not hold.
 
@@ -230,6 +255,7 @@ Where a browser compiles WebGL2 programs without the extension, `load.warmUpMs` 
 ## Related pages
 
 - [A fast start](start-time.md): the host's part of a start, downloads that start together, and a first frame before the large models.
+- [Sketch API](../api/sketch.md#the-download-list): the download list, and the warning for loads one after another.
 - [Assets](../api/assets.md): `assets.preload`, `assets.onProgress` and the loading calls.
 - [Textures](../api/textures.md): how texture uploads work.
 - [Performance guide](performance.md): what makes the GPU build a pipeline, and the costs of a frame.

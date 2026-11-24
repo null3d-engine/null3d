@@ -229,6 +229,7 @@ A repeat visit starts sooner when the browser keeps what the first visit downloa
 | A service worker's cache | Every file the game needs, so it plays with no network | Your game, as [Offline play](#offline-play) shows |
 | The cache of derived data | Data that the engine and add-ons make from files, such as transcoded KTX2 textures, and data that your sketch makes itself | The engine, with no setup. `assets.cache` gives your sketch its own namespace ([Caching](../api/assets.md#caching)) |
 | The stored preset check | The quality preset that the device held | The engine, in `localStorage` ([Quality presets](../concepts/quality-presets.md#repeat-visits)) |
+| The stored pipeline list | Which GPU pipelines the first frame needed, so the next start builds them while it loads | The engine, in `localStorage` ([Loading screens](../guides/loading-screens.md#repeat-visits)) |
 | The back/forward cache | The whole running page, for the browser's back and forward buttons | The browser ([Content pages](../guides/content-pages.md#second-visits-and-navigation)) |
 
 The HTTP cache and a service worker's cache keep files, so a repeat visit downloads less. The code cache and the cache of derived data keep the work done on those files, so a repeat visit skips it. A page whose KTX2 files are all in it never downloads the transcoder. The browser can delete any of them to free space, and the engine then downloads or makes the data again.
@@ -238,6 +239,8 @@ The HTTP cache and a service worker's cache keep files, so a repeat visit downlo
 Every engine thread loads its own copy of its script and of the core's loader. When the host lets the browser keep those files, each copy after the first comes from the cache. When the host asks the browser to check each file again, the copies wait for one another, one round trip each. A computer with many cores starts many threads, and on a slow phone connection one round trip can take more than half a second.
 
 With worker threads, the sketch worker imports the sketch module while the engine core downloads. The page also downloads the job worker's script then, and the job workers that start later take it from the cache. That saves a round trip only when the host lets the browser keep the file.
+
+A sketch that names its files in the `downloads` option of `defineSketch` starts them as soon as its module has loaded ([The download list](../api/sketch.md#the-download-list)). Over HTTP/1.1 a browser opens at most six connections to one server, and each large file holds one until it has arrived. So two listed files download at a time, and four at most while the setup's loads wait for them. The engine's own files, such as the first frame's shaders, then still find a free connection. Over HTTP/2 every request shares one connection. The listed files ask for low priority there, so a server that follows priorities sends the engine's own files first.
 
 Vite names the files in `assets/` with a hash of their content, so a file under a given name never changes. Serve them with a long cache lifetime, and serve the HTML page so that browsers check it each time:
 
@@ -328,8 +331,12 @@ The page registers it once the first frame has drawn, and in production builds o
 
 ```ts
 // page.ts, after createEngine
-await engine.firstFrame;
-if (import.meta.env.PROD) void navigator.serviceWorker?.register('./sw.js');
+engine.firstFrame.then(
+  () => {
+    if (import.meta.env.PROD) void navigator.serviceWorker?.register('./sw.js');
+  },
+  () => {}, // the engine stopped before its first frame: cache nothing
+);
 ```
 
 A worker that starts with the page shares the connection with every file of the start, so the first frame comes later. Over HTTP/1.1, a long list holds every connection the browser opens to the host.

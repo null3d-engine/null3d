@@ -42,7 +42,7 @@ const engine = await createEngine({
   depthPrepass: false,   // true draws opaque depth first, so each pixel shades once; presets: on for WebGL2, off for WebGPU
   gpuOcclusion: false,   // false keeps the GPU from skipping what large opaque objects hide (WebGPU only); on at High and Ultra on desktops
   softwareOcclusion: false,  // the same on WebGL2, on the job workers; presets leave it off; measure before keeping it
-  keepTextureCopies: true,   // (0.2) default true on phones and tablets, false on desktops: keep each texture's copy, so its map comes back after a GPU loss; false frees the copy (concepts/backends)
+  keepTextureCopies: true,   // (0.2) default true on phones and tablets, false on desktops: keep each texture's copy, so its map comes back after a GPU loss; false frees the copy. With copies, a page in the back/forward cache gives its GPU back (concepts/backends)
   shadowTiles: 8, shadowTileSize: 512, pointLightShadows: false,  // spot and point light shadows; the preset sets each
   heroTileSize: 2048,    // texels on each side of a hero shadow's tile: 1024, 2048 or 4096; the preset sets it
   gpu: 'auto',           // 'auto' | 'webgpu' | 'webgl2' (testing only)
@@ -68,7 +68,7 @@ const engine = await createEngine({
 });
 // createEngine rejects with an EngineError when the browser cannot run the engine (error.code)
 
-await engine.firstFrame;                 // the GPU finished the first frame: remove the loading screen
+await engine.firstFrame;                 // the GPU finished the first frame: remove the loading screen; (0.3) rejects with the failure when the engine stops drawing first
 engine.postToSketch('difficulty', { level: 2 });            // an optional third argument lists transferables
 const off = engine.onSketchMessage((type, data) => { /* ... */ }); // the first handler also gets earlier messages
 off();                                   // every on... call returns a function that removes its handler
@@ -82,7 +82,7 @@ const metrics = await engine.measure(5);          // CPU time per thread and pha
 //   metrics.updatedFps: (0.2) frames per second whose scene update ran to its end; metrics.updateErrors: frames whose update threw
 engine.stats(true);                               // (0.2) the stats overlay on or off from the page, or options; the sketch's debug.stats shares it
 const frame = await engine.captureFrame();        // the next frame's { width, height, pixels }: RGBA8 rows, top row first
-engine.onFailure((error) => { /* error.code: E1302 GPU lost for good, E1404 engine thread failed; (0.2) E1304 GPU out of memory, E1305 GPU rejected work */ });
+engine.onFailure((error) => { /* error.code: E1302 GPU lost for good, E1404 engine thread failed; (0.2) E1304 GPU out of memory, E1305 GPU rejected work; (0.3) E1307 GPU driver refused a pipeline twice, its objects are missing */ });
 engine.onStop(() => { /* (0.3) once: destroy() began, or E1302, E1404 or E1424 ended the frames, after onFailure heard it; end the page's own loop */ });
 engine.onSketchError((error) => { /* (0.2) the sketch's update threw; the engine keeps drawing, and measure().updateErrors counts the frames */ });
 engine.simulateGpuLoss();                         // acts out a driver reset; the engine recovers
@@ -120,8 +120,12 @@ export default defineSketch(async (ctx) => {
 }, { fixedRate: 60, maxFixedSteps: 8 });  // optional; these are the defaults (E1214 out of range)
 ```
 
+- `downloads: ['models/ship.glb', 'env/sky.ktx2']` (0.3), beside the other options, names the files that the setup loads. A live start begins them as soon as the module has loaded, two at a time in the list's order. The setup's loads take them with no second download. A load of a later file moves it to the front, with up to four at once. List only what the first frame waits for. An entry that is not an address throws E1214. Hold mode, replays and recordings ignore the list (`api/sketch`, "The download list").
+- `serialLoadWarning: false` (0.3) turns off a development build's warning for a setup load that started only after another load's file had arrived. Use it only when the second address comes from the first file.
+
 - `setup` can be `async`. The first frame waits for its promise, and `createEngine` resolves only after it. An error it throws makes `createEngine` reject.
 - `ctx.engine.viewport` gives `{ width, height, pixelRatio }`: the canvas size in CSS pixels, and the pixel ratio the engine draws with. The engine reads them at the start of each frame. `ctx.engine.capabilities` holds the values of `engine.capabilities` on the page.
+- `ctx.engine.firstFrame` (0.3) resolves once the GPU has finished the first frame. Start the downloads of later stages in its `then`, never with a frame count. Never await it in the setup, which the first frame waits for. Hold mode and replays resolve it after their last frame, so load what a held frame shows in the setup when `ctx.engine.held` is true.
 - In `onLateUpdate`, `getWorldPosition` already gives this frame's positions, and setters show in the same frame. Structural changes made there, such as creating an object, wait for the next frame.
 - Fixed steps fall due from sketch time. The first frame and the first after a pause run none. A frame runs at most `maxFixedSteps` and drops the rest. `time` keeps the frame's values during the steps, so count simulation time with `step`. Read `wasPressed` in `onUpdate`, because some frames run no fixed step.
 - `rotation` takes a quaternion `(x, y, z, w)`. For a turn of `a` radians about an axis, put `sin(a/2)` along the axis and `cos(a/2)` in `w`. The engine scales one more than one per cent off unit length, so a mistyped quaternion still only turns the object.
@@ -483,7 +487,7 @@ On WebGL2 the maps of one standard material share six textures on the GPU. Maps 
 
 ```ts
 assets.onProgress((loaded, total, url) => page.post('loading', Math.min(1, loaded / Math.max(total, loaded))));  // returns a remover
-await assets.preload(['/tex/bricks.png', '/level.json']);      // later loads take these from memory
+await assets.preload(['/tex/bricks.png', '/level.json']);      // a later stage's files; the setup's go in defineSketch's downloads
 const data = await assets.loadJson('/level.json');             // also loadBinary, loadTexture
 const tiles = assets.cache('my-game/terrain', 3);             // (0.3) a namespace of the cache of derived data, kept across visits
 const stored = await tiles.get(key);                          // Uint8Array or undefined; never rejects. Make the data on every miss

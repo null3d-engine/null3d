@@ -118,6 +118,11 @@ sketch's thread nothing. A change of the camera or of the budget starts a new se
 then packs the chosen rows into the batch in its own memory, so a moved frame copies no rows
 through the sketch's heap.
 
+`createSplats` starts the selection's task and the SPZ reader as it starts, beside the download of
+the index or the file. So the first selection and the first chunk's decode wait for neither. In the
+splat demo, on a simulated phone connection, the reader arrived at 4.4 seconds instead of 7.9. The
+first parts showed at 7.0 seconds instead of 8.3.
+
 The budget follows the quality preset. On each preset the add-on draws at most:
 
 | Preset | WebGPU | WebGL2 |

@@ -1,6 +1,6 @@
 # D-17: The preset check on repeat visits
 
-Status: decided and built. Task: M1-K5, for T-28. The stored result holds for both timings of the check. [D-386](D-386-preset-check-during-play.md) settles when a first visit's check runs: by the owner's ruling, during play by default, which replaces this record's rejection of design (a). The check before play, which this record measured, stays as the `presetCheck` option's `before-play`.
+Status: decided and built. Task: M1-K5, for T-28. The stored result holds for both timings of the check. The check's target starts at the display's rate measured before the check ([The target under the check's own load](#the-target-under-the-checks-own-load)). The store also keeps the rounds of a check that never ended ([Rounds of a check that never ended](#rounds-of-a-check-that-never-ended)). [D-386](D-386-preset-check-during-play.md) settles when a first visit's check runs: by the owner's ruling, during play by default, which replaces this record's rejection of design (a). The check before play, which this record measured, stays as the `presetCheck` option's `before-play`.
 
 Summary: Store each sketch's preset check result in `localStorage` for a week, and skip the check on a matching repeat visit. With the check before play, that saves about 1 s per preset measured on the iPad. A shorter check for known GPUs needs GPU names. By the owner's ruling in D-386, a first visit's check runs during play by default.
 
@@ -83,6 +83,22 @@ The engine stores a result only when it measured against the highest target, 60 
 
 A start that takes a stored result runs the stored preset from its setup on. Its settings fixed at the start keep the values of the preset that the check started from, as they do after the check's own steps. These are the shadow tiles, point light shadows and the prepass. A unit test checks that both paths give the same settings. `engine.mode.presetCheck` reports the stored result with `reused: true`. The `?check=fresh` switch measures again.
 
+### The target under the check's own load
+
+The examples page's production build ran on a Galaxy Tab A9 Plus: Adreno 619, a 90 Hz display, Chrome on WebGPU, through BrowserStack. It ran the check on every visit of Skyway, and stored the result of instances. The check lowered Skyway from Medium to Low, which takes about 16 s on that tablet. So each repeat visit spent those seconds again. A first visit and a repeat visit of the base commit cbdd718e4 both reported a target of 45 frames per second. Medium read 1.2 frames per second presented and 0 completed, and Low read 1.7 and 1.7. The page then stored nothing, as the rule above says for a target below 60.
+
+The display runs at 90 Hz. The engine takes the display's rate from the intervals of the frame callbacks of the thread that draws. While Skyway loaded the GPU, the callbacks came every second or third refresh, and the rate read 30 to 45. During the setup it read 90. The page's own frame callbacks slowed too, but their shortest interval stayed at 11.1 ms in every half second. The check raised its target from that reading at the end of each round, and both readings were 45. Instances loads the GPU less, its reading stayed at 90, and its target was 60.
+
+The check now starts its target at the rate that the engine read before the check's first frame. It raises the target from each round's reading as before. A display that saves power reads its slower rate before the check too. So the rule above still keeps its result out of the store. A unit test of the runner reads 90 before the check and 45 during it, and expects a target of 60. Without the change it gets 45. On the Tab A9 Plus with the change, Skyway's first visit reported a target of 60 and stored its result. The repeat visit took it: no check ran, and the setup ran at Low. Instances did the same.
+
+### Rounds of a check that never ended
+
+The page stored the check's result only when the check ended. With the check during play ([D-386](D-386-preset-check-during-play.md)), a viewer can leave before then. On the Tab A9 Plus, Skyway's check ended about 18 s after its first frame. So can a test tool that closes the page once the loading card has gone. The next start then measured every preset again.
+
+Each lowering by the check now hands the page the check's rounds so far. The page stores them under the same conditions and the same target rule as a result. A start that finds them begins at the preset that they lowered to, with `checkedSettings`, as a start that takes a result does. Its own check goes on from there, from the earlier start's first preset, target and rounds. It reports the earlier rounds first, with `reused: false`, and stores the result when it ends. This keeps the rule of this record: the engine still runs the preset that the check would choose. Each round that the earlier start measured missed its target, and the check goes on below them.
+
+The Tab A9 Plus ran Skyway with a tool that leaves each page once the loading card has gone, as the phones helper's tool does. Without the change, each of three visits started at Medium and lowered to Low at its first frame, and no visit stored anything. With it, the first visit stored the Medium round at its lowering. The second visit ran at Low from its setup, and its check measured Low alone. That check ended 2.7 s after the first frame, against about 18 s for the whole check. The third visit took the stored result and ran no check.
+
 ### The anti-aliasing mode of a lowered preset
 
 The anti-aliasing mode does not stay with the start preset. A device fixes its mode when it starts, and the scene's targets and pipelines depend on it. A device can still move to a lighter mode while it runs. The engine does so when the check lowers the preset: `SketchQuality.lower()` gives the lower preset's mode when it is lighter. The runner then moves the canvas to that mode, on the scene color that the device started with. A start that takes a stored result computes the same setting in `checkedSettings`, so both paths draw alike.
@@ -97,6 +113,8 @@ The move is paid inside the check, not by the viewer. The lowering applies, the 
 
 A lowering changes the shadow map, the tile atlas and the pipelines, so the first frames after it carry that rebuild. The check draws past them before it measures again: it waits until the GPU has finished two frames at 100 ms or less, or four seconds have passed. The frames it skips are a one-time cost of the check's own lowering, not a cost that play pays: the rebuild happens once, inside the check, before the session starts. On the iPad its longest frame took about half a second, where the window read 2.1 frames a second against 59.2 for an unlowered page.
 
+The first round waits the same way, after the first frame's pipelines are built. So the first frame's own long finish stays out of its window too ([D-392](D-392-check-fast-exit-and-governor-target.md)). A preset far below its target goes straight to Low there. A Low that far below takes the lowest quality tier, which the stored result keeps.
+
 The wait cannot hide a cost that persists in play. A preset that runs slower than ten frames a second never meets the two-frame mark, so the four-second cap ends the wait and the next window measures the preset at its true rate.
 
 ### three.js
@@ -109,7 +127,8 @@ three.js has no preset check. Apps choose a quality level themselves, or adapt d
 
 ## Consequences
 
-- `page/check-store.ts` reads and writes the stored result. `createEngine` reads it after the GPU probe, and starts at its preset with `checkedSettings`. It saves each result that a check measured.
+- The module `page/check-store.ts` reads and writes the stored result. The page's `createEngine` reads it after the GPU probe, and starts at its preset with `checkedSettings`. It saves each result that a check measured, and the rounds so far at each lowering. The functions `checkEnded` and `checkedPreset` tell a result from the rounds of a check that never ended, and give the preset to start at.
+- In `sketch/preset-check.ts`, `checkStart` gives the check's first preset, target and rounds. It takes them from the rate that the runner read before the check's first frame, and from the rounds that `QualityStart.resume` carries. The method `CheckHost.lower` takes the rounds so far, which `SketchQuality.lower` sends to the page with the lower preset.
 - `SketchQuality.lower()` gives the lower preset's anti-aliasing mode when it is lighter than the one that runs, and `SketchRunner` moves the canvas to it with `setCanvasOutput`. `checkedSettings` gives the same setting for a start that takes a stored result, so both paths draw alike. `SketchQuality.setPreset()` keeps the mode that the device started with, and a lowering writes the lighter mode into the settings that every later preset keeps.
 - `PresetCheck` has `reused`. The `?check=fresh` switch measures again.
 - The device runner's quality and preset check pages take `?check=fresh`, so each run measures. So do the first two loads of each scene in the warm-up time plan. Its later loads take the stored result, as a repeat visit does.

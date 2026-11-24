@@ -3,7 +3,7 @@ id: api/sketch
 title: "Sketch API: defineSketch and the context"
 status: experimental
 since: "0.1"
-summary: "The context object: scene, assets, materials, geometry, textures, input, time, engine, quality, post, render, page, ui, debug; the callbacks."
+summary: "The context object: scene, assets, materials, geometry, textures, input, time, engine, quality, post, render, page, ui, debug; the callbacks; the options, with the download list."
 ---
 
 # Sketch API: defineSketch and the context
@@ -56,19 +56,58 @@ An error that `setup` throws ends the start: `createEngine` rejects with it. An 
 
 ## Options
 
-`defineSketch` takes options after the setup function. They set the fixed steps, which [Time](time.md#fixed-steps) explains.
+`defineSketch` takes options after the setup function. They set the fixed steps, which [Time](time.md#fixed-steps) explains, and the files that the setup loads.
 
 | Option | Default | What it sets |
 | --- | --- | --- |
 | `fixedRate` | 60 | Fixed steps per second of sketch time: how often `onFixedUpdate` runs |
 | `maxFixedSteps` | 8 | The most fixed steps that one frame runs, after a slow frame |
 | `lowestTier` | true | False keeps the governor's lowest quality tier out, for a scene that its own sketch thread limits |
+| `downloads` | none | The files that the setup loads, which start to download as soon as the module has loaded ([The download list](#the-download-list)) |
+| `serialLoadWarning` | true | False turns off a development build's warning for a load that waited for another one ([Loads one after another](#loads-one-after-another)) |
 
 ```ts
 export default defineSketch(setup, { fixedRate: 120 });
 ```
 
 An option out of its range fails the start with [E1214](../errors/E1214.md), before the engine calls `setup`.
+
+### The download list
+
+A setup that awaits its files one after another waits for each download in turn. The `downloads` option names the files that the setup loads, so they download before the setup asks for them:
+
+```ts
+// sketch.ts
+import { defineSketch } from '@null3d/engine';
+
+const SHIP = 'models/ship.glb';
+const SKY = 'env/harbor.ktx2';
+
+export default defineSketch(
+  async ({ assets, scene }) => {
+    const [ship, sky] = await Promise.all([assets.loadGltf(SHIP), assets.loadEnvironment(SKY)]);
+    scene.setEnvironment(sky);
+    scene.instantiate(ship);
+  },
+  { downloads: [SHIP, SKY] },
+);
+```
+
+A live start begins the downloads as soon as the module has loaded. That is often before the engine's core has arrived, so the files download while the engine starts. The setup's loads take the bytes that arrived or are on their way, and nothing downloads twice. Each address resolves against the page's address, as the loading calls' addresses do.
+
+- List the files in the order that the setup needs them. Two download at a time, so the engine's own files, such as the shaders of the first frame, still find free connections to the server. A load of a later file moves it to the front of the list. While loads wait for listed files, up to four download at once, which still leaves connections for the engine's own files.
+- Name only the files that the first frame waits for. A file that loads after the first frame takes bandwidth from the files that the first frame needs. Start its load when `engine.firstFrame` resolves instead ([The engine field](#the-engine-field)).
+- A file that no load takes costs its download, and its bytes stay in memory until the engine stops. Nothing decodes it.
+- Hold mode, a replay and a recording download each file at its load, as without the list, so their runs stay the same.
+- `assets.onProgress` counts the listed files, also the bytes that arrived before the setup added the handler.
+
+An entry that is not a file's address, such as an empty string, fails the start with [E1214](../errors/E1214.md). A listed file that does not download fails the load that takes it with [E1411](../errors/E1411.md).
+
+### Loads one after another
+
+A development build watches the setup's loads. Sometimes a load starts its download only after another load's file has arrived, while no other file downloads. The console then shows one warning that names both files. The two files could have downloaded together, and the first frame waited for the gap. Start both loads before you await either, as `Promise.all` does above, or name both files in `downloads`. An environment that the engine makes with no file counts as an earlier load too. A load that starts only after `assets.builtinEnvironment` or `assets.skyEnvironment` has finished could have started beside it.
+
+When the second file's address comes from the first file, as a level file names its models, the order is needed. A JSON file that holds the second file's name passes without a warning. For other such cases, pass `serialLoadWarning: false`. The engine watches only the loads of a live setup, not a model's own files and not loads after the first frame. A production build has no warning.
 
 ## The context
 
@@ -97,12 +136,28 @@ An option out of its range fails the start with [E1214](../errors/E1214.md), bef
 
 `engine.held` is true when the engine steps the sketch itself, as hold mode and a replay do. It is false when the sketch runs live. A sketch that returns before its scene is complete waits for it when this is true. A held frame or a replay then shows the finished scene. A live page starts the work without awaiting it, and the result appears as it lands.
 
+`engine.firstFrame` is a promise that resolves once the GPU has finished the engine's first frame, as `engine.firstFrame` does on the page. Start the downloads that the first frame does not need when it resolves. They then leave the network to the first frame's own files, such as its shaders. A frame number is no such signal: the thread that draws can still be drawing the first frame while the sketch runs the second. Never await the promise in the setup, because the first frame waits for the setup. In hold mode and a replay, the promise resolves once the engine has stepped the sketch to its last frame. No frame follows that one, so the work that it starts never changes what those modes show. The promise never resolves when the engine stops first.
+
 ```ts
 export default defineSketch(({ scene, engine }) => {
   // A portrait screen gets a wider view, so the scene still fits across it.
   const portrait = engine.viewport.height > engine.viewport.width;
   const camera = scene.createPerspectiveCamera({ fov: portrait ? 75 : 50, position: [0, 2, 6] });
   scene.setActiveCamera(camera);
+});
+```
+
+A scene that adds far scenery after the first frame starts its download then, and in hold mode loads it in the setup:
+
+```ts
+// sketch.ts
+import { defineSketch } from '@null3d/engine';
+
+export default defineSketch(async ({ assets, engine, scene }) => {
+  const addForest = async () => scene.instantiate(await assets.loadGltf('models/forest.glb'));
+  // Build the first view here.
+  if (engine.held) await addForest(); // a held frame shows the finished scene
+  else void engine.firstFrame.then(addForest).catch((error) => console.error(error)); // the forest appears as it lands
 });
 ```
 

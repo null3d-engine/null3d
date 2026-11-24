@@ -115,6 +115,7 @@ URL switches for the dev server and other development builds, such as (0.2) the 
 | `?compile=wait` | On WebGL2, wait for each shader program's compile at its first draw, as browsers without `KHR_parallel_shader_compile` do |
 | `?shaders=fresh` | Make the browser compile every shader again, as on a first visit, to time a cold warm-up |
 | `?check=fresh` | Measure the quality preset again, as on a first visit, instead of taking the preset check's stored result (`concepts/quality-presets`) |
+| `?builds=fresh` | Start each pipeline build when the first frame asks for it, as on a first visit, instead of building the stored list of an earlier start's first frame ahead (`guides/loading-screens`) |
 | `?compression=bc`, `?compression=astc,etc2`, `?compression=none` | Keep KTX2 textures to the compressed formats that the list names, as on a device with only those. `none` uploads them uncompressed (`api/textures`) |
 | `?derived-cache=off` | Turn the engine's cache of derived data off, so every load makes its data again, as on a first visit: KTX2 files transcode, and `assets.cache` keeps nothing (`api/assets`) |
 | `?wake=message` | Make the worker threads wake each other with messages, as browsers without `Atomics.waitAsync` do, such as Firefox before 145 |

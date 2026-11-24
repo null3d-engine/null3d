@@ -46,8 +46,13 @@ Each change below was then measured alone, on the same connection:
 | [Compress every file](#compress-every-file), `.wasm` included, with a smaller page script and no offline cache | A small demo's first frame | 4.6 s | 3.0 s |
 | The same | The garden demo's repeat visit | 3.0 s, or 5.6 s with its offline cache | 1.7 s |
 | [The sketch module loads while the core downloads](#what-the-engine-does-while-the-core-downloads) | From the core's arrival to the setup's start | 0.64 to 0.96 s | 0.15 to 0.51 s |
+| [The sketch's whole import chain is asked for at once](#what-the-engine-does-while-the-core-downloads), over HTTP/2 with Brotli | A small demo's first frame, and the skyway demo's | 3.24 s and 3.52 s | 2.90 s and 3.23 s |
+| [The stored list of the first frame's pipelines](#pipelines-on-phones) | The island's repeat visit on a Galaxy S25, from the setup's end to the first frame | 3.81 s | 1.56 s |
 | [The first frame before the large models](#draw-the-first-frame-before-the-large-models) | The garden demo's first frame | 25.7 s | 5.7 s, with every model in at 25.0 s |
+| The same for the island's trees, town and people, with its heavy work moved to first use | The island demo's first frame on WebGPU, and on WebGL2 | 9.37 s and 23.56 s | 6.84 s and 7.97 s |
 | The splat scan draws once the nearest parts are in | The splat demo's first frame | 29.1 s | 8.8 s, with every part in at 28.2 s |
+| The splats add-on starts its decoder and its selection beside its first download | The splat demo's first parts on screen | 8.3 s | 7.0 s |
+| [The download list](#start-the-first-views-downloads-at-the-top-of-the-setup) names the garden demo's eleven models, with every model drawn before the first frame | The garden demo's first frame, and the time with nothing downloading before it | 25.9 s and 3.3 s | 21.3 s and 0.2 s |
 | [The first view's downloads start together](#start-the-first-views-downloads-at-the-top-of-the-setup): a light map and a model | The character demo's first frame | 8.55 s | 8.2 s |
 | [The preset check during play](#the-preset-check) | A small demo's loading screen on a first visit, at full speed on a MacBook Pro | 1.18 s | 0.49 s |
 | [Chrome keeps the compiled core](#let-the-browser-keep-the-files) | A repeat visit's first frame on the engine's test page, at full speed, and the core's functions that it compiled again | 176 to 180 ms, 273 functions | 160 ms, 3 functions |
@@ -63,13 +68,15 @@ The same demos also ran on real phones, over a tunnel of about 105 ms for each r
 | Galaxy S25, Chrome | 4.7 s | 7.8 s | 13.4 s | 25.1 s |
 | Pixel 9, Chrome | 6.5 s | 10.3 s | 18.8 s | 38.8 s |
 | Galaxy Tab A9 Plus, Chrome | 9.1 s | 20.2 s | 46.7 s | failed |
-| iPhone 17, Safari | 7.4 s | | | |
+| iPhone 17, Safari | 11.6 s | 19.0 s | 24.4 s | 34.5 s |
 
-<!-- TODO(phones helper): add the after figures on the same devices, and the iPhone 17's other demos, once the combined build has run there. -->
+Safari on the iPhone 17 kept the files and its compiled shaders between visits. Its repeat visits drew their first frame in 0.9 to 5.5 seconds. Chrome on the Android devices kept no file between visits, because they had accepted the test server's certificate after a warning ([Test a production build](#test-a-production-build)).
+
+<!-- TODO(phones helper): add the after figures on the same devices, once the combined build has run there. -->
 
 A phone's processor makes the largest difference from a computer. The first frame's pipeline builds take seconds there, as [Pipelines on phones](#pipelines-on-phones) shows. The Galaxy Tab A9 Plus failed to build one custom material's pipeline in the garden demo, and on repeat visits of the island.
 
-<!-- TODO(tab-crash helper): say what the Galaxy Tab A9 Plus's pipeline failure is (VK_ERROR_UNKNOWN from the driver for one shader) and what the engine does about it, once that work ends. -->
+The engine now builds a pipeline that the driver refuses once more, alone. When the driver refuses it again, the engine leaves that pipeline's objects out and draws on, with [E1307](../errors/E1307.md), which does not stop it. So the island draws on that tablet without its far tree cards, at 1.1 frames a second at Low. The garden demo reaches its first frame at 71 seconds there, but the tablet runs out of GPU memory 4 seconds later ([E1302](../errors/E1302.md)).
 
 ## Compress every file
 
@@ -121,7 +128,7 @@ A production build with the null3D Vite plugin adds a small script to the head o
 
 So when the core arrives, the setup starts almost at once.
 
-<!-- TODO(side-effects helper): once the engine package marks its modules' side effects and a scene module's imports shrink, add the measured change here. -->
+The Vite plugin also writes into the built sketch module every file that the module reaches through its imports. So the sketch worker asks for all of them as soon as the module arrives. It needs no round trip for each step of the chain. A sketch's code then arrives in about 2 rounds instead of 4 to 6. Over HTTP/1.1 the six connections still queue those files, so the gain there is small. The engine's package keeps no `sideEffects` list: one was measured, and it made the start slower.
 
 `engine.measure()` reports when the thread that draws had its device, its shader file and its renderer, in `load.drawingStart` ([Measure a start](#measure-a-start)).
 
@@ -155,9 +162,13 @@ export default defineSketch(async ({ assets, page, scene }) => {
 
 `assets.preload` does the same for files that later code loads: it starts every download at once, and each later load takes its file from memory. A load of a file that is still downloading waits for that download, and starts no second one.
 
+The engine's add-ons follow the same rule. The sound add-on downloads its recordings beside its mixer, and the splats add-on starts its decoder and its selection beside its first file.
+
 Post the first loading message on the setup's first line, so the loading screen names the scene's own work from the start.
 
-<!-- TODO(preload-list helper): once defineSketch's download list and the development warning about loads that wait for each other land, describe them here and in loading-screens.md, and merge the helper's api/sketch.md text on the sketch's engine.firstFrame. -->
+Name the first view's files in the `downloads` option of `defineSketch`, in the order that the setup needs them: `defineSketch(setup, { downloads: [...] })`. They start to download as soon as the sketch module loads, often before the core has arrived. Two download at a time, at a low priority, so the engine's own files still find free connections. A load that waits for a listed file moves it to the front, and up to four then download at once. Hold mode, replays and recordings ignore the list ([The download list](../api/sketch.md#the-download-list)).
+
+List only the files that the first frame needs, and start the rest from `engine.firstFrame`, as the next section shows. A development build warns once in a live start when a scene's own load started only after another one finished, with nothing else downloading. Pass `serialLoadWarning: false` to turn the warning off where the second address comes from the first file.
 
 ## Draw the first frame before the large models
 
@@ -165,7 +176,7 @@ The first frame waits for the setup. When the setup awaits a large model, the vi
 
 Start those downloads after the first frame, not in the setup. Over HTTP/1.1, large files that the setup starts take all six connections, and the first frame's own shader and code files wait behind them. A lower fetch priority does not help: the large files take the free connections before the shader requests exist. Started with the setup, a scene's 2.85 MB of town models made its first frame 0.7 to 1.0 seconds later.
 
-In the sketch, `engine.firstFrame` resolves once the GPU has finished the first frame, as `engine.firstFrame` does on the page. Start the later downloads when it resolves:
+In the sketch, `engine.firstFrame` resolves once the GPU has finished the first frame, as `engine.firstFrame` does on the page. Unlike the page's promise, it never rejects: when the engine stops first, it stays pending. Start the later downloads when it resolves:
 
 ```ts
 // sketch.ts
@@ -181,15 +192,15 @@ export default defineSketch(async ({ assets, engine, scene }) => {
   };
   // A held frame or a replay waits for the forest, so it shows the finished scene.
   if (engine.held) await addForest();
-  else void engine.firstFrame.then(addForest); // the forest appears as it lands
+  else void engine.firstFrame.then(addForest).catch((error) => console.error(error)); // the forest appears as it lands
 });
 ```
 
-Never await `engine.firstFrame` in the setup, because the first frame waits for the setup. A frame number is no such signal. The thread that draws can still be drawing the first frame while the sketch runs the second ([Sketch API](../api/sketch.md)).
+Never await `engine.firstFrame` in the setup, because the first frame waits for the setup. A frame number is no such signal. The thread that draws can still be drawing the first frame while the sketch runs the second ([The engine field](../api/sketch.md#the-engine-field)).
 
 `engine.held` is true in hold mode and in a replay, so tests still draw the finished scene. A held start that waits for many files starts them all on the setup's first line with `assets.preload`. It then builds the scene in one fixed order. The engine's showcase demos take a `?grown` switch that does the same on a live page. A page that measures frame rates then measures the finished scene.
 
-<!-- TODO(picture-flake helper): held pictures of scenes that load many files can still differ between runs, because the engine makes each file's content in the order that the loads finish. Say what holds once that work ends. -->
+While the engine holds frames or replays, the sketch's `assets` calls run one at a time, in the order the sketch made them. So the held picture never depends on which file lands first ([Hold mode](testing.md#hold-mode)).
 
 A scene that streams its content, such as a splat scan, can draw once the parts nearest the camera are in. The rest then stream in after the first frame. The engine's splat demo drew its first frame after 8.8 seconds that way, over the simulated phone connection. It took 29.1 seconds when it waited for every part.
 
@@ -201,27 +212,41 @@ The same holds for work that the first view does not need. Light maps that a sce
 
 When the engine picks the quality preset itself, it checks the preset in the first frames of play on a first visit. The loading screen goes at the first frame, and the check measures while the sketch plays. Where the GPU misses the target frame rate, the engine lowers the preset in front of the viewer. `engine.presetChecked` resolves once the check has ended. A repeat visit takes the stored result and runs no check, and a phone starts at Low, which has no check.
 
-A page that would rather hide a change of preset behind its loading screen passes `presetCheck: 'before-play'` to `createEngine`. The check then runs before play, and `createEngine` waits for it, at least three quarters of a second for each preset that it measures. The `?preset-check=` switch sets the same from the page's address ([The preset check](loading-screens.md#the-preset-check)).
+A check before play costs a slow tablet the most. On a Galaxy Tab A9 Plus, it held the loading screen 8 to 18 seconds after the first frame. A page that would rather hide a change of preset behind its loading screen passes `presetCheck: 'before-play'` to `createEngine`. The check then runs before play, and `createEngine` waits for it, at least three quarters of a second for each preset that it measures. The `?preset-check=` switch sets the same from the page's address ([The preset check](loading-screens.md#the-preset-check)).
 
-<!-- TODO(stored-check helper): on a Galaxy Tab A9 Plus, the check during play measured while the first frame's pipelines were still building, so it read the frame rate too low; and a skyway repeat visit did not reuse its stored result in one run. Say what holds once that work ends. -->
+On a slow tablet the check can take many seconds, as each lighter preset builds its pipelines. It stores its rounds each time it lowers the preset, so a viewer who leaves during the check loses none of them. The next start begins at the preset that the check had lowered to. The check's target starts at the display's rate measured before its first frame, and never falls under the check's own load. Its first round waits for the first frame's pipelines, then for frames at play's rate, for at most 4 seconds. A preset under a quarter of its target goes straight to Low. When Low is that slow too, the check takes the [lowest quality tier](../concepts/quality-presets.md#the-lowest-quality-tier), and the stored result keeps it.
 
 ## Pipelines on phones
 
 Building the first frame's pipelines is the largest processor cost of a start on a phone. Each pipeline is one compile on the device's GPU driver. The demos built these pipelines for their first frame, on a first visit:
 
-| Device | Small demo, 17 pipelines | Skyway, 54 to 55 | Island, 62 to 63 | Garden, 46 |
+| Device | Small demo | Skyway | Island | Garden |
 | --- | --- | --- | --- | --- |
 | Galaxy S25 | 0.4 s | 1.8 s | 4.1 s | 5.4 s |
 | Pixel 9 | 0.9 s | 3.1 s | 6.0 s | 6.7 s |
 | Galaxy Tab A9 Plus | 2.8 s | 10.9 s | 23.5 s | failed |
+| iPhone 17 | 2.4 s | 11.8 s | 13.1 s | 16.5 s |
+| MacBook Pro | 0.1 s | 0.2 s | 0.3 s | 0.7 s |
 
-A MacBook Pro built each demo's in 0.3 to 1.3 seconds. On a repeat visit, the small demo built its pipelines 4 to 5 times faster on each phone. The larger demos built theirs no faster. Chrome on Android keeps about 2 MB of a site's compiled GPU code between visits, so a scene with many large shaders overflows it.
+The phones built 16 to 17, 53 to 55, 61 to 63 and 45 to 46 pipelines for the four demos. The MacBook Pro built 31, 73, 84 and 73 at its higher preset, in a fraction of the time.
+
+On a repeat visit, Safari reused its compiled shaders, and the iPhone 17 built each demo's pipelines in 0.2 seconds or less. In Chrome on Android, the small demo built its pipelines 4 to 5 times faster, and the larger demos built theirs no faster. Chrome on Android keeps about 2 MB of a site's compiled WebGPU pipelines between visits, and 128 KB on a low-end phone. A computer keeps 6 MB. A scene with many large shaders overflows it, so the engine keeps a list of its own.
 
 - Keep the first view's pipelines few. A pipeline serves every object of one shading model, vertex format and set of material features, as the [Performance guide](performance.md#how-the-engine-batches-builds-pipelines-and-times-frames) lists. A new feature on one material, such as a normal map, makes a new pipeline.
 - Warm up behind the loading screen, so play builds no pipeline ([Loading screens and warm-up](loading-screens.md#pipelines-and-warm-up)).
 - Time the start on the phones and tablets of your audience. A desktop browser that emulates a phone builds pipelines at the computer's speed.
 
-<!-- TODO(pipelines-phones helper): add what the engine changes about first-frame pipeline builds on phones, and the measured cost of each pipeline, once that work ends. -->
+The engine keeps a list of the pipelines that a sketch's first frame built, in the page's `localStorage`. The list is kept for each engine version, GPU path, set of the device's shader bits, preset and canvas format. On the next start, the thread that draws builds each of those pipelines as soon as its shader arrives. The engine downloads and the setup runs meanwhile. Before the first frame, the engine also builds in the background the pipelines that the frame's list asks for partway through. Identical pipelines share one build. Hold mode, replays and recordings neither read nor store the list, and `?builds=fresh` turns it off ([Repeat visits](loading-screens.md#repeat-visits)).
+
+These figures run from the setup's end to the first frame:
+
+| Demo and device | Before | After |
+| --- | --- | --- |
+| Island, Galaxy S25, first visit | 5.79 s | 3.77 s |
+| Island, Galaxy S25, repeat visit | 3.81 s | 1.56 s |
+| Skyway, Galaxy S25, repeat visit | 2.29 s | about 1.5 s |
+| Garden, Galaxy S25, repeat visit | 4.78 s | about 3.0 s |
+| Island, Galaxy Tab A9 Plus, repeat visit | 23.6 s | 8.8 to 11.2 s |
 
 ## Cache for offline play after the first frame
 

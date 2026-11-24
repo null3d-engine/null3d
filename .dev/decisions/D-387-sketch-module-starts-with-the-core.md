@@ -126,9 +126,9 @@ Not done here:
   the examples' build, with the page's start code. The package has no `sideEffects` field, so the
   bundler keeps every module of it. Marking it needs a review of each engine module that does work
   as it loads.
-- **The island's later models after its first frame.** The island starts its trees and people at
-  its second frame. Its town's models would then leave the six connections to the first frame's
-  shader files, however the timing falls.
+- **The island's later models after its first frame.** Left to the island's own change, which now
+  starts its trees, its town's three model files and its people once its first frame has drawn. They
+  then leave the six connections to the first frame's shader files ([Examples](../examples.md)).
 
 ## Consequences
 

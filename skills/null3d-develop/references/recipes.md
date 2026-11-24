@@ -288,17 +288,22 @@ To show a page under the drawn scene, start the engine with `createEngine({ tran
 ## 8. Loading screen with progress and warm-up
 
 ```ts
-// sketch.ts
+// sketch.ts: the module names the setup's files, which start to download as soon as it loads
+const LEVEL = '/levels/one.json';
+const TERRAIN = '/tex/terrain.png';
+// defineSketch(setup, { downloads: [LEVEL, TERRAIN] }); then, in the setup:
 assets.onProgress((loaded, total) =>
   // With no length announced there is no total, so the page shows the count and no fraction.
+  // The listed files count too, also the bytes that arrived before this handler.
   page.post('loading', {
     text: 'Downloading the scene files',
     value: total > 0 ? loaded / Math.max(total, loaded) : undefined,
   }),
 );
-await assets.preload(['/levels/one.json', '/tex/terrain.png', '/tex/rocks.png']);
-const level = await assets.loadJson<Level>('/levels/one.json');   // from memory: preload downloaded it
-const terrain = await assets.loadTexture('/tex/terrain.png', { wrap: 'repeat', anisotropy: 8 });
+const [level, terrain] = await Promise.all([   // both loads start before either is awaited
+  assets.loadJson<Level>(LEVEL),               // takes the list's download: nothing downloads twice
+  assets.loadTexture(TERRAIN, { wrap: 'repeat', anisotropy: 8 }),
+]);
 buildLevel(scene, level, terrain);
 await scene.warmUp();                          // build every pipeline before the first frame
 ```
@@ -331,14 +336,15 @@ try {
   await engine.firstFrame;                     // the GPU has finished the first frame
   loadingScreen.remove();
 } catch (error) {
-  showMessage(`This browser cannot show the scene: ${(error as Error).message}`);
+  // createEngine rejected, or the engine stopped before its first frame (engine.firstFrame rejected)
+  showMessage(`The scene did not start: ${(error as Error).message}`);
 }
 ```
 
 - A percentage comes from measured work. `onProgress` reports the engine core's bytes, and `assets.onProgress` reports the scene's files. A phase with no total has no percentage: keep its bar moving instead of taking a number from a timer or from the stage's place in the start. The label names the phase, so the number always measures the work that it names. The figure never falls within a phase, but it can fall across the whole start, because a later phase that counts starts a new measure.
 - `onProgress` reports `memory-wait` when the browser has refused the engine's memory for 10 s (0.2). The engine then tries for about 35 s more before E1109, so show a "taking longer than usual" message.
 - Pass `onSketchMessage` to `createEngine`. A handler added after `createEngine` resolves hears the setup's messages only once setup is over, which is too late for a progress bar.
-- Remove the loading screen when `engine.firstFrame` resolves, not when setup ends. Until the GPU finishes the first frame, the canvas is blank.
+- Remove the loading screen when `engine.firstFrame` resolves, not when setup ends. Until the GPU finishes the first frame, the canvas is blank. When the engine stops drawing before that frame, `engine.firstFrame` rejects with the failure that ended the frames (0.3): show its message on the loading screen.
 - `createEngine` rejects when the browser cannot run the engine. Examples are Safari before 18 and every iPhone or iPad browser before iOS 18 (E1306), and a browser without WebAssembly SIMD (E1303). Show a message or a still image in place of the canvas.
 - `warmUp` resolves once every pipeline that the scene needs is built, hidden objects included. For a later loading stage, create its objects hidden, await it, then show them, so nothing appears late or stalls a frame. The Godot browser port measured seconds of such stalls.
 
