@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'bun:test';
 import { ENGINE_MODES, type EngineMode } from '../../tests/lib/engine-checks.ts';
-import { loadSteps, parseArgs, stepLoad, stepUrl } from '../startup.ts';
+import {
+	type LoadStep,
+	loadSteps,
+	macChromeArgs,
+	parseArgs,
+	stepLoad,
+	stepUrl,
+} from '../startup.ts';
 import {
 	groupSamples,
 	judgeLoad,
@@ -222,5 +229,18 @@ describe('bench:startup', () => {
 		expect(stepUrl('', { ...cold, mode: PIPELINED }, mac, 's')).toBe(
 			'/__null3d/load/cold/s.pipelined-slow-4g-2/tests/pages/engine.html?gpu=webgpu&seconds=0.2&jobs=2',
 		);
+	});
+
+	it("fills the warm loads' caches at their address, in a browser whose V8 writes the compiled core at once", () => {
+		const options = parseArgs(['--loads', 'warm']);
+		const [fill, measured] = loadSteps(options);
+		expect(fill?.run).toBe(0);
+		expect(stepUrl('', fill as LoadStep, options, 's')).toBe(
+			stepUrl('', measured as LoadStep, options, 's'),
+		);
+		const switches = '--js-flags=--wasm-caching-timeout-ms=0';
+		expect(macChromeArgs(true)).toContain(switches);
+		expect(macChromeArgs(false)).not.toContain(switches);
+		expect(macChromeArgs(false)).toEqual(macChromeArgs(true).filter((arg) => arg !== switches));
 	});
 });
