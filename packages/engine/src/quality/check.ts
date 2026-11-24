@@ -4,9 +4,9 @@
 // before play starts, as the page's choice of timing says. It reads the lower of the presented and
 // completed rates, so frames that queue on the GPU cannot pass for a healthy rate. A preset holds
 // when that rate reaches most of the target. Otherwise the engine lowers the preset by one and
-// measures again, down to Low. A preset far below the target goes straight to Low, and Low far
-// below it goes on into the lowest quality tier. These functions are pure, so tests call them with
-// any rates, and the docs generator reads the constants.
+// measures again, down to Low. A preset far below the target goes straight to Low. These
+// functions are pure, so tests call them with any rates, and the docs generator reads the
+// constants.
 
 import type { QualityPreset } from './presets';
 
@@ -20,8 +20,7 @@ export const CHECK_MAX_FPS = 60;
 export const CHECK_HOLD_SHARE = 0.9;
 /**
  * A preset is far below its target when the measured rate stays under this share of it. The
- * check then lowers it straight to Low, and the presets between could not close such a gap. Low
- * far below its target takes the lowest quality tier, where the page allows it.
+ * check then lowers it straight to Low, and the presets between could not close such a gap.
  */
 export const CHECK_FAR_SHARE = 0.25;
 /**
@@ -80,11 +79,6 @@ export interface PresetCheck {
 	 * runs.
 	 */
 	rounds: PresetCheckRound[];
-	/**
-	 * True when Low measured far below the target too, and the check took the lowest quality tier
-	 * after it: a third of the render scale, without the sun's shadows or bloom. Absent otherwise.
-	 */
-	lowest?: true;
 	/**
 	 * True when the engine took this result from an earlier start of the sketch in this browser on
 	 * this device, and did not measure again. The engine stores each check's result for a week. A

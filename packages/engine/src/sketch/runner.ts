@@ -53,7 +53,6 @@ import type { PresetCheck } from '../quality/check';
 import { Governor, GovernorLoop } from '../quality/governor';
 import {
 	lowestTierCuts,
-	lowestTierSettings,
 	presetSettings,
 	presetValue,
 	type QualitySettings,
@@ -1171,7 +1170,6 @@ export class SketchRunner {
 					return quality.preset;
 				},
 				lower: (check, to) => quality.lower(check, to),
-				enterLowest: () => this.enterLowestTier(),
 				drawFrame,
 				uploading: () => glue.textureStat(TEXTURE_STAT_WAITING, 0) > 0,
 				maxTargetFps,
@@ -1179,26 +1177,6 @@ export class SketchRunner {
 			},
 			checkStart(quality.preset, this.setupRefreshHz, maxTargetFps, this.sketch.quality.resume),
 		);
-	}
-
-	/**
-	 * Takes the lowest quality tier for the preset check, with the settings that a start in the
-	 * tier has, where the page and the sketch allow the tier. The governor gives the settings back
-	 * when the frames have room for its window. Resolves once the tier's first frame is on screen:
-	 * with true when the engine took the tier and still runs.
-	 */
-	private async enterLowestTier(): Promise<boolean> {
-		const { governor, quality } = this;
-		if (!governor.lowestAllowed || governor.lowest) return false;
-		const { settings } = quality;
-		governor.startLowest(
-			thousandths(settings.minRenderScale),
-			thousandths(settings.maxRenderScale),
-		);
-		this.tierRestore = tierRestoreSettings(settings);
-		this.tierChanges = governor.tierChanges;
-		await quality.setGoverned(lowestTierSettings(this.sketch.capabilities.tier));
-		return Atomics.load(this.sketch.control.slots, Slot.Running) !== 0;
 	}
 
 	/** Resolves the sketch's `engine.firstFrame`, once. */

@@ -26,7 +26,6 @@ function host(hiddenMs: number): CheckHost & { lowered: number } {
 		lower: async () => {
 			check.lowered++;
 		},
-		enterLowest: async () => false,
 		async drawFrame() {
 			await new Promise((resolve) => setTimeout(resolve, 4));
 			started ||= performance.now();
@@ -80,7 +79,6 @@ function rebuildingHost(
 			preset = to;
 			loweredAt = performance.now();
 		},
-		enterLowest: async () => false,
 		async drawFrame() {
 			await new Promise((resolve) => setTimeout(resolve, 4));
 			frame++;
@@ -182,13 +180,13 @@ test('a check starts its target at the rate that the meter read before it, once 
 /**
  * A host whose presets draw at the given rates, both presented and completed, and whose GPU
  * finishes no frame for `firstFinishMs` after the check starts, as a phone does while it finishes
- * the first frame. `tier` says whether the lowest quality tier may enter.
+ * the first frame.
  */
 function rateHost(
 	rates: Partial<Record<QualityPreset, number>>,
 	start: QualityPreset,
-	{ firstFinishMs = 0, tier = true } = {},
-): CheckHost & { lowered: QualityPreset[]; tiers: number } {
+	{ firstFinishMs = 0 } = {},
+): CheckHost & { lowered: QualityPreset[] } {
 	const metrics = createMetricsBuffer(false, 0);
 	const presented = new FrameRecorder(metrics, Role.Render);
 	const completed = new FrameRecorder(metrics, Role.Completion);
@@ -197,20 +195,15 @@ function rateHost(
 	let preset = start;
 	const began = performance.now();
 	let finished = firstFinishMs === 0;
-	const check: CheckHost & { lowered: QualityPreset[]; tiers: number } = {
+	const check: CheckHost & { lowered: QualityPreset[] } = {
 		metrics,
 		get preset() {
 			return preset;
 		},
 		lowered: [],
-		tiers: 0,
 		lower: async (_, to) => {
 			check.lowered.push(to);
 			preset = to;
-		},
-		enterLowest: async () => {
-			check.tiers++;
-			return tier;
 		},
 		async drawFrame() {
 			await new Promise((resolve) => setTimeout(resolve, 4));
@@ -255,22 +248,12 @@ test('a preset far below its target goes straight to Low, which the check then m
 	const result = await checkPreset(check);
 	expect(check.lowered).toEqual(['low']);
 	expect(result?.rounds.map((round) => round.preset)).toEqual(['ultra', 'low']);
-	expect(result?.lowest).toBeUndefined();
-	expect(check.tiers).toBe(0);
 });
 
-test('Low far below its target takes the lowest quality tier, where it may enter', async () => {
+test('the check ends at Low when Low is far below its target too, and leaves the tier to the governor', async () => {
 	const check = rateHost({ high: 12.5, low: 12.5 }, 'high');
 	const result = await checkPreset(check);
 	expect(check.lowered).toEqual(['low']);
-	expect(check.tiers).toBe(1);
-	expect(result?.lowest).toBe(true);
 	expect(result?.rounds.map((round) => round.preset)).toEqual(['high', 'low']);
-	// Where the tier may not enter, the check ends at Low.
-	const closed = rateHost({ low: 12.5 }, 'low', { tier: false });
-	expect((await checkPreset(closed))?.lowest).toBeUndefined();
-	// Low that misses by less takes no tier.
-	const near = rateHost({ low: 30 }, 'low');
-	expect((await checkPreset(near))?.lowest).toBeUndefined();
-	expect(near.tiers).toBe(0);
+	expect(result && 'lowest' in result).toBe(false);
 });

@@ -4,8 +4,7 @@
 // thread that draws presented frames and the GPU finished them. When the lower rate misses the
 // target, it lowers the preset by one, or straight to Low when the rate is far below the target,
 // waits for the new preset's first frame, and measures again. It ends at a preset that holds the
-// target, or at Low, after which a Low far below the target takes the lowest quality tier. So the
-// engine runs only a preset that the check measured. A round during which the page was hidden or
+// target, or at Low, so the engine runs only a preset that the check measured. A round during which the page was hidden or
 // paused measures again: a hidden page draws no frames, and the first frame after it carries the
 // hidden time as its interval. The target starts at the refresh rate that the meter read before
 // the check's frames began: a GPU that falls behind slows the frame callbacks, which then read as
@@ -19,7 +18,6 @@ import {
 	CHECK_SETTLE_WAIT_MS,
 	CHECK_UPLOAD_WAIT_MS,
 	CHECK_WINDOW_MS,
-	farBelowTarget,
 	frameRate,
 	holdsTarget,
 	type PresetCheck,
@@ -40,11 +38,6 @@ export interface CheckHost {
 	 * is the check's rounds so far, whose last missed its target, for the page to keep.
 	 */
 	lower(check: PresetCheck, to: QualityPreset): Promise<void>;
-	/**
-	 * Takes the lowest quality tier, where the page and the sketch allow it, and resolves once its
-	 * first frame is on screen: with true when it took the tier.
-	 */
-	enterLowest(): Promise<boolean>;
 	/**
 	 * Draws a frame of the scene as it stands, and resolves once the thread that draws has taken
 	 * it: with false when the engine stopped.
@@ -133,7 +126,6 @@ export async function checkPreset(
 	const { from } = begin;
 	const rounds: PresetCheckRound[] = [...begin.rounds];
 	let targetFps = begin.targetFps;
-	let lowest = false;
 	if (!(await settle(host))) return undefined;
 	let start = performance.now();
 	for (;;) {
@@ -162,11 +154,7 @@ export async function checkPreset(
 			completedFps: rateOf(completed),
 		};
 		rounds.push(round);
-		if (holdsTarget(round, targetFps)) break;
-		if (host.preset === 'low') {
-			lowest = farBelowTarget(round, targetFps) && (await host.enterLowest());
-			break;
-		}
+		if (host.preset === 'low' || holdsTarget(round, targetFps)) break;
 		await host.lower(
 			{ from, targetFps, rounds: [...rounds], reused: false },
 			presetAfterMiss(round, targetFps),
@@ -174,5 +162,5 @@ export async function checkPreset(
 		if (!(await settle(host))) return undefined;
 		start = performance.now();
 	}
-	return { from, targetFps, rounds, ...(lowest && { lowest: true as const }), reused: false };
+	return { from, targetFps, rounds, reused: false };
 }

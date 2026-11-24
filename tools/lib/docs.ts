@@ -249,7 +249,7 @@ export function presetCheckTable(): string {
 		['A preset holds its target', `At ${CHECK_HOLD_SHARE * 100}% of the target or more`],
 		[
 			'A preset is far below its target',
-			`Under ${CHECK_FAR_SHARE * 100}% of the target: the check lowers it straight to Low, and Low takes the lowest quality tier`,
+			`Under ${CHECK_FAR_SHARE * 100}% of the target: the check lowers it straight to Low`,
 		],
 		[
 			'Wait before the first measurement and after each lowering',

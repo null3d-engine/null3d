@@ -583,11 +583,6 @@ export class Governor {
 		this.tiered = on;
 	}
 
-	/** True when the lowest quality tier may enter, as `setLowestTier` set it. */
-	get lowestAllowed(): boolean {
-		return this.tiered;
-	}
-
 	/**
 	 * The steps past the render scale that the scene's levels of detail, shadows, bloom, ambient
 	 * occlusion's scale and removal, screen-space reflections, contact shadows, the far characters'

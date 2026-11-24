@@ -95,8 +95,7 @@ function parseStored(text: string | null): StoredCheck | undefined {
 			typeof check.targetFps === 'number' &&
 			Array.isArray(check.rounds) &&
 			check.rounds.length > 0 &&
-			check.rounds.every(isRound) &&
-			(check.lowest === undefined || check.lowest === true)
+			check.rounds.every(isRound)
 			? (stored as StoredCheck)
 			: undefined;
 	} catch {
@@ -160,8 +159,8 @@ export function reusableCheck(
 	if (!(age >= 0 && age < STORED_CHECK_MS)) return undefined;
 	if (!(Math.max(area, stored.area) <= Math.min(area, stored.area) * STORED_CHECK_AREA_RATIO))
 		return undefined;
-	const { from, targetFps, rounds, lowest } = stored.check;
-	return { from, targetFps, rounds, ...(lowest && { lowest }), reused: true };
+	const { from, targetFps, rounds } = stored.check;
+	return { from, targetFps, rounds, reused: true };
 }
 
 /** The stored preset check of one sketch, for one start of it. */
@@ -204,12 +203,12 @@ export class CheckStore {
 	save(check: PresetCheck, maxTargetFps: number, now = Date.now()): void {
 		if (check.reused || !(this.area > 0) || check.targetFps < checkTargetFps(0, maxTargetFps))
 			return;
-		const { from, targetFps, rounds, lowest } = check;
+		const { from, targetFps, rounds } = check;
 		const stored: StoredCheck = {
 			conditions: this.conditions,
 			area: this.area,
 			savedAt: now,
-			check: { from, targetFps, rounds, ...(lowest && { lowest }), reused: false },
+			check: { from, targetFps, rounds, reused: false },
 		};
 		try {
 			this.storage?.setItem(this.key, JSON.stringify(stored));

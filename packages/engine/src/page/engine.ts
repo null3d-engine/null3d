@@ -2582,15 +2582,13 @@ async function startEngine(
 				? false
 				: gpuOcclusionChoice(deviceKind(presetRequest.hints), pageSettings.gpuOcclusion);
 		// A start that crashed the tab twice begins in the lowest tier, as a page's switch does: the
-		// engine has already lowered the preset, and the tier is the last step down (D-382). So does
-		// a start that takes a stored check that took the tier after Low.
+		// engine has already lowered the preset, and the tier is the last step down (D-382).
 		// The `?tier=off` switch keeps the governor out of the tier, and a start keeps its values.
 		const lowestAllowed = switches.lowestTier !== 'off';
 		const startLowest =
 			lowestAllowed &&
 			(switches.lowestTier === 'lowest' ||
-				(switches.preset === undefined &&
-					(crashLowest(history.crashed) || storedCheck?.lowest === true)));
+				(switches.preset === undefined && crashLowest(history.crashed)));
 		const tierSettings = {
 			...pageSettings,
 			gpuOcclusion,

@@ -113,7 +113,7 @@ The move is paid inside the check, not by the viewer. The lowering applies, the 
 
 A lowering changes the shadow map, the tile atlas and the pipelines, so the first frames after it carry that rebuild. The check draws past them before it measures again: it waits until the GPU has finished two frames at 100 ms or less, or four seconds have passed. The frames it skips are a one-time cost of the check's own lowering, not a cost that play pays: the rebuild happens once, inside the check, before the session starts. On the iPad its longest frame took about half a second, where the window read 2.1 frames a second against 59.2 for an unlowered page.
 
-The first round waits the same way, after the first frame's pipelines are built. So the first frame's own long finish stays out of its window too ([D-392](D-392-check-fast-exit-and-governor-target.md)). A preset far below its target goes straight to Low there. A Low that far below takes the lowest quality tier, which the stored result keeps.
+The first round waits the same way, after the first frame's pipelines are built. So the first frame's own long finish stays out of its window too ([D-392](D-392-check-fast-exit-and-governor-target.md)). A preset far below its target goes straight to Low there.
 
 The wait cannot hide a cost that persists in play. A preset that runs slower than ten frames a second never meets the two-frame mark, so the four-second cap ends the wait and the next window measures the preset at its true rate.
 

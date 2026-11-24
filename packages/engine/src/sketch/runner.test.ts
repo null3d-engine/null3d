@@ -1480,33 +1480,27 @@ describe('SketchRunner and quality presets', () => {
 	);
 
 	it(
-		'takes the lowest quality tier when Low too draws far below the target, where the page allows it',
+		"ends the check at Low when Low too draws far below the target, with Low's own settings",
 		async () => {
-			// Eleven frames a second: under a quarter of the target, on Medium and then on Low.
-			const drawing = { presentedMs: 16, completedMs: 90 };
-			const tiered = await start(() => ({}), undefined, {
+			// Eleven frames a second: under a quarter of the target, on Medium and then on Low. The
+			// lowest tier is the governor's step, during play.
+			const { context, updates, stopDrawing } = await start(() => ({}), undefined, {
 				quality: { ...MEDIUM, check: 'before-play' },
-				drawing,
+				drawing: { presentedMs: 16, completedMs: 90 },
 			});
-			tiered.stopDrawing();
-			const check = tiered.updates.at(-1)?.check;
+			stopDrawing();
+			const check = updates.at(-1)?.check;
 			expect(check?.rounds.map((round) => round.preset)).toEqual(['medium', 'low']);
-			expect(check?.lowest).toBe(true);
-			const { settings } = tiered.context.quality;
+			expect(context.quality.governor.lowest).toBe(false);
+			const { settings } = context.quality;
+			const low = presetSettings('low');
 			expect([settings.maxRenderScale, settings.castShadows, settings.bloom]).toEqual([
-				LOWEST_TIER_SCALE,
-				false,
-				false,
+				low.maxRenderScale,
+				low.castShadows,
+				low.bloom,
 			]);
-			const closed = await start(() => ({}), undefined, {
-				quality: { ...MEDIUM, check: 'before-play', lowestAllowed: false },
-				drawing,
-			});
-			closed.stopDrawing();
-			expect(closed.updates.at(-1)?.check?.lowest).toBeUndefined();
-			expect(closed.context.quality.settings.maxRenderScale).toBe(
-				presetSettings('low').maxRenderScale,
-			);
+			// A sketch can still set a floor of its own after the check.
+			expect(() => context.quality.set({ minRenderScale: 1 })).not.toThrow();
 		},
 		scaledBudget(10_000),
 	);
