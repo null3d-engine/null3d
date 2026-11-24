@@ -39,11 +39,11 @@ The engine builds one skeleton for the whole model. Its joints are every node th
 - A node that no clip moves keeps its place. One below a joint goes in the copy's group, where the joints rest.
 - A light on a node that a clip moves is left out, and development builds warn about it.
 
-A clip without a name takes the name three.js gives it: `animation_0`, `animation_1` and on, in the file's order. When two clips share a name, the second becomes `Name 2`, the third `Name 3`, and so on.
+A clip without a name is named `animation_` and its index among the file's clips, from 0: the third clip becomes `animation_2`. When two clips share a name, the second becomes `Name 2`, the third `Name 3`, and so on.
 
 `scene.clone(copy)` gives the clone an animator of its own, with no clip playing. `scene.createInstances(prefab, count)` draws a model's meshes in their rest pose: instance batches do not animate. Batches do not skin either. A skinned mesh whose rest pose differs from its bind pose draws in its bind pose, and development builds warn.
 
-A model's morph targets load with their default weights, and its clips animate the weights, as [Morph targets](#morph-targets) says. A node's own `weights` replace its mesh's, as three.js reads them.
+A model's morph targets load with their default weights, and its clips animate the weights, as [Morph targets](#morph-targets) says. A node's own `weights` replace its mesh's.
 
 ### Load cost
 
@@ -53,7 +53,7 @@ Files from `bunx @null3d/cli assets optimize` store every clip at the engine's r
 
 ## Seeing the skeleton
 
-`debug.skeleton(object)` draws the joints of an animated object, such as a copy's group, in the frame's pose. It draws a line from each joint of a skin to its parent joint. As in three.js's `SkeletonHelper`, a line is blue at the joint and green at its parent. Pass a color to draw every line in that color. Call it in `onUpdate`, as every debug drawing call. Only development builds draw it.
+`debug.skeleton(object)` draws the joints of an animated object, such as a copy's group, in the frame's pose. It draws a line from each joint of a skin to its parent joint. A line is blue at the joint and green at its parent. Pass a color to draw every line in that color. Call it in `onUpdate`, as every debug drawing call. Only development builds draw it.
 
 ```ts
 return {
@@ -94,7 +94,7 @@ return {
 | `weight` | 1 | The clip's own weight, 0 or more. A play with a weight joins the other clips of its layer instead of fading them out, as [Clip weights](#clip-weights) shows. |
 | `transition` | `'blend'` | How a play with a fade switches what its layer plays. `'blend'` cross-fades the layer's old clips with the new one, and samples both while the fade runs. `'inertial'` samples only the new clip: the pose the layer leaves carries on at its own speed and eases into the new clip, as [Inertial transitions](#inertial-transitions) shows. It needs a fade above 0, no `weight`, a clip to switch from, and a new clip that does not already play on the layer. An additive play always cross-fades. |
 
-`crossFade(name, duration, options)` is `play` with a fade of `duration` seconds, and takes `play`'s other options, such as `layer`, `loop` and `weight`. It always cross-fades, whatever its `transition`, because three.js's `crossFadeTo` shows the mix of two clips. A cross-fade always takes over its layer, with a weight too. A clip that already plays on its layer keeps its time when you play it again, and fades back in from its current weight. So calling `play` with the same clip again does no harm. A clip that played once and reached its end starts again.
+`crossFade(name, duration, options)` is `play` with a fade of `duration` seconds, and takes `play`'s other options, such as `layer`, `loop` and `weight`. It always cross-fades, whatever its `transition`, so it shows the mix of the clips while the fade runs. A cross-fade always takes over its layer, with a weight too. A clip that already plays on its layer keeps its time when you play it again, and fades back in from its current weight. So calling `play` with the same clip again does no harm. A clip that played once and reached its end starts again.
 
 A plain play fades out only the plain clips of its layer, and an additive play only the additive clips. So a walk keeps playing when a breath starts on its layer as an additive clip.
 
@@ -117,7 +117,7 @@ for (const [k, knight] of knights.entries()) {
 }
 ```
 
-`stop(name, { fade })` fades a clip out on every layer. `stop()` with no name stops every clip. A clip that stops at once, or fades out fully, leaves the pose. With no clip playing, the object holds its rest pose.
+`stop(name, { fade })` fades a clip out on every layer. A fade out starts from the clip's current weight, so a quick change of mind does not jump. `stop()` with no name stops every clip. A clip that stops at once, or fades out fully, leaves the pose. With no clip playing, the object holds its rest pose.
 
 `setTimeScale(scale)` sets the rate of every clip of the object. Set it to 0 to pause the object's animation.
 
@@ -162,7 +162,7 @@ The returned animation has these calls and values:
 
 | Call or value | What it does |
 | --- | --- |
-| `setTime(seconds)` | Places the animation at a time, as three.js's `action.time` does |
+| `setTime(seconds)` | Places the animation at a time, in seconds |
 | `setSpeed(rate)` | Sets the rate of its time |
 | `setPaused(paused)` | Starts or stops its time, and leaves the target as it is |
 | `setLoop(loop)` | Repeats the animation, or makes it hold its last key |
@@ -180,11 +180,11 @@ const copy = scene.instantiate(await assets.loadGltf(url));
 copy.animator().play('Cube Animation');
 ```
 
-A pointer that the engine does not read leaves the value as the file has it. Development builds warn about each one. The names show the kind. The engine leaves out a camera's values, because it reads no cameras from files. It leaves out an animated texture transform's rotation, and an animated transform of every texture but a base color or an emissive one. That matches three.js's animation-pointer plugin, which moves the same four values. It leaves out a light's inner cone angle. It also leaves out `normalTexture/scale`, and the pointers of `KHR_materials_ior`, `KHR_materials_volume`'s attenuation color and distance, and `KHR_materials_iridescence`'s thickness range. It leaves out the values of extensions that it does not draw. A file's own transforms stay per map, so a file that places its maps differently draws that way.
+A pointer that the engine does not read leaves the value as the file has it. Development builds warn about each one. The names show the kind. The engine leaves out a camera's values, because it reads no cameras from files. It leaves out an animated texture transform's rotation, and an animated transform of every texture but a base color or an emissive one. It leaves out a light's inner cone angle. It also leaves out `normalTexture/scale`, and the pointers of `KHR_materials_ior`, `KHR_materials_volume`'s attenuation color and distance, and `KHR_materials_iridescence`'s thickness range. It leaves out the values of extensions that it does not draw. A file's own transforms stay per map, so a file that places its maps differently draws that way.
 
 ## Clip weights
 
-Each clip has a weight of its own, as a three.js action has. A play with a `weight` joins the clips that already play on its layer, and the layer blends them by their weights. Where the weights add up to less than 1, the rest pose makes up the remainder, as three.js's mixer does.
+Each clip has a weight of its own. A play with a `weight` joins the clips that already play on its layer, and the layer blends them by their weights. Where the weights add up to less than 1, the rest pose makes up the remainder.
 
 ```ts
 const anim = knight.animator();
@@ -200,7 +200,7 @@ return {
 };
 ```
 
-`setWeight(name, weight)` sets the weight of a clip that plays, on every layer that plays it. It writes the weight into engine memory, so you can change it every frame at no cost. A clip at weight 0 leaves the pose. It keeps playing, and its time moves on, as in three.js. A fade multiplies the weight: a clip at weight 0.5 that fades in reaches 0.5. In development builds, `setWeight` on a clip that does not play throws E1218.
+`setWeight(name, weight)` sets the weight of a clip that plays, on every layer that plays it. It writes the weight into engine memory, so you can change it every frame at no cost. A clip at weight 0 leaves the pose. It keeps playing, and its time moves on. A fade multiplies the weight: a clip at weight 0.5 that fades in reaches 0.5. In development builds, `setWeight` on a clip that does not play throws E1218.
 
 Clips that blend by weight keep their own times. A walk and a run of different lengths then step at different moments, and the feet slide. A 1D blend keeps their steps together.
 
@@ -232,8 +232,7 @@ fade's share `x`. The pose reaches the new clip exactly when the fade ends.
 An inertial transition needs a fade above 0 and no `weight`. The layer must play a clip to switch
 from, and the new clip must not already play on that layer.
 A play that joins its layer keeps the weighted blend. So do a layer with a 1D blend and an additive
-clip. `crossFade` always cross-fades too, so a port of three.js's `crossFadeTo` shows the mix that
-three.js shows.
+clip. `crossFade` always cross-fades too.
 
 A transition costs one extrapolated pose and its velocity per joint of the layer. A scene that
 never uses one pays nothing, and a transition that starts allocates nothing.
@@ -385,7 +384,7 @@ Events come from the clip's data. The animator also reports two events of its ow
 
 Each event fires once each time the clip's time passes it, however long the frame was. An event at a clip's last frame fires as the clip loops, as one at its first frame does. Backward clips fire events too, in their order of play.
 
-Handlers run on your sketch's thread at the start of the next frame, before `onFixedUpdate` and `onUpdate`. So your update code sees what the clips reached in the frame before, as three.js code sees events after `mixer.update`. A clip that a handler plays starts in that frame.
+Handlers run on your sketch's thread at the start of the next frame, before `onFixedUpdate` and `onUpdate`. So your update code sees what the clips reached in the frame before. A clip that a handler plays starts in that frame.
 
 ## Clips
 
@@ -394,33 +393,31 @@ A clip moves the joints of one skeleton. Each track of a clip moves one joint's 
 When the engine loads a clip, it stores the keys at one fixed rate for the whole clip. The key before any time is then a direct index, with no search.
 
 - A clip whose keys all lie on one grid of at most 30 keys per second keeps that grid exactly. Files exported at 24, 25 or 30 frames per second lose nothing.
-- Other clips get 30 keys per second, spaced so that the last key falls on the clip's end. A clip exported at 60 keys per second keeps every second key.
+- Other clips get 30 keys per second, spaced so that the last key falls on the clip's end. A clip exported at 60 keys per second keeps every second key. Where a joint turns fast between keys, the new keys can cut a corner slightly.
 - Rotations take 8 bytes per key: four 16-bit integers. Translations and scales take 12 bytes per key.
 - A track whose value never changes is stored once. So is a track whose keys move by under a millionth of its largest value, or under a millionth when its values lie within 1. Exporters leave rounding noise of that size in tracks that do not move.
 
 A track moves in a straight line from key to key. A step track jumps instead: it holds each key's value until the next key.
 
-A cubic spline track, as glTF stores one, keeps an in-tangent and an out-tangent with each key. The engine follows the curve through the keys, as three.js's `GLTFLoader` does, and stores it at 30 keys per second. When the file's keys lie on a coarser grid, the engine keeps them and adds keys between them on a finer grid. Keys every half second, for example, get 14 keys between each two.
+A cubic spline track, as glTF stores one, keeps an in-tangent and an out-tangent with each key. The engine follows glTF's cubic spline through the keys, and stores it at 30 keys per second. When the file's keys lie on a coarser grid, the engine keeps them and adds keys between them on a finer grid. Keys every half second, for example, get 14 keys between each two.
 
 ## Blending
 
 An object blends up to eight clips in a frame, each at its own time and weight. Two layers that each cross-fade between two clips, with an additive clip on top, fit with room to spare. So does a three-clip blend that cross-fades to another while a second layer cross-fades between two clips. When all eight are busy, a new clip takes the place of a clip that fades out, the one that counts least. Only when no clip fades out does it take the place of the clip that counts least at that moment.
 
-Within a layer, the engine blends clips as three.js's `AnimationMixer` does, joint by joint:
+Within a layer, the engine blends clips joint by joint:
 
 - A clip counts only for the joints and channels it has tracks for. A clip that moves only an arm leaves the legs to the other clips.
 - Each clip moves the blend so far by its share of the weights so far.
 - In layer 0, where the weights add up to less than 1, the joint's rest pose makes up the remainder.
 
-Rotations between keys and rotations in a blend use a corrected form of normalized linear interpolation. It stays within 0.0001 radians of three.js's spherical interpolation for rotations up to 2 radians apart. On the engine's test skeleton, poses match three.js's within 0.00003, and skinning matrices within 0.0002. Fades, masked layers and additive clips match three.js's results within 0.0002. Start times, clip weights and blends match within 0.0004.
-
-Seven glTF sample models play their clips as three.js plays them. Each joint's skinning matrix matches three.js's within 0.0004 in its rotation and scale, and within 0.0004 of the model's size in its position. Fox's run is the exception: its keys follow no single grid, so the engine stores it at 30 keys per second. The joints that turn fastest then cut corners by up to 0.005.
+Rotations between keys and rotations in a blend use a corrected form of normalized linear interpolation. It stays within 0.0001 radians of spherical interpolation for rotations up to 2 radians apart.
 
 ## Skinned meshes
 
-A skinned mesh's vertices follow the joints of an animated object. Each vertex names up to four joints, with a weight for each. Its skinned place is the sum of its joints' skinning matrices applied to it, each times its weight. The mesh's own world matrix then places it, as three.js draws a `SkinnedMesh`.
+A skinned mesh's vertices follow the joints of an animated object. Each vertex names up to four joints, with a weight for each. Its skinned place is the sum of its joints' skinning matrices applied to it, each times its weight. The mesh's own world matrix then places it.
 
-On both paths, the vertex shader of each pass that draws a skinned mesh skins it, as three.js does. The shadow passes skin it again. On the devices that the engine was measured on, this was as fast as skinning once per frame, or faster. On WebGPU that was a compute pass, and on WebGL2 transform feedback. Each frame uploads the animated objects' skinning matrices to one float texture, 48 bytes per joint. Every material skins in the vertex shader, custom materials included. Skinned meshes that share a mesh and a material draw in one instanced draw in each pass, so a crowd costs few draw calls. On WebGPU, a custom material's skinning builds download the first time the material draws a skinned mesh. A page whose custom materials never draw one never downloads them. The mesh draws once they have arrived, so call `await scene.warmUp()` in the setup to load them before play.
+On both paths, the vertex shader of each pass that draws a skinned mesh skins it. The shadow passes skin it again. On the devices that the engine was measured on, this was as fast as skinning once per frame, or faster. On WebGPU that was a compute pass, and on WebGL2 transform feedback. Each frame uploads the animated objects' skinning matrices to one float texture, 48 bytes per joint. Every material skins in the vertex shader, custom materials included. Skinned meshes that share a mesh and a material draw in one instanced draw in each pass, so a crowd costs few draw calls. On WebGPU, a custom material's skinning builds download the first time the material draws a skinned mesh. A page whose custom materials never draw one never downloads them. The mesh draws once they have arrived, so call `await scene.warmUp()` in the setup to load them before play.
 
 On WebGPU, a compute pass, the skinning pass, skins two kinds of mesh once per frame instead. It runs before the shadow passes and the scene passes. The first kind is morphed meshes, which it morphs first. The second is meshes that a debug view draws, or that a [full shader](../guides/custom-shaders.md#full-shaders) of the sketch's draws. Neither has a skinning build of its vertex shader. The passes then draw the skinned vertices as a plain mesh. Each mesh that the pass skins draws on its own, as it has vertices of its own. The pass skips a mesh that no view draws in a frame, neither the camera nor a shadow cascade. It also skips a mesh whose pose and morph weights did not change since its last skin. The `?skinning=compute` switch makes the pass skin every skinned mesh, to compare the two ways ([Testing](../guides/testing.md#switches-for-tests)).
 
@@ -455,7 +452,7 @@ The clips keep their real speed. Each update covers the frames that it skipped, 
 
 ## Morph targets
 
-A morph target is another shape of a mesh, such as a smile or a blink. Each object of a mesh with targets blends them in by its own weights. A weight of 0 leaves a target out, 1 adds all of it, and other numbers scale it. The call `setMorphWeight` sets a weight by the target's number or name, as three.js's `morphTargetInfluences[k]` does. The call `getMorphWeight` reads it back. A target can move positions, normals and tangents, and change vertex colors, as a glTF file's `COLOR_0` targets do. A mesh from a glTF file has the file's targets and default weights. A mesh that you build takes its targets from `morphTargets` in [geometry.fromArrays](geometry.md#morph-targets).
+A morph target is another shape of a mesh, such as a smile or a blink. Each object of a mesh with targets blends them in by its own weights. A weight of 0 leaves a target out, 1 adds all of it, and other numbers scale it. The call `setMorphWeight` sets a weight by the target's number or name. The call `getMorphWeight` reads it back. The mesh geometry's `morphTargetNames` lists the names in target order, such as `prefab.find('Face')?.mesh?.morphTargetNames`. A target can move positions, normals and tangents, and change vertex colors, as a glTF file's `COLOR_0` targets do. A morphed vertex color stays between 0 and 1, as the glTF specification asks. A target that leaves out `COLOR_0` while another target of the mesh has it changes no color. A mesh from a glTF file has the file's targets and default weights. A mesh that you build takes its targets from `morphTargets` in [geometry.fromArrays](geometry.md#morph-targets).
 
 ```ts
 const head = scene.instantiate(face).find('Head') as Mesh;
@@ -463,63 +460,22 @@ head.setMorphWeight('Smile', 0.6);
 head.setMorphWeight(1, Math.sin(time.now) * 0.5 + 0.5);
 ```
 
-A clip of a glTF file can animate a mesh's weights. While it plays, it blends its weights with the object's own, as three.js's mixer blends a property with its value from before the clips. A clip at full weight sets the weights, and a fade blends the two. The object's own weights hold when no clip animates them. The call `setMorphWeight` sets the object's own weight, so a weight that you set shows in full only where no clip animates it. Layers and joint masks work on weights too: a layer masked to a node's name takes that node's weights.
+A clip of a glTF file can animate a mesh's weights. While it plays, it blends its weights with the object's own. A clip at full weight sets the weights, and a fade blends the two. The object's own weights hold when no clip animates them. The call `setMorphWeight` sets the object's own weight, so a weight that you set shows in full only where no clip animates it. Layers and joint masks work on weights too: a layer masked to a node's name takes that node's weights.
 
-On WebGPU, the skinning pass morphs each morphed mesh once per frame, before its joints skin it. On WebGL2, the vertex shader of each pass morphs it, as three.js does. Each object then keeps only its largest weights, by the `morphTargets` quality setting: 8 on Low, 16 on Medium, 32 on High and 64 on Ultra. WebGPU keeps every weight. The first morphed mesh that a WebGL2 page draws loads the morph shaders, about 20 KB after compression, and draws once they arrive. On WebGPU, it loads the skinning pass's shaders. `createEngine`'s `preload` option loads either before the first frame ([Loading screens](../guides/loading-screens.md#loading-everything-up-front)).
+On WebGPU, the skinning pass morphs each morphed mesh once per frame, before its joints skin it. On WebGL2, the vertex shader of each pass morphs it. Each object then keeps only its largest weights, by the `morphTargets` quality setting: 8 on Low, 16 on Medium, 32 on High and 64 on Ultra. WebGPU keeps every weight. The first morphed mesh that a WebGL2 page draws loads the morph shaders, about 20 KB after compression, and draws once they arrive. On WebGPU, it loads the skinning pass's shaders. `createEngine`'s `preload` option loads either before the first frame ([Loading screens](../guides/loading-screens.md#loading-everything-up-front)).
 
 A morphed object culls with a sphere that its weights grow: each target's longest move times the size of its weight. On WebGL2, a custom material draws a morphed mesh in its shape at rest.
 
-## How it compares with three.js
+## Speed compared with three.js
 
-| three.js | null3D |
-| --- | --- |
-| `new AnimationMixer(root)`, then `mixer.update(dt)` each frame | `object.animator()`; the engine advances every animator each frame |
-| `mixer.clipAction(clip).play()` | `anim.play('name')` |
-| `a.crossFadeTo(b, 0.3)`, `fadeIn`, `fadeOut` | `anim.crossFade('b', 0.3)`, `play` with `fade`, `stop` with `fade` |
-| `action.setLoop(LoopOnce)` with `clampWhenFinished` | `play('name', { loop: false })`: it holds its last frame |
-| `action.timeScale`, `mixer.timeScale` | `play` with `speed`, `anim.setTimeScale` |
-| `action.time = t` before `play()` | `play('name', { time: t })` |
-| `action.setEffectiveWeight(w).play()` for clips that play together | `play('name', { weight: w })`, then `anim.setWeight('name', w)` |
-| A blend of actions whose weights and time scales your code works out from a speed | `anim.playBlend({ walk: 1.4, run: 4 })` and `anim.setBlend(speed)`, with the clips kept in step |
-| `AnimationUtils.makeClipAdditive(clip)` and an additive blend mode | `play('name', { additive: true })` |
-| Clips with tracks filtered out, for upper and lower body | Layers with `setLayerMask` |
-| `mixer.addEventListener('loop' or 'finished')` | `anim.onEvent('loop' or 'finished', handler)`, and events from the clip's data |
-| `gltf.animations` and `new AnimationMixer(gltf.scene)` | `prefab.clips` and `scene.instantiate(prefab).animator()` |
-| `SkeletonUtils.clone(gltf.scene)` | `scene.clone(copy)`, whose copy animates on its own |
-| `new SkeletonHelper(object)` | `debug.skeleton(object)` in `onUpdate` |
-| `skeleton.getBoneByName('Head')` | `anim.joint('Head')`, an index that the joint calls take |
-| `bone.quaternion.copy(q)` after `mixer.update(dt)` | `anim.setJointRotation('Head', q)`, which holds until `clearJoint` |
-| `bone.quaternion.multiply(q)` after `mixer.update(dt)` | `anim.addJointRotation('Spine', q)` |
-| `bone.lookAt(point)`, or a look-at chain that your code works out | `anim.lookAt(point, { joints: ['Spine', 'Neck', 'Head'] })` |
-| `AnimationClip` and `NumberKeyframeTrack` built in code, then `mixer.clipAction(clip).play()` | `scene.animateProperty(lamp, 'light.intensity', { times, values })` |
-| `KHR_animation_pointer` through a registered GLTFLoader plugin | The loader reads the pointer itself, and the clip's animator plays it |
-| `mesh.morphTargetInfluences[k] = w` | `mesh.setMorphWeight(k, w)`, or with the target's name |
-| `mesh.morphTargetDictionary['Smile']` | `mesh.setMorphWeight('Smile', w)`; the mesh geometry's `morphTargetNames`, such as `prefab.find('Face')?.mesh?.morphTargetNames`, lists the names in order |
-| `geometry.morphAttributes.position`, with `morphTargetsRelative = true` | `geometry.fromArrays({ ..., morphTargets: { positions } })` |
-| `geometry.morphAttributes.color` | `geometry.fromArrays({ ..., colors, morphTargets: { colors } })` |
-| `SkinnedMesh` skinned in the vertex shader of each pass that draws it | The same on both paths, custom materials included. On WebGPU, the skinning pass skins morphed meshes once per frame instead |
-
-Where three.js and null3D differ:
-
-- A three.js fade out starts from full weight. null3D fades a clip out from the weight it has, so a quick change of mind does not jump.
-- three.js makes a bone object for each joint of a glTF skin, which you can find and move. null3D's joints are not objects. To turn a joint from code, use the joint calls of [Joint overrides](#joint-overrides). A three.js bone keeps a rotation that you set only until the next `mixer.update`. A null3D joint rotation holds until `clearJoint`.
-- three.js's `bone.lookAt` turns one bone and has no limits. null3D's `lookAt` turns a chain of up to 4 joints, each within its limit.
-- A three.js action played backward starts at time 0 and wraps to the end. A null3D clip with a negative speed starts at its end.
-- three.js has no layers. null3D's layer 0 blends as three.js's mixer does, and each layer above replaces the pose below.
-- A morphed vertex color stays between 0 and 1, as the glTF specification asks. three.js does not clamp it. A glTF target that leaves out `COLOR_0` while another target has it changes no color in null3D, as the specification says. three.js r186 adds the base color there instead. Its WebGPURenderer draws no color targets, and its WebGLRenderer cannot draw them on colors without alpha.
-- A three.js `play()` never stops other actions. A null3D `play` without a weight fades out the other clips of its layer. Give each clip that plays beside others a `weight`.
-- three.js always cross-fades two actions. A null3D play with a fade can switch with an [inertial transition](#inertial-transitions) instead, which samples only the new clip. `crossFade` keeps the cross-fade.
-- three.js's `setEffectiveWeight` stops a fade. null3D's `setWeight` leaves a fade running, which multiplies the weight.
-- three.js has no blend by a value. A three.js blend of walk and run keeps each clip's own rate, so their steps drift apart. A null3D blend keeps them in step.
-- `action.startAt(time)`, which delays a start, has no counterpart. Call `play` at that time in `onUpdate`.
-- three.js reads `KHR_animation_pointer` with a plugin that registers on the loader. null3D's loader reads the pointers of lights, materials, node visibility and the offset and scale of a base color or emissive texture's transform itself. A pointer that it does not read leaves its value as the file has it, and development builds warn.
+The engine takes animation off the main thread, and does less work and stores less data for each key than three.js:
 
 | | three.js | null3D |
 | --- | --- | --- |
 | Where clips are sampled | The main thread, one bone at a time | The job workers, four joints per SIMD operation, characters in parallel |
 | Finding the keys | A search of each track's key times | A direct index, from the clip's fixed rate |
 | Memory per rotation key | 20 bytes: four floats and a time | 8 bytes: four 16-bit integers |
-| Blending | `PropertyMixer`, with spherical interpolation | The same rules, with corrected normalized interpolation |
+| Rotations between keys and in blends | Spherical interpolation | Corrected normalized interpolation |
 
 ## Errors
 

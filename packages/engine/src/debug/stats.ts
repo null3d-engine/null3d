@@ -123,9 +123,8 @@ export interface FrameStats {
 	readonly drawCalls: number;
 	/**
 	 * Mean triangles drawn per frame, over every pass: shadow maps and the depth prepass count as
-	 * well as the passes that shade, as three.js's `renderer.info` counts them. Lines count none.
-	 * On WebGPU the GPU culls most objects, and the count of their triangles comes back from the GPU
-	 * on one frame in eleven, a few frames late.
+	 * well as the passes that shade. Lines count none. On WebGPU the GPU culls most objects, and the
+	 * count of their triangles comes back from the GPU on one frame in eleven, a few frames late.
 	 */
 	readonly triangles: number;
 	/**

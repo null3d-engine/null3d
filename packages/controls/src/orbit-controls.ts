@@ -41,8 +41,7 @@ export type OneFingerAction = 'rotate' | 'pan';
 export type TwoFingerAction = 'dolly-pan' | 'dolly-rotate';
 
 /**
- * The action of each mouse button, with three.js's names for the buttons. Null gives a button no
- * action.
+ * The action of each mouse button. Null gives a button no action.
  *
  * @category api/controls
  */
@@ -56,7 +55,7 @@ export interface MouseButtons {
 }
 
 /**
- * The action of one finger and of two fingers, with three.js's names. Null gives no action.
+ * The action of one finger and of two fingers. Null gives no action.
  *
  * @category api/controls
  */
@@ -68,9 +67,8 @@ export interface TouchActions {
 }
 
 /**
- * Options for `createOrbitControls` and `createMapControls`, with three.js's names and defaults.
- * The controls keep each option as a property of the same name, which a sketch can change at any
- * time.
+ * Options for `createOrbitControls` and `createMapControls`. The controls keep each option as a
+ * property of the same name, which a sketch can change at any time.
  *
  * @category api/controls
  */
@@ -114,8 +112,8 @@ export interface OrbitControlsOptions {
 	/** The farthest the camera goes from the target. The default is Infinity. */
 	maxDistance?: number;
 	/**
-	 * The smallest zoom of an orthographic camera, as three.js counts zoom: 1 shows the view's height
-	 * when the controls start, and 2 shows half of it. The default is 0.
+	 * The smallest zoom of an orthographic camera: 1 shows the view's height when the controls
+	 * start, and 2 shows half of it. The default is 0.
 	 */
 	minZoom?: number;
 	/** The largest zoom of an orthographic camera. The default is Infinity. */
@@ -962,9 +960,9 @@ export class MapControls extends OrbitControls {
 }
 
 /**
- * Creates orbit controls, which three.js calls `OrbitControls`. A left drag or one finger turns the
- * camera around the target. The wheel, a pinch and a middle drag dolly it. A right drag or two
- * fingers pan. Call `controls.update(dt)` once per frame in `onUpdate`.
+ * Creates orbit controls. A left drag or one finger turns the camera around the target. The wheel,
+ * a pinch and a middle drag dolly it. A right drag or two fingers pan. Call `controls.update(dt)`
+ * once per frame in `onUpdate`.
  *
  * @category api/controls
  */
@@ -977,9 +975,9 @@ export function createOrbitControls(
 }
 
 /**
- * Creates map controls, which three.js calls `MapControls`. A left drag or one finger pans over
- * the ground. The wheel, a pinch and a middle drag dolly the camera. A right drag or two fingers
- * turn it. Call `controls.update(dt)` once per frame in `onUpdate`.
+ * Creates map controls. A left drag or one finger pans over the ground. The wheel, a pinch and a
+ * middle drag dolly the camera. A right drag or two fingers turn it. Call `controls.update(dt)`
+ * once per frame in `onUpdate`.
  *
  * @category api/controls
  */

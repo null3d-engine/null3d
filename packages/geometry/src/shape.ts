@@ -8,14 +8,14 @@ import { isClockWise, triangulateShape } from './shape-utils';
 import type { GeneratedArrays } from './types';
 
 /**
- * Options for `shape`, with the names and defaults of three.js's `ShapeGeometry`.
+ * Options for `shape`.
  *
  * @category api/geometry
  */
 export interface ShapeOptions {
 	/**
-	 * One shape or a list of shapes. The default is three.js's triangle with corners (0, 0.5),
-	 * (-0.5, -0.5) and (0.5, -0.5).
+	 * One shape or a list of shapes. The default is a triangle with corners (0, 0.5), (-0.5, -0.5)
+	 * and (0.5, -0.5).
 	 */
 	shapes?: Shape | readonly Shape[];
 	/** The number of points along each curve of a shape. The default is 12. */
@@ -23,9 +23,8 @@ export interface ShapeOptions {
 }
 
 /**
- * The arrays of flat shapes, like three.js's `ShapeGeometry`. The mesh has indices, and all its
- * normals point along +Z. three.js gives each shape of a list a group of its own. Here the shapes
- * form one mesh, so a material per shape needs one `shape` call per shape.
+ * The arrays of flat shapes. The mesh has indices, and all its normals point along +Z. The shapes
+ * of a list form one mesh, so a material per shape needs one `shape` call per shape.
  *
  * @category api/geometry
  */

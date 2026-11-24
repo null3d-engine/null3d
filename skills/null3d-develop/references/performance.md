@@ -244,7 +244,7 @@ Some calls rebuild the scene's draw tables in the frame they take effect: the bu
 
 ## 10. Advice written for other engines
 
-Performance advice for three.js and other engines assumes things that do not hold in null3D. The engine docs page `guides/performance` answers the questions behind it.
+Performance advice written for other engines assumes things that do not hold in null3D. The engine docs page `guides/performance` answers the questions behind it.
 
 | Advice | In null3D |
 | --- | --- |

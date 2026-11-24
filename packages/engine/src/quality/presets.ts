@@ -730,9 +730,10 @@ export interface QualitySettings {
 	 */
 	lodFade: boolean;
 	/**
-	 * Whether `{ atmosphere }` backgrounds draw the physical sky from its tables. False draws
-	 * three.js's analytic sky in its place, with the same sun, moon, air and clouds, matched to the
-	 * physical sky's brightness, and keeps the haze on distant objects. It changes during play.
+	 * Whether `{ atmosphere }` backgrounds draw the physical sky from its tables. False draws the
+	 * analytic `{ sky }` background in its place, with the same sun, moon, air and clouds, matched
+	 * to the physical sky's brightness, and keeps the haze on distant objects. It changes during
+	 * play.
 	 */
 	physicalSky: boolean;
 	/**

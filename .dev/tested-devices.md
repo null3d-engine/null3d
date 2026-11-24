@@ -58,7 +58,7 @@ The rows were read from `target/runs/20261023-002748-showcase/bsipadpro13-safari
 
 Creek and the forest demo ran for M3-V1 ([D-241](decisions/D-241-vegetation-foundation.md)) on the
 cloud iPhone, the iPad, an S24-class phone and a low-end Android tablet. The Galaxy S25 ran Creek
-on core WebGPU, and the package's generator on its own, in a later run. The runs took one
+on core WebGPU in a later run. The runs took one
 BrowserStack Automate session at a time. Each page fixed its GPU path and its preset. It also set
 the quality governor's target at 1 frame a second, so the render scale stayed at 1 and each
 preset's own cost shows.
@@ -270,51 +270,6 @@ Five pages passed, and none was skipped. The same plan ran on this phone on 27 O
 ([that run](tested-devices/galaxy-s25-sm-s931b-chrome/20261027-002402-vegetation.md)), and it holds
 no per-pass figures.
 
-### Creek through the vegetation add-on (M3-V11)
-
-Creek grows its plants at first use. It has 12 species records with up to four variants each, and
-it places 2,543 plants from seed 7, where the rows above loaded model files. The figures below
-measure that scene.
-
-The Mac's page drew at its display's full 1,512 by 982 points at the display's pixel ratio, where
-the folder's earlier Creek record drew 1,920 by 1,080, so compare the counts rather than the
-milliseconds across the two. The Mac's WebGL2 timer reports the whole frame, not one pass.
-
-| Device and preset | Path | FPS | Frame ms | CPU ms | GPU ms | Triangles | Draws | Textures MiB | Buffers MiB | wasm MiB |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Mac, Low | WebGPU | 38.2 | 26.19 | 4.12 | 46.04 | 4,560,000 | 780 | 85.4 | 79.9 | 119.9 |
-| Mac, Low | compatibility mode | 38.9 | 25.68 | 3.18 | 42.21 | 4,850,000 | 783 | 85.4 | 72.0 | 104.3 |
-| Mac, Low | WebGL2 | 34.1 | 29.31 | 2.50 | 49.08 | 6,130,000 | 279 | 103.5 | 40.5 | 100.2 |
-| Mac, Medium | WebGPU | 20.0 | 50.04 | 3.06 | 93.06 | 4,830,000 | 698 | 276.4 | 84.6 | 116.1 |
-| Mac, Medium | compatibility mode | 28.2 | 35.50 | 2.97 | 67.01 | 4,870,000 | 698 | 160.5 | 84.6 | 116.1 |
-| Mac, Medium | WebGL2 | 13.0 | 77.22 | 2.62 | 126.43 | 9,420,000 | 297 | 410.6 | 44.0 | 108.5 |
-| Mac, High | WebGPU | 11.2 | 89.28 | 3.61 | 150.60 | 8,450,000 | 846 | 359.6 | 86.7 | 126.7 |
-| Mac, Ultra | WebGPU | 13.4 | 74.53 | 2.01 | 140.25 | 9,950,000 | 855 | 516.6 | 90.9 | 143.8 |
-
-The Mac's run: [20261102-131805-vegetation](tested-devices/macbook-pro-m3-max-chrome/20261102-131805-vegetation.md).
-Thirteen pages passed, and none was skipped. WebGL2 and compatibility mode cap the preset at
-Medium, so their High and Ultra pages drew Medium again and are left out.
-
-The Galaxy S25 stands in for the S24 class. The table is the run below, on the scene before the
-wildflower record and before the trunks' prepass option.
-
-| Device and preset | Path | FPS | Frame ms | CPU ms | GPU ms | Triangles | Draws | Textures MiB | Buffers MiB | wasm MiB |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Galaxy S25, Low | WebGPU | 30.0 | 33.33 | 6.31 | 24.61 | 2,280,000 | 752 | 47.5 | 79.9 | 117.8 |
-| Galaxy S25, Medium | WebGPU | 6.0 | 166.62 | 5.53 | 164.43 | 2,440,000 | 669 | 114.2 | 92.5 | 135.6 |
-| Galaxy S25, High | WebGPU | 4.4 | 224.98 | 5.91 | 237.63 | 3,700,000 | 812 | 135.9 | 94.6 | 147.9 |
-| Galaxy S25, Ultra | WebGPU | 2.2 | 458.20 | 7.30 | 451.22 | 6,510,000 | 829 | 355.7 | 98.8 | 181.7 |
-
-The S25's run: [20261102-132333-vegetation](tested-devices/galaxy-s25-sm-s931b-chrome/20261102-132333-vegetation.md).
-Five pages passed, and none was skipped. Its High row reads 16.68 ms over the 208.3 ceiling. That
-reading did not hold: the phone was hot, and its later High runs read lower.
-
-A later run draws the landed scene at all four presets:
-[20261115-113547-vegetation](tested-devices/galaxy-s25-sm-s931b-chrome/20261115-113547-vegetation.md),
-at `1c6785724` in Chrome 152.0.7977.54 on Android 15. Low, Medium and High read the display's own
-30 Hz cap of 33.33 ms, and Ultra reads 66.65 against its 499.8 ceiling, so every row holds. The
-three at the cap hold by pacing rather than by work: the display sets the interval.
-
 ### The wind governor's rows (M3-V16)
 
 The iPad Pro 13 ran the four wind-stress presets at `1c6785724`, in Safari 26.6.1:
@@ -325,125 +280,6 @@ tightest end of D-241's range for its preset: 30.8, 43.9, 62.5 and 71.1. The gov
 render scale to 0.95 under load at Low, Medium and High and leaves it at 1.00 at Ultra. The device's
 GPU timer returns no usable figure, as its earlier wind-stress record says, so the rows rest on the
 frame interval and the governor's state.
-
-Two later runs put the final scene at High, which carries the wildflower clumps. One had the trunks
-in the depth prepass and one had them out. Both read a 208.29 ms median frame interval against the
-208.3 ceiling, so the frame measure passes. Their GPU medians are 231.67 and 224.85 ms, and the
-frame medians agree because the page paces its frames, not because the plants cost the same. The
-runs' mean frame intervals were 239.2 and 226.6 ms, so they cannot order the code states against
-each other. The exclusion's own saving is the Mac's measured 0.92 ms of GPU time.
-
-| Galaxy S25, High | Median frame ms | GPU ms | Triangles | Draws | Run |
-| --- | --- | --- | --- | --- | --- |
-| Trunks out | 208.29 | 231.67 | 3,590,000 | 783 | 20261102-142543-vegetation |
-| Trunks in | 208.29 | 224.85 | 3,750,000 | 860 | 20261102-142844-vegetation |
-
-### Tree generation, all four devices
-
-The page generated the stand-in parametric tree of `tests/pages/lib/tree-generator.ts` in a worker:
-oak, beech, birch and pine at each preset's detail, six seeds each.
-
-| Device | Low | Medium | High | Ultra |
-| --- | --- | --- | --- | --- |
-| iPhone 17 | 22.7 ms | 14.3 ms | 17.8 ms | 14.8 ms |
-| iPad Pro 13 | 16.8 ms | 14.6 ms | 19.5 ms | 14.3 ms |
-| Galaxy S24 | 44.1 ms | 34.5 ms | 33.2 ms | 47.3 ms |
-| Galaxy Tab A9 Plus | 56.4 ms | 49.4 ms | 59.3 ms | 93.5 ms |
-
-Each figure is the page's own total for that preset: the 24 timed generations of four species and
-six seeds. Each of those generations is timed inside the worker. The furthest triangle counts are
-123,876 at Low and 474,096 at Ultra, and the arrays take 7.0 MB and 22.7 MB. The slowest single
-variant on the tablet was an oak at Ultra: 5.42 ms for 27,090 triangles. The tablet's runs:
-[20261024-111904-tree-generation](tested-devices/galaxy-tab-a9-plus-sm-x216b-chrome/20261024-111904-tree-generation.md).
-The other three are in their folders: the iPhone and the iPad at 20261024-084032, and the S24 at
-20261024-084231.
-
-### Tree generation on the Galaxy S25
-
-The `tree-generation` plan ran again on the cloud Galaxy S25, with the vegetation package's own
-generator instead of the stand-in ([its run](tested-devices/galaxy-s25-sm-s931b-chrome/20261027-002251-tree-generation.md)).
-The page generated every species at each preset's detail in a worker, six seeds each: thirteen
-species, so 78 variants for a preset.
-
-| Preset | Variants | Total (ms) | Per variant (ms) | Triangles | Bytes (MB) |
-| --- | --- | --- | --- | --- | --- |
-| Low | 78 | 163.0 | 2.09 | 337,008 | 16.7 |
-| Medium | 78 | 137.9 | 1.77 | 337,008 | 16.7 |
-| High | 78 | 156.9 | 2.01 | 409,182 | 20.0 |
-| Ultra | 78 | 148.9 | 1.91 | 409,182 | 20.0 |
-
-The phone stands in for the S24 class. D-241's generation budget then allowed a whole variant set to
-build in 200 ms on the slowest measured device, and every preset sits inside it; the line is now
-250 ms a variant on the reference Mac. The cost per variant is
-about 1.7 times the iPad's, whose rows are below. Its byte column counts the arrays before the leaf
-parts carried the morph data, so it is lower than the iPad's.
-
-### Tree generation on the iPad Pro 13
-
-The same plan ran on the cloud iPad Pro 13 in Safari 26.6.1
-([its run](tested-devices/ipad-pro-13-safari/20261030-014425-tree-generation.md)). The page
-generated every species at each preset's detail in a worker, six seeds each: 78 variants for a
-preset.
-
-| Preset | Variants | Total (ms) | Per variant (ms) | Triangles | Bytes (MB) |
-| --- | --- | --- | --- | --- | --- |
-| Low | 78 | 105.2 | 1.35 | 337,008 | 20.5 |
-| Medium | 78 | 77.6 | 1.00 | 337,008 | 20.5 |
-| High | 78 | 93.3 | 1.20 | 409,182 | 24.5 |
-| Ultra | 78 | 80.6 | 1.03 | 409,182 | 24.5 |
-
-D-241 then allowed the set 200 ms on the slowest measured device and 150 ms on the iPad. Every preset
-sits inside both lines, and the slowest is Low at 105.2 ms, 70 per cent of the iPad's line. The line
-is now 250 ms a variant on the reference Mac.
-
-The arrays take 20.5 MB at Low and Medium and 24.5 MB at High and Ultra, which is inside the 25 and 30 MB
-that D-241 sets. The leaf parts carry the next level's place for each vertex, which the material's morph
-reads.
-
-### Tree generation on this Mac with the catalogue species
-
-The plan ran on this Mac's Chrome 156.0.8078.81 at `75b1e59f2`, after the batch's twelve catalogue
-species landed ([its run](tested-devices/macbook-pro-m3-max-chrome/20261109-075455-tree-generation.md)).
-The package ships twelve species, so a preset's set is 72 variants.
-
-| Preset | Variants | Total (ms) | Per variant (ms) | Triangles | Bytes (MB) |
-| --- | --- | --- | --- | --- | --- |
-| Low | 72 | 12,440.8 | 172.79 | 15,274,350 | 382.2 |
-| Medium | 72 | 12,261.9 | 170.30 | 15,863,454 | 393.5 |
-| High | 72 | 12,472.2 | 173.22 | 16,299,114 | 402.3 |
-| Ultra | 72 | 12,878.1 | 178.86 | 17,721,942 | 428.4 |
-
-The catalogue species are far heavier than the thirteen procedural stand-ins the earlier figures
-measured: 50,718 to 887,750 triangles a variant against about 4,300, and the set takes 12.3 to 12.9 s
-against the old 200 ms whole-set line, about sixty times it. The owner restated the line at 250 ms a
-variant on the reference Mac, and the set's 170 to 179 ms a variant meets it.
-
-### Tree generation on the Galaxy S25 with the leaf morph data
-
-The plan ran twice on the cloud Galaxy S25 with the current generator. The second run came after the
-phone had time to cool, and it is the figure
-([its run](tested-devices/galaxy-s25-sm-s931b-chrome/20261030-021612-tree-generation.md)). The page
-generated 78 variants for each preset.
-
-| Preset | Variants | Total (ms) | Per variant (ms) | Triangles | Bytes (MB) |
-| --- | --- | --- | --- | --- | --- |
-| Low | 78 | 198.6 | 2.55 | 337,008 | 20.5 |
-| Medium | 78 | 164.9 | 2.11 | 337,008 | 20.5 |
-| High | 78 | 161.9 | 2.08 | 409,182 | 24.5 |
-| Ultra | 78 | 172.4 | 2.21 | 409,182 | 24.5 |
-
-D-241 then allowed the set 200 ms on the slowest measured device. Low is inside it at 198.6 ms, by
-0.7 per cent, and the other presets sit inside it. The line is now 250 ms a variant on the reference
-Mac. Both runs drew on a 30 Hz display, and the runner
-names the phone's heat or the display setting, so the figure carries that caveat.
-
-The first run
-([its run](tested-devices/galaxy-s25-sm-s931b-chrome/20261030-015719-tree-generation.md)) read
-213.4 ms at Low while the cloud reported the phone hot. It is discarded as an upper bound, and the
-two runs differ by 14.8 ms at Low.
-
-The arrays take 20.5 MB at Low and Medium and 24.5 MB at High and Ultra, which is inside the 25 and 30 MB
-that D-241 sets.
 
 ### The splats add-on at its full count, iPad Pro 13 and Galaxy S24
 

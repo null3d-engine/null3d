@@ -38,8 +38,7 @@ export interface LutData {
 /**
  * A color grading table, which `assets.loadLut` loads from a file and `assets.lutFromData` makes
  * from numbers. It is a 3D texture that maps each color of the picture to its graded color. Give
- * it to `post.set({ lut })`, which applies it to every pixel after the tone mapping, as three.js's
- * `LUTPass` does.
+ * it to `post.set({ lut })`, which applies it to every pixel after the tone mapping.
  *
  * @category api/assets
  */

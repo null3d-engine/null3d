@@ -149,8 +149,7 @@ describe('the sampling function', () => {
 		// The docs page holds the copy that a person pastes, so it is kept equal too.
 		expect(marked(docsFile, 'wind-steady')).toBe(steady);
 		expect(marked(docsFile, 'wind-sample')).toBe(sample);
-		// The grass add-on reads this field for its blades, whose shader carries the same blocks;
-		// the vegetation add-on's own test holds its readers to the same copies.
+		// The grass add-on reads this field for its blades, whose shader carries the same blocks.
 		expect(marked(grassFile, 'wind-steady')).toBe(steady);
 		expect(marked(grassFile, 'wind-sample')).toBe(sample);
 		// The engine's particle shader reads the same field, once for each particle.

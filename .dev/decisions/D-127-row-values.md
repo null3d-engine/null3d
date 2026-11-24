@@ -89,8 +89,7 @@ Option A for the data path and the API, with the `ROW_VALUES` and `CASTER` build
 
 ## Addendum: rows keep the mask's own test
 
-The vegetation add-on draws its trees and grass in instance batches, so a batch's rows must take
-alpha to coverage. M3-V2 removed `ROW_VALUES` from the pairs that `permutation::APART` keeps apart
+Trees and grass draw in instance batches, so a batch's rows must take alpha to coverage. M3-V2 removed `ROW_VALUES` from the pairs that `permutation::APART` keeps apart
 from `ALPHA_COVERAGE` and `ALPHA_HASH`, and the frame builder no longer exempts a batch's rows from
 the mask's own test. A batch's rows now test a mask as the same material's mesh does: by the cutoff,
 by coverage or by the hash. The builds still stay apart from skins, morph targets, transmission and

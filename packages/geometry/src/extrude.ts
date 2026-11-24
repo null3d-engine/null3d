@@ -10,10 +10,9 @@ import { isClockWise, triangulateShape } from './shape-utils';
 import type { GeneratedArrays, Vec2Like } from './types';
 
 /**
- * Makes the texture coordinates of an extrusion's triangles, like the `UVGenerator` option of
- * three.js's `ExtrudeGeometry`. Each method gets the positions made so far, three numbers per
- * vertex, and the vertex numbers of one triangle or one side quad. three.js's methods also take
- * the geometry first. These do not, as there is no geometry object.
+ * Makes the texture coordinates of an extrusion's triangles, for the `UVGenerator` option of
+ * `extrude`. Each method gets the positions made so far, three numbers per vertex, and the vertex
+ * numbers of one triangle or one side quad.
  *
  * @category api/geometry
  */
@@ -36,8 +35,8 @@ export interface UVGenerator {
 }
 
 /**
- * three.js's default texture coordinates for an extrusion. A cap vertex takes its x and y. A side
- * wall vertex takes its x or its y, whichever changes more along the wall, and 1 minus its z.
+ * The default texture coordinates for an extrusion. A cap vertex takes its x and y. A side wall
+ * vertex takes its x or its y, whichever changes more along the wall, and 1 minus its z.
  *
  * @category api/geometry
  */
@@ -80,14 +79,13 @@ export const WorldUVGenerator: UVGenerator = {
 };
 
 /**
- * Options for `extrude`, with the names and defaults of three.js's `ExtrudeGeometry`.
+ * Options for `extrude`.
  *
  * @category api/geometry
  */
 export interface ExtrudeOptions {
 	/**
-	 * One shape or a list of shapes. The default is three.js's square with corners at x and y of
-	 * 0.5 and -0.5.
+	 * One shape or a list of shapes. The default is a square with corners at x and y of 0.5 and -0.5.
 	 */
 	shapes?: Shape | readonly Shape[];
 	/** The number of points along each curve of a shape. The default is 12. */
@@ -116,11 +114,11 @@ export interface ExtrudeOptions {
 }
 
 /**
- * The arrays of an extruded shape, like three.js's `ExtrudeGeometry`. The mesh has no indices:
- * each three vertices in a row make a triangle. Its normals are flat, one per face.
+ * The arrays of an extruded shape. The mesh has no indices: each three vertices in a row make a
+ * triangle. Its normals are flat, one per face.
  *
- * three.js puts the caps in one group and the side walls in another, so each can take its own
- * material. Here they form one mesh, caps first. A material per group needs two meshes.
+ * The caps and the side walls form one mesh, caps first. To give each its own material, make two
+ * meshes.
  *
  * @category api/geometry
  */

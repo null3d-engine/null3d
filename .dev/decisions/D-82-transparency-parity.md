@@ -203,7 +203,7 @@ A run of the transparent pass is a set of neighbors in the sorted order that sha
 
 ## Addendum: custom materials take the three bits too
 
-M3-V2 gave custom materials the cut-out features, for the vegetation add-on's leaf cards. A custom
+M3-V2 gave custom materials the cut-out features, for plants' leaf cards. A custom
 material whose WGSL sets or reads the surface's `alpha` now builds alpha to coverage, the alpha
 hash, their sample mask, and a shadow caster and a motion build that test that alpha. A material
 whose WGSL never names the alpha keeps the builds it had, and `materials.shader` throws E1217 for

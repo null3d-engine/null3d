@@ -4,7 +4,6 @@
 // tarball, and exports its package.json, which the Vite plugin resolves to find the text.
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
-import { packagesInUse } from './vegetation-switch';
 
 /** The page that lists every package's third-party code. */
 export const NOTICES_PAGE = 'docs/getting-started/third-party-notices.md';
@@ -162,7 +161,7 @@ function upstreamProblems(root: string): string[] {
 	const problems: string[] = [];
 	const packageRoot = join(root, 'packages');
 	if (!existsSync(packageRoot)) return problems;
-	for (const name of packagesInUse(readdirSync(packageRoot)).sort()) {
+	for (const name of readdirSync(packageRoot).sort()) {
 		const dir = join(packageRoot, name);
 		const trees = SHIPPED_TREES[name] ?? [`packages/${name}/src`];
 		const text = folded(
@@ -229,7 +228,7 @@ export function noticesProblems(root: string): string[] {
 	const page = readFileSync(pagePath, 'utf8');
 	const entries = entriesOf(page);
 	const packageRoot = join(root, 'packages');
-	const packages = existsSync(packageRoot) ? packagesInUse(readdirSync(packageRoot)).sort() : [];
+	const packages = existsSync(packageRoot) ? readdirSync(packageRoot).sort() : [];
 	for (const name of packages) {
 		const dir = join(packageRoot, name);
 		const entry = entries.get(name);

@@ -63,7 +63,6 @@ import {
 } from '../../packages/engine/src/quality/chooser.ts';
 import type { Tier as EngineTier } from '../../packages/engine/src/shared/tier.ts';
 import { sampleUrl } from '../../tools/lib/sample-url.ts';
-import { vegetationOn } from '../../tools/lib/vegetation-switch.ts';
 import { IMAGE_RUNS, manifestRun } from '../image/manifest.ts';
 import { type AnimationResult, animationProblems } from '../pages/lib/animation.ts';
 import { distanceLabel, PRECISION, type PrecisionFacts } from '../pages/lib/depth-precision.ts';
@@ -824,20 +823,6 @@ export function checksPlan({ shaders = 'all' }: PlanSettings = {}): PlanItem<Che
 				),
 			),
 		),
-		// Creek's valley placed by the vegetation add-on, which must reach the reference that its
-		// devices recorded. The placement starts no engine, so one page covers both GPU paths. It
-		// joins only with the add-on's switch on, since the add-on is a work in progress that no CI
-		// job runs (D-378).
-		...(vegetationOn()
-			? [
-					pageItem(
-						'vegetation-scatter',
-						'vegetation-scatter',
-						{ kind: 'probe', tier: 'webgl2' },
-						{ switches: ['runs=1'], timeoutSeconds: 120 },
-					),
-				]
-			: []),
 		pageItem(`${CAPABILITIES}-reload`, 'capabilities', {
 			kind: 'capabilities-reload',
 			first: CAPABILITIES,
@@ -2173,34 +2158,6 @@ export function windFieldCostPlan(): PlanItem<Check>[] {
 	return items;
 }
 
-/** The leaf counts and the two forms that the leaves' cost plan compares. */
-const LEAF_COUNTS = [500, 2000, 10000] as const;
-const LEAF_RIDES = ['offset', 'state'] as const;
-
-/**
- * What the two ways for leaves to ride the wind cost at 500, 2,000 and 10,000 leaves, on each GPU
- * path: the offset form reads the field where each leaf passes, and the state form steps a place
- * and a speed for each leaf through the field.
- */
-export function leavesWindCostPlan(): PlanItem<Check>[] {
-	const items: PlanItem<Check>[] = [];
-	for (const { path, tier } of WIND_READER_PATHS)
-		for (const ride of LEAF_RIDES)
-			for (const count of LEAF_COUNTS)
-				items.push(
-					pageItem(
-						`leaves-wind-${ride}-${count}-${path}`,
-						'leaves-wind-cost',
-						{ kind: 'probe', tier },
-						{
-							switches: [`gpu=${path}`, `ride=${ride}`, `count=${count}`, 'seconds=3'],
-							timeoutSeconds: 600,
-						},
-					),
-				);
-	return items;
-}
-
 /** The GPU paths that a wind reader's cost page draws. */
 const WIND_READER_PATHS = [
 	{ path: 'webgpu', tier: 'webgpu' },
@@ -2485,28 +2442,6 @@ export function reflectionMotionPlan(): PlanItem<Check>[] {
 			},
 		);
 	return [sea('sea-reflection-still', true), sea('sea-reflection-moving', false)];
-}
-
-/**
- * Creek's valley placed by the vegetation add-on's ecological rules, on each GPU path: the page
- * checks its placement against the reference that another device recorded, and times it. The
- * placement reads no GPU, so the two paths must give the same points.
- */
-export function vegetationScatterPlan(): PlanItem<Check>[] {
-	return [
-		pageItem(
-			'vegetation-scatter-webgl2',
-			'vegetation-scatter',
-			{ kind: 'probe', tier: 'webgl2' },
-			{ switches: ['runs=3'], timeoutSeconds: 180 },
-		),
-		pageItem(
-			'vegetation-scatter-webgpu',
-			'vegetation-scatter',
-			{ kind: 'probe', tier: 'webgpu' },
-			{ switches: ['runs=3', 'gpu=webgpu'], timeoutSeconds: 180 },
-		),
-	];
 }
 
 /**
@@ -3416,24 +3351,6 @@ export const recordPlan = (): PlanItem<Check>[] => [
 	},
 ];
 
-/**
- * Procedural tree generation in a worker, for M3-V4's budgets: each species at each preset's
- * detail, generated for several seeds, with the triangles, the vertices and the bytes of each
- * variant. It draws nothing and asks for no GPU path, so every device runs it.
- */
-export function treeGenerationPlan(): PlanItem<Check>[] {
-	return [
-		pageItem(
-			'tree-generation',
-			'tree-generation',
-			{ kind: 'probe', tier: 'webgl2' },
-			// The page generates every species at four presets, each with warm-ups and six seeds: over
-			// five hundred generations. The figures are the run's result, so the item allows ten minutes.
-			{ switches: ['seeds=6'], timeoutSeconds: 600 },
-		),
-	];
-}
-
 export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanItem<Check>[]>> = {
 	record: recordPlan,
 	checks: checksPlan,
@@ -3490,13 +3407,10 @@ export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanIte
 	vegetation: vegetationPlan,
 	'wind-field-cost': windFieldCostPlan,
 	'wind-reader-cost': windReaderCostPlan,
-	'leaves-wind-cost': leavesWindCostPlan,
 	'vegetation-grass': vegetationGrassPlan,
 	terrain: terrainPlan,
 	'terrain-shadow': terrainShadowPlan,
 	'island-phones': islandPhonesPlan,
-	'vegetation-scatter': vegetationScatterPlan,
-	'tree-generation': treeGenerationPlan,
 	'canvas-cost': canvasCostPlan,
 	'wind-stress': windStressPlan,
 	'webgpu-stall': webgpuStallPlan,

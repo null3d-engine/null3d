@@ -189,7 +189,7 @@ A live engine logs an error in `onUpdate` and carries on. Hold mode stops instea
 - Finish loading in the setup. Await every asset there, because the hold starts when the setup's promise resolves. A sketch that adds large models after the first frame on a live page waits for them when `engine.held` is true ([A fast start](start-time.md#draw-the-first-frame-before-the-large-models)).
 - Pass test settings in the sketch module's address, such as `new URL('./sketch.ts?view=harbor', import.meta.url)`, and read them in the sketch with `new URL(import.meta.url).searchParams`. The page's messages reach the sketch only after the hold, because `createEngine` resolves after it.
 - Keep a reference image per GPU tier, and force the tier with `?gpu=webgpu`, `?gpu=compat` or `?gpu=webgl2`. The tiers can differ slightly at edges.
-- Compare with a small tolerance. A software GPU in CI and a real GPU differ at object edges. three.js's own rule counts a pixel as different past 10% of the color range. It fails an image when 0.1% or more of its pixels differ.
+- Compare with a small tolerance. A software GPU in CI and a real GPU differ at object edges. `bunx @null3d/cli test` counts a pixel as different past 10% of the color range. It fails an image when more than 0.1% of its pixels differ ([References and results](../cli/null3d.md#references-and-results)).
 
 Loads that run side by side are safe in a held frame. While the engine holds frames or replays, the sketch's `assets` calls run one at a time, in the order the sketch made them. A model makes its textures in the file's order. So a held scene puts its content together in the same order on every run, however its files arrive ([Hold mode](#hold-mode)).
 

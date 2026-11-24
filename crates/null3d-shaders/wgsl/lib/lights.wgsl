@@ -213,13 +213,12 @@ fn cluster_lights(relative: vec3f) -> vec2u {
     return vec2u(word & ((1u << START_BITS) - 1u), word >> START_BITS);
 }
 
-/// The map that a spot light projects over its cone at a surface, as three.js's spot light map
-/// reads it: the map's color where the cone's square covers the surface, and white outside the
-/// square, where the light shows one color. `relative` is the surface's position relative to the
-/// camera, `normal` its unit normal, `to_view` the unit direction toward the camera, and
-/// `to_light` the unit direction from the surface toward the light. The light's record holds the
-/// map's layer in the light tables plus one, the number of its size above that, and the up axis
-/// that it reads with (see null3d::tables's image_of).
+/// The map that a spot light projects over its cone at a surface: the map's color where the cone's
+/// square covers the surface, and white outside the square, where the light shows one color.
+/// `relative` is the surface's position relative to the camera, `normal` its unit normal, `to_view`
+/// the unit direction toward the camera, and `to_light` the unit direction from the surface toward
+/// the light. The light's record holds the map's layer in the light tables plus one, the number of
+/// its size above that, and the up axis that it reads with (see null3d::tables's image_of).
 fn spot_map(
     light: PointLight,
     relative: vec3f,
@@ -314,14 +313,13 @@ fn cluster_sample(
 }
 
 /// The light that a PBR surface reflects toward the camera from the point, spot and area lights of
-/// its cluster, as three.js's `RE_Direct_Physical` gives it for each point and spot light, and its
-/// `RE_Direct_RectArea_Physical` for each area light. `relative` is the
-/// surface's position relative to the camera, `normal` its unit normal, `mesh_normal` that normal
-/// before a normal map bends it, which moves a shadow lookup off the surface, and `to_view` the
-/// unit direction toward the camera. `compensation` comes from `multiscatter_compensation`. In the
-/// TRANSLUCENCY builds each light also adds the light that reaches the surface's back, shadowed
-/// from the side that it falls on (null3d::translucency). COAT_SHEEN builds each light lights the
-/// surface's clear coat and sheen too (null3d::coat_sheen).
+/// its cluster, as `direct_light` gives it for each point and spot light, and `area_light` for each
+/// area light. `relative` is the surface's position relative to the camera, `normal` its unit
+/// normal, `mesh_normal` that normal before a normal map bends it, which moves a shadow lookup off
+/// the surface, and `to_view` the unit direction toward the camera. `compensation` comes from
+/// `multiscatter_compensation`. In the TRANSLUCENCY builds each light also adds the light that
+/// reaches the surface's back, shadowed from the side that it falls on (null3d::translucency).
+/// COAT_SHEEN builds each light lights the surface's clear coat and sheen too (null3d::coat_sheen).
 /// A shader that adds a lobe of its own for each light walks the cluster itself, since this module
 /// cannot call a function of the shader that declares it, and shades each light with
 /// `cluster_sample`.

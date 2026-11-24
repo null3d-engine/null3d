@@ -56,12 +56,9 @@ import {
 /**
  * How a label's element sits in the scene.
  *
- * - `'screen'` keeps the element flat on the screen at the label's place, always the same size, as
- *   three.js's `CSS2DRenderer` does.
- * - `'world'` makes the element a plane of the scene: it turns and scales with the object, as
- *   three.js's `CSS3DObject` does.
- * - `'billboard'` makes the element a plane of the scene that always faces the camera, as
- *   three.js's `CSS3DSprite` does.
+ * - `'screen'` keeps the element flat on the screen at the label's place, always the same size.
+ * - `'world'` makes the element a plane of the scene: it turns and scales with the object.
+ * - `'billboard'` makes the element a plane of the scene that always faces the camera.
  *
  * @category api/ui
  */
@@ -81,8 +78,8 @@ export interface LabelOptions {
 	/** How the element sits in the scene. The default is `'screen'`. */
 	transform?: LabelTransform;
 	/**
-	 * The element's turn in its own plane, in radians, for `'billboard'`. It turns the content of the
-	 * element, as three.js's `CSS3DSprite` `rotation2D` does.
+	 * The element's turn in its own plane, in radians, for `'billboard'`. It turns the element's
+	 * content counterclockwise, while the element keeps facing the camera.
 	 */
 	rotation?: number;
 }

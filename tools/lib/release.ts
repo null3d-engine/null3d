@@ -441,8 +441,8 @@ const ROADMAP = /^## Roadmap$|Everything else planned, by version/m;
 
 /**
  * Why a version cannot be released yet. A minor or major release ships the features of every
- * page with that version or an earlier one, so none of those pages may still be planned. From 1.0
- * on, releases are public, and the roadmap is internal, so the README must not carry it.
+ * page with that version or an earlier one, so none of those pages may still be planned. From
+ * 0.1.0 on, releases are public, and the roadmap is internal, so the README must not carry it.
  */
 export function releaseProblems(
 	version: string,
@@ -450,8 +450,9 @@ export function releaseProblems(
 	readme: string,
 ): string[] {
 	const [major, minor, patch] = parseVersion(version);
+	const isPublic = major > 0 || minor > 0;
 	const problems: string[] = [];
-	if ((major > 0 || minor > 0) && patch === 0) {
+	if (isPublic && patch === 0) {
 		for (const page of pages) {
 			const since = /^(\d+)\.(\d+)$/.exec(page.since);
 			if (page.status !== 'planned' || !since) continue;
@@ -462,7 +463,7 @@ export function releaseProblems(
 				);
 		}
 	}
-	if (major >= 1 && ROADMAP.test(readme))
+	if (isPublic && ROADMAP.test(readme))
 		problems.push(
 			`README.md still has the roadmap, which is internal; remove it before the public ${version} release`,
 		);

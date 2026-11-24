@@ -136,7 +136,8 @@ fn clip_with_jitter(view_proj: mat4x4f, jitter: vec2f, relative_position: vec3f)
 /// the frame's uniform block, and Adreno 830's WebGL2 driver copies no array member of a struct
 /// that way (see "Browser faults" in the maintainer notes). The bytes are the same as arrays'.
 struct EnvironmentLight {
-    /// The coefficients of the diffuse light in three.js's order, from `a`, each in `xyz`.
+    /// The coefficients of the diffuse light, from `a`, each in `xyz`, in the band order that
+    /// null3d::lighting's `sh_irradiance` reads.
     sh_a: vec4f,
     sh_b: vec4f,
     sh_c: vec4f,

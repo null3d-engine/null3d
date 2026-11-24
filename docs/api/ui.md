@@ -78,7 +78,7 @@ The engine holds 4,096 labels at once by default, and 256 labels that are planes
 
 `engine.labels.bind(id, element)` binds an element to the label with the same id. The sketch can track the label before or after the bind. The element stays hidden until the label's first frame reaches the screen. The code that moves the elements downloads with the first bind, so a page without labels never downloads it.
 
-The engine places the element's center over the label, through its CSS `transform`. It also sets the element's `position` to `absolute` at the top left of its container. So put the elements in a container that covers the canvas exactly, as the example above does. Give the container `pointer-events: none`, so the canvas still gets the pointer.
+The engine places the element's center over the label, through its CSS `transform`. It also sets the element's `position` to `absolute` at the top left of its container. So put the elements in a container that covers the canvas exactly, as the example above does. Give the container `pointer-events: none`, so the canvas still gets the pointer. The elements of labels flat on the screen stack in the order of the page, whatever their distance to the camera. The engine owns the element's `transform`. To anchor another point of the element on the label, offset the content inside the element with CSS.
 
 The engine sets `visibility: hidden` on the element while:
 
@@ -101,14 +101,14 @@ ui.trackLabel(panel, 'card', { transform: 'world', offset: [0, 1.4, 0] });
 ui.trackLabel(crown, 'title', { transform: 'billboard', rotation: 0.1 });
 ```
 
-The scene's units are the element's CSS pixels for these labels, as they are for three.js's `CSS3DRenderer`. An element 160 pixels wide is 160 units wide, so the scene around it needs units of the same size.
+The scene's units are the element's CSS pixels for these labels. An element 160 pixels wide is 160 units wide, so the scene around it needs units of the same size.
 
 The browser scales the element with the perspective, and keeps its text sharp. The element covers about `w × focal ÷ d` pixels of the canvas, where `w` is its width and `d` its distance. The focal length is half the canvas height in pixels, divided by the tangent of half the vertical field of view.
 
 What the page does for such a label:
 
 - The engine moves the element into a container of its own, inside the element's parent. The container covers its parent and holds the camera's view. Put the element in a container that covers the canvas, as for any label.
-- The engine sets the element's `user-select` to `none`, and leaves the pointer to your CSS. Give the element `pointer-events: auto` when it takes clicks, as three.js's `CSS3DRenderer` does. Keep its `transform-origin` at its center.
+- The engine sets the element's `user-select` to `none`, and leaves the pointer to your CSS. Give the element `pointer-events: auto` when it takes clicks. Keep its `transform-origin` at its center.
 - The engine writes the element's `transform` only when its matrix changes. Its size, its text and its style stay yours.
 - The element hides with `visibility: hidden` for the reasons listed above. The engine tests the label's anchor, so the whole element hides at once.
 
@@ -119,18 +119,6 @@ The engine draws a frame on one thread while the sketch computes the next one on
 So the sketch places every label with the camera of each frame, as part of the frame's work. The thread that draws keeps the places of the frame it shows, and the page moves the elements to them. Each element therefore sits over its object in the frame on screen, in every thread mode. Where the page itself draws, it moves the elements right after it draws each frame, in the same update of the page.
 
 The page writes a screen label's element only when the label moved by half a CSS pixel or more, or when it shows or hides. It writes a 3D element's transform only when its matrix changed. It reads every label before it writes any style, so the browser runs no layout between them. While no element is bound, the labels cost the page nothing.
-
-## Compared with three.js
-
-Labels take the place of three.js's `CSS2DRenderer` and `CSS2DObject`, of `CSS3DRenderer` with `CSS3DObject` and `CSS3DSprite`, and of drei's `<Html>`.
-
-- An element's center sits where `CSS2DRenderer` puts a `CSS2DObject`'s center by default, to within a thousandth of a pixel.
-- A label with `transform: 'world'` takes a `CSS3DObject`'s matrix, and `'billboard'` takes a `CSS3DSprite`'s, with its `rotation2D` as `rotation`.
-- The offset works like a `CSS2DObject`'s or `CSS3DObject`'s position under its parent.
-- `CSS2DRenderer` and `CSS3DRenderer` hide an element with `display: none`; null3D uses `visibility: hidden`, which keeps the page's layout as it is.
-- null3D does not set `z-index` from the distance to the camera. Elements stack in the order of the page. `CSS2DObject`'s `center` has no counterpart: move the content inside the element with CSS.
-- null3D hides a plane whose anchor lies behind the camera, or outside the near and far planes. three.js's `CSS3DRenderer` draws such an element anyway.
-- `CSS3DRenderer` writes every element's style in every frame. null3D writes an element's transform only when its matrix changes.
 
 ## Related pages
 

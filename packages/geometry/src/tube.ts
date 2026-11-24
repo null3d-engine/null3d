@@ -7,14 +7,14 @@ import { gridIndices, type Tuple3 } from './math';
 import type { GeneratedArrays } from './types';
 
 /**
- * Options for `tube`, with the names and defaults of three.js's `TubeGeometry`.
+ * Options for `tube`.
  *
  * @category api/geometry
  */
 export interface TubeOptions {
 	/**
-	 * The 3D curve that the tube follows. The default is three.js's quadratic Bézier curve from
-	 * (-1, -1, 0) through the control point (-1, 1, 0) to (1, 1, 0).
+	 * The 3D curve that the tube follows. The default is a quadratic Bézier curve from (-1, -1, 0)
+	 * through the control point (-1, 1, 0) to (1, 1, 0).
 	 */
 	path?: Curve<[number, number, number]>;
 	/** The number of segments along the curve. The default is 64. */
@@ -28,7 +28,7 @@ export interface TubeOptions {
 }
 
 /**
- * The arrays of a tube, like three.js's `TubeGeometry`. The mesh has indices.
+ * The arrays of a tube along a 3D curve. The mesh has indices.
  *
  * @category api/geometry
  */

@@ -56,7 +56,7 @@ export default defineSketch(({ scene, materials, geometry, textures, render }) =
 - A pass runs only while something shows its texture: a texture from `textures.fromPass`, or another running pass that names it in `reads`. A pass that nothing shows costs nothing, not even its texture's memory.
 - The texture holds linear color, after the exposure and before the tone curve. On most devices it holds high dynamic range color. A material that shows it, such as an unlit material, gives the camera the same light that the pass saw. The final pass then maps it as it maps the rest of the scene.
 - Devices that draw 8-bit color tone map in each material's shader: compatibility mode with MSAA, and WebGL2 devices without float targets ([Color management](../concepts/color-management.md)). In compatibility mode the engine turns the pass's colors back to linear as it fills the texture. But they stay tone mapped, so the material that shows the texture applies the tone curve a second time. With the default curve the image then looks a little lighter in the middle tones. On WebGL2 devices without float targets the texture holds display color, so the image looks brighter and flatter.
-- The image stands upright on a plane, with v = 0 at its bottom row, as three.js's render targets do. A reflection pass's texture on the HDR WebGPU path is the exception: its rows start at the top, so read it with `reflection_uv`.
+- The image stands upright on a plane, with v = 0 at its bottom row. A reflection pass's texture on the HDR WebGPU path is the exception: its rows start at the top, so read it with `reflection_uv`.
 - Each pass texture has the scene's anti-aliasing: with MSAA the pass draws with the same samples, then resolves.
 - A pass never draws an object whose material shows the texture of a pass that it does not read, or its own texture. So a mirror does not show itself, and a minimap's screen does not appear in the minimap. To show a mirror in a mirror, add a second pass for it.
 - A pass with a `scale` fills its whole texture at any render scale, so a material samples it from 0 to 1 across. Its texture follows the render size: when the engine lowers the render scale to keep up, the texture shrinks with it, and the pass costs less too.
@@ -64,9 +64,9 @@ export default defineSketch(({ scene, materials, geometry, textures, render }) =
 
 ### What a scene pass draws
 
-A scene pass draws the scene's objects with their materials, the sun and its shadows where the camera's shadow cascades reach. It draws the ambient and hemisphere lights, the environment's light and the fog. It also draws the point, spot and area lights that its camera sees. Such a light casts its shadow in the pass when the camera's view gives it one. A light that only the pass sees casts no shadow there. It draws the scene's background behind the objects, the sky included, as a three.js render target shows `scene.background`. With a `clearColor`, the texture clears to that color and shows no background, which suits a minimap. It culls each frame in one pass, without occlusion culling.
+A scene pass draws the scene's objects with their materials, the sun and its shadows where the camera's shadow cascades reach. It draws the ambient and hemisphere lights, the environment's light and the fog. It also draws the point, spot and area lights that its camera sees. Such a light casts its shadow in the pass when the camera's view gives it one. A light that only the pass sees casts no shadow there. It draws the scene's background behind the objects, the sky included. With a `clearColor`, the texture clears to that color and shows no background, which suits a minimap. It culls each frame in one pass, without occlusion culling.
 
-A pass draws no ambient occlusion. three.js draws ambient occlusion as a post pass over the canvas, so its render targets have none either.
+A pass draws no ambient occlusion.
 
 ## Reflection passes
 

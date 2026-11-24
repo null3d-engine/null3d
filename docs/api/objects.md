@@ -44,10 +44,10 @@ export default defineSketch(({ scene, geometry, materials }) => {
 Each object has a position, a rotation and a scale, all relative to its parent. Positions are in meters and angles in radians.
 
 - `setPosition(x, y, z)` and `setScale(x, y, z)` set the position and the scale.
-- `setRotation(x, y, z, w)` sets the rotation as a quaternion. `setRotationEuler(x, y, z, order)` sets it from Euler angles, with three.js's axis orders. The default order is `'XYZ'`.
+- `setRotation(x, y, z, w)` sets the rotation as a quaternion. `setRotationEuler(x, y, z, order)` sets it from Euler angles. The order names the axes in turn: the default, `'XYZ'`, turns the object about its own X axis, then its Y axis, then its Z axis. The other orders are `'YXZ'`, `'ZXY'`, `'ZYX'`, `'YZX'` and `'XZY'`.
 - `setPose(position, rotation)` sets the position and, when you give it, the rotation, from two arrays that hold them: `[x, y, z]` and the quaternion `[x, y, z, w]`. Give it the arrays that a pose lives in, and no number crosses the call. The calls above pass each number on its own. A number passed to a call that the browser does not inline becomes an object of its own. The controls write a camera's pose this way in every frame.
-- `rotateX(angle)`, `rotateY(angle)` and `rotateZ(angle)` turn the object about its own axes, as three.js's calls of the same names do.
-- `translate(x, y, z)` moves the object along its own axes, as three.js's `translateX`, `translateY` and `translateZ` do together. The object's rotation turns the vector, but its scale does not stretch it. So `camera.translate(0, 0, -1)` moves a camera 1 m forward.
+- `rotateX(angle)`, `rotateY(angle)` and `rotateZ(angle)` turn the object by an angle about its own X, Y or Z axis.
+- `translate(x, y, z)` moves the object along its own axes. The object's rotation turns the vector, but its scale does not stretch it. So `camera.translate(0, 0, -1)` moves a camera 1 m forward.
 - `lookAt(x, y, z)` turns a mesh or a group so that its +Z axis points at a point. A camera or a light turns its -Z axis there instead. The call assumes that the object's parents are not rotated.
 
 Setters write straight into the engine's memory and mark the object as changed. They send no message and allocate nothing, so `onUpdate` can call them for many objects in every frame. In development builds, a setter that gets `NaN` or an infinite number throws E1203.
@@ -60,7 +60,7 @@ Getters copy into an array you pass, so they allocate nothing. Make the array on
 
 - `getPosition(out)` copies the position that you set, relative to the parent. In large-world mode it keeps its full precision, so pass a plain array or a `Float64Array`. `getRotation(out)` copies the rotation, as a quaternion (x, y, z, w).
 - `getWorldPosition(out)` copies the position in the world, and `getWorldQuaternion(out)` the rotation in the world.
-- `getWorldMatrix(out)` copies the world matrix: 16 numbers, column by column, as the [math helpers](math.md) and three.js's `matrixWorld` hold them.
+- `getWorldMatrix(out)` copies the world matrix: 16 numbers, column by column, as the [math helpers](math.md) hold them.
 
 The world getters read the engine's last transform update. A change that you make in `onUpdate` shows in them in the same frame's `onLateUpdate`, and from the next `onUpdate` call on. Their positions are 64-bit numbers, which keep their precision far from the origin. Pass a plain array or a `Float64Array`, because a `Float32Array` rounds them to 32 bits.
 
@@ -68,7 +68,7 @@ The world getters read the engine's last transform update. A change that you mak
 
 An object gets a parent from the `parent` option, or later from `setParent(parent)`. `setParent(null)` makes it a root object. `getParent()` returns the parent, or null for a root object.
 
-By default the object keeps its position, rotation and scale relative to the parent, as three.js's `add` does. Its place in the world then changes with the new parent. `setParent(parent, { keepWorld: true })` keeps its place, rotation and size in the world instead, as three.js's `attach` does. The engine gives the object the position, rotation and scale that do that under the new parent.
+By default the object keeps its position, rotation and scale relative to the parent. Its place in the world then changes with the new parent. `setParent(parent, { keepWorld: true })` keeps its place, rotation and size in the world instead. The engine gives the object the position, rotation and scale that do that under the new parent.
 
 ```ts
 // Pick up a crate: it stays where it is, then moves with the hand.
@@ -81,7 +81,7 @@ The engine works out those values when it applies the change, after `onUpdate` r
 
 Two kinds of parent change the result:
 
-- A parent that is turned and scaled by different amounts on its axes shears its children. No position, rotation and scale can express a shear. The object keeps its place, but its rotation and scale come out close to the old ones. three.js has the same limit.
+- A parent that is turned and scaled by different amounts on its axes shears its children. No position, rotation and scale can express a shear. The object keeps its place, but its rotation and scale come out close to the old ones.
 - A parent scaled to 0 on an axis flattens its children, and no transform can undo that. The object then keeps its values relative to the parent.
 
 Children move with their parent. A static child of a dynamic parent follows it too, because the engine recomputes the child whenever the parent moves.
@@ -109,12 +109,12 @@ The mask belongs to the object alone, so its children keep their own. Like `setV
 A mesh has these calls besides the ones above. Like the structural calls, they take effect in the next frame.
 
 - `setMaterial(material)` changes the material, and `setMesh(mesh)` changes the shape. The new mesh's bounding sphere replaces any bounds that `setBounds` gave.
-- `setCastShadows(true)` and `setReceiveShadows(true)` make the mesh cast and receive the directional light's shadows, as three.js's `castShadow` and `receiveShadow` do. The `castShadows` and `receiveShadows` options of `createMesh` set them at the start. Both are false by default. Unlit materials show no shadows. [Shadows](../concepts/shadows.md) explains them.
+- `setCastShadows(true)` and `setReceiveShadows(true)` make the mesh cast and receive the directional light's shadows. The `castShadows` and `receiveShadows` options of `createMesh` set them at the start. Both are false by default. Unlit materials show no shadows. [Shadows](../concepts/shadows.md) explains them.
 - `shaderId` is the number that a custom material reads as `object.id` for the mesh. Pass it to a uniform to pick out the mesh in a shader, as [Built-in shader inputs](../shaders/builtins.md#object) shows.
-- `setOutlined(true)` draws an outline around the mesh while `post.set({ outline })` turns outlines on, as adding it to three.js's `OutlinePass.selectedObjects` does. It is false by default. A model's copy from `scene.instantiate` has `setOutlined` too, which outlines each of its meshes. [Outlines](post.md#outlines) gives the outline's settings.
-- `setRenderOrder(order)` sets the order in which blended objects draw, lower first, as three.js's `renderOrder` does. Objects of one order draw farthest first. The engine orders opaque and masked objects itself, for speed, as the depth test decides what shows. The order costs nothing: the engine sorts blended objects in every frame anyway. [Materials and pipelines](../concepts/materials.md#the-transparent-pass) explains the sort.
+- `setOutlined(true)` draws an outline around the mesh while `post.set({ outline })` turns outlines on. It is false by default. A model's copy from `scene.instantiate` has `setOutlined` too, which outlines each of its meshes. [Outlines](post.md#outlines) gives the outline's settings.
+- `setRenderOrder(order)` sets the order in which blended objects draw, lower first. Objects of one order draw farthest first. The engine orders opaque and masked objects itself, for speed, as the depth test decides what shows. The order costs nothing: the engine sorts blended objects in every frame anyway. [Materials and pipelines](../concepts/materials.md#the-transparent-pass) explains the sort.
 - `setMorphWeight(nameOrIndex, weight)` and `getMorphWeight(nameOrIndex)` set and read a morph target's weight: [Morph targets](animation.md#morph-targets).
-- `setFrustumCulled(false)` makes the engine draw the mesh even when its bounds are out of view, as three.js's `frustumCulled = false` does.
+- `setFrustumCulled(false)` makes the engine draw the mesh even when its bounds are out of view.
 - `setBounds(center, radius)` gives the object a bounding sphere of its own, which culling tests instead of the mesh's sphere. The center is relative to the object's origin, and both values are before the object's scale. Use it when a shader moves vertices outside the mesh's sphere: bounds that cover the moved vertices keep culling at work, where `setFrustumCulled(false)` turns it off. A group has no sphere of its own, so it needs one wherever a sphere is read, as a directional light's [hero shadow](../concepts/shadows.md#a-hero-shadow) reads it. A negative radius throws E1108 in development builds.
 - `setLevelBias(bias)` raises or lowers the threshold that picks this object's levels of detail, as Godot's `lod_bias` does. A bias above 1 draws coarser levels, and one below 1 keeps the object's detail. The same factor moves the distance at which the object hides. The bias is 1 by default, and does nothing without a mesh that has levels. [Levels of detail](../concepts/lod.md#the-bias-of-one-object) shows it.
 - `setDrawRange(start, end)` draws the mesh only between those distances from the camera to its nearest point, fading at each edge. [Distance bands](../concepts/lod.md#distance-bands) shows it.

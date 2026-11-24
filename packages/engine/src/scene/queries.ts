@@ -36,8 +36,7 @@ import type { PointBatch, SpriteBatch } from './sprites';
 export interface QueryOptions {
 	/**
 	 * The layers to test, as a 32-bit mask like `Object3D.setLayers` takes. A query tests an object
-	 * when their masks share a layer. The default is layer 0 alone, as for a camera and for
-	 * three.js's `Raycaster`.
+	 * when their masks share a layer. The default is layer 0 alone, as for a camera.
 	 */
 	layers?: number;
 }
@@ -52,14 +51,12 @@ export interface RaycastOptions extends QueryOptions {
 	maxDistance?: number;
 	/**
 	 * When set, a ray hits a point that it passes within this many meters of, whatever the point's
-	 * size, as three.js's `Raycaster.params.Points.threshold` does. By default a ray hits the
-	 * square that a point draws.
+	 * size. By default a ray hits the square that a point draws.
 	 */
 	pointThreshold?: number;
 	/**
 	 * When set, a ray hits a line that it passes within this many meters of, whatever the line's
-	 * width, as three.js's `Raycaster.params.Line.threshold` does. By default a ray hits a line
-	 * within half its width.
+	 * width. By default a ray hits a line within half its width.
 	 */
 	lineThreshold?: number;
 }
@@ -102,16 +99,13 @@ export interface RaycastHit extends OverlapHit {
 	normal: Vec3Like;
 	/** The distance from the ray's origin to the hit, in meters. */
 	distance: number;
-	/**
-	 * The index of the hit triangle in its mesh, as three.js's `faceIndex`, or -1 for a sprite, a
-	 * point or a line.
-	 */
+	/** The index of the hit triangle in its mesh, or -1 for a sprite, a point or a line. */
 	triangle: number;
 	/**
 	 * Where on the surface the ray hit, as the first texture coordinates of the hit triangle
-	 * blended across its three corners, as three.js's `intersection.uv`. Give the hit object an
-	 * array of two numbers, as it has arrays for `point` and `normal`, and every raycast fills it.
-	 * Read `hasUv` first: the numbers mean nothing when it is false.
+	 * blended across its three corners. Give the hit object an array of two numbers, as it has
+	 * arrays for `point` and `normal`, and every raycast fills it. Read `hasUv` first: the numbers
+	 * mean nothing when it is false.
 	 */
 	uv?: Vec2Like;
 	/**

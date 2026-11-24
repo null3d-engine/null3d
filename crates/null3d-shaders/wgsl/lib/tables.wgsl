@@ -82,7 +82,7 @@ struct AreaTerms {
 
 /// The area lights' tables for a view at `n_dot_v` and a perceptual `roughness`, filtered between
 /// the nearest four entries by the sampler. The tables run across by roughness and down by
-/// sqrt(1 - n_dot_v), as three.js's `LTC_Uv` reads them, in the corner of their layers.
+/// sqrt(1 - n_dot_v), in the corner of their layers.
 fn area_terms(n_dot_v: f32, roughness: f32) -> AreaTerms {
     let place = vec2f(roughness, sqrt(1.0 - saturate(n_dot_v)));
     let at = clamp(place, vec2f(0.0), vec2f(1.0)) * f32(AREA_SIZE - 1u) + 0.5;

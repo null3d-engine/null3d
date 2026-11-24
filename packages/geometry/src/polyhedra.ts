@@ -7,7 +7,7 @@ import { faceNormals, normalizeNormals } from './math';
 import type { GeneratedArrays } from './types';
 
 /**
- * Options for `polyhedron`, with the names and defaults of three.js's `PolyhedronGeometry`.
+ * Options for `polyhedron`.
  *
  * @category api/geometry
  */
@@ -26,7 +26,7 @@ export interface PolyhedronOptions {
 }
 
 /**
- * Options for the named polyhedra, such as `icosahedron`, with three.js's names and defaults.
+ * Options for the named polyhedra, such as `icosahedron`.
  *
  * @category api/geometry
  */
@@ -54,8 +54,8 @@ function inclination(x: number, y: number, z: number): number {
 }
 
 /**
- * The arrays of a polyhedron, like three.js's `PolyhedronGeometry`. The mesh has no indices: each
- * three vertices in a row make a triangle.
+ * The arrays of a polyhedron from your own corners and faces, with its vertices on a sphere. The
+ * mesh has no indices: each three vertices in a row make a triangle.
  *
  * @category api/geometry
  */
@@ -183,7 +183,7 @@ function correctSeam(uvBuffer: number[]): void {
 }
 
 /**
- * The arrays of a tetrahedron, like three.js's `TetrahedronGeometry`. The mesh has no indices.
+ * The arrays of a tetrahedron. The mesh has no indices.
  *
  * @category api/geometry
  */
@@ -196,7 +196,7 @@ export function tetrahedron(options: PolyhedronShapeOptions = {}): GeneratedArra
 }
 
 /**
- * The arrays of an octahedron, like three.js's `OctahedronGeometry`. The mesh has no indices.
+ * The arrays of an octahedron. The mesh has no indices.
  *
  * @category api/geometry
  */
@@ -209,7 +209,7 @@ export function octahedron(options: PolyhedronShapeOptions = {}): GeneratedArray
 }
 
 /**
- * The arrays of an icosahedron, like three.js's `IcosahedronGeometry`. The mesh has no indices.
+ * The arrays of an icosahedron. The mesh has no indices.
  *
  * @category api/geometry
  */
@@ -263,7 +263,7 @@ export function icosahedron(options: PolyhedronShapeOptions = {}): GeneratedArra
 }
 
 /**
- * The arrays of a dodecahedron, like three.js's `DodecahedronGeometry`. The mesh has no indices.
+ * The arrays of a dodecahedron. The mesh has no indices.
  *
  * @category api/geometry
  */

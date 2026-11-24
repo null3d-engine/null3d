@@ -13,8 +13,8 @@ struct Backdrop {
     /// The factor of the background's light, the blur as a roughness from 0 to 1, the cube map's
     /// last mip level, and the weight of the sky's second sky, 0 for none.
     params: vec4f,
-    /// The sky's sun position in `xyz`, as three.js's `sunPosition`, and 1 where the sky shows the
-    /// sun's disc, else 0.
+    /// The sky's sun position in `xyz`, a point toward the sun that the sky's `sunPosition` sets,
+    /// and 1 where the sky shows the sun's disc, else 0.
     sun: vec4f,
     /// The sky's turbidity, Rayleigh coefficient, Mie coefficient and Mie directional g.
     scattering: vec4f,
@@ -37,14 +37,14 @@ struct BoxCorner {
     direction: vec3f,
 }
 
-/// Corner `vertex` of 36: the box of two triangles per face around the camera, as three.js draws
-/// cube and sky backgrounds. The box's center is the camera's place, which is the origin of
-/// positions relative to the camera, or the mirrored camera's place in a reflection, and a
-/// corner's offset from it is its direction. Every corner sits at the far plane, depth 0 in
-/// reversed depth, which every depth mapping keeps at the edge of the clip volume, and triangles
-/// that pass behind the camera are clipped where w reaches 0. An orthographic camera's view rays are parallel, so every pixel looks the
-/// same way: its first three corners make one triangle over the whole view, in the view's
-/// direction, and the rest make none.
+/// Corner `vertex` of 36: the box of two triangles per face around the camera, which the cube map
+/// and the sky draw as. The box's center is the camera's place, which is the origin of positions
+/// relative to the camera, or the mirrored camera's place in a reflection, and a corner's offset
+/// from it is its direction. Every corner sits at the far plane, depth 0 in reversed depth, which
+/// every depth mapping keeps at the edge of the clip volume, and triangles that pass behind the
+/// camera are clipped where w reaches 0. An orthographic camera's view rays are parallel, so every
+/// pixel looks the same way: its first three corners make one triangle over the whole view, in the
+/// view's direction, and the rest make none.
 fn box_corner(vertex: u32, view_proj: mat4x4f, camera_position: vec4f) -> BoxCorner {
     var out: BoxCorner;
     if camera_position.w == 0.0 {

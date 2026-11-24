@@ -25,9 +25,9 @@ export interface EngineLabels {
 	 *
 	 * A label that the sketch tracks with `transform: 'world'` or `'billboard'` is a plane of the
 	 * scene: the engine moves the element into a container of its own inside the element's parent,
-	 * and turns it with the scene's perspective, as three.js's `CSS3DRenderer` does. Leave the
-	 * element's `transform-origin` at its center, and size the element in CSS pixels, which are the
-	 * scene's units at the distance where the view is one pixel per unit.
+	 * and turns it with the scene's perspective. Leave the element's `transform-origin` at its
+	 * center, and size the element in CSS pixels, which are the scene's units at the distance where
+	 * the view is one pixel per unit.
 	 */
 	bind(id: string, element: HTMLElement): () => void;
 }

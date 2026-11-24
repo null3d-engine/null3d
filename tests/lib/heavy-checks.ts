@@ -5,8 +5,6 @@
 // One list, because the two halves of it must agree: a file that the unit run leaves out and no
 // runner names runs nowhere, and a file that a runner names without the unit run leaving it out
 // runs twice.
-import { isVegetationFile, vegetationOn } from '../../tools/lib/vegetation-switch.ts';
-
 export interface HeavyCheck {
 	/** The test file, relative to the repository. */
 	readonly file: string;
@@ -27,10 +25,7 @@ export interface HeavyCheck {
  */
 export const PART_ENV = 'NULL3D_CHECK_PART';
 
-/**
- * The checks. The vegetation add-on's join only with its switch on: the add-on is a work in progress
- * that no CI job checks (D-378).
- */
+/** The checks. */
 export const HEAVY_CHECKS: readonly HeavyCheck[] = [
 	// The whole generated set beside the text the tests read their counts from. The set grows with
 	// each feature that adds builds, and shares of it are held while the check runs: CI measured
@@ -88,17 +83,7 @@ export const HEAVY_CHECKS: readonly HeavyCheck[] = [
 	// predates that range and is owed a study; the ceiling is raised to hold the measured figure with
 	// room rather than to let a re-run pass. It is now a bound on unexplained growth: a build that climbs towards it without a named cause is the fault the study exists to find, not a ceiling to move again. The server's own pair of runs is still owed.
 	{ file: 'packages/cli/src/add-on-page-build.test.ts', ceilingMiB: 1280 },
-	// The triangle maximum's sweep, and the checks that read its table: a plant grown for each
-	// species, sparseness and maximum. Alone, the file took 320 to 340 s on the Mac and held 3,166
-	// MiB in one run and 3,833 in another, near the unit run's own ceiling and most of a local unit
-	// run's time, so it takes a process and a ceiling of its own. The ceiling leaves about a fifth
-	// above the higher measurement for a busier machine.
-	{ file: 'packages/vegetation/src/lod/budget.test.ts', ceilingMiB: 4608 },
-	// The owner's byte caps over eleven seeds: every variant of each, at every tier, which builds a kit
-	// for each tier and grows a tree for each variant. The unit run sweeps one seed and this one the
-	// rest, and the whole measures 247 MiB and 55 s on the Mac.
-	{ file: 'packages/vegetation/src/core/caps-heavy.test.ts', ceilingMiB: 512 },
-].filter(({ file }) => vegetationOn() || !isVegetationFile(file));
+];
 
 /**
  * The pattern that `bun test --path-ignore-patterns` takes to leave one check's file out of a run.

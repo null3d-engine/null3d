@@ -105,18 +105,6 @@ The quadtree selection and the block build run in the add-on's own WebAssembly m
 
 A sketch that never imports `@null3d/terrain` ships no terrain code and starts no terrain work. The package follows the engine's add-on rules: its surface function ships compiled, and the selection and build module loads when a terrain first picks its blocks.
 
-## Compared with three.js
-
-three.js has no terrain class. Projects displace a `PlaneGeometry` on the CPU, shape the ground with three.js's `ImprovedNoise` and a height map, or add a library such as three-mesh-bvh for large ground.
-
-| three.js | null3D |
-| --- | --- |
-| A `PlaneGeometry` with displaced vertices | `createTerrain` with a height function or height map |
-| A quadtree or a library for levels of detail | The add-on's own camera-centered quadtree |
-| A hand-painted ground or per-vertex colors | A splat map that blends four tiled layers |
-| A physics collider or a height lookup on the mesh | `heightAt` and `normalAt` |
-| A vertex morph between levels | A block morphs toward its parent, and a skirt covers a neighbour more than one level away |
-
 ## Related pages
 
 - [Geometry](geometry.md): meshes from arrays, and the generators.

@@ -15,8 +15,6 @@
 		"@null3d/particles": "workspace:*",
 		"@null3d/sound": "workspace:*",
 		"@null3d/terrain": "workspace:*",
-		"@null3d/vegetation": "workspace:*",
-		"@null3d/vegetation-textures": "workspace:*",
 		"@null3d/three-compat": "workspace:*",
 		"@null3d/vite-plugin": "workspace:*",
 		"@null3d/water": "workspace:*",

@@ -8,9 +8,9 @@ summary: "The npm packages; the Vite plugin, which every Vite build needs; packa
 
 # Install null3D
 
-> Roadmap step 0.1, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. The packages are not on npm until the 0.1 release, so the install commands below fail before then.
+> Roadmap step 0.1, first released in null3D 0.1.0. The API is experimental, so it can still change between versions.
 
-null3D installs from npm like any other library, and you import it in your code as you would import `three`. You need no command-line tool to build or run a null3D sketch. To try the engine in one HTML file with no install, see [Try null3D from a CDN](cdn.md).
+null3D installs from npm and imports like any other library. You need no command-line tool to build or run a null3D sketch. To try the engine in one HTML file with no install, see [Try null3D from a CDN](cdn.md).
 
 The commands on these pages use [Bun](https://bun.sh) 1.4.3 or newer. Older Bun can drop its link to the browser that `bunx @null3d/cli test` and the tool's other browser commands drive, and the command then waits forever. npm, pnpm and Yarn work too, with their own install and run commands.
 
@@ -43,7 +43,7 @@ import null3d from '@null3d/vite-plugin';
 export default defineConfig({ plugins: [null3d()] });
 ```
 
-Every Vite build of a null3D project needs the plugin, for the dev server and for production. The plugin does these jobs, which a three.js project does not need:
+Every Vite build of a null3D project needs the plugin, for the dev server and for production. The plugin does these jobs:
 
 - Sends the two headers that let worker threads share memory, on the dev server and on `vite preview`. [Hosting and cross-origin isolation](hosting.md) explains them.
 - Compresses what `vite preview` sends with Brotli, `.wasm` included, and what the dev server sends to another device, such as a phone. Its `https` option serves HTTPS on your network, and its `http2` option serves that over HTTP/2 ([During development](hosting.md#during-development)).

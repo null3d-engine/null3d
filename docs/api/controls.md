@@ -8,7 +8,7 @@ summary: "Orbit and map controls (0.1); fly and first-person controls, with poin
 
 # Controls (@null3d/controls)
 
-> Roadmap step 0.1, first released in null3D 0.1.0. Step 0.2 adds the fly and first-person controls, and gizmos that move, turn and scale an object. The API is experimental, so it can still change between versions. The three.js options `zoomToCursor`, `keys`, `keyPanSpeed`, `keyRotateSpeed`, `cursor`, `minTargetRadius` and `maxTargetRadius` are not built yet, and neither are the methods `saveState` and `reset`. The gizmos do not limit a position with `minX` to `maxZ` yet. Coding agents must not use these parts.
+> Roadmap step 0.1, first released in null3D 0.1.0. Step 0.2 adds the fly and first-person controls, and gizmos that move, turn and scale an object. The API is experimental, so it can still change between versions. Orbit controls cannot yet zoom toward the pointer (`zoomToCursor`) or move with keys (`keys`, `keyPanSpeed` and `keyRotateSpeed`). They cannot yet limit how far the target goes from a point (`cursor`, `minTargetRadius` and `maxTargetRadius`), and the methods `saveState` and `reset` are not built yet. The gizmos do not limit a position with `minX` to `maxZ` yet. Coding agents must not use these parts.
 
 ```mermaid
 flowchart LR
@@ -18,7 +18,7 @@ flowchart LR
     update --> gizmo["A held handle moves,<br/>turns or scales an object"]
 ```
 
-The `@null3d/controls` package moves a camera with the mouse, the wheel, a trackpad, touch and the keyboard, and it moves, turns and scales scene objects with gizmos. Orbit controls turn the camera around a target point, as in a model viewer. Map controls pan over the ground, as in a map or a strategy game. [Fly controls](#fly-controls) move the camera in all directions, as in a flight game. [First-person controls](#first-person-controls) walk it over the ground and look around, as in a first-person game. [Gizmos](#gizmos) draw handles on an object that the user drags, as an editor does. Each takes three.js's option names and defaults. For the same input, each camera control gives the camera the pose that three.js's control of the same name gives it.
+The `@null3d/controls` package moves a camera with the mouse, the wheel, a trackpad, touch and the keyboard, and it moves, turns and scales scene objects with gizmos. Orbit controls turn the camera around a target point, as in a model viewer. Map controls pan over the ground, as in a map or a strategy game. [Fly controls](#fly-controls) move the camera in all directions, as in a flight game. [First-person controls](#first-person-controls) walk it over the ground and look around, as in a first-person game. [Gizmos](#gizmos) draw handles on an object that the user drags, as an editor does.
 
 The controls run in the sketch, where the camera is. They add no DOM listeners: `controls.update(dt)` reads [`ctx.input`](input.md) once per frame and moves the camera, or the object that a gizmo holds.
 
@@ -61,12 +61,12 @@ Pass the whole sketch context, `ctx`, as the first argument. The controls read i
 | Two fingers | Dolly as they spread or close, and pan as they move | Dolly as they spread or close, and rotate as they move |
 | Shift, Control or Meta held at the start of a drag | Swap rotate and pan | Swap rotate and pan |
 
-- Rotate turns the camera around the target. A drag as long as the canvas is high turns it once around.
-- Dolly moves the camera toward the target or away from it. Each 100 pixels of wheel scroll change the distance by about 5%. A pinch on a trackpad dollies ten times as far as its scroll, as in three.js.
-- An orthographic camera zooms instead: it keeps its distance, and the view's height changes by the same factor. three.js changes the camera's `zoom` the same way.
+- Rotate turns the camera around the target, about the +Y axis. A drag as long as the canvas is high turns it once around.
+- Dolly moves the camera toward the target or away from it. Each 100 pixels of wheel scroll change the distance by about 5%. A pinch on a trackpad dollies ten times as far as its scroll.
+- An orthographic camera zooms instead: it keeps its distance, and the view's height changes by the same factor.
 - Pan moves the camera and the target together. Orbit controls pan in the plane of the screen. A map drag pans over the ground, and keeps the ground point under the pointer.
 - The wheel does nothing during a drag. Scroll after the release dollies, even when the release and the scroll both come between two frames.
-- `mouseButtons` and `touches` change what each button and each count of fingers do, with three.js's names, such as `mouseButtons: { LEFT: 'pan', RIGHT: 'rotate' }` and `touches: { ONE: 'pan', TWO: 'dolly-rotate' }`. Null gives a button no action.
+- `mouseButtons` and `touches` change what each button and each count of fingers do, such as `mouseButtons: { LEFT: 'pan', RIGHT: 'rotate' }` and `touches: { ONE: 'pan', TWO: 'dolly-rotate' }`. Their fields are `LEFT`, `MIDDLE` and `RIGHT`, and `ONE` and `TWO`. Null gives a button no action.
 
 ## The page
 
@@ -77,7 +77,7 @@ The controls read the input that the page forwards. So the page must keep the br
 
 ## Options
 
-The options and the controls' properties have three.js's names and defaults. A sketch can change a property at any time, such as `controls.enablePan = false`. The [API reference](#api-reference) describes each one.
+Each option is also a property of the controls, with the same name. A sketch can change a property at any time, such as `controls.enablePan = false`. The [API reference](#api-reference) describes each one and gives its default.
 
 | Options | Use |
 | --- | --- |
@@ -100,12 +100,12 @@ The options and the controls' properties have three.js's names and defaults. A s
 Call `controls.update(dt)` once per frame in `onUpdate`, with the step that `onUpdate` receives. It returns true when the camera or the target moved.
 
 - `update` allocates nothing. `tests/image/controls.spec.ts` checks it through every gesture, and `bun run bench:allocation --calls` samples it in every frame.
-- With damping, each frame applies a share of the motion that remains. The share suits the frame's step, so the motion takes the same time at every frame rate. At 60 frames per second, it matches three.js.
+- With damping, each frame applies a share of the motion that remains: `dampingFactor` at 60 frames per second. The share suits the frame's step, so the motion takes the same time at every frame rate.
 - The sketch can move the camera itself with `camera.setPosition`. The controls carry on from the new position at the next `update`.
 - Auto-rotation stops while the user asks for less motion. [Accessibility](../guides/accessibility.md) explains the preference.
 - If the camera has a parent, the parent must not be rotated. The controls turn the camera with `lookAt`, which assumes that.
 
-`rotateLeft(angle)`, `rotateUp(angle)`, `pan(deltaX, deltaY)`, `dollyIn(scale)` and `dollyOut(scale)` move the camera from code, and the next `update` applies them. `stop()` drops the motion that damping still carries, so the camera is still from the next `update` on: call it when something else takes the camera, such as a route, or the fling resumes at the handover. `getDistance()`, `getPolarAngle()` and `getAzimuthalAngle()` read the camera's place, as in three.js. Use them to drive the controls with keys or a gamepad:
+`rotateLeft(angle)`, `rotateUp(angle)`, `pan(deltaX, deltaY)`, `dollyIn(scale)` and `dollyOut(scale)` move the camera from code, and the next `update` applies them. `stop()` drops the motion that damping still carries, so the camera is still from the next `update` on: call it when something else takes the camera, such as a route, or the fling resumes at the handover. `getDistance()`, `getPolarAngle()` and `getAzimuthalAngle()` read the camera's place. Use them to drive the controls with keys or a gamepad:
 
 ```ts
 const { input } = ctx;
@@ -121,7 +121,7 @@ return {
 
 ## Fly controls
 
-`createFlyControls(ctx, camera, options)` makes fly controls, which three.js calls `FlyControls`. They move the camera along its own axes and turn it about them, so the camera can loop and roll.
+`createFlyControls(ctx, camera, options)` makes fly controls. They move the camera along its own axes and turn it about them, so the camera can loop and roll.
 
 ```ts
 import { createFlyControls } from '@null3d/controls';
@@ -144,14 +144,15 @@ return {
 | The pointer's place on the canvas | Turn: not at all at the middle, and at full speed at an edge |
 | Left and right buttons | Move forward and back |
 
-- `movementSpeed` is in world units per second. `rollSpeed` sets how fast the keys and the pointer turn the camera. At full turn, the camera turns about twice `rollSpeed` radians per second, as in three.js.
+- `movementSpeed` is in world units per second. `rollSpeed` sets how fast the keys and the pointer turn the camera. At full turn, the camera turns about twice `rollSpeed` radians per second.
 - The pointer steers whenever it moves over the canvas, and its turn holds until it moves again. With `dragToLook: true`, the pointer steers only during a drag, and the buttons do not move the camera.
 - `autoForward: true` moves the camera forward all the time, unless S or the right button moves it back.
-- The keys add to the pointer's turn. In three.js, the pointer's last move replaces the arrow keys' turn.
+- The keys add to the pointer's turn.
+- The camera stores its pose in 32-bit floats, so fly and first-person controls keep their own copy in double precision. At each `update`, they take a pose that the sketch set, and carry on from it.
 
 ## First-person controls
 
-`createFirstPersonControls(ctx, camera, options)` makes first-person controls. They take the place of two three.js controls. Without a pointer lock, they act as `FirstPersonControls`. While the canvas holds the [pointer lock](#pointer-lock), the mouse turns the view as `PointerLockControls` turn it.
+`createFirstPersonControls(ctx, camera, options)` makes first-person controls. Without a pointer lock, keys walk and a drag looks around. While the canvas holds the [pointer lock](#pointer-lock), the mouse turns the view.
 
 ```ts
 import { createFirstPersonControls } from '@null3d/controls';
@@ -176,8 +177,9 @@ return {
 
 - The keys walk over the ground, in the direction the view faces around +Y. Two keys at once walk no faster than one.
 - A drag turns the view at a speed that grows with the drag's length, in `lookSpeed` degrees per second for each pixel. While a key walks forward or back, a press only looks.
-- Moves and turns start and stop smoothly: each frame applies `dampingFactor` of the change of speed that remains. The share suits the frame's step, so the motion takes the same time at every frame rate. At 60 frames per second, it matches three.js.
-- A drag tips the view at most 85 degrees above or below the level. `constrainVertical` with `verticalMin` and `verticalMax` limits it further, and `lookVertical: false` keeps the view level.
+- When two fingers are down, the first finger's movement turns the view.
+- Moves and turns start and stop smoothly: each frame applies a share of the change of speed that remains, `dampingFactor` at 60 frames per second. The share suits the frame's step, so the motion takes the same time at every frame rate.
+- The controls turn the camera with no roll. A drag tips the view at most 85 degrees above or below the level. `constrainVertical` with `verticalMin` and `verticalMax` limits it further, and `lookVertical: false` keeps the view level.
 - `heightSpeed`, with `heightCoef`, `heightMin` and `heightMax`, walks faster forward the higher the camera is. `autoForward` walks forward along the view all the time.
 - `lookAt(x, y, z)` turns the camera toward a point.
 
@@ -196,15 +198,15 @@ canvas.addEventListener('click', () => {
 
 An engine started with `input: false` reads no movement, and `engine.requestPointerLock()` fails there with [E1426](../errors/E1426.md). The page's own input code then locks the canvas and reads the movement, as [Input off](input.md#input-off) says.
 
-While the pointer is locked, `ctx.input.pointer.locked` is true, and `pointer.dx` and `pointer.dy` give the mouse's movement ([Input](input.md#the-pointer)). First-person controls then turn the view by the movement, as three.js's `PointerLockControls` do:
+While the pointer is locked, `ctx.input.pointer.locked` is true, and `pointer.dx` and `pointer.dy` give the mouse's movement ([Input](input.md#the-pointer)). First-person controls then turn the view by the movement:
 
 - Each pixel turns the view by 0.002 radians times `pointerSpeed`.
-- The view stays between `minPolarAngle` and `maxPolarAngle` from +Y.
+- The view stays between `minPolarAngle` and `maxPolarAngle` from +Y. The limits apply after a frame's moves add up.
 - A drag looks around no more, and the buttons do not walk, so the sketch can use them, for example to fire.
 
 The user ends the lock with Esc, and the page with `document.exitPointerLock()`. Destroying the engine also ends it.
 
-To port code that moves the camera itself with `PointerLockControls`, set `movementSpeed: 0`, so the keys do not walk, and call the controls' `moveForward(distance)` and `moveRight(distance)`. As in three.js, `moveForward` walks over the ground at right angles to the camera's right, and `getDirection(out)` gives the direction of the view:
+To move the camera from the sketch's own code, set `movementSpeed: 0`, so the keys do not walk, and call the controls' `moveForward(distance)` and `moveRight(distance)`. The call `moveForward` walks over the ground at right angles to the camera's right, and `getDirection(out)` gives the direction of the view:
 
 ```ts
 const controls = createFirstPersonControls(ctx, camera, { movementSpeed: 0 });
@@ -223,7 +225,7 @@ The [first-person and fly controls demo](https://github.com/null3d-engine/null3d
 
 ## Gizmos
 
-`createTransformControls(ctx, camera, options)` draws handles on one object, and a drag of a handle moves, turns or scales that object. three.js calls the same control `TransformControls`. The [gizmos demo](https://github.com/null3d-engine/null3d/tree/main/examples/gizmos) selects one of three pieces and drags its handles.
+`createTransformControls(ctx, camera, options)` draws handles on one object, and a drag of a handle moves, turns or scales that object. The [gizmos demo](https://github.com/null3d-engine/null3d/tree/main/examples/gizmos) selects one of three pieces and drags its handles.
 
 ```ts
 import { createTransformControls } from '@null3d/controls';
@@ -248,7 +250,7 @@ A press on a handle begins a drag, and the pointer then moves, turns or scales t
 | `'scale'` | A rod with a cube on each axis, and a cube at the center | Scales the object along the axes that the handle names |
 
 - `gizmo.axis` names the handle under the pointer, or the one that a drag holds: `'X'`, `'Y'`, `'Z'`, `'XY'`, `'YZ'`, `'XZ'`, `'XYZ'` or `'E'`. `gizmo.object` is the object that `attach` picked.
-- `mode` picks the handles, and `space` picks between the world's axes and the object's own. A scale drag always follows the object's own axes, as in three.js.
+- `mode` picks the handles, and `space` picks between the world's axes and the object's own. A scale drag always follows the object's own axes.
 - `showX`, `showY` and `showZ` hide the handles of an axis, and the planes that it lies in.
 - `translationSnap`, `rotationSnap` and `scaleSnap` round a move in meters, a turn in radians and a scale to steps. Null, the default, gives a free drag.
 - `size` scales the handles on the screen. They keep the same share of the screen as the camera moves.
@@ -257,13 +259,13 @@ A press on a handle begins a drag, and the pointer then moves, turns or scales t
 - The handles draw over the scene, so a handle that lies behind a wall still shows and still takes the pointer.
 - The handle meshes take `levels: false`. The handles keep one share of the screen, so a level would never switch.
 
-The handles answer a raycast on a layer of their own, so a press tests the gizmo alone. No scene object stands between the pointer and a handle. `layers` sets the layer that the handles draw on, which the controls add to the camera's layers and take away at `destroy`. `pickLayers` sets the layer of the handles that answer a raycast, which no camera draws. Both default to layers out of the way of a scene's own: 30 and 29. Give a camera that draws every layer another pair, or its image shows the pickers.
+The handles answer a raycast on a layer of their own, so a press tests the gizmo alone. No scene object stands between the pointer and a handle. A click on a handle reaches the handle and its parents alone. A click handler on the object behind it does not hear it. `layers` sets the layer that the handles draw on, which the controls add to the camera's layers and take away at `destroy`. `pickLayers` sets the layer of the handles that answer a raycast, which no camera draws. Both default to layers out of the way of a scene's own: 30 and 29. Give a camera that draws every layer another pair, or its image shows the pickers.
 
 `gizmo.destroy()` removes the handles and gives the camera back its own layers. `gizmo.detach()` hides the handles and leaves the object where it is.
 
 ## Drag controls
 
-`createDragControls(ctx, camera, objects, options)` drags any object of a list over a plane that faces the camera. The right button turns the object instead, about the camera's axes. three.js calls the same control `DragControls`.
+`createDragControls(ctx, camera, objects, options)` drags any object of a list over a plane that faces the camera. The right button turns the object instead, about the camera's axes.
 
 ```ts
 import { createDragControls } from '@null3d/controls';
@@ -280,28 +282,9 @@ return {
 - A press on an object of the list takes hold of it, and the pointer then drags it over the plane through its place at the press, facing the camera.
 - `dragger.dragging` is the object that a drag holds, or null. `dragger.hovered` is the object under the pointer, and `dragger.state` is `'pan'` or `'rotate'`.
 - `recursive` drags a child of a listed object as that object, and `transformGroup` drags the outermost listed object that holds the one under the pointer.
-- `mouseButtons` and `touches` change what each button and each finger does, with three.js's names: `{ LEFT: 'pan', RIGHT: 'rotate' }` and `{ ONE: 'pan' }`.
+- `mouseButtons` and `touches` change what each button and each finger does: `'pan'` drags and `'rotate'` turns. The defaults are `{ LEFT: 'pan', MIDDLE: 'pan', RIGHT: 'rotate' }` and `{ ONE: 'pan' }`.
 - `layers` sets the layers that the pointer's ray tests. The default is layer 0 alone.
 - `rotateSpeed` scales the turn that a rotate drag makes.
-
-## Differences from three.js
-
-- The controls take the sketch context and the camera: `createOrbitControls(ctx, camera, options)`. They need no DOM element, and have no `connect`, `disconnect`, `dispose` or `listenToKeyEvents`.
-- `update` takes the frame's step in seconds, and it must run every frame.
-- Actions are strings, such as `'rotate'` and `'dolly-pan'`, in place of the numbers of `THREE.MOUSE` and `THREE.TOUCH`.
-- The controls send no `change`, `start` or `end` events. `update` returns true when the camera moved.
-- `rotateLeft`, `rotateUp`, `pan`, `dollyIn` and `dollyOut` take effect at the next `update`, not at once.
-- The controls orbit around +Y. three.js orbits around the camera's `up`, which is +Y unless a page changes it.
-- three.js takes a frame's events one at a time. When two fingers move in the same frame, its pan differs from null3D's by a few percent of the move.
-- Fly and first-person controls keep the camera's pose in double precision, as three.js does. At each `update` they take a pose that the sketch set, and carry on from it.
-- First-person controls turn the camera with no roll. `PointerLockControls` keep a roll that the camera had.
-- While the pointer is locked, the mouse's moves in one frame add up before the polar limits apply. three.js applies them after each move, so a frame whose moves reach a limit and come back can end at a different angle.
-- `FirstPersonControls` and `PointerLockControls` are one set of controls, so `lock`, `unlock`, `isLocked` and the `lock` and `unlock` events have no equivalent. The page locks the pointer with `engine.requestPointerLock()`, and the sketch reads `input.pointer.locked`.
-- When two fingers are down, the first finger's movement turns the view. three.js takes the movement of any finger from where the last finger touched down.
-- Gizmos need no `getHelper()`: the controls create their handles in the scene, and `destroy` removes them. A click on a handle reaches the handle, and it goes on to the handle's parents alone, so a click handler on the object behind it does not hear it.
-- A gizmo reports what it does through `dragging` and `axis` instead of the `dragging-changed`, `objectChange`, `mouseDown` and `mouseUp` events. A drag control reports `dragging`, `hovered` and `state` instead of `dragstart`, `drag`, `dragend`, `hoveron` and `hoveroff`. `update` returns true when it moved something.
-- A turn with a gizmo uses the exact angle that the pointer sweeps around the axis. three.js scales a linear approximation of that angle, so the two can differ by a few degrees in a long drag.
-- `showXY`, `showYZ` and `showXZ` have no counterparts: `showX`, `showY` and `showZ` hide the planes too. `minX` to `maxZ` are not built yet.
 
 ## Related pages
 

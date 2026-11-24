@@ -67,7 +67,7 @@ export type SketchThread = 'worker' | 'main';
  * draws it. WebGL2 draws it where the browser has the `EXT_clip_control` extension, which gives
  * WebGL2 the depth range from 0 to 1 that WebGPU has. The `reversed-gl` mode keeps the same
  * order, but in WebGL2's own depth range from -1 to 1, which loses most of the precision. In
- * `standard` depth, the near plane stores 0, as in three.js's WebGL renderer.
+ * `standard` depth, the near plane stores 0 and the far plane 1.
  *
  * @category api/engine
  */

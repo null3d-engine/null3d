@@ -38,7 +38,7 @@ A scene pass ([Custom passes](../guides/custom-passes.md)) does steps 3 and 4 ag
 
 ## Kinds of light and their units
 
-Units follow three.js since r155, which dropped its legacy light mode. A scene tuned for three.js's current units needs the same intensities in null3D.
+Each kind of light takes its intensity in a physical unit:
 
 | Light | What it models | Intensity | `intensityUnit` |
 | --- | --- | --- | --- |
@@ -50,17 +50,17 @@ Units follow three.js since r155, which dropped its legacy light mode. A scene t
 | Rectangle | A window, a screen or a soft box: light from a glowing rectangle | Nits: the brightness of its surface | None |
 | Tube | A neon or fluorescent tube: light from a glowing tube | Nits: the brightness of its surface | None |
 
-A standard material reflects light with the formulas of three.js's `MeshStandardMaterial`. A rough surface that is not a metal reflects close to its color divided by π, times the light that reaches it. A white directional light with an intensity of π therefore shows a white, rough surface that faces it as nearly white.
+A standard material reflects light with the physically based model of glTF's metallic-roughness materials: a Lambert diffuse term and a GGX highlight. A rough surface that is not a metal reflects close to its color divided by π, times the light that reaches it. A white directional light with an intensity of π therefore shows a white, rough surface that faces it as nearly white.
 
 Three defaults keep shiny surfaces clean. They are always on, and they have no settings:
 
-- The smoothest surface has a roughness of 0.045, as in three.js and Filament. A roughness of 0 still shows a small highlight, and reads the sharpest level of an environment.
-- Highlights flicker less on curved shapes. A highlight narrower than a pixel comes and goes as the camera moves. So where a mesh's normal turns fast between pixels, the highlight widens by the spread of the normals within the pixel. This is Filament's specular anti-aliasing. The widening has a limit, so edges stay glossy, and flat surfaces get none. three.js widens highlights by a cruder rule that has no limit. So on small curved shapes, the engine's highlights are a little brighter and narrower than three.js's.
-- Reflections never come from inside an object. A normal map can tilt a surface so far that its reflection points below the mesh's own surface. There the environment's reflection fades out, as in Unity and Godot. three.js has no such fade, so grazing reflections on strong normal maps are darker than three.js's.
+- The smoothest surface has a roughness of 0.045, as in Filament. A roughness of 0 still shows a small highlight, and reads the sharpest level of an environment.
+- Highlights flicker less on curved shapes. A highlight narrower than a pixel comes and goes as the camera moves. So where a mesh's normal turns fast between pixels, the highlight widens by the spread of the normals within the pixel. This is Filament's specular anti-aliasing. The widening has a limit, so edges stay glossy, and flat surfaces get none.
+- Reflections never come from inside an object. A normal map can tilt a surface so far that its reflection points below the mesh's own surface. There the environment's reflection fades out, as in Unity and Godot.
 
-A rectangle or tube light's light follows from its size and brightness: the engine integrates it over the light's area, with three.js's linearly transformed cosines. A larger light of the same intensity therefore gives more light, and a shiny surface shows its shape. [Area lights](../api/lights.md#area-lights) gives the details.
+A rectangle or tube light's light follows from its size and brightness. The engine integrates it over the light's area with linearly transformed cosines, the method of Heitz, Dupuy, Hill and Neubelt. A larger light of the same intensity therefore gives more light, and a shiny surface shows its shape. [Area lights](../api/lights.md#area-lights) gives the details.
 
-Point and spot lights fade with distance by their `decay`. A decay of 2, the default, fades light with the square of the distance, as real light fades. Each also ends at its `range`, because the engine finds the lights near each surface by their ranges. three.js's `distance` of 0, a light with no end, has no equivalent.
+Point and spot lights fade with distance by their `decay`. A decay of 2, the default, fades light with the square of the distance, as real light fades. Each also ends at its `range`, because the engine finds the lights near each surface by their ranges. So every point and spot light needs a range above 0.
 
 ```ts
 import { defineSketch } from '@null3d/engine';
@@ -79,7 +79,7 @@ Up to four directional lights light a frame. The first one created that remains 
 
 ```mermaid
 flowchart LR
-    units["Intensity in lumens,<br/>candela or lux"] --> light["Light in three.js's units"]
+    units["Intensity in lumens,<br/>candela or lux"] --> light["Light in candela or lux"]
     camera["exposure, and ev100:<br/>1 / (1.2 × 2^ev100)"] --> factor["The frame's exposure"]
     light --> times["Light times the exposure,<br/>on the CPU"]
     factor --> times
@@ -89,7 +89,7 @@ flowchart LR
     scene --> tone["Tone mapping"]
 ```
 
-A scene can keep three.js's units, as most scenes and ports do, or use real units. A real sun gives about 100,000 lux, an 800-lumen bulb lights a room, and a camera's exposure brings that light to the screen. In null3D, `intensityUnit` gives a light its real unit, and `post.set({ ev100 })` sets the camera's exposure value at ISO 100, as in Filament and Bevy. The exposure is 1 / (1.2 × 2^ev100): about 1 / 39,000 at 15, a sunny day.
+Most scenes give small intensities, such as 3 for a bright sun, with an exposure of 1. A scene can also give its lights real values. A real sun gives about 100,000 lux, an 800-lumen bulb lights a room, and a camera's exposure brings that light to the screen. In null3D, `intensityUnit` gives a light its real unit, and `post.set({ ev100 })` sets the camera's exposure value at ISO 100, as in Filament and Bevy. The exposure is 1 / (1.2 × 2^ev100): about 1 / 39,000 at 15, a sunny day.
 
 The engine multiplies the exposure into each light at its source, as Filament does, not into the finished picture. On the CPU it scales each light, the background color and the fog color. In the shaders it scales emissive light, light maps, unlit colors and background textures. Everything before the tone mapping is linear, so the picture is the same as with the exposure at the end. But the scene's colors stay near 1, so a 16-bit float holds them. With the exposure at the end, a sun of 100,000 lux gives a smooth metal a highlight above 65,504. That is the largest 16-bit float, so the highlight loses its color.
 
@@ -105,7 +105,7 @@ export default defineSketch(({ scene, post }) => {
 });
 ```
 
-Colors that you set in the scene's units take the exposure too: a background color, an unlit material's color and an emissive color. At EV100 15 a background color of white draws black, as it does in three.js at the same exposure. Give emissive light in nits instead, through `emissiveIntensity`, such as 40,000 for about white at EV100 15. [Post-processing API](../api/post.md#lights-in-real-units) gives the settings.
+Colors that you set in the scene's units take the exposure too: a background color, an unlit material's color and an emissive color. At EV100 15 a background color of white draws black. Give emissive light in nits instead, through `emissiveIntensity`, such as 40,000 for about white at EV100 15. [Post-processing API](../api/post.md#lights-in-real-units) gives the settings.
 
 ## Clustered forward shading
 
@@ -151,9 +151,9 @@ A glTF file's lights (`KHR_lights_punctual`) become directional, point and spot 
 
 ## Ambient and hemisphere lights
 
-An ambient light gives every surface the same light. A hemisphere light blends from its ground color to its sky color as a surface's normal turns toward its +Y axis, as three.js's `HemisphereLight` does. That blend is half the sum of the two colors, plus a term that grows with the cosine between the normal and the sky's direction. Each frame, the engine sums every ambient and hemisphere light on the CPU. The sum is one color from every direction and one color along each world axis. Each pixel of a standard material adds them up with three multiply-adds, whatever the number of lights.
+An ambient light gives every surface the same light. A hemisphere light blends from its ground color to its sky color as a surface's normal turns toward its +Y axis. That blend is half the sum of the two colors, plus a term that grows with the cosine between the normal and the sky's direction. Each frame, the engine sums every ambient and hemisphere light on the CPU. The sum is one color from every direction and one color along each world axis. Each pixel of a standard material adds them up with three multiply-adds, whatever the number of lights.
 
-Both lights are diffuse only, as in three.js: they light a surface's color and give no highlights. An environment's light adds to theirs. The environment's `intensity` and a material's `envIntensity` scale only the environment's own light. The occlusion map and ambient occlusion darken the light of all of them.
+Both lights are diffuse only: they light a surface's color and give no highlights. An environment's light adds to theirs. The environment's `intensity` and a material's `envIntensity` scale only the environment's own light. The occlusion map and ambient occlusion darken the light of all of them.
 
 ### A scene that shows a time of day
 
@@ -169,13 +169,13 @@ The engine keeps each object's position relative to a grid cell, a cube of space
 
 ## Fog
 
-Fog fades objects toward one color with their distance from the camera, as air does over a landscape. A sketch sets it with `scene.setFog`, and [Scene](../api/scene.md#fog) lists the options. The distance is the straight line from the camera to each point. A point therefore keeps its fog as the camera turns, and fog at the screen's edges does not shift. In three.js, fog follows the depth along the camera's view instead. Its fog thins toward the screen's edges and moves as the camera turns.
+Fog fades objects toward one color with their distance from the camera, as air does over a landscape. A sketch sets it with `scene.setFog`, and [Scene](../api/scene.md#fog) lists the options. The distance is the straight line from the camera to each point. A point therefore keeps its fog as the camera turns, and fog at the screen's edges does not shift.
 
-A curve sets how the fog thickens. The default, exponential fog, follows light through an even haze: each unit of distance hides the same share of what is left. Exponential squared fog and linear fog give three.js's `FogExp2` and `Fog` curves.
+A curve sets how the fog thickens. The default, exponential fog, follows light through an even haze: each unit of distance hides the same share of what is left. Exponential squared fog thickens with the square of the distance. Linear fog is clear up to `near` and hides objects from `far`, with a smooth change between them.
 
 Real mist lies low and thins with height. With a `heightFalloff`, the fog's density falls by a factor of e every 1 / `heightFalloff` units up. The engine sums that density along each line of sight with an exact formula, as Filament does. A view down into the mist then sees thick fog, and a view across its top sees thin fog. With a `sunGlow`, the fog toward the main directional light takes some of that light's color, as haze around a low sun does. The glow follows the light and its intensity. Shadows do not block it.
 
-The engine mixes the fog into each pixel's color as it shades the pixel, after lighting and before the tone mapping. Fog therefore needs no pass and no texture. It costs about 15 arithmetic operations and one or two exponentials per pixel, and nothing in a scene without fog. The mix happens in linear color, as in three.js's WebGPURenderer and in WebGLRenderer with a half-float target. The sky and the background can take the same fog as a surface at the camera's far plane. They do so at the share that the fog's `background` option sets, above 0; the default is 0. The haze over the land can then continue over the sky it meets. A material created with `fog: false` keeps its color at every distance.
+The engine mixes the fog into each pixel's color as it shades the pixel, after lighting and before the tone mapping. Fog therefore needs no pass and no texture. It costs about 15 arithmetic operations and one or two exponentials per pixel, and nothing in a scene without fog. The mix happens in linear color. The sky and the background can take the same fog as a surface at the camera's far plane. They do so at the share that the fog's `background` option sets, above 0; the default is 0. The haze over the land can then continue over the sky it meets. A material created with `fog: false` keeps its color at every distance.
 
 ### Volumetric fog
 
@@ -212,7 +212,7 @@ An environment map holds the light that reaches a point from every direction, su
 import { defineSketch } from '@null3d/engine';
 
 export default defineSketch(async ({ scene, assets, materials, geometry }) => {
-  // The room of three.js's RoomEnvironment: soft, neutral light, with no file of your own.
+  // The built-in room: soft, neutral light, with no file of your own.
   scene.setEnvironment(await assets.builtinEnvironment('room'));
   // Or a file that `bunx @null3d/cli assets env` made from an HDR image, turned and dimmed:
   // scene.setEnvironment(await assets.loadEnvironment('/env/sunset.ktx2'), { intensity: 0.8, rotation: [0, Math.PI / 2, 0] });
@@ -229,34 +229,34 @@ export default defineSketch(async ({ scene, assets, materials, geometry }) => {
 The fast path is one KTX2 file, which `bunx @null3d/cli assets env` makes from an HDR image before you publish:
 
 - A cube map with one level for each step of roughness. Level 0 holds the light itself, for mirrors. Each smaller level holds the light blurred as a rougher surface reflects it, with the GGX distribution of the standard material.
-- Nine spherical harmonics coefficients, the diffuse light from each direction in a few numbers, as three.js's `LightProbe` holds it.
+- Nine spherical harmonics coefficients, the diffuse light from each direction in a few numbers.
 
-three.js builds the same data in the browser on every visit with `PMREMGenerator`. The engine reads the finished file, so a page does no prefiltering before it draws. [The asset pipeline](../guides/assets-pipeline.md#environment-maps) gives the command's options and the file's sizes.
+The tool filters the map before you publish, so a page does no prefiltering before it draws. [The asset pipeline](../guides/assets-pipeline.md#environment-maps) gives the command's options and the file's sizes.
 
-The engine also reads the HDR image itself, a Radiance (`.hdr`) or OpenEXR (`.exr`) file, as three.js's `HDRLoader` and `EXRLoader` do with `PMREMGenerator`. A worker reads the file, and the GPU filters it at load with the asset tool's steps. On every GPU path, the map lies on average within a tenth of a step of 255 of the tool's map of the same file. As in the tool's map, light past the 16-bit float limit, such as an unclipped sun, keeps its share of the rough levels.
+The engine also reads the HDR image itself, a Radiance (`.hdr`) or OpenEXR (`.exr`) file. A worker reads the file, and the GPU filters it at load with the asset tool's steps. On every GPU path, the map lies on average within a tenth of a step of 255 of the tool's map of the same file. As in the tool's map, light past the 16-bit float limit, such as an unclipped sun, keeps its share of the rough levels.
 
-The built-in room needs no file. The GPU draws three.js's room into a cube map and filters it for each roughness when a sketch first asks for it, as three.js's `PMREMGenerator.fromScene` does. It follows the asset tool's steps, so it gives the same map as `bunx @null3d/cli assets env --builtin room`.
+The built-in room needs no file. The GPU draws the room into a cube map and filters it for each roughness when a sketch first asks for it. It follows the asset tool's steps, so it gives the same map as `bunx @null3d/cli assets env --builtin room`.
 
-The sky's environment needs no file either. The GPU draws the sky that `scene.setBackground({ sky })` shows into a cube map, and filters it for each roughness. three.js makes the same light with `PMREMGenerator.fromScene` on a scene that holds its `Sky`. It makes it again with another call after each change. The engine's map follows the sky by itself: when the sun moves, the map refreshes over the next frames. [Sky and backgrounds](#sky-and-backgrounds) says how.
+The sky's environment needs no file either. The GPU draws the sky that `scene.setBackground({ sky })` shows into a cube map, and filters it for each roughness. The map follows the sky by itself: when the sun moves, the map refreshes over the next frames. [Sky and backgrounds](#sky-and-backgrounds) says how.
 
 ### How an environment lights a surface
 
-The standard material takes the environment's light as three.js's `MeshStandardMaterial` takes it from `scene.environment`:
+The standard material takes the environment's light in these ways:
 
 - Specular light comes from the cube map, along the view's reflection about the surface's normal. A rough surface reads a smaller, blurrier level.
 - Diffuse light comes from the nine coefficients, along the surface's normal.
-- The split-sum terms of three.js's table weigh the two by the view's angle, the roughness and the metalness, with three.js's energy compensation.
-- The occlusion map darkens the diffuse light, and darkens the specular light as three.js's `computeSpecularOcclusion` does.
+- A table of split-sum terms weighs the two by the view's angle, the roughness and the metalness. Fdez-Agüera's multiple-scattering model adds back the light that a rough surface reflects more than once.
+- The occlusion map darkens the diffuse light. It darkens the specular light too, by the specular occlusion of Lagarde and de Rousiers, which depends on the view's angle and the roughness.
 - The specular light fades where a normal map tilts the reflection below the mesh's own surface.
 
-three.js's PMREM blurs its levels a little less than the GGX distribution of its own materials. The engine therefore reads each roughness from the level that matches three.js's light best, from a table that compares the two. A port keeps its look: the spheres of the engine's parity scenes match three.js under three.js's own image rule.
+A small table picks the level that each roughness reads.
 
-`scene.setEnvironment(environment, { intensity, rotation })` sets the scene's environment, and `scene.setEnvironment(null)` removes it. `intensity` scales the light, as three.js's `scene.environmentIntensity` does. `rotation` turns the environment by Euler angles in radians, as `scene.environmentRotation` does. The call allocates nothing, so a sketch can turn the environment in every frame. A material's `envIntensity` scales the environment's light on that material alone.
+`scene.setEnvironment(environment, { intensity, rotation })` sets the scene's environment, and `scene.setEnvironment(null)` removes it. `intensity` scales the light. `rotation` turns the environment by Euler angles in radians, in the order X, Y, Z. The call allocates nothing, so a sketch can turn the environment in every frame. A material's `envIntensity` scales the environment's light on that material alone, and multiplies the scene's `intensity`. A scene has one environment. For the light of one place in the scene, use a [reflection probe](#reflection-probes).
 
 | Call | Gives |
 | --- | --- |
 | `assets.loadEnvironment(url)` | An environment from a file of `bunx @null3d/cli assets env`, or from a Radiance or OpenEXR file that the GPU filters at load |
-| `assets.builtinEnvironment('room')` | The room that three.js's `RoomEnvironment` builds: a white room with six boxes and glowing panels. It is blurred as three.js's examples blur it, with `fromScene(room, 0.04)`. The GPU makes it, so no file downloads |
+| `assets.builtinEnvironment('room')` | A white room with six boxes and glowing panels, blurred by 0.04 radians. The GPU makes it, so no file downloads |
 | `assets.skyEnvironment()` | The light of the scene's sky, which follows the sky background. The GPU makes it, so no file downloads |
 | `scene.setEnvironment(environment, options)` | Nothing: it lights the scene with the environment from the next frame |
 | `environment.destroy()` | Nothing: it frees the cube map's GPU memory |
@@ -282,11 +282,6 @@ The tests of the room's generator measured these times in Chrome. The phones ran
 | MacBook Pro (Apple M5 Max), WebGL2 | 9 to 15 ms | 20 to 27 ms, of which 16 to 17 ms on the GPU |
 | Galaxy S25, Pixel 9, Pixel 10 and Pixel 11, WebGPU | 93 to 129 ms | 48 to 100 ms |
 | The same phones, WebGL2 | 100 to 226 ms | 58 to 107 ms |
-
-### Differences from three.js
-
-- three.js takes `scene.environmentIntensity` in place of a material's `envMapIntensity` when the material has no map of its own. The engine multiplies the two, so `envIntensity` keeps its meaning with a scene environment.
-- Each material can have its own `envMap` in three.js. The engine has one environment per scene. For the light of one place in the scene, use a [reflection probe](#reflection-probes).
 
 ## Reflection probes
 
@@ -315,7 +310,7 @@ The engine captures the scene from the probe's point on the GPU, through six squ
 
 - **Box projection.** A reflection ray meets the box's sides, and the probe reads its light in the direction from its point to that place. So a wall reflects in the floor at its own distance, and a reflection moves right as the camera moves. `boxProjection: false` reads the probe as light from far away, for open ground.
 - **Blending.** A probe lights its whole box, a floor on its bottom side included, and fades out over `blend` meters beyond its sides. So make each box the shape of its room or street. Where boxes overlap, the probe with the higher `priority` lights the surface, or the smaller box at the same priority, and the next probe takes the rest. A surface takes light from at most two probes. The environment lights what the probes leave.
-- **Diffuse light.** A probe also gives the diffuse light of its surfaces, from its roughest level, as three.js reads an environment map's.
+- **Diffuse light.** A probe also gives the diffuse light of its surfaces, from its roughest level.
 - **Refresh.** `refresh: 'once'` captures when the probe is made or moved, and when `probe.capture()` asks. `refresh: 'always'` captures again and again, so moving objects show. One probe captures per frame, in turns. A capture whose pipelines are still building keeps its request, so that probe takes the next frame's turn too.
 - **What a capture sees.** Objects on the probe's `layers`, the sun and its shadows, the ambient, hemisphere and environment light, fog and the background. A probe sees the environment, not other probes.
 
@@ -365,13 +360,13 @@ Such a mesh keeps the environment's diffuse light, and takes no light from the g
 
 ## Sky and backgrounds
 
-The background is what the camera shows behind every object. `scene.setBackground` takes a color, a texture, an environment, a cube map, three.js's analytic sky, or the physical sky. [Scene](../api/scene.md#environments-cube-maps-and-the-sky) gives the options.
+The background is what the camera shows behind every object. `scene.setBackground` takes a color, a texture, an environment, a cube map, the analytic sky, or the physical sky. [Scene](../api/scene.md#environments-cube-maps-and-the-sky) gives the options.
 
 ```ts
 import { defineSketch } from '@null3d/engine';
 
 export default defineSketch(async ({ scene, assets }) => {
-  // A low sun over a hazy sky, as three.js's sky example draws it.
+  // A low sun over a hazy sky.
   scene.setBackground({ sky: { sunPosition: [0, 0.07, -1], turbidity: 10, rayleigh: 3 } });
   // Light from an environment, which the sky does not give.
   scene.setEnvironment(await assets.builtinEnvironment('room'));
@@ -379,13 +374,13 @@ export default defineSketch(async ({ scene, assets }) => {
 });
 ```
 
-The engine draws a background after the opaque objects, at the far plane, with the depth test. So it shades only the pixels that no object covers, and transparent objects draw over it. While an opaque material has `depthWrite: false` or `depthTest: false`, the background draws before the objects instead, without the depth test, as three.js draws `scene.background`. That material then still shows over the background. A texture fills the view as one triangle. An environment, a cube map and the sky draw as a box around the camera, as three.js draws them. So each pixel takes its color from its own direction. Their light goes into the scene's color like an object's, so exposure and tone mapping change them too.
+The engine draws a background after the opaque objects, at the far plane, with the depth test. So it shades only the pixels that no object covers, and transparent objects draw over it. While an opaque material has `depthWrite: false` or `depthTest: false`, the background draws before the objects instead, without the depth test. That material then still shows over the background. A texture fills the view as one triangle. An environment, a cube map and the sky draw as a box around the camera. So each pixel takes its color from its own direction. Their light goes into the scene's color like an object's, so exposure and tone mapping change them too.
 
-- An environment's background reads the environment's cube map at the level of the blur's roughness, as three.js reads its PMREM texture with `backgroundBlurriness`. The levels hold the blur already, so a blurred background costs no more than a sharp one.
-- A cube map reads its six images as three.js's `CubeTextureLoader` maps them: seen from inside the cube, mirrored across x.
-- The sky is three.js's `Sky`, the Preetham daylight model, with its sun disc and its clouds. Its formulas and constants are three.js's, in their order. The engine's parity scenes compare the sky, a blurred environment background and a cube map with three.js. Each matches under three.js's own image rule, on every GPU path.
+- An environment's background reads the environment's cube map at the level of the blur's roughness. The levels hold the blur already, so a blurred background costs no more than a sharp one. Only environments blur: for a background that blurs, load an environment with `assets.loadEnvironment`.
+- A cube map shows its six images as seen from inside the cube, mirrored across x.
+- The analytic sky is the Preetham daylight model, with a sun disc and clouds. It is the scene's background, so it draws behind every object, whatever the camera's far plane. It moves its clouds by its `time` setting, so a still frame always shows the same clouds.
 
-The sky lights nothing by itself, as in three.js. For light that matches it, add a directional light along the sun, and light the scene with the sky's environment:
+The sky lights nothing by itself. For light that matches it, add a directional light along the sun, and light the scene with the sky's environment:
 
 ```ts
 import { defineSketch } from '@null3d/engine';
@@ -415,7 +410,7 @@ export default defineSketch(async ({ scene, assets, time }) => {
 - So the light follows a sun that turned half a degree 19 frames later, about 320 ms at 60 frames per second. A smaller turn waits, and the map captures the sun exactly once it stops. A change during a refresh waits until it ends: then it takes up to 39 frames.
 - The steps are short so that a phone keeps its frame rate. On a software GPU, the longest step takes under 6 ms.
 - The engine works out the diffuse light on the CPU, from the same sky model, in about 0.1 ms on a MacBook Pro.
-- three.js's sky is about 5 at the horizon by day, while a sun light of about 3 is bright. Lit by the sky at full intensity, a scene looks brighter than three.js's examples with their exposure of 0.5. Lower the environment's `intensity`, or the exposure. [Time of day](#time-of-day) gives values that match each other.
+- The analytic sky is about 5 at the horizon by day, while a sun light of about 3 is bright. Lit by the sky at full intensity, a scene looks too bright. Lower the environment's `intensity`, or the exposure. [Time of day](#time-of-day) gives values that match each other.
 
 ### Where the land ends
 
@@ -518,14 +513,6 @@ The sky's environment shows the physical sky too. When a refresh starts, the eng
 - The settings are a small block of values that the GPU reads, and the engine writes them again only when they change. Setting or moving a background builds no pipeline. The first background of each kind builds one.
 - A cube map's six images upload in the frames after the load, within the frame's upload budget. Its faces have one level, so large faces seen small can shimmer.
 
-### Backgrounds beside three.js
-
-- three.js's `Sky` and `SkyMesh` are meshes in the scene. The engine's sky is the scene's background, so it draws behind every object, whatever the camera's far plane.
-- three.js's `SkyMesh` moves its clouds by the renderer's clock. The engine's sky moves them by its `time` setting, as three.js's `Sky` does, so a still frame shows the same clouds.
-- Only environments blur. three.js blurs a cube texture by turning it into a PMREM texture first. For a background that blurs, load an environment with `assets.loadEnvironment`.
-- `WebGLRenderer` draws an sRGB cube texture without exposure and tone mapping. The engine changes every background with them, as three.js's `WebGPURenderer` does.
-- three.js has no physical sky of its own. Ports of its `Sky` keep `{ sky }`, which matches three.js. `{ atmosphere }` is the engine's best sky, which a port can move to.
-
 ## Time of day
 
 `timeOfDay` works out the settings that change together through a day, from one value: an hour from 0 to 24, or a preset. They are the sky's sun and air, the main light, the fog's color and glow, an ambient light, the sky's intensity and the exposure. Each comes from the same sky model as the sky background. The fog takes the sky's mean light at every hour, the same light that the exposure follows, so it stays as dim as the sky around it. A fog of the sky's horizon instead carries the sky's brightest band over the whole scene and washes out its shaded surfaces, and a low sun makes that band its own glow.
@@ -576,8 +563,8 @@ With `{ model: 'physical' }`, the values match the physical sky instead, from a 
 
 The helper gives values and leaves them to the sketch. A scene keeps its own light, fog curve and density, and post settings, which a call that applied them would overwrite.
 
-- three.js's sky is far brighter than the lights' usual range. By day `skyIntensity` is 0.15, so the sun outshines the sky's diffuse light about two to one, and the fog's color can match the horizon.
-- three.js's sky gives no light once its sun is about 2.3 degrees under the horizon, and the tone curve maps what is left to black. So after sunset the helper keeps the sky's own sun just under the horizon, and `skyIntensity` dims the sky to a deep blue.
+- The analytic sky is far brighter than the lights' usual range. By day `skyIntensity` is 0.15, so the sun outshines the sky's diffuse light about two to one, and the fog's color can match the horizon.
+- The analytic sky gives no light once its sun is about 2.3 degrees under the horizon. The tone curve maps what is left to black. So after sunset the helper keeps the sky's own sun just under the horizon, and `skyIntensity` dims the sky to a deep blue.
 - At night the sky's own sun stands at the moon's place, and `skyIntensity` dims it: the "day for night" sky of film. The sky is a navy blue with a lighter horizon and a faint glow around the moon. Its sun's disc draws a small moon, and the sky's environment lights the scene a dim blue. `showSunDisc: false` hides the moon's disc.
 - As the sun sinks from 6 to 12 degrees under the horizon, the sunset's sky fades straight into the moon's sky. No frame goes dark between them. The sky draws both at once: `sky.secondSunPosition` is the moon's place, and `sky.secondSkyWeight` is the moon sky's share. At other times the weight is 0, so pass the whole `sky` each time.
 - Each call returns a new object, unless you pass one for it to fill. `timeOfDay(hour, {}, day)` writes into `day`, so a day cycle that moves the time in every frame makes no settings object of its own. `setColor` converts a color. A day that changes a few times a second is enough for a still scene: the sky's environment takes about 20 frames to follow anyway.

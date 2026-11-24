@@ -44,7 +44,7 @@ export default defineSketch(
 | `loadLut(url)` | A color grading table from a `.cube` or a `.3dl` file, for `post.set({ lut })`. [Color grading tables](#color-grading-tables) says what it reads |
 | `lutFromData({ size, data })` | A color grading table made from numbers in code, with no file. [Tables from numbers](#tables-from-numbers) says what it takes |
 | `loadEnvironment(url)` | An `Environment` for `scene.setEnvironment`, from a file of `bunx @null3d/cli assets env` or from an HDR file: Radiance (`.hdr`) or OpenEXR (`.exr`). [Environments](#environments) says what it reads |
-| `builtinEnvironment('room')` | The built-in room, the scene of three.js's `RoomEnvironment`, as an `Environment` |
+| `builtinEnvironment('room')` | The built-in room, a white room with boxes and glowing panels for soft, neutral light, as an `Environment` |
 | `skyEnvironment()` | The light of the scene's sky, as an `Environment` that follows the sky background |
 | `loadCubemap(urls)` | A `Cubemap` of six images, a sky box for `scene.setBackground`. [Cube maps](#cube-maps) says what it reads |
 | `loadLightProbeGrid(url)` | A probe grid baked outside the engine, as the options that `scene.setLightProbeGrid` takes. [Baked light](#baked-light) says what it reads |
@@ -85,11 +85,11 @@ The prefab turns each part of the file into the engine's own:
 | --- | --- |
 | A node | A `Group`, or a `Mesh` for a node with a mesh of one material. A node with lights or a mesh of several materials becomes a group with one object for each |
 | A mesh | One mesh for each material, with its vertex arrays in the types that the file holds them in, `KHR_mesh_quantization` types included. Points and lines are left out; development builds warn about them |
-| A material | `materials.standard`, or `materials.unlit` with `KHR_materials_unlit`. `KHR_materials_emissive_strength` sets `emissiveIntensity`. `KHR_materials_specular` sets `specularIntensity`, `specularColor` and their maps, and `KHR_materials_ior` sets `ior`, as three.js's `GLTFLoader` sets them on a `MeshPhysicalMaterial`. An `ior` of 0 becomes 1000, as in three.js. `KHR_materials_transmission` sets `transmission`, and `KHR_materials_volume` sets `thickness`, `attenuationColor` and `attenuationDistance` ([Transmission](materials.md#transmission)). `KHR_materials_dispersion` sets `dispersion`, which separates the light that passes through into colors. Their transmission and thickness textures load into `transmissionMap` and `thicknessMap`, a masked material keeps its transmission, so its cut-out decides which pixels draw and the light from behind fills the rest. A material that also gives specular textures keeps both families: each transmission or thickness texture keeps a row slot of its own and samples a specular slot's texture array. A thickness texture stays out beside a specular color texture, whose sRGB texels never share its array. A layered material keeps each texture unless a layer map fills the array that it samples, and the loader notes the one that stays out. `KHR_materials_diffuse_transmission` sets `diffuseTransmission`, `diffuseTransmissionColor` and their maps ([Light through thin surfaces](materials.md#light-through-thin-surfaces)), with the volume's values too. Such a material leaves out its specular maps, and transmission wins over it. `KHR_materials_clearcoat` sets `clearcoat`, `clearcoatRoughness`, `clearcoatNormalScale` and their maps, and `KHR_materials_sheen` sets `sheenColor`, `sheenRoughness` and their maps ([Clear coat and sheen](materials.md#clear-coat-and-sheen)). `KHR_materials_iridescence` sets `iridescence`, `iridescenceIor`, `iridescenceThicknessRange` and their maps, and `KHR_materials_anisotropy` sets `anisotropy`, `anisotropyRotation` and its map ([Iridescence and anisotropy](materials.md#iridescence-and-anisotropy)). A layered material goes without its specular textures and its diffuse transmission, and a coat roughness or sheen roughness texture that is not the texture of its pair is not drawn. The coat's and the sheen's textures keep their places ahead of the iridescence's and the anisotropy's, whose textures are then noted. The draft `KHR_materials_volume_scatter` sets `subsurfaceRadius` and `subsurfaceColor` ([Light under the surface](materials.md#light-under-the-surface)): each channel spreads `attenuationDistance` times its `multiscatterColor`, as the Khronos sample renderer finds it. A volume without an attenuation distance spreads no light, and `scatterAnisotropy` is not drawn |
+| A material | `materials.standard`, or `materials.unlit` with `KHR_materials_unlit`. `KHR_materials_emissive_strength` sets `emissiveIntensity`. `KHR_materials_specular` sets `specularIntensity`, `specularColor` and their maps, and `KHR_materials_ior` sets `ior`. An `ior` of 0 becomes 1000, a surface that reflects nearly all light. `KHR_materials_transmission` sets `transmission`, and `KHR_materials_volume` sets `thickness`, `attenuationColor` and `attenuationDistance` ([Transmission](materials.md#transmission)). `KHR_materials_dispersion` sets `dispersion`, which separates the light that passes through into colors. Their transmission and thickness textures load into `transmissionMap` and `thicknessMap`, a masked material keeps its transmission, so its cut-out decides which pixels draw and the light from behind fills the rest. A material that also gives specular textures keeps both families: each transmission or thickness texture keeps a row slot of its own and samples a specular slot's texture array. A thickness texture stays out beside a specular color texture, whose sRGB texels never share its array. A layered material keeps each texture unless a layer map fills the array that it samples, and the loader notes the one that stays out. `KHR_materials_diffuse_transmission` sets `diffuseTransmission`, `diffuseTransmissionColor` and their maps ([Light through thin surfaces](materials.md#light-through-thin-surfaces)), with the volume's values too. Such a material leaves out its specular maps, and transmission wins over it. `KHR_materials_clearcoat` sets `clearcoat`, `clearcoatRoughness`, `clearcoatNormalScale` and their maps, and `KHR_materials_sheen` sets `sheenColor`, `sheenRoughness` and their maps ([Clear coat and sheen](materials.md#clear-coat-and-sheen)). `KHR_materials_iridescence` sets `iridescence`, `iridescenceIor`, `iridescenceThicknessRange` and their maps, and `KHR_materials_anisotropy` sets `anisotropy`, `anisotropyRotation` and its map ([Iridescence and anisotropy](materials.md#iridescence-and-anisotropy)). A layered material goes without its specular textures and its diffuse transmission, and a coat roughness or sheen roughness texture that is not the texture of its pair is not drawn. The coat's and the sheen's textures keep their places ahead of the iridescence's and the anisotropy's, whose textures are then noted. The draft `KHR_materials_volume_scatter` sets `subsurfaceRadius` and `subsurfaceColor` ([Light under the surface](materials.md#light-under-the-surface)): each channel spreads `attenuationDistance` times its `multiscatterColor`, as the Khronos sample renderer finds it. A volume without an attenuation distance spreads no light, and `scatterAnisotropy` is not drawn |
 | A texture | A texture with the file's sampler and texture coordinates. `KHR_texture_basisu` textures load through the KTX2 transcoder |
 | `EXT_texture_webp`, `EXT_texture_avif` | The texture's WebP or AVIF image, which the browser decodes in the loader's worker. A texture with a KTX2 image takes that first, then WebP, then AVIF. The texture's own image is a fallback for other loaders, and the engine does not download or decode it |
 | `KHR_texture_transform` | Each map's own transform, in the material's `mapUvTransforms`: its offset, repeat and rotation. A map that the file gives no transform reads the texture coordinates as the mesh gives them |
-| `KHR_lights_punctual` | Directional, point and spot lights, in the units of glTF and three.js |
+| `KHR_lights_punctual` | Directional, point and spot lights, in glTF's units: lux for a directional light, and candela for a point or spot light |
 | `KHR_node_visibility` | A node that the file hides draws nothing until a clip shows it |
 | `NEEDLE_lightmaps`, `NEEDLE_components` | The light map that a node's Needle `MeshRenderer` names, on the material that draws the node: its radiance, read at the second texture coordinates, and the scale and offset that place it. The texture keeps its RGBM texels, which the material decodes as [Needle's viewer](../guides/baked-light-data.md#needle-light-maps) does. A skybox or reflection entry of the extension is left out |
 | `KHR_animation_pointer` | Property tracks of a clip, which move a light's intensity, color or range, a material's values, the offset and scale of a base color or emissive texture's transform, and a node's visibility. A pointer the engine does not read leaves its value as the file has it, and development builds warn: [Property animation](animation.md#property-animation) |
@@ -100,7 +100,7 @@ The prefab turns each part of the file into the engine's own:
 | `KHR_meshopt_compression`, `EXT_meshopt_compression` | The decoded vertex and index data, as the uncompressed file holds it. The first file with meshopt data downloads the decoder, about 6 KB after Brotli. A fallback buffer never downloads |
 | `KHR_draco_mesh_compression` | The decoded vertices and triangles. Normals and tangents become 8-bit integers, and texture coordinates between 0 and 1 become 16-bit integers. The first file with Draco data downloads Draco's decoder, about 60 KB after Brotli. Development builds warn about each such file and name the command that converts it to meshopt |
 
-Materials follow three.js's `GLTFLoader`. A mesh with vertex colors turns them on, and a mesh without normals shades flat. A mesh without tangents turns the normal map's green channel over. Blended materials write no depth. The engine finds the lights near each surface by their ranges. So a point or spot light without a range ends where its light falls below 0.001 lux.
+A mesh with vertex colors turns them on, and a mesh without normals shades flat. A mesh without tangents turns the normal map's green channel over. Blended materials write no depth. The engine finds the lights near each surface by their ranges. So a point or spot light without a range ends where its light falls below 0.001 lux.
 
 | Member | Gives |
 | --- | --- |
@@ -173,10 +173,10 @@ A file that requires an extension which an add-on reads loads with that add-on's
 
 ## Color grading tables
 
-`loadLut` reads the two forms that three.js's `LUTCubeLoader` and `LUT3dlLoader` read, with tables of 2 to 256 texels a side. The table becomes a 3D texture of 4 bytes per texel: 144 KB for a table of 33, and 1.1 MB for one of 65.
+`loadLut` reads two forms of file, `.cube` and `.3dl`, with tables of 2 to 256 texels a side. The table becomes a 3D texture of 4 bytes per texel: 144 KB for a table of 33, and 1.1 MB for one of 65.
 
 - A `.cube` file gives `LUT_3D_SIZE`, and the table's values from 0 to 1, red changing fastest. Its `TITLE` becomes the table's `title`. Its domain comes from `DOMAIN_MIN` and `DOMAIN_MAX`, or from DaVinci Resolve's `LUT_3D_INPUT_RANGE`, and becomes `domainMin` and `domainMax`. A table in 1D (`LUT_1D_SIZE`) fails with E1412.
-- A `.3dl` file gives whole numbers, blue changing fastest, after an optional line of its input grid, such as `0 64 128 ... 1023`. The grid's points may differ from even steps by one, as rounding leaves them, which three.js's loader refuses. The values' bit depth comes from a Lustre `Mesh` line, or else from the largest value.
+- A `.3dl` file gives whole numbers, blue changing fastest, after an optional line of its input grid, such as `0 64 128 ... 1023`. The grid's points may differ from even steps by one, as rounding leaves them. The values' bit depth comes from a Lustre `Mesh` line, or else from the largest value.
 - Values outside 0 to 1 are clamped, as the canvas would clamp them.
 - The first table loads the readers, a file of about 2 KB. The thread that runs the sketch reads the file between frames: a table of 33 takes about 10 ms on a desktop.
 
@@ -184,7 +184,7 @@ A file that requires an extension which an add-on reads loads with that add-on's
 
 ### Tables from numbers
 
-`lutFromData` makes a table from numbers that your code computes, as three.js's `LUTPass` takes a `Data3DTexture` that code fills. It takes the numbers in the order of a `.cube` file's lines, so a file and its numbers make the same table:
+`lutFromData` makes a table from numbers that your code computes. It takes the numbers in the order of a `.cube` file's lines, so a file and its numbers make the same table:
 
 ```ts
 import { defineSketch } from '@null3d/engine';
@@ -223,9 +223,9 @@ export default defineSketch(async ({ assets, post }) => {
 `loadEnvironment` reads two kinds of file:
 
 - The KTX2 file that `bunx @null3d/cli assets env` writes, the fast path. It holds a cube map in `rgb9e5ufloat` or `rgba16float`, with one mip level for each step of roughness. It also holds the nine coefficients of its diffuse light.
-- An HDR file of an equirectangular panorama, as three.js's `HDRLoader` and `EXRLoader` read it: a Radiance file (`.hdr`) or an OpenEXR file (`.exr`). The engine filters it on the GPU at load, with the asset tool's steps, as three.js's `PMREMGenerator.fromEquirectangular` does.
+- An HDR file of an equirectangular panorama: a Radiance file (`.hdr`) or an OpenEXR file (`.exr`). The engine filters it on the GPU at load, with the asset tool's steps.
 
-`builtinEnvironment('room')` makes the room that three.js's `RoomEnvironment` builds. `skyEnvironment()` makes the light of the sky that [`scene.setBackground({ sky })`](scene.md#environments-cube-maps-and-the-sky) draws, as three.js's `PMREMGenerator.fromScene` does with its `Sky`. The GPU draws each of them and filters it, so no file downloads. Give any of them to [`scene.setEnvironment`](scene.md#the-environment).
+`builtinEnvironment('room')` makes a white room with six boxes, six glowing panels and one point light. It gives soft, neutral light. `skyEnvironment()` makes the light of the sky that [`scene.setBackground({ sky })`](scene.md#environments-cube-maps-and-the-sky) draws. The GPU draws each of them and filters it, so no file downloads. Give any of them to [`scene.setEnvironment`](scene.md#the-environment).
 
 ```ts
 import { defineSketch } from '@null3d/engine';
@@ -259,7 +259,7 @@ export default defineSketch(async ({ scene, assets }) => {
 
 ## Cube maps
 
-`loadCubemap` loads six images into a cube map, as three.js's `CubeTextureLoader` does. Give their addresses in three.js's order: the faces toward +X, -X, +Y, -Y, +Z and -Z. Each face is square, every face has the same size, and a face takes at most 2,048 pixels a side. Give the cube map to [`scene.setBackground`](scene.md#environments-cube-maps-and-the-sky).
+`loadCubemap` loads six images into a cube map. Give their addresses in this order: the faces toward +X, -X, +Y, -Y, +Z and -Z. The engine reads the faces as seen from inside the cube, mirrored across x, so a common six-image sky box shows the right way round. Each face is square, every face has the same size, and a face takes at most 2,048 pixels a side. Give the cube map to [`scene.setBackground`](scene.md#environments-cube-maps-and-the-sky).
 
 ```ts
 import { defineSketch } from '@null3d/engine';
@@ -319,7 +319,7 @@ await assets.preload(['/tex/a.png', '/tex/b.png', '/tex/c.png']);
 
 ## Caching
 
-Loads of one address at the same time share one download. Files that `preload` or the download list downloaded wait in memory until a load takes them. The HTTP cache keeps everything else, as it does for a page's own requests, so three.js's `THREE.Cache` has no counterpart.
+Loads of one address at the same time share one download. Files that `preload` or the download list downloaded wait in memory until a load takes them. The HTTP cache keeps everything else, as it does for a page's own requests.
 
 A download that the network rejects, or that a server answers with a 5xx, is tried once more after a short wait. A tunnel or a proxy can refuse the first request of a session while the same file serves a moment later. A refused answer such as a 404, and a body that arrived but will not read, are reported at once.
 

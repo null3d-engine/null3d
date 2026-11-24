@@ -55,7 +55,7 @@ Options rejected:
 
 ## Consequences
 
-- `tools/lib/cdn.ts` splits the entries (`splitEntries`), and its unit tests check a small build: both entries' values, the files copied and shared, and each copy's addresses. They also check a refused constant outside the code. The import rewrite covers every package that the build carries, so the vegetation add-on's import of `@null3d/impostors` resolves on a page with no bundler.
+- `tools/lib/cdn.ts` splits the entries (`splitEntries`), and its unit tests check a small build: both entries' values, the files copied and shared, and each copy's addresses. They also check a refused constant outside the code. The import rewrite covers every package that the build carries, so the grass add-on's import of `@null3d/wind` resolves on a page with no bundler.
 - `tests/image/cdn-script-tag.spec.ts` checks that no code file of the real build names a constant. It loads both entries, and the production entry ignores `?threads=off` while the development entry obeys it. It draws the terrain add-on from each entry.
 - `docs/getting-started/cdn.md` gives both entries and when to use each. Other pages say which build a page runs, and that timings use a production build. They are the performance, testing and debugging guides, the engine and debug API pages, and the `null3d` command's page. The install page, both skills, `AGENTS.md` and [Benchmarks](../benchmarks.md#production-builds) say it too.
 - In a production build on WebGPU, `engine.measure` counts the triangles of the GPU-culled draws only after the sketch calls `debug.frameStats()` or the stats card opens. A development build always counts them. A benchmark page that reports triangles calls `debug.frameStats()` once.

@@ -30,8 +30,8 @@ export interface PickHit {
 	instance: number;
 	/**
 	 * Where on the surface the pixel landed, as the first texture coordinates of the hit triangle
-	 * blended across its three corners, as three.js's `intersection.uv`. Read `hasUv` first: the
-	 * numbers mean nothing when it is false.
+	 * blended across its three corners. Read `hasUv` first: the numbers mean nothing when it is
+	 * false.
 	 */
 	uv?: Vec2Like;
 	/**

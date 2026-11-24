@@ -316,7 +316,7 @@ A phone cost is a published figure unless it says "estimate".
 | --- | --- | --- | --- |
 | Leak-free probe volume, after Unity 6's adaptive probe volumes: a validity mask, leak-reduced sampling, and a baked sky term times the live sky color | Fixes the main flaw of three.js's grid; time of day keeps working; Unity ships it to phones | 0.1 to 0.3 ms (estimate) | Core, on the probe grid: M3's global illumination (D-179 ruling 12) |
 | A bake on WebGPU compute: a progressive path tracer | No complete version in the three.js world | Seconds to a minute; desktop first | Core, beside the ray-cast bake of [D-146](decisions/D-146-light-probe-grid.md), with the reflection probes' capture |
-| Grass made on the GPU with wind | Not in three.js | 1 to 2 ms for 200,000 blades (estimate) | M3, inside the vegetation add-on ([D-241](decisions/D-241-vegetation-foundation.md)) |
+| Grass made on the GPU with wind | Not in three.js | 1 to 2 ms for 200,000 blades (estimate) | M3, in the grass add-on ([D-241](decisions/D-241-vegetation-foundation.md)) |
 | An ocean with real waves (FFT, 2 to 3 bands) | Not in three.js; its `webgpu_ocean` is a normal map | About 0.5 ms (estimate) | The water add-on, in M3 (D-179 ruling 19) |
 | Smoke lit from six baked directions; ribbons | Cheap on phones | Very small (estimate) | The particles add-on, with no ruling yet. Collision with the depth buffer is out, because the add-on has no simulation pass ([D-131](decisions/D-131-particles.md)) |
 | Moment transparency; per-pixel linked lists on desktops | Better order where layers overlap | About twice weighted blending's bandwidth (estimate) | An M3 core task, off by default (D-179 ruling 20) |

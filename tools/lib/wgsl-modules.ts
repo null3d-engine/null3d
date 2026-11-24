@@ -31,7 +31,6 @@ import {
 	WGSL_TAG,
 } from '../../packages/vite-plugin/src/wgsl';
 import { hashFiles, hashOf } from './build-cache';
-import { isVegetationFile, vegetationOn } from './vegetation-switch';
 import { filesBelow } from './walk';
 
 /** The folders whose modules hold the repository's own WGSL: the test sketches and the demos. */
@@ -59,8 +58,6 @@ function modulesBelow(root: string, folders: readonly string[]): string[] {
 		for (const file of filesBelow(join(root, folder), NOT_SERVED)) {
 			const path = join(folder, file);
 			if (TEST_FILE.test(path)) continue;
-			// The vegetation add-on is a work in progress that no CI job compiles (D-378).
-			if (!vegetationOn() && isVegetationFile(path)) continue;
 			if (
 				path.endsWith('.wgsl') ||
 				(/\.[cm]?[jt]sx?$/.test(path) && WGSL_TAG.test(readFileSync(join(root, path), 'utf8')))

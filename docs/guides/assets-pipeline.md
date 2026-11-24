@@ -96,11 +96,11 @@ The engine keeps each animation clip at one fixed rate of keys, so it never sear
 | Key times | One list of evenly spaced times per clip. The file's own spacing when every key lies on one grid of up to 30 keys a second, else 30 keys a second | The rate that the engine picks for the clip at load |
 | Rotations that change | One key per time, as 16-bit integers, compressed with meshopt's quaternion filter | A quarter of the size of floats. The engine keeps rotations in 16 bits as well |
 | Translations, scales and morph weights that change | One key per time, as 32-bit floats | glTF asks for floats. meshopt compresses them with no loss |
-| A track whose value never changes, or moves by under a millionth of its size | One key, at the clip's last time | The clip keeps its length, in null3D and in three.js. Exporters leave rounding noise of that size in tracks that do not move, and the engine counts such a track as constant in every file |
+| A track whose value never changes, or moves by under a millionth of its size | One key, at the clip's last time | The clip keeps its length. Exporters leave rounding noise of that size in tracks that do not move, and the engine counts such a track as constant in every file |
 | Step tracks | Step tracks, with a key at each time | The engine steps at the same times |
 | Cubic spline tracks | Linear keys on the curve | The engine stores the same keys from the curve at load |
 
-The command drops no key and no track. A clip blends only where it has tracks, as in three.js, so a dropped track would change how the clip blends. Poses stay within the engine's tolerance of three.js. The KayKit Knight's skinning matrices differ by at most 7e-5, the same as from its source file.
+The command drops no key and no track. A clip blends only where it has tracks, so a dropped track would change how the clip blends. Poses stay as accurate as the source file's: the KayKit Knight's skinning matrices from either file differ from three.js's by at most 7e-5.
 
 For the Knight and its 76 clips, the file's binary part falls from 838 KB to 405 KB after Brotli. On the engine's test page, its clips were ready in 8 ms on two job workers, against 16.5 ms for the source file.
 
@@ -192,7 +192,7 @@ A large mesh also gets pieces: `--lod` sorts each of its levels of 32,768 triang
 
 Over the 213 models of four Kenney city kits, `--lod` gives levels to 162. The 45 models of under 64 triangles get none, and so do six flat road pieces that cannot lose a quarter of their triangles.
 
-`assets.loadGltf` gives each mesh its levels. So every copy of the model and every instance batch of it picks its level in each frame, as [Levels of detail](../concepts/lod.md) explains. A skinned mesh draws its levels too, because the tool's levels name the mesh's own vertices and the skin moves them. three.js's `GLTFLoader` ignores `MSFT_lod`, and draws the full mesh.
+`assets.loadGltf` gives each mesh its levels. So every copy of the model and every instance batch of it picks its level in each frame, as [Levels of detail](../concepts/lod.md) explains. A skinned mesh draws its levels too, because the tool's levels name the mesh's own vertices and the skin moves them. A glTF reader that ignores `MSFT_lod` draws the full mesh.
 
 ### Levels as separate downloads
 
@@ -352,7 +352,7 @@ FBX and MTL materials become glTF's metal-rough materials:
 
 Textures go into the file as PNG and JPEG images. TGA images become PNG. The command looks for each texture file where the model names it, then by its name in the model's folder. A missing file gets a note, and the material keeps its other maps.
 
-STL files hold facets with no other data. The command joins corners at the same place and leaves the facets' normals out, so glTF readers shade the faces flat, as the facets say. PLY and STL colors in bytes are sRGB, and the output stores them as linear values, as glTF requires. The engine does not draw glTF points yet, so a PLY point cloud loads with nothing to draw. three.js draws it.
+STL files hold facets with no other data. The command joins corners at the same place and leaves the facets' normals out, so glTF readers shade the faces flat, as the facets say. PLY and STL colors in bytes are sRGB, and the output stores them as linear values, as glTF requires. The engine does not draw glTF points yet, so a PLY point cloud loads with nothing to draw.
 
 | Option | Effect | Without it |
 | --- | --- | --- |
@@ -385,7 +385,7 @@ const brick = materials.standard({ metalnessRoughnessMap: orm, aoMap: orm });
 
 ## Normal maps from bump maps
 
-A bump map gives each texel a height. A normal map gives the slope that the heights make, which the GPU reads with no extra work. The engine draws bump maps too ([materials](../api/materials.md)), at three texture reads per pixel, and a normal map saves those. `assets normal-from-bump` makes one from a bump map, such as a three.js material's `bumpMap`:
+A bump map gives each texel a height. A normal map gives the slope that the heights make, which the GPU reads with no extra work. The engine draws bump maps too ([materials](../api/materials.md)), at three texture reads per pixel, and a normal map saves those. The `assets normal-from-bump` command makes one from a bump map, such as a material's `bumpMap`:
 
 ```sh
 bunx @null3d/cli assets normal-from-bump textures/stone_bump.png textures/stone_normal.ktx2 --scale 2
@@ -393,13 +393,13 @@ bunx @null3d/cli assets normal-from-bump textures/stone_bump.png textures/stone_
 
 White stands high and black low. The height map is a PNG, JPEG or TGA image, read from its red channel. A 16-bit PNG keeps its full depth, so gentle slopes do not show steps. The normal map follows glTF: X to the right and Y up the image.
 
-`--scale` works as three.js's `bumpScale`. At 1, a slope of the whole height range per texel tilts the surface 45 degrees. three.js measures the slope per pixel of the screen, so its bumps look stronger when a texel covers less than a pixel. The normal map keeps the strength that three.js shows where one texel covers one pixel. Give the three.js material's `bumpScale` as `--scale`, and check the look up close.
+`--scale` works as a material's `bumpScale`. At 1, a slope of the whole height range per texel tilts the surface 45 degrees. A bump map measures its slope per pixel of the screen, so its bumps look stronger when a texel covers less than a pixel. The normal map keeps the strength that the bump map shows where one texel covers one pixel. Give the material's `bumpScale` as `--scale`, and check the look up close.
 
 The map tiles: the texels at each edge take their neighbors from the opposite edge. `--clamp` stops that, for a map that does not tile.
 
 | Option | Effect | Without it |
 | --- | --- | --- |
-| `--scale <number>` | The strength of the slopes, as three.js's `bumpScale` | 1 |
+| `--scale <number>` | The strength of the slopes, as a material's `bumpScale` | 1 |
 | `--clamp` | The edge texels take no neighbors from the opposite edge | The map tiles |
 | `--max-texture-size <pixels>` | The largest side of a `.ktx2` texture: a power of two up to 2048 | 2048 |
 
@@ -439,11 +439,11 @@ The output is one KTX2 file:
 
 Both formats filter on every GPU the engine supports. `rgb9e5ufloat` stores three 9-bit values with one shared exponent, in half the memory of `rgba16float`. In tests, the two formats differed by under a tenth of a step of 255 after tone mapping. Both hold light up to about 65,000, and the command clamps brighter texels, such as the middle of an unclipped sun.
 
-three.js prefilters an HDR file in the browser on every visit, with `PMREMGenerator`. The command does it once, before you publish. Your page then downloads the filtered file and does no work before it draws. The same file gives the same bytes on every computer.
+The command filters the image once, before you publish. Your page then downloads the filtered file and does no work before it draws. The same file gives the same bytes on every computer.
 
 `assets.loadEnvironment` also takes the HDR file itself, for maps that change, such as files that users upload. A worker reads the file, and the GPU filters it at load with this command's steps, so the two maps match. [Assets](../api/assets.md#environments) gives what it reads and costs.
 
-`--builtin room` writes the room that three.js's `RoomEnvironment` builds: a white room with six boxes, six glowing panels and one point light. It blurs the room by 0.04 radians first, as three.js's examples do with `fromScene(room, 0.04)`. The engine makes the same room on the GPU when `assets.builtinEnvironment('room')` asks for it, so its package ships no file. The engine's tests compare its map with this command's.
+`--builtin room` writes the engine's built-in room: a white room with six boxes, six glowing panels and one point light. It blurs the room by 0.04 radians first, which softens the edges of the panels' reflections. The engine makes the same room on the GPU when `assets.builtinEnvironment('room')` asks for it, so its package ships no file. The engine's tests compare its map with this command's.
 
 A sketch loads the file with `assets.loadEnvironment`, and lights the scene with it through `scene.setEnvironment`:
 

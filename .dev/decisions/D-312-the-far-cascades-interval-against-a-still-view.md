@@ -1,8 +1,8 @@
 # D-312: A far cascade redraws on its interval, and the test that watches it needs a window that covers the cycles
 
-Status: decided for the measurement, open for the schedule. The far cascade keeps redrawing on `farCascadeInterval`. The shadow-count page now reports the least draw calls of any frame, with the frames it held. Pending: whether a far cascade should ignore its interval while nothing in it moves. That changes every scene's far shadows and waits for its own figures. Task: none.
+Status: decided for the measurement, open for the schedule. The far cascade keeps redrawing on `farCascadeInterval`. A test that counts the far cascades' draws compares the least draw calls of any frame, with the frames its window held. The shadow-count test that this record measured drew the vegetation add-on's plants, and the repository no longer holds it ([D-378](D-378-vegetation-add-on-removed.md)). Pending: whether a far cascade should ignore its interval while nothing in it moves. That changes every scene's far shadows and waits for its own figures. Task: none.
 
-Summary: the far cascade draws on `frame % interval == (cascade - 1) % interval`, which is four at Low, so every fourth frame draws it whatever the grove is doing. The test took the median of a two-second window, and with a heavy scene that window holds few frames, so the median flipped between the held and the drawn value: seven of ten runs failed, with counts in whole steps of one cascade's draws (45, 53, 60, 67, 75). The page now reports the least counts instead, and the schedule is unchanged.
+Summary: the far cascade draws on `frame % interval == (cascade - 1) % interval`, which is four at Low, so every fourth frame draws it whatever the grove is doing. The test took the median of a two-second window, and with a heavy scene that window holds few frames, so the median flipped between the held and the drawn value: seven of ten runs failed, with counts in whole steps of one cascade's draws (45, 53, 60, 67, 75). Such a test compares the least counts instead, and the schedule is unchanged.
 
 ## Question
 
@@ -43,10 +43,10 @@ The two options look the same. The picture is unchanged either way: the question
 
 ## Decision
 
-Measure like with like, and leave the schedule. The page reports the least draw calls of any frame in its window, which a held frame always gives within one interval, and the frames it covered, so a reader sees that the window held a whole cycle. The test compares those least counts.
+Measure like with like, and leave the schedule. A page that counts the far cascades' draws reports the least draw calls of any frame in its window. A held frame always gives that count within one interval. The page also reports the frames it covered, so a reader sees that the window held a whole cycle. Its test compares those least counts.
 
 The schedule stays as it is. Whether a far cascade should ignore its interval when nothing inside it moved is a real question. The interval is what keeps a still grove's far layers cheap, and holding them harder would make every scene's far shadows cheaper. Against that, a moving caster's shadow would lag behind it. Either way the choice decides the cost of every scene's far shadows, so it waits for its own figures rather than a change made in the same hour the test was fixed.
 
 ## Consequences
 
-The shadow-count page's result carries `drawCallsLeast`, `frames` and the window's length; the test compares the least counts and names the window when it presents no frame. The engine is unchanged. If a later record decides that a still far cascade should hold regardless of its interval, this record's decision on the measurement stands and only the schedule changes.
+A page that counts the far cascades' draws carries the least draw calls, the frames and the window's length in its result. Its test compares the least counts, and it names the window when the window presents no frame. The engine is unchanged. If a later record decides that a still far cascade should hold regardless of its interval, this record's decision on the measurement stands and only the schedule changes.

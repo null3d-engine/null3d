@@ -53,8 +53,8 @@ import { Texture } from './textures';
 
 /**
  * A cube map of six images, which `assets.loadCubemap` loads, for a sky box behind every object:
- * `scene.setBackground(cubemap)`, as three.js's `CubeTextureLoader` makes a `CubeTexture` for
- * `scene.background`. It does not light the scene: light comes from an environment.
+ * `scene.setBackground(cubemap)`. The engine reads the faces as seen from inside the cube, mirrored
+ * across x. It does not light the scene: light comes from an environment.
  *
  * @category api/assets
  */
@@ -83,17 +83,16 @@ export class Cubemap {
 }
 
 /**
- * The settings of three.js's sky, with the names and defaults of its `Sky` object's uniforms. A
- * call that leaves a setting out takes its default.
+ * The settings of the analytic sky, the Preetham daylight model with a sun disc and drifting
+ * clouds. A call that leaves a setting out takes its default.
  *
  * @category api/scene
  */
 export interface SkyOptions {
 	/**
-	 * A point toward the sun, as three.js's `sunPosition`. Its direction places the sun. A point
-	 * far below the horizon, hundreds of thousands of units down, also dims the sky, as in
-	 * three.js. The default is the sun 2 degrees above the horizon toward -Z, as three.js's sky
-	 * example sets it: `[0, 0.0349, -0.9994]`.
+	 * A point toward the sun. Its direction places the sun. A point far below the horizon, hundreds
+	 * of thousands of units down, also dims the sky. The default is the sun 2 degrees above the
+	 * horizon toward -Z: `[0, 0.0349, -0.9994]`.
 	 */
 	sunPosition?: readonly [number, number, number];
 	/** The haze in the air, 0 or more. The default is 2. */
@@ -135,7 +134,7 @@ export interface SkyOptions {
 }
 
 /**
- * three.js's analytic sky as a background: `scene.setBackground({ sky: { sunPosition } })`.
+ * The analytic sky as a background: `scene.setBackground({ sky: { sunPosition } })`.
  *
  * @category api/scene
  */
@@ -227,20 +226,17 @@ export interface AtmosphereBackground {
  * @category api/scene
  */
 export interface BackgroundOptions {
-	/**
-	 * The factor of the background's light, 0 or more, as three.js's `scene.backgroundIntensity`.
-	 * The default is 1.
-	 */
+	/** The factor of the background's light, 0 or more. The default is 1. */
 	intensity?: number;
 	/**
-	 * How much an environment blurs, from 0 (sharp) to 1, as three.js's
-	 * `scene.backgroundBlurriness`. It reads the environment's light at that roughness, so a
-	 * blurred background costs no more than a sharp one. Only environments blur. The default is 0.
+	 * How much an environment blurs, from 0 (sharp) to 1. It reads the environment's light at that
+	 * roughness, so a blurred background costs no more than a sharp one. Only environments blur.
+	 * The default is 0.
 	 */
 	blur?: number;
 	/**
 	 * The turn of a cube map or an environment about the scene, as Euler angles in radians in the
-	 * order X, Y, Z, as three.js's `scene.backgroundRotation`. The default is `[0, 0, 0]`.
+	 * order X, Y, Z. The default is `[0, 0, 0]`.
 	 */
 	rotation?: readonly [number, number, number];
 }
@@ -326,7 +322,7 @@ const ATMOSPHERE_RANGES: Readonly<Record<AtmosphereNumber, readonly [number, num
 
 /**
  * What `scene.setBackground` draws behind every object in place of a plain color: a texture, an
- * environment, a cube map, three.js's sky or the physical sky.
+ * environment, a cube map, the analytic sky or the physical sky.
  *
  * @category api/scene
  */

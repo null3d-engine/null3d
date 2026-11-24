@@ -86,7 +86,7 @@ pmndrs postprocessing maps the same way:
 | `ChromaticAberrationEffect`, `NoiseEffect`, `ScanlineEffect`, `PixelationEffect` | A custom effect for each |
 | `DepthOfFieldEffect` | `dof`. `worldFocusDistance` becomes `focusDistance`, and `bokehScale` becomes `maxBlur`, tuned by eye with `aperture`. A `target` to focus on becomes `focusPoint`. |
 
-Bloom's glow covers a share of the screen, and three.js's glow covers a number of pixels. So a bloom mapping matches at one canvas size. [The post-processing chain](../concepts/post-processing.md#porting-from-threejs) gives the details for bloom, ambient occlusion and outlines.
+Bloom's glow covers a share of the screen, and three.js's glow covers a number of pixels. So a bloom mapping matches at one canvas size. [The three.js to null3D mapping](threejs-mapping.md#post-processing) gives the details for bloom, ambient occlusion and outlines.
 
 ## Port a ShaderPass to a custom effect
 

@@ -78,8 +78,8 @@ const CONSTANT_MARK = Buffer.from('__NULL3D_');
 
 /**
  * The add-ons that the build carries, each under `addons/<name>/`: every public package that builds
- * on the engine. A private package, such as the vegetation add-on, ships nowhere and stays out. A
- * unit test fails when a public package of the workspace is missing here.
+ * on the engine. A private package ships nowhere and stays out. A unit test fails when a public
+ * package of the workspace is missing here.
  */
 export const CDN_ADDONS: readonly string[] = [
 	'controls',

@@ -46,7 +46,6 @@ import { GLASS_IMAGE } from '../../bench/scenes/transparency.ts';
 import { COMPARISONS } from '../../examples/compare/comparisons.ts';
 import { DEMOS, sketchPath } from '../../examples/demos.ts';
 import type { DepthMode } from '../../packages/engine/src/page/switches.ts';
-import { VEGETATION_PICTURE, vegetationOn } from '../../tools/lib/vegetation-switch.ts';
 import type { EngineModeName } from '../lib/engine-checks.ts';
 import {
 	ALL_MODES,
@@ -64,8 +63,6 @@ import {
 } from '../pages/lib/bright-scene.ts';
 import { PRECISION } from '../pages/lib/depth-precision.ts';
 import { MOTION_HOLD } from '../pages/lib/motion-vectors.ts';
-import { plantSpeciesTests } from './plant-species.ts';
-import { sparseFormTests } from './sparse-form.ts';
 
 /**
  * The tolerance of a scene drawn about 1,000 km out against its image at the origin: any change of
@@ -3235,29 +3232,6 @@ const FEATURE_TESTS: readonly ImageTest[] = [
 		size: [480, 270],
 		timeoutSeconds: 180,
 	},
-	// A plant of the vegetation add-on held at one time under the wind add-on's field. The plant's
-	// own materials move its wood, shoots, leaves and cards by a vertex offset that fades to nothing
-	// at its preset's sway distance, so the test that holds this page at two times measures a plant
-	// that sways, and the twin below measures the same plant under the same field, past a one
-	// millimetre sway distance, standing still.
-	{
-		name: 'plant-wind-sway',
-		sketch:
-			'tests/pages/sketches/plant-review-sketch.ts?species=hawthorn-shrub&view=whole&wind=2&size=480x270',
-		hold: 1,
-		size: [480, 270],
-		// The first compile of the instanced plant material and its shadow casters is the cost that
-		// overran the removed wind pages' 180-second limit on CI, so each page takes room for it.
-		timeoutSeconds: 360,
-	},
-	{
-		name: 'plant-wind-still',
-		sketch:
-			'tests/pages/sketches/plant-review-sketch.ts?species=hawthorn-shrub&view=whole&wind=2&sway=0.001&size=480x270',
-		hold: 1,
-		size: [480, 270],
-		timeoutSeconds: 360,
-	},
 	// Impostors of the impostors add-on: cards far from the world's origin, each blending the three
 	// atlas views nearest its direction to the eye and lit by the sun from the normal the surface
 	// atlas stores, and a merged row of a plain, a turned and a mirrored panel, which draws only
@@ -4145,35 +4119,14 @@ function withIndexInstances(name: string): ImageTest {
 	};
 }
 
-/**
- * The manifest's tests. The vegetation add-on's pictures, each named `plant-` and more, join only
- * with the add-on's switch on: the add-on is a work in progress that no CI job draws (D-378), and
- * its species pictures read the add-on's species folders only then.
- */
-export const IMAGE_TESTS: readonly ImageTest[] = (
-	[
-		...FEATURE_TESTS,
-		...PREPASS_SCENES.flatMap(prepassCopies),
-		...GPU_OCCLUSION_SCENES.map(withGpuOcclusion),
-		...HALF_PRECISION_TESTS.map((name) => copyWithSwitch(name, 'half', 'half=on')),
-		...INDEX_INSTANCE_TESTS.map(withIndexInstances),
-		...(vegetationOn() ? plantSpeciesTests() : []),
-		// One oak crown at three distances from one camera: two copies in the first band of the plant
-		// core's card levels and one in the second, so the plant coverage test can read the share of
-		// each crown's own box.
-		{
-			name: 'plant-coverage',
-			page: 'tests/pages/plant-coverage.html',
-			size: [1280, 720],
-			// Three crowns compile their materials before the first frame. A busy software runner drew
-			// its first frame at 64 seconds and its second at 159, and the page then gave no result inside
-			// its 180-second limit (run 43515868396). The limit stays under the page budget and above
-			// what the page has needed.
-			timeoutSeconds: 300,
-		},
-		...sparseFormTests(),
-	] satisfies ImageTest[]
-).filter((test) => vegetationOn() || !VEGETATION_PICTURE.test(test.name));
+/** The manifest's tests. */
+export const IMAGE_TESTS: readonly ImageTest[] = [
+	...FEATURE_TESTS,
+	...PREPASS_SCENES.flatMap(prepassCopies),
+	...GPU_OCCLUSION_SCENES.map(withGpuOcclusion),
+	...HALF_PRECISION_TESTS.map((name) => copyWithSwitch(name, 'half', 'half=on')),
+	...INDEX_INSTANCE_TESTS.map(withIndexInstances),
+];
 
 /** Every run of the manifest's tests: each test on each of its tiers, in each of its thread modes. */
 export const IMAGE_RUNS = imageRuns(IMAGE_TESTS);

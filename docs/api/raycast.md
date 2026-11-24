@@ -18,7 +18,7 @@ flowchart LR
     test --> hits["Hits, written into<br/>your own objects"]
 ```
 
-A raycast finds where a ray meets the scene's objects. An overlap query finds the objects inside a sphere or a box. Every query tests the triangles of objects and instance rows, as three.js's `Raycaster` does. Raycasts also hit [sprites, points and lines](#sprites-points-and-lines) where they draw. The engine keeps a tree over the scene's objects and a tree over each mesh's triangles. So a query tests only the few triangles near it.
+A raycast finds where a ray meets the scene's objects. An overlap query finds the objects inside a sphere or a box. Every query tests the triangles of objects and instance rows. Raycasts also hit [sprites, points and lines](#sprites-points-and-lines) where they draw. The engine keeps a tree over the scene's objects and a tree over each mesh's triangles. So a query tests only the few triangles near it.
 
 Queries run in the sketch, on the scene. They write their results into objects and arrays that you create once, so a query in every frame allocates nothing. `bun run bench:allocation --calls` checks it.
 
@@ -77,7 +77,7 @@ A ray starts at `origin` and runs along `direction`, which needs no unit length.
 
 `options` is `undefined` or an object with these optional fields:
 
-- `layers`: the layers to test, a 32-bit mask as `setLayers` takes. A query tests an object when their masks share a layer. The default is layer 0 alone, as for a camera and for three.js's `Raycaster`.
+- `layers`: the layers to test, a 32-bit mask as `setLayers` takes. A query tests an object when their masks share a layer. The default is layer 0 alone, as for a camera.
 - `maxDistance`: the farthest hit in meters. The default is no limit.
 - `pointThreshold`: a distance in meters. When you set it, a ray hits a point that it passes within this distance of, whatever the point's size.
 - `lineThreshold`: a distance in meters. When you set it, a ray hits a line that it passes within this distance of, whatever the line's width.
@@ -91,8 +91,8 @@ A hit has these fields:
 | `point` | Where the ray hit, in world space |
 | `normal` | The unit normal of the hit triangle in world space, on the side that faces the ray's origin |
 | `distance` | The distance from the origin to the point, in meters |
-| `triangle` | The index of the hit triangle in its mesh, as three.js's `faceIndex`. -1 for a sprite, a point or a line |
-| `uv` | Where on the surface the ray hit, in the mesh's first texture coordinates, as three.js's `intersection.uv`. Give an array of two numbers, as you give `point`, and every raycast fills it. Read `hasUv` first |
+| `triangle` | The index of the hit triangle in its mesh. -1 for a sprite, a point or a line |
+| `uv` | Where on the surface the ray hit, in the mesh's first texture coordinates. Give an array of two numbers, as you give `point`, and every raycast fills it. Read `hasUv` first |
 | `hasUv` | True when the hit triangle's mesh has a first texture coordinate set, so `uv` gives where on the surface the ray hit. False for a hit on a sprite, a point or a line, and for a mesh with no such coordinates |
 
 `uv` holds where the ray crossed the surface. It blends the three corners' texture coordinates,
@@ -191,7 +191,7 @@ An overlap query tests triangles. A long wall counts only where its surface reac
 
 ## Sprites, points and lines
 
-A ray hits [sprites](sprites.md), [points](points.md) and [lines](lines.md) where they draw, as three.js's `Raycaster` hits its `Sprite` and `Line2`:
+A ray hits [sprites](sprites.md), [points](points.md) and [lines](lines.md) where they draw:
 
 | Row | A ray hits it |
 | --- | --- |
@@ -205,9 +205,9 @@ A hit's `instance` is the row: the sprite, the point, or the segment. Segment `i
 
 Sprites face the camera, and sizes in pixels depend on it. So these raycasts need a camera. `scene.raycast` and the other raycasts use the active camera. A pointer event's ray uses the camera of the frame on screen at the event. Without an active camera, rays miss sprites, points without `pointThreshold` and lines sized in pixels. A row sized in pixels is hit only between the camera's near and far planes, where the camera draws it.
 
-The hit on a sprite or a point's square is the point where the ray crosses it, and its normal faces the camera. A hit near a line, or near a point within a threshold, is the ray's closest point to it, as in three.js. Its distance is that point's distance along the ray, and its normal points back along the ray. A ray hits a dashed line in its gaps too, and a sprite or a point where its map is clear, as in three.js.
+The hit on a sprite or a point's square is the point where the ray crosses it, and its normal faces the camera. A hit near a line, or near a point within a threshold, is the ray's closest point to it. Its distance is that point's distance along the ray, and its normal points back along the ray. A ray hits a dashed line in its gaps too, and a sprite or a point where its map is clear.
 
-`pointThreshold` and `lineThreshold` give the tests of three.js's `Raycaster.params.Points.threshold` and `Raycaster.params.Line.threshold`. Use them to port code that sets those, or to make small points and thin lines easier to click. three.js's default for both is 1 meter, whatever the sizes. null3D has no default threshold: without one, rays hit what draws.
+`pointThreshold` and `lineThreshold` make small points and thin lines easier to click. Neither has a default: without one, rays hit what draws.
 
 ```ts
 // Each star is 3 pixels wide. A click within 0.5 m of a star selects it.
@@ -226,7 +226,7 @@ Overlap queries do not find sprites, points or lines.
 ## What queries test
 
 - Each object and instance row with a mesh, on the query's layers. Groups, cameras and lights have no mesh. Raycasts also test the sprites, points and line segments in use on the query's layers.
-- Each triangle as its material draws it: front faces only, or both faces for a material with `doubleSided: true`. three.js's `Raycaster` reads a material's `side` the same way.
+- Each triangle as its material draws it: front faces only, or both faces for a material with `doubleSided: true`.
 - Shown objects only. A hidden object is never hit.
 - The positions of the last frame's update. A move, a new object or a destroy in your `onUpdate` counts from the next frame. In `onLateUpdate`, queries see this frame's positions, but rows of instance batches still have the last frame's positions.
 - Before the first frame, a query applies the objects that `setup` has created and their transforms. A bake that `setup` runs therefore sees the scene as `setup` has built it. Moves that `setup` makes after its first query count from the first frame.
@@ -258,30 +258,11 @@ The engine keeps two levels of trees, in its WebAssembly core.
 
 Each node of a tree has four children, so one SIMD instruction tests a ray against four boxes. A query walks the scene's trees to the objects whose boxes it meets. Then it moves the ray into each object's own space and walks that object's mesh tree. Each object's box comes from its mesh's box, so it holds every triangle.
 
+Because a query walks these trees, a ray costs about the same in a large scene as in a small one. A three.js `Raycaster` tests each object's bounding sphere in turn, so its rays cost more as the scene grows.
+
 The trees hold sprites, points and line segments too. A row sized in pixels takes more room in the world the farther it lies from the camera. A threshold reaches past what a row draws. So when the query's layers hold such rows, the raycast grows each box of the trees as it walks them. A raycast on layers without them costs no more.
 
 The trees give the same hits as testing every triangle of every object in turn. Objects far from the origin, thousands of kilometers out, get the same precision as objects near it. The engine stores positions relative to grid cells, and each query moves its origin into each cell's frame in 64-bit numbers.
-
-## Compared with three.js
-
-| three.js | null3D |
-| --- | --- |
-| `raycaster.setFromCamera(pointer, camera)` | `camera.screenToRay(input.pointer.x, input.pointer.y, ray)`, with the camera of the frame on screen at the pointer's event |
-| DOM listeners that raycast for clicks and hover | `object.on('click', handler)` and the other [pointer events on objects](input.md#pointer-events-on-objects) |
-| `raycaster.intersectObjects(scene.children, true)` | `scene.raycastAll(origin, direction, options, hits)` tests the whole scene |
-| `intersects[0]` | `scene.raycast(origin, direction, options, hit)` |
-| `raycaster.far` | `maxDistance` |
-| `raycaster.layers` | `options.layers`, with the same default: layer 0 alone |
-| `raycaster.params.Points.threshold` | `options.pointThreshold`, with no default: without it, a ray hits each point's square |
-| `raycaster.params.Line.threshold` | `options.lineThreshold`, with no default: without it, a ray hits each line within half its width, as `Line2` |
-| `raycaster.camera`, for sprites and `Line2` | The active camera, or the camera of the frame on screen at a pointer event |
-| `intersection.instanceId` | `hit.instance` |
-| `intersection.faceIndex` | `hit.triangle` |
-| `intersection.uv` | `hit.uv`, which `hit.hasUv` says whether to read |
-| `three-mesh-bvh` | Built in: delete its setup |
-| three.js has no pixel pick: its `Raycaster` tests triangles | `scene.pick(x, y)` tests the pixel that the image shows, through the GPU, and returns a promise |
-
-three.js tests hidden objects unless you filter them out; null3D never hits them. three.js gives a `Line`'s hit point on the line; null3D gives the point on the ray, as three.js does for `Line2`. three.js's `Line2` ignores `raycaster.far`; null3D's `maxDistance` limits every hit. three.js tests a skinned mesh's animated vertices; null3D tests its bind pose. three.js returns a new array of new objects for each raycast; null3D writes into the objects you pass. three.js tests each object's bounding sphere in turn, so a ray costs more as the scene grows. null3D walks its trees, so a ray costs about the same in a large scene.
 
 ## API reference
 

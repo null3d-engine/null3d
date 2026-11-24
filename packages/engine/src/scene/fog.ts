@@ -19,9 +19,9 @@ import type { CoreMemory } from './memory';
 /**
  * How fog thickens with distance. Exponential fog, `'exponential'`, follows light through an even
  * haze. An object at distance d takes the fog color by a factor of 1 - exp(-density × d).
- * Exponential squared fog, `'exp2'`, thickens with the square of the distance, as three.js's
- * `FogExp2`: 1 - exp(-(density × d)²). Linear fog, `'linear'`, is clear up to `near` and hides
- * objects from `far`, with a smooth step between them, as three.js's `Fog`.
+ * Exponential squared fog, `'exp2'`, thickens with the square of the distance:
+ * 1 - exp(-(density × d)²). Linear fog, `'linear'`, is clear up to `near` and hides objects from
+ * `far`, with a smooth step between them.
  *
  * @category api/scene
  */

@@ -68,7 +68,7 @@ export function scale<T extends Vec3Like>(out: T, a: Vec3Like, s: number): T {
 	return out;
 }
 
-/** Adds `b` times the number `s` to `a`, as three.js's `addScaledVector`. */
+/** Adds `b` times the number `s` to `a`. */
 export function scaleAndAdd<T extends Vec3Like>(out: T, a: Vec3Like, b: Vec3Like, s: number): T {
 	out[0] = (a[0] as number) + (b[0] as number) * s;
 	out[1] = (a[1] as number) + (b[1] as number) * s;
@@ -178,7 +178,7 @@ export function max<T extends Vec3Like>(out: T, a: Vec3Like, b: Vec3Like): T {
 	return out;
 }
 
-/** Turns `a` by the rotation `q`, a quaternion of length 1, as three.js's `applyQuaternion`. */
+/** Turns `a` by the rotation `q`, a quaternion of length 1. */
 export function transformQuat<T extends Vec3Like>(out: T, a: Vec3Like, q: QuatLike): T {
 	const vx = a[0] as number;
 	const vy = a[1] as number;
@@ -196,10 +196,7 @@ export function transformQuat<T extends Vec3Like>(out: T, a: Vec3Like, q: QuatLi
 	return out;
 }
 
-/**
- * Transforms the point `a` by the matrix `m`, with the perspective divide, as three.js's
- * `applyMatrix4`.
- */
+/** Transforms the point `a` by the matrix `m`, with the perspective divide. */
 export function transformMat4<T extends Vec3Like>(out: T, a: Vec3Like, m: Mat4Like): T {
 	const x = a[0] as number;
 	const y = a[1] as number;

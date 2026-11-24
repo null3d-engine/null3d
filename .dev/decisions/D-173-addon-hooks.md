@@ -1,6 +1,6 @@
 # D-173: Add-on hooks, one place per feature, and a path to an add-on marketplace
 
-Status: decided by the owner. Built: the import and layout checks, the packages of eleven foundations: controls, geometry, impostors, particles, splats, terrain, `three-compat`, vegetation, water, wind and sound, H1's compute pass (M3-E8), the preset and stats links (M3-E6) and sky layers (M3-E10). Pending: the physics and MSDF text packages, and the open hooks and tasks: H2 (M3-E9), H4, material lobes (M3-E7), H5, add-on tasks (M3-E2), H7, scene inputs (M3-E4 and M3-E4a), the texture-unit allocator (M3-D7), the listing check (M3-D9), the splats add-on (M3-F2), water (M3-F5), the FFT ocean (M3-F9) and the volumetric tier (M3-F11). Each hook and platform task is built in its own M3 task, with its first user. Task: M3-plan.
+Status: decided by the owner. Built: the import and layout checks, the packages of eleven foundations: controls, geometry, grass, impostors, particles, splats, terrain, `three-compat`, water, wind and sound, H1's compute pass (M3-E8), the preset and stats links (M3-E6) and sky layers (M3-E10). Pending: the physics and MSDF text packages, and the open hooks and tasks: H2 (M3-E9), H4, material lobes (M3-E7), H5, add-on tasks (M3-E2), H7, scene inputs (M3-E4 and M3-E4a), the texture-unit allocator (M3-D7), the listing check (M3-D9), the splats add-on (M3-F2), water (M3-F5), the FFT ocean (M3-F9) and the volumetric tier (M3-F11). Each hook and platform task is built in its own M3 task, with its first user. Task: M3-plan.
 
 Summary: Each feature lives in one place, the core or one add-on, never both. An add-on extends a core feature only through that feature's own settings. Flat and volumetric clouds are tiers of the core sky, and a water add-on owns all water. Every add-on and example reaches the engine only through its public entry points, which `bun run check` enforces. The engine's team builds the foundation add-ons as npm packages, and M3's six content add-ons are example add-ons. Hooks H1 to H9, the plugin interface version and a listing check all come in M3, each hook with its first user.
 
@@ -155,7 +155,7 @@ A check of the proposal against `origin/main` found these facts. The rulings res
 1. **Flat clouds stay in the core.** They are three.js `Sky`'s clouds, so ports keep their look ([D-52](D-52-intent-parity.md)). Moving them saves no bytes (F1).
 2. **Volumetric clouds are the core sky's High tier and above.** M3-F11 builds them behind the same cloud settings that draw the flat layer on Low and Medium. Through the H8 sky-layers hook (M3-E10), another developer adds their own clouds behind these settings. It is not a second way for the engine to draw them. No cloud add-on is planned.
 3. **Particles are not an exception.** The add-on uses a public engine method (F3). The method gets a written docs page.
-4. **The foundation add-ons** are physics, Gaussian splats, MSDF text, particles, terrain, water, controls, geometry, impostors, `three-compat`, vegetation, wind and sound. The engine's team builds them. A later add-on is a foundation when other add-ons or many kinds of project build on it. So is one that implements a standard or wraps a large third-party library. [Vegetation and wind](#vegetation-and-wind) gives those two's reasons.
+4. **The foundation add-ons** are physics, Gaussian splats, MSDF text, particles, terrain, water, controls, geometry, grass, impostors, `three-compat`, wind and sound. The engine's team builds them. A later add-on is a foundation when other add-ons or many kinds of project build on it. So is one that implements a standard or wraps a large third-party library. [Grass and wind](#grass-and-wind) gives those two's reasons.
 5. **M3's six content add-ons are example add-ons,** not npm packages: the lens kit, facades, screens, weather, car paint and traffic lanes. Each lives in `examples/addons/<name>/`, shaped like a package, under the engine's licenses. It uses only the public API and has image tests through the examples. The lens kit uses the core's sharpening, grading and vignette, and weather says which feature makes rain (F11). [D-172](D-172-neon-harbour-follow-ups.md) lists them.
 6. **Publishing.** Each foundation add-on is its own npm package. It pins the exact engine version and checks the engine's version at run time. Its WGSL is compiled when the package is packed (F8). The engine package holds no bundle of add-ons in the style of `three/addons`.
 7. **Rule 11 reads:** "an add-on extends or replaces a core feature only through that feature's own settings" (F2).
@@ -171,7 +171,7 @@ Every hook is public, works on both GPU paths or states its fallback, and stays 
 | Hook | What it does | First user | WebGL2 | When |
 | --- | --- | --- | --- | --- |
 | H1 | A compute pass whose storage output materials, effects and passes read in the same frame | The water add-on's FFT ocean | A fragment-pass form, else WebGPU only, as its docs state | M3 (M3-E8), with the ocean |
-| H2 | Draws whose count and instances the GPU writes, in the main and shadow passes | Splats' GPU culling, to confirm in its task; vegetation's near grass, which casts shadows and so needs the shadow views | The CPU fills instance batches | M3 (M3-E9) |
+| H2 | Draws whose count and instances the GPU writes, in the main and shadow passes | Splats' GPU culling, to confirm in its task; the grass add-on's near grass, which casts shadows and so needs the shadow views | The CPU fills instance batches | M3 (M3-E9) |
 | H3 | A new kind of draw: an add-on registers a shader template, what it reads and where it sorts | Splats; then impostors or particles | Both, through the WGSL-to-GLSL step | M3, with splats |
 | H4 | Material lobes: a custom material adds a specular lobe beside the base lobe | Car paint's glints, if the clear coat check shows they need one (F6) | Both | Before 1.0, after the clear coat check |
 | H5 | Add-on tasks: the public form of D-54's loader, for WebAssembly and work on the job workers | The splats add-on's selection ([H5](#h5-an-add-ons-tasks-on-the-job-workers), F4) | Both | M3, with splats |
@@ -196,13 +196,13 @@ The add-ons wait until the architecture and the core engine work are done, by th
 
 The order sets when, not what is built. Hooks ship with a first user, so each hook's task waits for the add-on that uses it.
 
-### Vegetation and wind
+### Grass and wind
 
-The owner made vegetation a foundation ([D-241](D-241-vegetation-foundation.md)). It passes ruling 4's test, because many kinds of project use plants and other developers' style packs build on it. It holds the species generator, the scatter, the grass, the leaf material, the wind and the hand-off to impostors. Themed species packs stay content for other developers.
+The GPU grass is a foundation of its own, `@null3d/grass` ([D-241](D-241-vegetation-foundation.md), [D-378](D-378-vegetation-add-on-removed.md)). It passes ruling 4's test, because many kinds of project draw grass over a ground. The demos draw it, so a reader can install what a demo shows.
 
-The owner made the fluid wind an add-on of its own, working name `@null3d/wind` ([D-241](D-241-vegetation-foundation.md#fluid-wind-is-an-add-on-of-its-own)). It passes ruling 4's test: vegetation, particles and water read the field, and so would later add-ons for hair or weather. Rule 13 in AGENTS.md lists both.
+The owner made the fluid wind an add-on of its own, working name `@null3d/wind` ([D-241](D-241-vegetation-foundation.md#fluid-wind-is-an-add-on-of-its-own)). It passes ruling 4's test: the grass, particles and water read the field, and so would later add-ons for hair or weather. Rule 13 in AGENTS.md lists both.
 
-Vegetation is the first foundation that depends on another add-on. The rule for that:
+The grass depends on the wind add-on, and water on the particles add-on. The rule for a foundation that depends on another add-on:
 
 - An add-on imports another add-on only by its package name, or by a sub-path that the package exports. It never imports a relative path into the other add-on's folder.
 - It lists the other add-on as a dependency at the exact version. Every foundation pins the exact engine version and releases with the engine, so the two always release in step.
@@ -352,9 +352,9 @@ An add-on's compute pass writes one storage texture at a fixed binding of the pa
 
 **Consequences.** A ping-pong pair is two passes. A storage buffer waits for the first user that needs one, and M3-E9's GPU-written count buffer reuses this surface rather than bringing a second one. The target's default format is `rgba16float`. The call refuses on WebGL2, which has no compute, and the docs give the full-screen fallback.
 
-## vegetation is the eleventh foundation
+## grass is a foundation
 
-The owner made vegetation a foundation add-on ([D-241](D-241-vegetation-foundation.md)). It passes ruling 4's test, because many kinds of project use plants and other developers' style packs build on it. It holds the species generator, the scatter, the grass, the leaf material, the wind and the hand-off to impostors. Themed species packs stay content for other developers, as the "vegetation styles" of the owner's answer of 14 October. Rule 13 in AGENTS.md lists it. H2's GPU-written draws gain a second user that needs the shadow views: the near grass, which casts shadows (M3-E9).
+The GPU grass is a foundation add-on, `@null3d/grass` ([D-241](D-241-vegetation-foundation.md), [D-378](D-378-vegetation-add-on-removed.md)). It passes ruling 4's test, because many kinds of project draw grass over a ground. Themed plant packs stay content for other developers, as the "vegetation styles" of the owner's answer of 14 October. Rule 13 in AGENTS.md lists it. H2's GPU-written draws gain a second user that needs the shadow views: the near grass, which casts shadows (M3-E9).
 
 ## what M3-E2's line covers
 
@@ -394,10 +394,11 @@ add-on's selection. [Tasks on the job workers](../../docs/api/tasks.md) now says
 
 The owner made the fluid wind an add-on of its own, working name `@null3d/wind`
 ([D-241](D-241-vegetation-foundation.md), the addendum on fluid wind). It passes ruling 4's test:
-vegetation, particles and water read the field, and so would later add-ons for hair or weather.
+the grass, particles and water read the field, and so would later add-ons for hair or weather.
 Rule 13 in AGENTS.md lists it.
 
-Vegetation is the first foundation that depends on another add-on. The rule for that:
+The grass depends on the wind add-on, and water on the particles add-on. The rule for a foundation
+that depends on another add-on:
 
 - An add-on imports another add-on only by its package name, or by a sub-path that the package
   exports. It never imports a relative path into the other add-on's folder.

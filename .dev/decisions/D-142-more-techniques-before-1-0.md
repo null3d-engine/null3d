@@ -73,5 +73,5 @@ Six more rulings go with this one. The owner made five of them, and the coordina
 - **Texture units on WebGL2:** area lights, a probe grid, reflection probes and decals each add per-pixel inputs. The rules in [the technique review](../technique-review.md#webgl2-texture-units) apply. All probe grids share one 3D texture, and reflection probes share one 2D array. The area lights' two tables are one 2-layer array.
 - **Other records:** D-53's ruling 20 (area lights after 1.0) and ruling 21 (decals and box-projected probes in M3) point here. So does [D-14](D-14-js-budget.md)'s row for the area lights' tables.
 - **Examples guide:** the table of engine features for the showcase in [Examples](../examples.md#engine-features-for-the-showcase) lists the eleven techniques, motion vectors and joint overrides. Its layout table lists the scenery file.
-- **README:** the roadmap's 0.2 step lists the eleven techniques.
+- **Roadmap:** step 0.2 holds the eleven techniques.
 - **The light probe grid:** M2-EX29's grid is the base of M3's global illumination, with a validity mask and a sky-occlusion term ([D-179](D-179-technique-rulings.md)).

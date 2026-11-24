@@ -65,8 +65,8 @@ export function identity<T extends QuatLike>(out: T): T {
 }
 
 /**
- * The rotation of the matrix `m`, whose upper 3 by 3 part must hold no scale, as three.js's
- * `setFromRotationMatrix`. To read the rotation of a matrix with scale, use `mat4.decompose`.
+ * The rotation of the matrix `m`, whose upper 3 by 3 part must hold no scale. To read the rotation
+ * of a matrix with scale, use `mat4.decompose`.
  */
 export function fromMat4<T extends QuatLike>(out: T, m: Mat4Like): T {
 	const m11 = m[0] as number;
@@ -109,9 +109,8 @@ export function fromMat4<T extends QuatLike>(out: T, m: Mat4Like): T {
 
 /**
  * The rotation that turns an object at `eye` so that its +Z axis points at `target`, with its +Y
- * axis as close to `up` as it can be, or to +Y without `up`. A mesh looks at a point this way, in
- * null3D and in three.js. Cameras and lights look down their -Z axis instead: for them, swap `eye`
- * and `target`.
+ * axis as close to `up` as it can be, or to +Y without `up`. A mesh's `lookAt` turns it this way.
+ * Cameras and lights look down their -Z axis instead: for them, swap `eye` and `target`.
  */
 export function lookAt<T extends QuatLike>(
 	out: T,
@@ -160,8 +159,8 @@ export function lookAt<T extends QuatLike>(
 }
 
 /**
- * The shortest rotation that turns the direction `a` onto the direction `b`, as three.js's
- * `setFromUnitVectors`. Both vectors must have length 1.
+ * The shortest rotation that turns the direction `a` onto the direction `b`. Both vectors must have
+ * length 1.
  */
 export function rotationTo<T extends QuatLike>(out: T, a: Vec3Like, b: Vec3Like): T {
 	const ax = a[0] as number;
@@ -187,10 +186,7 @@ export function rotationTo<T extends QuatLike>(out: T, a: Vec3Like, b: Vec3Like)
 	return normalize(out, unscaled);
 }
 
-/**
- * The product of `a` and `b`, as three.js's `multiplyQuaternions`. It turns a vector by `b` first,
- * then by `a`.
- */
+/** The product of `a` and `b`. It turns a vector by `b` first, then by `a`. */
 export function multiply<T extends QuatLike>(out: T, a: QuatLike, b: QuatLike): T {
 	const ax = a[0] as number;
 	const ay = a[1] as number;
@@ -207,7 +203,7 @@ export function multiply<T extends QuatLike>(out: T, a: QuatLike, b: QuatLike): 
 	return out;
 }
 
-/** The rotation that undoes `a`, a quaternion of length 1, as three.js's `invert`. */
+/** The rotation that undoes `a`, a quaternion of length 1. */
 export function invert<T extends QuatLike>(out: T, a: QuatLike): T {
 	out[0] = -(a[0] as number);
 	out[1] = -(a[1] as number);

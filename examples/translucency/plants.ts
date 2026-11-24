@@ -2,13 +2,8 @@
 // its length, a leaf texture with a midrib and side veins, and the places of the plants. The sketch
 // gives them their materials and lights.
 //
-// The plants stay the demo's own, and the cost is measured. The leaf grid is fourteen along by eight
-// across, so one leaf is 224 triangles, and the twelve clumps hold ninety-six leaves: the whole
-// garden is 21,504 triangles. The vegetation add-on grows a species from a record, and its conifer's
-// coarsest level alone is 3,079 triangles as the demo task's evidence records it, so one grown plant
-// per clump would cost 36,948 — more than this garden's every leaf — and would not draw the cupped,
-// drooping leaf that the demo exists to show. The demo loads no part of the add-on, so a switch would
-// bring its wasm and its memory too.
+// The plants are the demo's own. The leaf grid is fourteen along by eight across, so one leaf is 224
+// triangles, and the twelve clumps hold ninety-six leaves: the whole garden is 21,504 triangles.
 import {
 	type Geometry,
 	type Material,

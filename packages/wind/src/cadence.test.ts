@@ -2,7 +2,7 @@
 // row, and the frame-budget governor's steps lengthen the step interval while they scale the
 // pressure iterations and the spring trees. The field keeps moving at the lowest step, because the
 // owner ruled that a still valley does not meet the bar. The wind's own budget is smaller than the
-// room that D-241 leaves beside the vegetation add-on's own budget. D-241's ceilings are whole
+// room that D-241 leaves beside the vegetation's own budget. D-241's ceilings are whole
 // frames that already hold the vegetation and the scene, so the check does not say a frame holds
 // both; the governor is what holds the frame when both are spent.
 import { describe, expect, test } from 'bun:test';
@@ -20,7 +20,7 @@ const camera = {
 
 /** The field's own budget at each preset, in ms a frame, from the wind cost study. */
 const BUDGET_MS = [0.5, 1.2, 4.9, 6.25] as const;
-/** The vegetation add-on's own GPU time at each preset, in ms, from D-241. */
+/** The vegetation's own GPU time at each preset, in ms, from D-241. */
 const VEGETATION_MS = [5, 12, 49, 62.5] as const;
 /**
  * D-241's whole-frame ceiling at each preset, in ms, at its lowest measured figure. The frame it

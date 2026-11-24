@@ -40,7 +40,6 @@ import { secondsSince } from './build-cache.ts';
 import { walkFiles } from './files.ts';
 import { ensureShaderModules, isShaderModule, MODULE_DIR } from './shader-modules.ts';
 import { SOURCE_CONDITION } from './source-condition.ts';
-import { packagesInUse } from './vegetation-switch';
 
 /** The folder of a package's built JavaScript and type declarations. */
 export const LIB_DIR = 'lib';
@@ -79,26 +78,6 @@ export interface PackageBuild {
 
 /** The prefix of a workspace package's name, as a manifest gives it. */
 const WORKSPACE_PREFIX = '@null3d/';
-
-/**
- * The files of the vegetation textures package that pages load by address: each species folder's
- * KTX2 files, as its manifest lists them, its manifest and its module's types.
- */
-function speciesTextureFiles(): string[] {
-	const root = join(import.meta.dirname, '../../packages/vegetation-textures/textures');
-	if (!existsSync(root)) return [];
-	return readdirSync(root)
-		.filter((species) => existsSync(join(root, species, 'manifest.json')))
-		.sort()
-		.flatMap((species) => {
-			const manifest = JSON.parse(readFileSync(join(root, species, 'manifest.json'), 'utf8')) as {
-				readonly outputs: readonly { readonly file: string }[];
-			};
-			return [...manifest.outputs.map((o) => o.file), 'manifest.json', 'index.d.ts'].map(
-				(file) => `textures/${species}/${file}`,
-			);
-		});
-}
 
 /** Each package in `packages/` by folder name. */
 export const PACKAGES: Readonly<Record<string, PackageBuild>> = {
@@ -166,26 +145,6 @@ export const PACKAGES: Readonly<Record<string, PackageBuild>> = {
 		docs: false,
 		required: ['dist/terrain.wasm'],
 		repositoryOnly: ['reference-builder.ts', 'quadtree.ts', 'chunk-vertices.ts'],
-	},
-	// The species template is a folder to copy, which the registry leaves out, and so does the
-	// package.
-	vegetation: {
-		compile: true,
-		shaders: false,
-		docs: false,
-		required: ['THIRD-PARTY-NOTICES.txt'],
-		repositoryOnly: ['species/_template/record.ts', 'species/_template/index.ts'],
-	},
-	// Data only: each species folder's textures, manifest and module, which the textures tool writes.
-	// The list is read when a build asks for it, so a command that builds other packages never reads
-	// the add-on's folders.
-	'vegetation-textures': {
-		compile: false,
-		shaders: false,
-		docs: false,
-		get required() {
-			return speciesTextureFiles();
-		},
 	},
 	// Its tone curves and outline passes compile from .wgsl files into modules of their own.
 	'three-compat': {
@@ -812,7 +771,7 @@ export interface PackedPackage {
 
 /** The folder names of the packages that are not private, in a fixed order. */
 export function publicPackages(root: string): string[] {
-	return packagesInUse(readdirSync(join(root, 'packages')))
+	return readdirSync(join(root, 'packages'))
 		.filter((folder) => existsSync(join(root, 'packages', folder, 'package.json')))
 		.filter((folder) => {
 			const manifest = JSON.parse(

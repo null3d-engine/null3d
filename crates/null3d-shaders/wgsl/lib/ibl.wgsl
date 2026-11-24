@@ -39,11 +39,10 @@ fn environment_irradiance(env: EnvironmentLight, normal: vec3f) -> vec3f {
     return sh_irradiance(map_direction(env, normal), sh) * env.params.y;
 }
 
-/// The roughness of the GGX filter whose light matches three.js's PMREM best, at each material
-/// roughness from 0 to 1 in steps of 0.05 (D-19), four steps to a vector, then a spare. three.js's
-/// PMREM blurs less than the GGX distribution of its own materials, so a port keeps its look only
-/// through this table. It is vectors rather than an array, because Mali drivers refuse the GLSL
-/// of a constant array.
+/// The roughness of the GGX filter that the environment's reflection takes at each material
+/// roughness from 0 to 1 in steps of 0.05 (D-19), four steps to a vector, then a spare. The filter
+/// blurs less than the materials' own GGX distribution. It is vectors rather than an array,
+/// because Mali drivers refuse the GLSL of a constant array.
 const THREE_ROUGHNESS_0: vec4f = vec4f(0.0, 0.0, 0.07, 0.12);
 const THREE_ROUGHNESS_1: vec4f = vec4f(0.19, 0.23, 0.255, 0.3);
 const THREE_ROUGHNESS_2: vec4f = vec4f(0.345, 0.375, 0.41, 0.45);
@@ -62,7 +61,7 @@ fn three_roughness_step(k: u32) -> f32 {
     return steps[k % 4u];
 }
 
-/// The mip level that holds the light that three.js's standard material reflects at perceptual
+/// The mip level that holds the light that a standard material reflects at perceptual
 /// `roughness`: the table's filter roughness g, between its steps. Level i of n + 1 holds filter
 /// roughness 1 - sqrt(1 - i / n), so level g (2 - g) n holds g. More levels go to smooth surfaces,
 /// whose reflections change fastest.
@@ -73,18 +72,17 @@ fn roughness_level(roughness: f32, last_level: f32) -> f32 {
     return last_level * g * (2.0 - g);
 }
 
-/// The direction whose light a surface of perceptual `roughness` reflects toward the camera, as
-/// three.js's `getIBLRadiance` finds it: the reflection of the view about the unit `normal`, bent
-/// toward the normal on rough surfaces, which keeps them from gathering light from behind
-/// themselves.
+/// The direction whose light a surface of perceptual `roughness` reflects toward the camera. It is
+/// the reflection of the view about the unit `normal`, bent toward the normal by the fourth power
+/// of the roughness. The bend keeps rough surfaces from gathering light from behind themselves.
 fn reflected_direction(to_view: vec3f, normal: vec3f, roughness: f32) -> vec3f {
     let r2 = roughness * roughness;
     return normalize(mix(reflect(-to_view, normal), normal, r2 * r2));
 }
 
 /// The light that a surface of perceptual `roughness` reflects toward the camera from the
-/// environment, as three.js's `getIBLRadiance`: the light along [`reflected_direction`], times the
-/// environment's intensity.
+/// environment. It is the light along [`reflected_direction`] at the mip level that
+/// `roughness_level` picks, times the environment's intensity.
 fn environment_radiance(
     env: EnvironmentLight,
     to_view: vec3f,

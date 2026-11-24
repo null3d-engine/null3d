@@ -1,6 +1,6 @@
 # D-304: a normal for the sky's light, and occlusion counted once, in custom surfaces
 
-Status: decided and built. The owner approved both hooks for the plant core's light path. A third
+Status: decided and built. The owner approved both hooks for a plant's light path. A third
 hook, a size limit on loaded textures, is not built: phones load separate half-size files instead.
 Task: none.
 
@@ -117,5 +117,5 @@ Options rejected:
 - `docs/shaders/surface-functions.md` gains both fields and a section for each. It also says which
   lights `diffuseNormal` reaches. `docs/api/materials.md` and the develop skill's quick reference
   and shader reference name the fields.
-- The plant core's material sets both: the crown's bent normal in `ambientNormal`, and its baked
-  visibility in `occlusion` with `occlusionByMinimum` true.
+- The demos' plant material (`examples/lib/sway.ts`) and the water add-on's falls set
+  `ambientNormal`. `tests/image/light-hooks.spec.ts` draws both fields.

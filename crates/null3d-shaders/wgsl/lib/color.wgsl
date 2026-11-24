@@ -1,9 +1,9 @@
 #define_import_path null3d::color
 
 // Color in linear space: sRGB encoding and decoding, luminance, HSV, and the tone mapping curves
-// that three.js offers. Shaders light in linear color, and encode sRGB only at the output. The
-// tone mapping curves take linear color that the exposure has already scaled, and return linear
-// color from 0 to 1, ready for sRGB encoding.
+// AgX, AgX punchy, Khronos PBR Neutral and ACES filmic. Shaders light in linear color, and encode
+// sRGB only at the output. The tone mapping curves take linear color that the exposure has already
+// scaled, and return linear color from 0 to 1, ready for sRGB encoding.
 
 /// Encodes a linear color as sRGB, the way the canvas shows it.
 fn linear_to_srgb(c: vec3f) -> vec3f {
@@ -37,7 +37,7 @@ fn limit_hdr(c: vec3f) -> vec3f {
     return select(min(c, vec3f(HDR_LIMIT)), vec3f(0.0), nan);
 }
 
-/// The relative luminance of a linear color, with the Rec. 709 weights that three.js uses.
+/// The relative luminance of a linear color, with the Rec. 709 weights 0.2126, 0.7152 and 0.0722.
 fn luminance(c: vec3f) -> f32 {
     return dot(c, vec3f(0.2126, 0.7152, 0.0722));
 }
@@ -81,8 +81,8 @@ fn rrt_and_odt_fit(v: vec3f) -> vec3f {
     return a / b;
 }
 
-/// ACES filmic tone mapping, as three.js's `ACESFilmicToneMapping`. Like three.js, it scales the
-/// color by 1 / 0.6 first, which suits a bright viewing place.
+/// ACES filmic tone mapping, a fit of the ACES curve. It scales the color by 1 / 0.6 first, which
+/// suits a bright viewing place.
 fn tone_map_aces(c: vec3f) -> vec3f {
     return saturate(ACES_OUTPUT * rrt_and_odt_fit(ACES_INPUT * (c / 0.6)));
 }
@@ -126,7 +126,7 @@ fn agx_contrast(x: vec3f) -> vec3f {
         + 0.1191 * x - 0.00232;
 }
 
-/// AgX tone mapping, as three.js's `AgXToneMapping`, in Rec. 2020 primaries.
+/// AgX tone mapping, the curve of Blender and Filament, in Rec. 2020 primaries.
 fn tone_map_agx(c: vec3f) -> vec3f {
     let inset = AGX_INSET * (LINEAR_SRGB_TO_LINEAR_REC2020 * c);
     let logged = (log2(max(inset, vec3f(1e-10))) - AGX_MIN_EV) / (AGX_MAX_EV - AGX_MIN_EV);
@@ -152,8 +152,8 @@ fn tone_map_agx_punchy(c: vec3f) -> vec3f {
     return saturate(LINEAR_REC2020_TO_LINEAR_SRGB * rec2020);
 }
 
-/// Khronos PBR Neutral tone mapping, as three.js's `NeutralToneMapping`. It keeps base colors
-/// under about 0.8 as they are, apart from a small offset.
+/// Khronos PBR Neutral tone mapping. It keeps base colors under about 0.8 as they are, apart from
+/// a small offset.
 fn tone_map_neutral(c: vec3f) -> vec3f {
     let start_compression = 0.8 - 0.04;
     let desaturation = 0.15;

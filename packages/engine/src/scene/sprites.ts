@@ -53,7 +53,7 @@ export type SpriteValues = MaterialOptions;
 
 /**
  * Options of `scene.createSprites`. The look of the sprites takes the options of an unlit
- * material, but sprites blend by default, as three.js's `SpriteMaterial` does.
+ * material, but sprites blend by default.
  *
  * @category api/sprites
  */
@@ -70,15 +70,14 @@ export interface SpriteOptions
 	/** Splits `map` into a grid of frames, which each sprite picks from with its `frames` row. */
 	atlas?: SpriteAtlas;
 	/**
-	 * True gives sizes in world units, so far sprites look smaller, as three.js's
-	 * `sizeAttenuation` does. False gives sizes in CSS pixels, so every sprite keeps its size on
-	 * screen. The default is true.
+	 * True gives sizes in world units, so far sprites look smaller. False gives sizes in CSS pixels,
+	 * so every sprite keeps its size on screen. The default is true.
 	 */
 	sizeAttenuation?: boolean;
 	/**
 	 * The point of each sprite that sits at its position, as a fraction of its width and height
-	 * from its bottom left corner, like three.js's `Sprite.center`. The sprite turns about it. The
-	 * default, `[0.5, 0.5]`, is the middle; `[0.5, 0]` stands a sprite on its position.
+	 * from its bottom left corner. The sprite turns about it. The default, `[0.5, 0.5]`, is the
+	 * middle; `[0.5, 0]` stands a sprite on its position.
 	 */
 	center?: readonly [number, number];
 	/** Every sprite updates and uploads every frame; a static batch updates rows marked dirty only. */
@@ -91,7 +90,7 @@ export interface SpriteOptions
 	 * the world's origin.
 	 */
 	origin?: Vec3;
-	/** How the sprites use their alpha. The default is `blend`, as three.js's sprites blend. */
+	/** How the sprites use their alpha. The default is `blend`. */
 	alphaMode?: MaterialFeatures['alphaMode'];
 }
 
@@ -261,8 +260,8 @@ export class SpriteBatch implements ViewHolder {
 	}
 
 	/**
-	 * The turn of each sprite on the screen, in radians, counterclockwise, 1 float per sprite, like
-	 * three.js's `SpriteMaterial.rotation`. A new sprite has 0.
+	 * The turn of each sprite on the screen, in radians, counterclockwise, 1 float per sprite. A new
+	 * sprite has 0.
 	 */
 	get rotations(): Float32Array {
 		return this.views().rotations;
@@ -342,7 +341,7 @@ export type PointValues = MaterialOptions;
 
 /**
  * Options of `scene.createPoints`. The look of the points takes the options of an unlit material.
- * Points are opaque by default, as three.js's `PointsMaterial` is.
+ * Points are opaque by default.
  *
  * @category api/points
  */
@@ -366,8 +365,7 @@ export interface PointOptions
 	size?: number;
 	/**
 	 * True gives the size in world units, so far points look smaller. False gives it in CSS pixels,
-	 * so every point keeps its size on screen, as three.js's `sizeAttenuation: false` does. The
-	 * default is true.
+	 * so every point keeps its size on screen. The default is true.
 	 */
 	sizeAttenuation?: boolean;
 	/**
@@ -385,7 +383,7 @@ export interface PointOptions
 	 * the world's origin.
 	 */
 	origin?: Vec3;
-	/** How the points use their alpha. The default is `opaque`, as three.js's points are. */
+	/** How the points use their alpha. The default is `opaque`. */
 	alphaMode?: MaterialFeatures['alphaMode'];
 }
 
@@ -396,10 +394,9 @@ export interface PointChecks {
 }
 
 /**
- * Many points: squares that face the camera, all of one size, each with its own position and color,
- * like three.js's `Points` with a `PointsMaterial`. Write points straight into the typed arrays, as
- * for an instance batch. A dynamic batch updates every point every frame, and a static batch
- * updates the points you mark dirty.
+ * Many points: squares that face the camera, all of one size, each with its own position and color.
+ * Write points straight into the typed arrays, as for an instance batch. A dynamic batch updates
+ * every point every frame, and a static batch updates the points you mark dirty.
  *
  * @category api/points
  */

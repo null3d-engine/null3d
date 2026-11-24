@@ -29,16 +29,16 @@ export default defineSketch(({ post }) => {
 | `exposure` | A number from 0 up. 2 is one stop brighter, and 0.5 one stop darker. | 1 |
 | `ev100` | The camera's exposure value at ISO 100, for lights in real units: a number from -20 to 30, or `false` for none | `false` |
 
-- The curves use three.js's formulas: `'agx'` for `AgXToneMapping`, `'neutral'` for `NeutralToneMapping` and `'aces'` for `ACESFilmicToneMapping`. `'agx-punchy'` is AgX with Filament's punchy look, which adds contrast and color. three.js has no such curve.
-- `'aces'` serves ports of three.js scenes that set `ACESFilmicToneMapping`. It shifts the hues of bright colors, so new scenes use AgX.
-- `'none'` scales the color by the exposure and clips it at white, as three.js's `LinearToneMapping` does.
-- three.js uses no tone mapping by default. A port of a three.js scene without tone mapping sets `toneMapping: 'none'`.
-- A custom tone curve is WGSL that declares `fn toneCurve(color: vec3f) -> vec3f`, compiled by the null3D Vite plugin. [Custom effects](#custom-effects) shows one. `@null3d/three-compat` gives `ReinhardToneMapping` and `CineonToneMapping` as the `reinhard` and `cineon` curves ([three.js compatibility](three-compat.md)).
+- `'agx'` is AgX, the curve of Blender and Filament. `'agx-punchy'` is AgX with Filament's punchy look, which adds contrast and color.
+- `'neutral'` is Khronos PBR Neutral, which keeps base colors as they are until they near white.
+- `'aces'` is a fit of the ACES filmic curve. It first scales the color by 1 / 0.6, for a bright viewing place. It shifts the hues of bright colors, so new scenes use AgX.
+- `'none'` scales the color by the exposure and clips it at white.
+- A custom tone curve is WGSL that declares `fn toneCurve(color: vec3f) -> vec3f`, compiled by the null3D Vite plugin. [Custom effects](#custom-effects) shows one. `@null3d/three-compat` adds the `reinhard` and `cineon` curves ([its API page](three-compat.md)).
 - The settings apply to the whole scene, the background included, from the next frame on. A setting that a call leaves out keeps its value.
 
 ## Lights in real units
 
-Most scenes and ports keep three.js's units, which need no camera setting. Lights in real units, such as a sun of 100,000 lux, need `ev100`: the exposure value of a camera at ISO 100. The units are on the [Lights](lights.md#color-intensity-and-units) page. Typical values are 15 for a sunny day, 12 for an overcast day and 7 for a lit room. Each step up is one stop darker. The engine scales the scene by 1 / (1.2 × 2^ev100), the formula of Filament, Bevy and Unity's HDRP. The `exposure` setting then scales that, as exposure compensation does. Setting `ev100: false` turns the camera off again.
+Most scenes need no camera setting: their lights have small intensities, such as a sun of 3, and the exposure stays at 1. Lights in real units, such as a sun of 100,000 lux, need `ev100`: the exposure value of a camera at ISO 100. The units are on the [Lights](lights.md#color-intensity-and-units) page. Typical values are 15 for a sunny day, 12 for an overcast day and 7 for a lit room. Each step up is one stop darker. The engine scales the scene by 1 / (1.2 × 2^ev100), the formula of Filament, Bevy and Unity's HDRP. The `exposure` setting then scales that, as exposure compensation does. Setting `ev100: false` turns the camera off again.
 
 ```ts
 import { defineSketch } from '@null3d/engine';
@@ -51,7 +51,7 @@ export default defineSketch(({ scene, post }) => {
 });
 ```
 
-The engine multiplies the exposure into each light, the environment's light, the background color and the fog color. The shaders multiply it into emissive light and unlit colors. The tone mapping then works on values near 1, even with a sun of 100,000 lux. Otherwise its highlights would pass the largest value of the 16-bit float scene color. The picture is the one that an exposure at the end gives. Background and unlit colors take the exposure too. At EV100 15 they draw black unless their own values are in real units, as in three.js at the same exposure.
+The engine multiplies the exposure into each light, the environment's light, the background color and the fog color. The shaders multiply it into emissive light and unlit colors. The tone mapping then works on values near 1, even with a sun of 100,000 lux. Otherwise its highlights would pass the largest value of the 16-bit float scene color. The picture is the one that an exposure at the end gives. Background and unlit colors take the exposure too. At EV100 15 they draw black unless their own values are in real units.
 
 ## Changing the exposure during play
 
@@ -134,7 +134,7 @@ export default defineSketch(({ post }) => {
 | `bloom.blend` | How the glow meets the scene's color: `'mix'`, `'add'` or `'screen'`. | `'mix'` |
 | `bloom.weights` | Each level's share of the glow, from the narrowest to the widest: up to 10 numbers from 0 up, not all 0. | Shares for 8 levels |
 
-- `'mix'` moves each pixel's color toward the glow, so the image keeps its total light. `'add'` adds the glow, as three.js's `UnrealBloomPass` does. `'screen'` screens it, as pmndrs's `BloomEffect` does.
+- `'mix'` moves each pixel's color toward the glow, so the image keeps its total light. The `'add'` blend adds the glow, so the image gains light. The `'screen'` blend screens it, so the glow adds less where the scene is already bright.
 - At a threshold of 0, all light glows a little. At 1, only light brighter than white glows, such as an emissive material with an `emissiveIntensity` above 1.
 - Each level spreads light twice as far as the one before. The eighth spreads it over about a quarter of the canvas's shorter side, and the tenth over all of it. The engine divides the weights by their sum. Levels past the last one with a weight cost nothing.
 - The glow keeps its size as a share of the screen at any pixel ratio, render scale and orientation. The quality setting `bloomSize` sets how many texels the chain's largest level has, which trades the glow's detail for cost.
@@ -145,7 +145,7 @@ export default defineSketch(({ post }) => {
 
 ## Ambient occlusion
 
-Ambient occlusion darkens the ambient light in corners, in creases and under objects, with the meanings of three.js's `GTAOPass`. It is off by default.
+Ambient occlusion darkens the ambient light in corners, in creases and under objects. It uses ground-truth ambient occlusion (GTAO), and it is off by default.
 
 ```ts
 import { defineSketch } from '@null3d/engine';
@@ -168,7 +168,7 @@ export default defineSketch(({ post, quality }) => {
 | `ao.samples` | The depth samples of each pixel's search: a whole number from 1 to 64. | 16 |
 | `ao.intensity` | How much of the occlusion reaches the ambient light: a number from 0 to 1. | 1 |
 
-- It darkens only the ambient light and the light that light maps add. `GTAOPass` darkens the whole image, direct light included.
+- It darkens only the ambient light and the light that light maps add. Direct light keeps its strength in a corner.
 - It draws where the quality setting `aoScale` is above 0: on the High and Ultra presets, or after `quality.set({ aoScale })`. On Low and Medium, the presets of phones and tablets, the scale is 0.
 - It turns the depth prepass on while it draws. On a WebGL2 device without float render targets it stays off.
 - A setting that a call leaves out keeps its value, also while it is off. `post.set({ ao: {} })` turns it on with the values it had.
@@ -264,7 +264,7 @@ export default defineSketch(({ scene, geometry, materials, post }) => {
 
 ## Outlines
 
-Outlines draw a crisp line around the meshes that `setOutlined(true)` marks, as three.js's `OutlinePass` draws edges around its selected objects. They are off by default.
+Outlines draw a crisp line around the meshes that `setOutlined(true)` marks. They are off by default.
 
 ```ts
 import { defineSketch } from '@null3d/engine';
@@ -291,21 +291,21 @@ export default defineSketch(({ scene, geometry, materials, post }) => {
 | `outline.width` | The line's width in CSS pixels, from 0 up. | 2 |
 
 - `mesh.setOutlined(true)` marks a mesh, and `setOutlined(false)` clears it. A model's copy from `scene.instantiate` has `setOutlined` too, which marks each of its meshes. Instance batches take no outline.
-- One outline style covers every outlined mesh. three.js needs one `OutlinePass` for each style, and null3D draws one.
+- One outline style covers every outlined mesh, and one mask pass draws them all.
 - The exposure, the tone mapping and the vignette do not change the line's colors. The color grading table still applies, and the dither moves them by up to one 8-bit step.
 - The line is as wide as `width` says on every screen and at every render scale. The engine multiplies it by the device's pixel ratio.
 - Above about 4 pixels of the canvas, a part of a mesh thinner than the line can leave a gap between itself and its line.
 - The outline covers the mesh's whole shape. It ignores the holes that an alpha cutoff cuts, and the vertices that a custom material moves.
 - A setting that a call leaves out keeps its value, also while outlines are off. `post.set` allocates nothing. So a sketch can change the outline's color or width every frame.
 - Turning outlines on or off, and `setOutlined`, rebuild the engine's draw tables, as a new material does. Do it in response to a click, not in every frame.
-- A full-screen pass reads the outline's mask with `input: 'outlineMask'`, for a soft glow such as `OutlinePass` draws ([Custom passes](../guides/custom-passes.md#a-soft-outline-glow)). `width: 0` draws the mask without the line.
-- `@null3d/three-compat`'s `createOutlinePass` draws `OutlinePass`'s soft edge, glow and pulse from this mask, through five full-screen passes and an effect ([three.js compatibility](three-compat.md)).
+- A full-screen pass reads the outline's mask with `input: 'outlineMask'`, for a soft glow ([Custom passes](../guides/custom-passes.md#a-soft-outline-glow)). `width: 0` draws the mask without the line.
+- `createOutlinePass` from `@null3d/three-compat` draws a soft edge, a glow and a pulse from this mask, through five full-screen passes and an effect ([its API page](three-compat.md)).
 
 [The post-processing chain](../concepts/post-processing.md#outlines) explains how outlines draw and what they cost.
 
 ## Color grading
 
-A color grading table maps each color of the picture to a graded color, as three.js's `LUTPass` does. Load one from a `.cube` or a `.3dl` file with [`assets.loadLut`](assets.md#color-grading-tables), or make one from numbers with [`assets.lutFromData`](assets.md#tables-from-numbers). Then give it to `post.set`:
+A color grading table maps each color of the picture to a graded color. Load one from a `.cube` or a `.3dl` file with [`assets.loadLut`](assets.md#color-grading-tables), or make one from numbers with [`assets.lutFromData`](assets.md#tables-from-numbers). Then give it to `post.set`:
 
 ```ts
 import { defineSketch } from '@null3d/engine';
@@ -320,10 +320,10 @@ export default defineSketch(async ({ assets, post }) => {
 | Setting | Values | Default |
 | --- | --- | --- |
 | `lut` | A table from `assets.loadLut` or `assets.lutFromData`, or `false` to turn grading off. | Off |
-| `lutIntensity` | The share of the table's color in each pixel, from 0 to 1, as `LUTPass`'s `intensity`. | 1 |
+| `lutIntensity` | The share of the table's color in each pixel, from 0 to 1. | 1 |
 
-- The table grades each pixel after the tone mapping and the sRGB encoding, as `LUTPass` does after three.js's `OutputPass`. Tables made for sRGB display color, as most are, look as their authors made them.
-- The final pass reads the table with a linear filter between its texel centers, as `LUTPass` does. It maps the colors of a `.cube` file's domain onto the table, which `LUTPass` leaves out.
+- The table grades each pixel after the tone mapping and the sRGB encoding. Tables made for sRGB display color, as most are, look as their authors made them.
+- The final pass reads the table with a linear filter between its texel centers. It maps the colors of a `.cube` file's domain onto the table.
 - The table grades the picture from the first frame after its texels reach the GPU, usually the next one.
 - `lutIntensity` keeps its value while the table is off, and `post.set` allocates nothing, so a sketch can fade a grade in every frame.
 
@@ -387,9 +387,8 @@ post.set({ vignette: { intensity: 0.8, size: 1.2 } });
 | `vignette.falloff` | How fast the light falls from the center: the power of the falloff curve, above 0. Higher values darken more of the picture. | 2 |
 | `vignette.roundness` | The shape, from 0 to 1: 0 follows the canvas's shape, an ellipse on a wide canvas, and 1 is a circle. | 0 |
 
-- The vignette multiplies each pixel's light before the tone mapping. [The post-processing chain](../concepts/post-processing.md#color-grading-and-the-vignette) gives the rule, the engines it follows and the difference from three.js's `VignetteShader`.
+- The vignette multiplies each pixel's light before the tone mapping. [The post-processing chain](../concepts/post-processing.md#color-grading-and-the-vignette) gives the rule and the engines it follows.
 - At a distance `d` from the center, in canvas widths and heights times `size`, the light is multiplied by `1 - intensity × (1 - (1 - d²)^falloff)`, and never by less than 0.
-- A port of three.js's `VignetteShader` sets `size` to its `offset` and `intensity` to its `darkness`. Under ACES the default falloff gives a close match. Under AgX, a port keeps `intensity` at 1 or less and sets `falloff` to 3. With a `darkness` below 1, three.js also lifts dark corners toward the gray, and null3D does not.
 - A setting that a call leaves out keeps its value, also while the vignette is off. `post.set({ vignette: {} })` turns it on with the values it had.
 
 Grading and the vignette draw on every GPU path, with HDR color or without it. Without HDR color, the scene's shaders darken their light by the vignette before their tone mapping. A plain background color then draws as a background, so the vignette darkens it too. Each table costs the final pass a few operations per pixel and one texture read. On a device that resolves its multisampled picture straight into the canvas, the table makes the final pass run, which reads the picture once more.
@@ -470,7 +469,7 @@ A view that holds still blends its frames into a sharper picture, then stops dra
 
 | Code | Cause |
 | --- | --- |
-| [E1213](../errors/E1213.md) | A ninth effect. A setting that this version does not have, such as three.js's vignette `offset` and `darkness`, a tone mapping that the engine does not know, or a bloom, ambient occlusion, depth of field, automatic exposure, outline, vignette or sharpening value other than settings, a number or `false`. An automatic exposure `metering` other than `'mean'` or `'percentile'`, `percentiles` that are not two numbers from 0 to 1 with the lower first, a `centerWeight` outside 0 to 1, a speed below 0, a `minEv`, `maxEv` or `compensation` outside -20 to 20, or a `minEv` above `maxEv`. A depth of field `focusDistance`, `aperture` or `focalLength` that is not above 0, a `maxBlur` outside 0 to 0.1, `blades` other than 0 or a whole number from 3 to 12, or a `focusPoint` that is not three finite numbers or `false`. Also a `lut` that is not a table from `assets.loadLut` or `assets.lutFromData`, a `grading` value out of its range, such as a white balance outside 1667 to 25000 kelvin, a lift channel outside -1 to 1, a gamma channel of 0 or below, a negative gain or saturation, or a split toning balance outside -1 to 1 or strength outside 0 to 1, or a value out of its range. These are an exposure, bloom intensity, threshold or knee, vignette intensity or size, or outline width below 0, a vignette falloff of 0 or below or a roundness above 1, a bloom blend other than `'mix'`, `'add'` or `'screen'`, bloom weights that are not 1 to 10 numbers of 0 or more, or that are all 0, a `lutIntensity` outside 0 to 1, a sharpening strength outside 0 to 1, an ambient occlusion value below 0 or its `distanceFalloff` or `intensity` above 1, a `distanceExponent` of 0, `samples` that are not a whole number from 1 to 64, or an `ev100` outside -20 to 30. |
+| [E1213](../errors/E1213.md) | A ninth effect. A setting that this version does not have, a tone mapping that the engine does not know, or a bloom, ambient occlusion, depth of field, automatic exposure, outline, vignette or sharpening value other than settings, a number or `false`. An automatic exposure `metering` other than `'mean'` or `'percentile'`, `percentiles` that are not two numbers from 0 to 1 with the lower first, a `centerWeight` outside 0 to 1, a speed below 0, a `minEv`, `maxEv` or `compensation` outside -20 to 20, or a `minEv` above `maxEv`. A depth of field `focusDistance`, `aperture` or `focalLength` that is not above 0, a `maxBlur` outside 0 to 0.1, `blades` other than 0 or a whole number from 3 to 12, or a `focusPoint` that is not three finite numbers or `false`. Also a `lut` that is not a table from `assets.loadLut` or `assets.lutFromData`, a `grading` value out of its range, such as a white balance outside 1667 to 25000 kelvin, a lift channel outside -1 to 1, a gamma channel of 0 or below, a negative gain or saturation, or a split toning balance outside -1 to 1 or strength outside 0 to 1, or a value out of its range. These are an exposure, bloom intensity, threshold or knee, vignette intensity or size, or outline width below 0, a vignette falloff of 0 or below or a roundness above 1, a bloom blend other than `'mix'`, `'add'` or `'screen'`, bloom weights that are not 1 to 10 numbers of 0 or more, or that are all 0, a `lutIntensity` outside 0 to 1, a sharpening strength outside 0 to 1, an ambient occlusion value below 0 or its `distanceFalloff` or `intensity` above 1, a `distanceExponent` of 0, `samples` that are not a whole number from 1 to 64, or an `ev100` outside -20 to 30. |
 | [E1203](../errors/E1203.md) | A value that is not a finite number, such as NaN, or an effect's `order` that is not one. |
 | [E1204](../errors/E1204.md) | An outline color that is not a hex string, a hex number or three linear components from 0 to 1. |
 | [E1215](../errors/E1215.md) | An effect or a tone curve as WGSL that the null3D Vite plugin did not compile, or compiled WGSL of another kind. |
@@ -483,7 +482,7 @@ A view that holds still blends its frames into a sharper picture, then stops dra
 - [The post-processing chain](../concepts/post-processing.md): how bloom, ambient occlusion, depth of field, outlines, custom effects and still views work, and what they cost.
 - [Cameras](cameras.md#focal-length): `camera.setFocalLength`, the lens that depth of field takes.
 - [Custom passes](../guides/custom-passes.md): how to write custom effects and tone curves.
-- [three.js to null3D mapping](../porting/threejs-mapping.md): `renderer.toneMapping`, `toneMappingExposure`, `UnrealBloomPass`, `GTAOPass`, `BokehPass`, `OutlinePass`, `LUTPass`, `VignetteShader`, `SharpenNode` and `ShaderPass`. three.js has no grading controls; a null3D grade has no three.js twin.
+- [three.js to null3D mapping](../porting/threejs-mapping.md): `renderer.toneMapping`, `toneMappingExposure`, `UnrealBloomPass`, `GTAOPass`, `BokehPass`, `OutlinePass`, `LUTPass`, `VignetteShader`, `SharpenNode` and `ShaderPass`.
 - [Quality presets](../concepts/quality-presets.md): `aoScale`, `dofSamples` and `exposureMeter` on each preset.
 - [Objects and transforms](objects.md#mesh-calls): `setOutlined`.
 - [Assets](assets.md): `assets.loadLut`, which loads color grading tables, and `assets.lutFromData`, which makes them from numbers.

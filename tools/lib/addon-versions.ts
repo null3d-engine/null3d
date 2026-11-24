@@ -5,13 +5,9 @@
 // repository.
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
-import { packagesInUse } from './vegetation-switch';
 
-/**
- * Packages that are not add-ons: the engine, the tools that build or serve projects, and the
- * vegetation add-on's textures, which hold files and no code that runs beside the engine.
- */
-const NOT_ADDONS = new Set(['engine', 'cli', 'vite-plugin', 'vegetation-textures']);
+/** Packages that are not add-ons: the engine, and the tools that build or serve projects. */
+const NOT_ADDONS = new Set(['engine', 'cli', 'vite-plugin']);
 
 /** The constant that an add-on's `version.ts` exports. */
 const VERSION_CONSTANT = /export const VERSION = '[^']+';/;
@@ -22,7 +18,7 @@ const CHECK = /checkAddonVersion\(\s*'([^']+)'\s*,\s*VERSION\s*\)/;
 /** Every problem with the add-ons of the repository at `root`, as `path: problem`, and the count of packages read. */
 export function addonVersionProblems(root: string): { problems: string[]; packages: number } {
 	const problems: string[] = [];
-	const folders = packagesInUse(readdirSync(join(root, 'packages')))
+	const folders = readdirSync(join(root, 'packages'))
 		.filter(
 			(name) => !NOT_ADDONS.has(name) && existsSync(join(root, 'packages', name, 'package.json')),
 		)

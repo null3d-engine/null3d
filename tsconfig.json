@@ -37,24 +37,10 @@
 		"packages/particles/**",
 		"packages/impostors/**",
 		"packages/terrain/**",
-		"packages/vegetation/**",
 		"packages/three-compat/**",
 		"packages/splats/**",
 		"packages/water/**",
 		"packages/wind/**",
-		"packages/sound/**",
-		// The vegetation add-on's own tools and tests, which tsconfig.vegetation.json checks with the
-		// add-on's switch on (tools/lib/vegetation-switch.ts lists them).
-		"tests/image/plant-*.spec.ts",
-		"tests/lib/plant-species.test.ts",
-		"tests/lib/leaf-card-rule.test.ts",
-		"tests/lib/species-walk.ts",
-		"tools/plant-*",
-		"tools/plant-*/**",
-		"tools/vegetation-registry.ts",
-		"tools/lib/plant-*",
-		"tools/lib/plant-*/**",
-		"tools/lib/vegetation-registry.ts",
-		"tools/lib/vegetation-registry.test.ts"
+		"packages/sound/**"
 	]
 }

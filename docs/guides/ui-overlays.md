@@ -102,8 +102,8 @@ The engine holds 4,096 labels at once by default. For more, set `createEngine`'s
 
 A label can also be a plane of the scene. It then scales with the distance, and it leans as its object or the camera turns. Give `ui.trackLabel` a `transform`:
 
-- `'world'` turns and scales the element with the object, as three.js's `CSS3DObject` does.
-- `'billboard'` keeps the element facing the camera, as three.js's `CSS3DSprite` does. Its `rotation` turns the content in the element's own plane.
+- `'world'` turns and scales the element with the object.
+- `'billboard'` keeps the element facing the camera. Its `rotation` turns the content in the element's own plane.
 
 ```ts
 // sketch.ts
@@ -121,7 +121,7 @@ layer.append(card);
 engine.labels.bind('card-3', card);
 ```
 
-An element's CSS pixels are the scene's units for these labels, as they are for three.js's `CSS3DRenderer`. An element 200 pixels wide is 200 units wide. Size the scene around it to match, and the browser keeps the text sharp at any distance.
+An element's CSS pixels are the scene's units for these labels. An element 200 pixels wide is 200 units wide. Size the scene around it to match, and the browser keeps the text sharp at any distance.
 
 A plane follows either lens. An orthographic camera turns and scales the element as a perspective camera does. An element can hold any markup, such as an iframe or a form. Give it `pointer-events: auto` if it takes the pointer, because the layer around it passes the pointer through.
 

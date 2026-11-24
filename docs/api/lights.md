@@ -75,7 +75,7 @@ export default defineSketch(({ scene, materials, geometry }) => {
 ```
 
 - The picture fills the square that bounds the cone: a circle in the middle of the picture lands on the cone's edge, where the light ends.
-- The picture's top row lies along the world's up, as three.js aims the camera that projects a spot light's map. Aim the light first: turning the light turns the picture with it, and rolling the light about its own axis leaves the picture as it is.
+- The picture's top row lies along the world's up. Aim the light first: turning the light turns the picture with it, and rolling the light about its own axis leaves the picture as it is.
 - The color and intensity tint the picture: a dark part of it gives less light, and a red part gives red light. `setMap(null)` goes back to one color.
 - The map is sRGB pixels, four bytes each with the top row first, or a texture. The engine copies a texture into the light's picture once, when the texture's texels reach the GPU, so a later change to the texture does not reach the light: give a still texture. A video's texture and a render pass's texture change every frame, and a 3D or cube texture holds more than one image, so each throws E1112.
 - The engine keeps the picture's detail up to 512 texels a side, in every mip level, and reduces a larger texture to that. A small gobo therefore costs less memory than a detailed photograph of the same light. A surface far from the light shows the picture blurred and a surface near the light shows it sharp. Up to 32 lights show pictures at once, and rectangle and spot lights share those places. A new picture takes up to a few tens of milliseconds, so set it at setup or now and then.
@@ -95,15 +95,15 @@ Code that draws a picture, such as a canvas or a generated pattern, gives its sR
 
 Each color is a hex string or a number, which are sRGB, or three linear components from 0 to 1. The default is white. The intensity scales the color, and the default is 1. A hemisphere light's intensity scales both of its colors.
 
-Units follow three.js since r155. The intensity of a point or spot light is in candela. A directional light's intensity is in lux: the light that reaches a surface facing it. The standard material uses the lighting formulas of three.js's `MeshStandardMaterial`, so the same colors and intensities give the same result in both engines. Take a white directional light with an intensity of π, about 3.14, and no ambient light. A rough surface that faces it shows nearly its full color. [Lighting and environment](../concepts/lighting.md#units-and-exposure) covers the units in full.
+The intensity of a point or spot light is in candela. A directional light's intensity is in lux: the light that reaches a surface facing it. Take a white directional light with an intensity of π, about 3.14, and no ambient light. A rough surface that faces it shows nearly its full color. [Lighting and environment](../concepts/lighting.md#units-and-exposure) covers the units in full.
 
 The `intensityUnit` option names another unit for the intensity and for `setIntensity`:
 
 | Light | `intensityUnit` | What the engine does |
 | --- | --- | --- |
-| Point | `'lumen'` | Divides by 4π, as three.js's `PointLight.power` does |
-| Spot | `'lumen'` | Divides by π at any cone angle, as three.js's `SpotLight.power` does |
-| Directional, hemisphere, ambient | `'lux'` | Nothing: lux is three.js's unit for these lights |
+| Point | `'lumen'` | Divides by 4π, the whole sphere |
+| Spot | `'lumen'` | Divides by π at any cone angle, so a narrower cone keeps its brightness |
+| Directional, hemisphere, ambient | `'lux'` | Nothing: these lights take lux already |
 
 A light in lumens with no `intensity` gives 1 lumen. A unit that the light does not take throws [E1213](../errors/E1213.md). Lights in real units need a camera exposure to match, such as `post.set({ ev100: 15 })` for a sunny day:
 
@@ -133,11 +133,11 @@ In this version:
 - Every hemisphere light that is visible and shares a layer with the camera adds its light. [Hemisphere lights](#hemisphere-lights) says how.
 - Without lights, standard materials draw black.
 
-To turn a light off, hide it with `setVisible(false)`, set its intensity to 0, or destroy it. A light lights a camera's view only when their layer masks share a bit, as in three.js. [Render layers](../concepts/render-layers.md) explains masks. The light's mask also picks the objects that cast its shadows: an object on a layer that the light lacks casts none ([Layers and shadows](../concepts/render-layers.md#layers-and-shadows)).
+To turn a light off, hide it with `setVisible(false)`, set its intensity to 0, or destroy it. A light lights a camera's view only when their layer masks share a bit. [Render layers](../concepts/render-layers.md) explains masks. The light's mask also picks the objects that cast its shadows: an object on a layer that the light lacks casts none ([Layers and shadows](../concepts/render-layers.md#layers-and-shadows)).
 
 ## Area lights
 
-A rectangle light glows over its whole area, like a shop window, a screen or a studio's soft box. A tube light glows along a tube, like a neon sign or a fluorescent lamp. A point light gives a shiny surface a small dot of light. An area light gives it the light's whole shape, stretched along the surface as on a wet street, and lights a rough surface softly. The engine shades them with linearly transformed cosines, as three.js shades its `RectAreaLight`, so a rectangle light gives three.js's look.
+A rectangle light glows over its whole area, like a shop window, a screen or a studio's soft box. A tube light glows along a tube, like a neon sign or a fluorescent lamp. A point light gives a shiny surface a small dot of light. An area light gives it the light's whole shape, stretched along the surface as on a wet street, and lights a rough surface softly. The engine shades them with linearly transformed cosines, the method of Heitz, Dupuy, Hill and Neubelt.
 
 ```ts
 import { defineSketch } from '@null3d/engine';
@@ -153,10 +153,10 @@ export default defineSketch(({ scene, materials, geometry }) => {
 });
 ```
 
-- The intensity is the brightness of the light's surface, in nits, as three.js's `RectAreaLight` takes it. A larger light of the same intensity gives more light.
+- The intensity is the brightness of the light's surface, in nits. A larger light of the same intensity gives more light.
 - A rectangle light's light leaves the side that its -Z axis points to. Surfaces behind it get none. `width` runs along its X axis and `height` along its Y axis, and both default to 1 meter.
 - A tube light shines all around. `length` runs along its -Z axis, and defaults to 1 meter. `radius` defaults to 0.025 meters, a thin neon tube. The ends of the tube add no light, which a thin tube does not show.
-- Area lights need a `range`, as point and spot lights do. The light fades to nothing at the range from the light's middle. three.js's `RectAreaLight` has no range: pick the distance where the light no longer matters.
+- Area lights need a `range`, as point and spot lights do. The light fades to nothing at the range from the light's middle. Pick the distance where the light no longer matters.
 - A rectangle light can show a picture over its area, such as a shop window or a screen. The `image` option and `setImage({ width, height, data })` take sRGB pixels, four bytes each, top row first. The light then varies over its area: a puddle shows the picture, and a rough wall gets its blurred colors. The color and intensity tint the picture. The light gives out its intensity times the picture's average color, in linear light. A mostly dark picture, such as thin neon tubes on black, lights little around it. Keep the intensity at the tubes' brightness, and paint a faint glow around the tubes to light more. The engine keeps the picture's detail up to 512 texels a side, in every mip level. Up to 32 lights show pictures at once, and `setImage(null)` goes back to one color. A new picture allocates and takes up to a few tens of milliseconds, so set it at setup or now and then.
 - `setSize`, `setRange`, `setDirection` and `setIntensity` take effect in the next frame and allocate nothing.
 - Area lights cast no shadows. Use a spot light beside one for a shadow.
@@ -167,7 +167,7 @@ export default defineSketch(({ scene, materials, geometry }) => {
 
 ## Hemisphere lights
 
-A hemisphere light gives a cheap fill light from the sky and the ground. A surface that faces up gets the sky color, and a surface that faces down gets the ground color. A surface between them gets a blend. The blend follows the angle between the surface's normal and the light's +Y axis, as three.js's `HemisphereLight` blends it. The light is diffuse only: it gives no highlights, as in three.js.
+A hemisphere light gives a cheap fill light from the sky and the ground. A surface that faces up gets the sky color, and a surface that faces down gets the ground color. A surface between them gets a blend. The blend follows the angle between the surface's normal and the light's +Y axis. The light is diffuse only: it gives no highlights.
 
 ```ts
 import { defineSketch } from '@null3d/engine';
@@ -187,7 +187,7 @@ export default defineSketch(({ scene, time }) => {
 
 - Any number of hemisphere lights add up. The engine sums them on the CPU into the ambient light and one color per world axis. So each pixel pays three multiply-adds, however many lights there are, and the same with none.
 - `setIntensity`, `setColor` (the sky color) and `setGroundColor` take effect in the next frame. Turning the light turns its sky.
-- An environment's light adds to the hemisphere lights' light, as in three.js. The environment's `intensity` and a material's `envIntensity` scale only the environment's light, never a hemisphere light's. This holds for every environment: a file's, the built-in room and the sky's.
+- An environment's light adds to the hemisphere lights' light. The environment's `intensity` and a material's `envIntensity` scale only the environment's light, never a hemisphere light's. This holds for every environment: a file's, the built-in room and the sky's.
 - The occlusion map and ambient occlusion darken a hemisphere light's light, as they darken an ambient light's.
 - Scene passes and reflection passes draw with the hemisphere lights too.
 
@@ -254,28 +254,6 @@ sun.setHeroShadow(null);
 The object must cast shadows. Its tile comes from the same atlas as the spot and point lights' shadows, and takes its last layer. Surfaces within the object's box along the light read the tile, and the cascades shadow everything else. The tile size is 1,024, 2,048 or 4,096 texels on each side. Name one with `setHeroShadow(car, 4096)` or the `heroTileSize` option. The quality preset's `heroTileSize` is the default. See [A hero shadow](../concepts/shadows.md#a-hero-shadow).
 
 [Shadows](../concepts/shadows.md) explains cascades, contact shadows, hero shadows, the shadow atlas of spot and point lights, each setting and its default, and the biases.
-
-## Coming from three.js
-
-| three.js | null3D |
-| --- | --- |
-| `new DirectionalLight(color, intensity)` with a position and a target | `createDirectionalLight({ color, intensity, direction })`, with the target minus the position as `direction`, or `lookAt(target)` |
-| `light.target = object`, which the light follows | Call `light.lookAt(x, y, z)` with the object's position when it moves |
-| `new PointLight(color, intensity, distance, decay)` | `createPointLight({ color, intensity, range: distance, decay })` |
-| `new SpotLight(color, intensity, distance, angle, penumbra, decay)` | `createSpotLight({ color, intensity, range: distance, angle, penumbra, decay, target: [x, y, z] })` |
-| `new HemisphereLight(skyColor, groundColor, intensity)` | `createHemisphereLight({ skyColor, groundColor, intensity })`. three.js points the sky from the light's position toward the origin, and null3D along the light's +Y axis, so turn the light where three.js moves it |
-| `new AmbientLight(color, intensity)` | `createAmbientLight({ color, intensity })` |
-| `new RectAreaLight(color, intensity, width, height)`, with `RectAreaLightUniformsLib.init()` | `createRectAreaLight({ color, intensity, width, height, range })`, with no setup call. It needs a `range` |
-| `scene.environment = pmremGenerator.fromScene(skyScene).texture`, again after each change of the sky | `scene.setEnvironment(await assets.skyEnvironment())` once: the map follows `setBackground({ sky })` |
-| `pointLight.power = lumens` or `spotLight.power = lumens` | `intensity: lumens, intensityUnit: 'lumen'` at create; `setIntensity` then takes lumens |
-| `scene.add(light)` or `group.add(light)` | Nothing for the scene; the `parent` option or `setParent(group)` for a group |
-| `light.visible = false` | `light.setVisible(false)` |
-| `light.castShadow = true`, `light.shadow.mapSize`, `light.shadow.bias` | `castShadows: true`, and `shadow: { mapSize, bias, normalBias, intensity }`, both biases in meters. [Shadows](../concepts/shadows.md) covers the differences. |
-| A second shadowed light fitted to one object, or a hand-fitted `DirectionalLight` shadow camera, for a sharper close-up shadow | `sun.setShadow({ hero: object })`: the light gives the object a fitted shadow map of its own, and follows it |
-| `spotLight.castShadow = true` or `pointLight.castShadow = true`, and `shadow.bias` | `castShadows: true`, and `shadow: { bias, normalBias, intensity }` in meters. The quality preset sets the tile size. |
-| `spotLight.map = texture` | `map: texture` at create, or `setMap(texture)`: the engine copies the texture into its own light image once. `setMap({ width, height, data })` takes sRGB pixels instead. `setMap(null)` goes back to one color |
-
-A three.js `distance` of 0 means a light with no end. null3D needs a finite range, so pick the distance where the light no longer matters.
 
 ## Related pages
 

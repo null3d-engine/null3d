@@ -21,9 +21,9 @@ export interface AssetOptions {
 	/** Add levels of detail to meshes of 64 triangles or more. The default is false. */
 	lod?: boolean;
 	/**
-	 * Write each mesh's levels of detail as separate files beside the model, so the engine draws the
-	 * coarsest level at once and takes each finer one as it arrives. It needs `lod`. The default is
-	 * false.
+	 * Write each mesh's finer levels of detail and cluster bands as separate files beside the model,
+	 * so the engine draws a coarse first picture at once and takes each finer part as it arrives. It
+	 * needs `lod` or `clusters`. The default is false.
 	 */
 	stages?: boolean;
 	/**

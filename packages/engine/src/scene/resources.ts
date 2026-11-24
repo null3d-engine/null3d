@@ -285,8 +285,8 @@ export interface MeshLevelOptions {
 	/**
 	 * The vertical field of view, in degrees, that checks the order of the levels when the mesh
 	 * takes them. Each frame compares a level's error or coverage with the field of view of the
-	 * view that draws it, so this option moves no switch. The default is 50, three.js's default
-	 * for a perspective camera.
+	 * view that draws it, so this option moves no switch. The default is 50, a perspective
+	 * camera's default.
 	 */
 	fov?: number;
 }
@@ -466,8 +466,8 @@ export class MeshGeometry {
 		/** How many morph targets the mesh has. 0 for a mesh without any. */
 		readonly morphTargets = 0,
 		/**
-		 * The morph targets' names, by target, or none when the mesh's arrays named none. Like
-		 * three.js's `morphTargetDictionary`, turned around. `mesh.setMorphWeight` takes a name too.
+		 * The morph targets' names, in target order, or none when the mesh's arrays named none.
+		 * `mesh.setMorphWeight` takes a name too.
 		 */
 		readonly morphTargetNames: readonly string[] = [],
 		/** The geometry that made the mesh, whose scene says which objects use it. */
@@ -505,12 +505,11 @@ export class MeshGeometry {
 	}
 
 	/**
-	 * Destroys the mesh, like three.js's `geometry.dispose()`. The engine frees its GPU memory and
-	 * its other data at once, and later meshes take its room. Destroy the objects and instance
-	 * batches that use it first, in the same frame or before. Its lower levels go with it, since a
-	 * level draws its base's vertices. Throws E1111 while one
-	 * still uses it, and E1101 for a mesh that is destroyed already. Later calls that pass the mesh
-	 * throw E1101.
+	 * Destroys the mesh. The engine frees its GPU memory and its other data at once, and later
+	 * meshes take its room. Destroy the objects and instance batches that use it first, in the same
+	 * frame or before. Its lower levels go with it, since a level draws its base's vertices. Throws
+	 * E1111 while one still uses it, and E1101 for a mesh that is destroyed already. Later calls
+	 * that pass the mesh throw E1101.
 	 */
 	destroy(): void {
 		const call = 'mesh.destroy';
@@ -531,17 +530,16 @@ export class MeshGeometry {
 	}
 
 	/**
-	 * Writes new values into one attribute of the mesh's vertices, like setting three.js's
-	 * `attribute.needsUpdate` after a change. `values` holds the attribute's values of every
-	 * vertex, in the array type the mesh was made with, as `geometry.fromArrays` takes them. Only
-	 * vertices `start` to `start + count - 1` change, which the next frame uploads. The defaults
-	 * update every vertex. Colors take three or four values per vertex: three keep each vertex's
-	 * alpha. The mesh keeps the bounding sphere it was made with, so give objects that draw
+	 * Writes new values into one attribute of the mesh's vertices. `values` holds the attribute's
+	 * values of every vertex, in the array type the mesh was made with, as `geometry.fromArrays`
+	 * takes them. Only vertices `start` to `start + count - 1` change, which the next frame uploads.
+	 * The defaults update every vertex. Colors take three or four values per vertex: three keep each
+	 * vertex's alpha. The mesh keeps the bounding sphere it was made with, so give objects that draw
 	 * vertices outside it bounds with `setBounds`. The four-number vertex record takes updates as
 	 * `targets`. Joints, weights, and a mesh with joints or morph targets take no updates. A level
-	 * that draws its base mesh's vertices writes them, so the base and every level of it draw the
-	 * new values. The levels that `buildLevels` or the automatic default planned measured the old
-	 * shape, so the first update takes them away, and the mesh plans no automatic levels again;
+	 * that draws its base mesh's vertices writes them, so the base and every level of it draw the new
+	 * values. The levels that `buildLevels` or the automatic default planned measured the old shape,
+	 * so the first update takes them away, and the mesh plans no automatic levels again;
 	 * `buildLevels` plans them for the new shape. Throws E1206 for values that do not fit the mesh,
 	 * and E1101 for a destroyed mesh. Allocates nothing, so a call in every frame makes no garbage.
 	 */
@@ -589,19 +587,19 @@ export class MeshGeometry {
 	}
 
 	/**
-	 * Gives the mesh lower levels of detail, from the most detailed down, like three.js's
-	 * `LOD.addLevel`. A mesh takes at most 15 lower levels. Every object and instance batch that
-	 * draws the mesh then picks one level per frame. It draws the coarsest level whose error covers
-	 * fewer pixels on the screen than the `lodThreshold` quality setting. A level may name a material of its own, so a far level shades
-	 * more cheaply; a level without one draws with the level before's material. A bound that
-	 * covers fewer pixels than the threshold draws nothing, so the mesh's last level holds no
-	 * geometry. The shadow maps pick their own levels, by each map's texel size, so a caster's
-	 * shadow shows the detail that the map can hold. An empty list takes the levels away.
-	 * Morphed objects, and materials that blend or let light through, draw the base mesh. A
-	 * skinned object draws a level while the level names the base mesh's own vertices.
-	 * Destroying a level's mesh takes every level away. Levels set here win over the ones that
-	 * `buildLevels` or the automatic default plans: a plan that runs ends, and the planned levels
-	 * go. Throws E1221 for levels the mesh cannot take, and E1101 for a destroyed mesh.
+	 * Gives the mesh lower levels of detail, from the most detailed down. A mesh takes at most 15
+	 * lower levels. Every object and instance batch that draws the mesh then picks one level per
+	 * frame. It draws the coarsest level whose error covers fewer pixels on the screen than the
+	 * `lodThreshold` quality setting. A level may name a material of its own, so a far level shades
+	 * more cheaply; a level without one draws with the level before's material. A bound that covers
+	 * fewer pixels than the threshold draws nothing, so the mesh's last level holds no geometry. The
+	 * shadow maps pick their own levels, by each map's texel size, so a caster's shadow shows the
+	 * detail that the map can hold. An empty list takes the levels away. Morphed objects, and
+	 * materials that blend or let light through, draw the base mesh. A skinned object draws a level
+	 * while the level names the base mesh's own vertices. Destroying a level's mesh takes every level
+	 * away. Levels set here win over the ones that `buildLevels` or the automatic default plans: a
+	 * plan that runs ends, and the planned levels go. Throws E1221 for levels the mesh cannot take,
+	 * and E1101 for a destroyed mesh.
 	 */
 	setLevels(levels: readonly MeshLevel[], options: MeshLevelOptions = {}): void {
 		const call = 'mesh.setLevels';
@@ -1460,9 +1458,9 @@ export type UpdatableAttribute =
 export type IntegerArray = Int8Array | Uint8Array | Int16Array | Uint16Array;
 
 /**
- * One attribute's numbers with a note on how its integers read, like three.js's `BufferAttribute`,
- * whose `array` and `normalized` fields it shares. Normalized integers read as fractions: from 0
- * to 1 when unsigned, and from -1 to 1 when signed. Plain integers read as whole numbers.
+ * One attribute's numbers with a note on how its integers read. Normalized integers read as
+ * fractions: from 0 to 1 when unsigned, and from -1 to 1 when signed. Plain integers read as whole
+ * numbers.
  *
  * @category api/geometry
  */
@@ -1470,9 +1468,9 @@ export interface VertexArray {
 	/** The numbers, as `MeshArrays` takes them. */
 	array: Float32Array | IntegerArray | readonly number[];
 	/**
-	 * True when the integers are normalized. The default is false, as in three.js and glTF. It
-	 * applies to positions and texture coordinates. The other attributes read integers one way
-	 * only, so they refuse a value that says otherwise.
+	 * True when the integers are normalized. The default is false, as in glTF. It applies to
+	 * positions and texture coordinates. The other attributes read integers one way only, so they
+	 * refuse a value that says otherwise.
 	 */
 	normalized?: boolean;
 }
@@ -1487,29 +1485,28 @@ export interface VertexArray {
 export type VertexValues = Float32Array | IntegerArray | readonly number[] | VertexArray;
 
 /**
- * A mesh's morph targets, like three.js's `morphAttributes` with `morphTargetsRelative` set, as
- * glTF stores them. Each list holds one array per target, of three numbers per vertex, or for
- * colors as many as the mesh's `colors` hold. They say how far the target moves the vertex's
- * position, normal, tangent or color at weight 1. Every list has the same number of targets, from
- * 1 to 256. A mesh's targets move its vertices by their weights, which each object sets with
- * `setMorphWeight`, and clips animate.
+ * A mesh's morph targets, as glTF stores them. Each list holds one array per target, of three
+ * numbers per vertex, or for colors as many as the mesh's `colors` hold. They say how far the
+ * target moves the vertex's position, normal, tangent or color at weight 1. Every list has the same
+ * number of targets, from 1 to 256. A mesh's targets move its vertices by their weights, which each
+ * object sets with `setMorphWeight`, and clips animate.
  *
  * @category api/geometry
  */
 export interface MorphTargets {
-	/** For each target, how far it moves each position. Like `morphAttributes.position`. */
+	/** For each target, how far it moves each position. */
 	positions?: readonly (Float32Array | readonly number[])[];
-	/** For each target, how far it turns each normal. Like `morphAttributes.normal`. */
+	/** For each target, how far it turns each normal. */
 	normals?: readonly (Float32Array | readonly number[])[];
 	/**
-	 * For each target, how far it turns each tangent's direction: three numbers per vertex, as
-	 * glTF gives them. three.js does not morph tangents.
+	 * For each target, how far it turns each tangent's direction: three numbers per vertex, as glTF
+	 * gives them.
 	 */
 	tangents?: readonly (Float32Array | readonly number[])[];
 	/**
 	 * For each target, how far it changes each vertex color: three or four numbers per vertex, as
-	 * many as the mesh's `colors` hold, in linear color. Like `morphAttributes.color`. A morphed
-	 * color is clamped to the range 0 to 1, as the glTF specification asks. Needs `colors`.
+	 * many as the mesh's `colors` hold, in linear color. A morphed color is clamped to the range 0 to
+	 * 1, as the glTF specification asks. Needs `colors`.
 	 */
 	colors?: readonly (Float32Array | readonly number[])[];
 	/** The targets' names, one per target, which `setMorphWeight` takes in place of numbers. */
@@ -1518,8 +1515,7 @@ export interface MorphTargets {
 
 /**
  * The arrays of a mesh for `geometry.fromArrays`. Each array holds its values for vertex 0, then
- * vertex 1, and so on, as three.js's `BufferGeometry` keeps its attributes. The engine copies
- * them.
+ * vertex 1, and so on. The engine copies them.
  *
  * An attribute can come as 32-bit floats, or as the 8-bit and 16-bit integers that glTF's
  * `KHR_mesh_quantization` allows for it. The mesh keeps that type on the GPU. Smaller types take
@@ -1531,48 +1527,44 @@ export interface MorphTargets {
  */
 export interface MeshArrays {
 	/**
-	 * Three numbers per vertex: x, y and z. Like three.js's `position` attribute. Takes floats,
-	 * or 8-bit or 16-bit integers, normalized or plain.
+	 * Three numbers per vertex: x, y and z. Takes floats, or 8-bit or 16-bit integers, normalized or
+	 * plain.
 	 */
 	positions: VertexValues;
 	/**
-	 * Three numbers per vertex: a direction of length 1 away from the surface. Like three.js's
-	 * `normal` attribute. Pass normals, or set `computeNormals` instead. Takes floats, or an
-	 * `Int8Array` or `Int16Array`, whose integers read as fractions from -1 to 1.
+	 * Three numbers per vertex: a direction of length 1 away from the surface. Pass normals, or set
+	 * `computeNormals` instead. Takes floats, or an `Int8Array` or `Int16Array`, whose integers read
+	 * as fractions from -1 to 1.
 	 */
 	normals?: VertexValues;
 	/**
-	 * Texture coordinates: two numbers per vertex, u and v. Like three.js's `uv` attribute. Takes
-	 * floats, or 8-bit or 16-bit integers, normalized or plain.
+	 * Texture coordinates: two numbers per vertex, u and v. Takes floats, or 8-bit or 16-bit
+	 * integers, normalized or plain.
 	 */
 	uvs?: VertexValues;
 	/**
 	 * A second set of texture coordinates, two numbers per vertex, such as those of a light map.
-	 * Like three.js's `uv1` attribute. Takes the same types as `uvs`.
+	 * Takes the same types as `uvs`.
 	 */
 	uvs1?: VertexValues;
 	/**
-	 * Linear colors, three numbers per vertex from 0 to 1, or four with alpha. Like three.js's
-	 * `color` attribute. Takes floats, or a `Uint8Array` or `Uint16Array`, whose integers read as
-	 * fractions from 0 to 1.
+	 * Linear colors, three numbers per vertex from 0 to 1, or four with alpha. Takes floats, or a
+	 * `Uint8Array` or `Uint16Array`, whose integers read as fractions from 0 to 1.
 	 */
 	colors?: VertexValues;
 	/**
-	 * Four numbers per vertex: the direction in which u grows along the surface, then 1 or -1 for
-	 * the direction in which v grows. Like three.js's `tangent` attribute. Takes the same types as
-	 * `normals`.
+	 * Four numbers per vertex: the direction in which u grows along the surface, then 1 or -1 for the
+	 * direction in which v grows. Takes the same types as `normals`.
 	 */
 	tangents?: VertexValues;
 	/**
 	 * The joints that move each vertex of a skinned mesh: four joint indices per vertex, in a
-	 * `Uint8Array`, a `Uint16Array` or a plain array. Like three.js's `skinIndex` attribute. Give
-	 * `weights` with them.
+	 * `Uint8Array`, a `Uint16Array` or a plain array. Give `weights` with them.
 	 */
 	joints?: VertexValues;
 	/**
-	 * How much each of a vertex's four joints moves it: four numbers per vertex, which add up to
-	 * 1. Like three.js's `skinWeight` attribute. Takes floats, or a `Uint8Array` or `Uint16Array`,
-	 * whose integers read as fractions from 0 to 1.
+	 * How much each of a vertex's four joints moves it: four numbers per vertex, which add up to 1.
+	 * Takes floats, or a `Uint8Array` or `Uint16Array`, whose integers read as fractions from 0 to 1.
 	 */
 	weights?: VertexValues;
 	/**
@@ -1586,17 +1578,16 @@ export interface MeshArrays {
 	/**
 	 * Three vertex indices per triangle, counter-clockwise when you look at its front. 16-bit and
 	 * 32-bit indices both work. Without indices, each three vertices in a row make a triangle.
-	 * Like three.js's `setIndex`.
 	 */
 	indices?: Uint16Array | Uint32Array | readonly number[];
 	/**
-	 * Computes the normals from the triangles, as three.js's `computeVertexNormals` does: each
-	 * vertex gets the average of its triangles' normals, weighted by their areas.
+	 * Computes the normals from the triangles: each vertex gets the average of its triangles'
+	 * normals, weighted by their areas.
 	 */
 	computeNormals?: boolean;
 	/**
-	 * Computes the tangents from the positions, the normals and `uvs`, as three.js's
-	 * `computeTangents` does, on the job workers.
+	 * Computes the tangents on the job workers, from the positions, the normals and `uvs`, with Eric
+	 * Lengyel's method.
 	 */
 	computeTangents?: boolean;
 	/**
@@ -1620,8 +1611,7 @@ export interface MeshArrays {
 }
 
 /**
- * Mesh generators with the parameters and defaults of three.js's geometry classes, and meshes
- * from arrays.
+ * Mesh generators for common shapes, and meshes from arrays.
  *
  * @category api/geometry
  */
@@ -1707,59 +1697,58 @@ export class Geometry {
 		);
 	}
 
-	/** A box, like three.js's `BoxGeometry`. */
+	/** A box, centered on its origin. */
 	box(options: BoxOptions = {}): MeshGeometry {
 		return this.shape(SHAPE_BOX, 'geometry.box', options, BOX);
 	}
 
-	/** A sphere, like three.js's `SphereGeometry`. */
+	/** A sphere with its poles on the Y axis, or a part of one. */
 	sphere(options: SphereOptions = {}): MeshGeometry {
 		return this.shape(SHAPE_SPHERE, 'geometry.sphere', options, SPHERE);
 	}
 
-	/** A flat rectangle, like three.js's `PlaneGeometry`. */
+	/** A flat rectangle in the XY plane that faces +Z. */
 	plane(options: PlaneOptions = {}): MeshGeometry {
 		return this.shape(SHAPE_PLANE, 'geometry.plane', options, PLANE);
 	}
 
-	/** A cylinder, like three.js's `CylinderGeometry`. */
+	/** A cylinder on the Y axis, closed at each end unless `openEnded` is true. */
 	cylinder(options: CylinderOptions = {}): MeshGeometry {
 		return this.shape(SHAPE_CYLINDER, 'geometry.cylinder', options, CYLINDER);
 	}
 
-	/** A cone, like three.js's `ConeGeometry`: a cylinder whose top is a point. */
+	/** A cone on the Y axis: a cylinder whose top is a point. */
 	cone(options: ConeOptions = {}): MeshGeometry {
 		return this.shape(SHAPE_CYLINDER, 'geometry.cone', options, CONE, 0);
 	}
 
-	/** A torus, like three.js's `TorusGeometry`. */
+	/** A torus: a tube bent into a ring around the Z axis. */
 	torus(options: TorusOptions = {}): MeshGeometry {
 		return this.shape(SHAPE_TORUS, 'geometry.torus', options, TORUS);
 	}
 
-	/** A capsule, like three.js's `CapsuleGeometry`. */
+	/** A capsule: a cylinder on the Y axis with a half sphere on each end. */
 	capsule(options: CapsuleOptions = {}): MeshGeometry {
 		return this.shape(SHAPE_CAPSULE, 'geometry.capsule', options, CAPSULE);
 	}
 
-	/** A flat circle, like three.js's `CircleGeometry`. */
+	/** A flat circle in the XY plane that faces +Z, or a slice of one. */
 	circle(options: CircleOptions = {}): MeshGeometry {
 		return this.shape(SHAPE_CIRCLE, 'geometry.circle', options, CIRCLE);
 	}
 
-	/** A flat ring, like three.js's `RingGeometry`. */
+	/** A flat ring: a disc with a hole, in the XY plane, that faces +Z. */
 	ring(options: RingOptions = {}): MeshGeometry {
 		return this.shape(SHAPE_RING, 'geometry.ring', options, RING);
 	}
 
 	/**
-	 * A mesh from arrays of vertex attributes and triangle indices, like three.js's
-	 * `BufferGeometry` with `setAttribute` and `setIndex`. The mesh keeps the attributes it gets,
-	 * each in the type of number it came in, and meshes whose attributes have the same types share
-	 * GPU buffers. A mesh can have any number of vertices. Throws E1206 when an array's length does
-	 * not fit the vertex count, when its attribute does not take its type of number, when an index
-	 * names no vertex, for a value that is not a finite number, and for morph targets whose arrays
-	 * do not fit the vertices or whose lists hold different numbers of targets.
+	 * A mesh from arrays of vertex attributes and triangle indices. The mesh keeps the attributes it
+	 * gets, each in the type of number it came in, and meshes whose attributes have the same types
+	 * share GPU buffers. A mesh can have any number of vertices. Throws E1206 when an array's length
+	 * does not fit the vertex count, when its attribute does not take its type of number, when an
+	 * index names no vertex, for a value that is not a finite number, and for morph targets whose
+	 * arrays do not fit the vertices or whose lists hold different numbers of targets.
 	 */
 	fromArrays(arrays: MeshArrays): MeshGeometry {
 		const call = 'geometry.fromArrays';
@@ -1822,11 +1811,10 @@ export interface MaterialOptions {
 /**
  * How a material uses its alpha: its opacity, times its base color map's alpha, and times its
  * mesh's vertex alpha with `vertexColors`. The `opaque` mode ignores the alpha. The `mask` mode
- * draws nothing where the alpha falls below `alphaCutoff`, and draws the rest opaque, as three.js's
- * `alphaTest` does. The `hash` mode draws each point of the surface opaque or not at all, by a
- * pattern that stays on the mesh. The alpha then sets how much of the surface draws, as three.js's
- * `alphaHash` does. The `blend` mode blends the surface over what lies behind it, as three.js's
- * `transparent: true` does. Blended objects draw after the opaque ones, farthest first.
+ * draws nothing where the alpha falls below `alphaCutoff`, and draws the rest opaque. The `hash`
+ * mode draws each point of the surface opaque or not at all, by a pattern that stays on the mesh.
+ * The alpha then sets how much of the surface draws. The `blend` mode blends the surface over what
+ * lies behind it. Blended objects draw after the opaque ones, farthest first.
  *
  * @category api/materials
  */
@@ -1836,30 +1824,28 @@ export type AlphaMode = 'opaque' | 'mask' | 'hash' | 'blend';
  * How a blended surface meets what lies behind it. The `normal` blending covers it as far as the
  * alpha says. The `additive` blending adds the surface's light, for glows and fire. The `multiply`
  * blending tints it, for stains and tinted glass. The `weighted` blending covers it as `normal`
- * does, but blends the surfaces of this blending in any order, by a weighted average, as
- * three.js's `OITPassNode` does. Use it for smoke, dense particles and many overlapping panes,
- * where sorting by object leaves surfaces in the wrong order.
+ * does, but blends the surfaces of this blending in any order, by a weighted average. Use it for
+ * smoke, dense particles and many overlapping panes, where sorting by object leaves surfaces in the
+ * wrong order.
  *
  * @category api/materials
  */
 export type Blending = 'normal' | 'additive' | 'multiply' | 'weighted';
 
 /**
- * A depth bias, as three.js's polygon offset gives. It moves a surface's depth, so a decal on a
- * wall wins the depth test and does not fight with the wall. Negative values pull the surface
- * toward the camera, as in three.js.
+ * A depth bias. It moves a surface's depth before the depth test, so a decal on a wall wins the
+ * depth test and does not fight with the wall. Negative values pull the surface toward the camera.
  *
  * @category api/materials
  */
 export interface DepthBias {
 	/**
-	 * Steps of the depth buffer's smallest difference, as three.js's `polygonOffsetUnits`. A
-	 * fraction rounds to the nearest whole number, as WebGPU takes it. The default is 0.
+	 * Steps of the depth buffer's smallest difference. A fraction rounds to the nearest whole
+	 * number, as WebGPU takes it. The default is 0.
 	 */
 	constant?: number;
 	/**
-	 * A factor of how steeply the surface's depth changes across the screen, as three.js's
-	 * `polygonOffsetFactor`. The default is 0.
+	 * A factor of how steeply the surface's depth changes across the screen. The default is 0.
 	 */
 	slopeScale?: number;
 }
@@ -1887,20 +1873,18 @@ export interface StandardValues extends MaterialOptions {
 	 */
 	normalScale?: readonly [number, number];
 	/**
-	 * How strongly the bump map bends normals, as three.js's `bumpScale`: the change of its red
-	 * channel from one pixel to the next times this. Negative values turn bumps into dents. The
-	 * default is 1.
+	 * How strongly the bump map bends normals: the change of its red channel from one pixel to the
+	 * next times this. Negative values turn bumps into dents. The default is 1.
 	 */
 	bumpScale?: number;
 	/**
-	 * How far the displacement map's white moves each vertex along its normal, in the mesh's units,
-	 * as three.js's `displacementScale`. The default is 1.
+	 * How far the displacement map's white moves each vertex along its normal, in the mesh's units.
+	 * The default is 1.
 	 */
 	displacementScale?: number;
 	/**
 	 * How far the displacement map moves every vertex along its normal, added to its texel's
-	 * share of `displacementScale`, in the mesh's units, as three.js's `displacementBias`. The
-	 * default is 0.
+	 * share of `displacementScale`, in the mesh's units. The default is 0.
 	 */
 	displacementBias?: number;
 	/** How much the occlusion map darkens ambient light, from 0 to 1. The default is 1. */
@@ -1908,30 +1892,27 @@ export interface StandardValues extends MaterialOptions {
 	/** The factor of the light map's light: 0 or more. The default is 1. */
 	lightMapIntensity?: number;
 	/**
-	 * The index of refraction of the surface's non-metallic part, 1 or more, as three.js's
-	 * `MeshPhysicalMaterial.ior`. It sets how much light the surface reflects when seen head on:
-	 * `((ior - 1) / (ior + 1))^2`. The default is 1.5, which reflects 4%, as glTF's metallic-roughness
-	 * model does.
+	 * The index of refraction of the surface's non-metallic part, 1 or more. It sets how much
+	 * light the surface reflects when seen head on: `((ior - 1) / (ior + 1))^2`. The default is
+	 * 1.5, which reflects 4%, as glTF's metallic-roughness model does.
 	 */
 	ior?: number;
 	/**
-	 * The strength of the specular reflection of the surface's non-metallic part, from 0 to 1, as
-	 * three.js's `specularIntensity`. It scales the reflection at every angle, so 0 leaves only
-	 * diffuse light. Metals ignore it. The default is 1.
+	 * The strength of the specular reflection of the surface's non-metallic part, from 0 to 1. It
+	 * scales the reflection at every angle, so 0 leaves only diffuse light. Metals ignore it. The
+	 * default is 1.
 	 */
 	specularIntensity?: number;
 	/**
 	 * The color that tints the specular reflection of the surface's non-metallic part when seen head
-	 * on, as three.js's `specularColor`. At grazing angles the reflection stays white, and metals
-	 * ignore it. It takes the forms that `color` takes, and its three linear components may also
-	 * exceed 1, as glTF allows, to reflect more than the index of refraction gives, up to all the
-	 * light. The default is white.
+	 * on. At grazing angles the reflection stays white, and metals ignore it. It takes the forms
+	 * that `color` takes, and its three linear components may also exceed 1, as glTF allows, to
+	 * reflect more than the index of refraction gives, up to all the light. The default is white.
 	 */
 	specularColor?: ColorInput;
 	/**
-	 * The factor of the scene environment's light on the surface, 0 or more, as three.js's
-	 * `envMapIntensity`. It multiplies the intensity that `scene.setEnvironment` gives. The
-	 * default is 1.
+	 * The factor of the scene environment's light on the surface, 0 or more. It multiplies the
+	 * intensity that `scene.setEnvironment` gives. The default is 1.
 	 */
 	envIntensity?: number;
 	/** Where the maps sit on the texture coordinates. The default leaves them as they are. */
@@ -1943,40 +1924,36 @@ export interface StandardValues extends MaterialOptions {
 	mapUvTransforms?: MapUvTransforms;
 	/**
 	 * How much of the light behind the surface passes through it, from 0 to 1, for glass and clear
-	 * water, as three.js's `MeshPhysicalMaterial.transmission`. That share of the diffuse light
-	 * becomes the light from behind, and the reflections stay. Roughness blurs what shows through.
-	 * Give it when you create the material, even as 0, to change it later. A material created
-	 * without it lets no light through. Such a material draws after the opaque objects, with the
-	 * blended ones, and only opaque objects show through it. It takes the `opaque`, `mask` or
-	 * `blend` alpha mode. A mask decides which pixels draw, and the light from behind fills the
-	 * pixels that remain, as three.js's `alphaTest` does. The default is 0.
+	 * water. That share of the diffuse light becomes the light from behind, and the reflections
+	 * stay. Roughness blurs what shows through. Give it when you create the material, even as 0, to
+	 * change it later. A material created without it lets no light through. Such a material draws
+	 * after the opaque objects, with the blended ones, and only opaque objects show through it. It
+	 * takes the `opaque`, `mask` or `blend` alpha mode. A mask decides which pixels draw, and the
+	 * light from behind fills the pixels that remain. The default is 0.
 	 */
 	transmission?: number;
 	/**
-	 * The thickness of the volume under the surface, in the mesh's own units, 0 or more, as
-	 * three.js's `thickness`. Light that passes through bends by `ior` over this distance, and the
-	 * volume's color absorbs part of it. 0 is a thin wall, which bends no light. The default is 0.
+	 * The thickness of the volume under the surface, in the mesh's own units, 0 or more. Light that
+	 * passes through bends by `ior` over this distance, and the volume's color absorbs part of it.
+	 * 0 is a thin wall, which bends no light. The default is 0.
 	 */
 	thickness?: number;
 	/**
 	 * The color that white light takes after it travels `attenuationDistance` through the
-	 * volume, as three.js's `attenuationColor`, in the forms that `color` takes. The default is
-	 * white, which absorbs nothing.
+	 * volume, in the forms that `color` takes. The default is white, which absorbs nothing.
 	 */
 	attenuationColor?: ColorInput;
 	/**
 	 * The distance in world units over which light in the volume takes `attenuationColor`, above
-	 * 0, as three.js's `attenuationDistance`. `Infinity` absorbs nothing. The default is
-	 * `Infinity`.
+	 * 0. `Infinity` absorbs nothing. The default is `Infinity`.
 	 */
 	attenuationDistance?: number;
 	/**
-	 * The strength of the volume's dispersion, 0 or more, as three.js's
-	 * `MeshPhysicalMaterial.dispersion` and glTF's `KHR_materials_dispersion`: 20 divided by the
-	 * Abbe number, so a diamond's 0.36 is weak and rutile's 2.04 is strong. The light from behind
-	 * bends by a slightly different index of refraction for each color, so a prism or a gem
-	 * separates it into colors at its edges. 0 bends every color alike. It shows only with
-	 * `transmission`, and the default is 0.
+	 * The strength of the volume's dispersion, 0 or more, as glTF's `KHR_materials_dispersion`
+	 * gives it: 20 divided by the Abbe number, so a diamond's 0.36 is weak and rutile's 2.04 is
+	 * strong. The light from behind bends by a slightly different index of refraction for each
+	 * color, so a prism or a gem separates it into colors at its edges. 0 bends every color alike.
+	 * It shows only with `transmission`, and the default is 0.
 	 */
 	dispersion?: number;
 	/**
@@ -2014,68 +1991,64 @@ export interface StandardValues extends MaterialOptions {
 	 */
 	subsurfaceColor?: ColorInput;
 	/**
-	 * How much of a clear coat covers the surface, from 0 to 1, as three.js's
-	 * `MeshPhysicalMaterial.clearcoat`: a thin, shiny layer, as on car paint, varnish or a wet
-	 * stone, with its own highlights and reflection. It dims what lies below it where it reflects
-	 * light. Give it, or another option of a clear coat or a sheen, when you create the material, to
-	 * change it later. The default is 0.
+	 * How much of a clear coat covers the surface, from 0 to 1: a thin, shiny layer, as on car
+	 * paint, varnish or a wet stone, with its own highlights and reflection. It dims what lies
+	 * below it where it reflects light. Give it, or another option of a clear coat or a sheen, when
+	 * you create the material, to change it later. The default is 0.
 	 */
 	clearcoat?: number;
-	/** How rough the clear coat is, from 0 (a mirror) to 1, as three.js's `clearcoatRoughness`. The default is 0. */
+	/** How rough the clear coat is, from 0 (a mirror) to 1. The default is 0. */
 	clearcoatRoughness?: number;
 	/**
-	 * How strongly the coat normal map bends the coat's normals along u and along v, as three.js's
-	 * `clearcoatNormalScale`. The default is `[1, 1]`, and negative values flip a direction.
+	 * How strongly the coat normal map bends the coat's normals along u and along v. The default is
+	 * `[1, 1]`, and negative values flip a direction.
 	 */
 	clearcoatNormalScale?: readonly [number, number];
 	/**
-	 * The color of a sheen, the soft glow at grazing angles of velvet, cloth and fuzz, as three.js's
-	 * `sheenColor`, in the forms that `color` takes. three.js's `sheen` multiplies it; here the
-	 * color alone sets the sheen. Black gives none. Give it, or another option of a clear coat or a
-	 * sheen, when you create the material, to change it later. The default is black.
+	 * The color of a sheen, the soft glow at grazing angles of velvet, cloth and fuzz, in the forms
+	 * that `color` takes. The color alone sets the sheen's strength, so black gives none. Give it,
+	 * or another option of a clear coat or a sheen, when you create the material, to change it
+	 * later. The default is black.
 	 */
 	sheenColor?: ColorInput;
-	/** How rough the sheen is, from 0 to 1, as three.js's `sheenRoughness`: rougher sheens spread wider. The default is 1. */
+	/** How rough the sheen is, from 0 to 1: rougher sheens spread wider. The default is 1. */
 	sheenRoughness?: number;
 	/**
-	 * How much a thin film above the surface tints its reflection, from 0 to 1, as three.js's
-	 * `iridescence`: soap bubbles, oil and beetle shells show the colors of the film's thickness.
-	 * Give it, or another option of iridescence, when you create the material, to change it later.
-	 * The default is 0.
+	 * How much a thin film above the surface tints its reflection, from 0 to 1: soap bubbles, oil
+	 * and beetle shells show the colors of the film's thickness. Give it, or another option of
+	 * iridescence, when you create the material, to change it later. The default is 0.
 	 */
 	iridescence?: number;
 	/**
-	 * The thin film's index of refraction, 1 or more, as three.js's `iridescenceIOR`: 1 makes the
-	 * film reflect as the surface does, and a value near 2 shows its colors most strongly. The
-	 * default is 1.3.
+	 * The thin film's index of refraction, 1 or more: 1 makes the film reflect as the surface does,
+	 * and a value near 2 shows its colors most strongly. The default is 1.3.
 	 */
 	iridescenceIor?: number;
 	/**
-	 * The thinnest and thickest parts of the film, in nanometers, as three.js's
-	 * `iridescenceThicknessRange`: the map's green channel mixes between them. The default is
-	 * `[100, 400]`.
+	 * The thinnest and thickest parts of the film, in nanometers: the map's green channel mixes
+	 * between them. The default is `[100, 400]`.
 	 */
 	iridescenceThicknessRange?: readonly [number, number];
 	/**
 	 * How far the specular reflection stretches along one direction of the surface, from 0 (round)
-	 * to 1, as three.js's `anisotropy`: brushed metal shows a highlight across its grooves rather
-	 * than around. A material with a map takes the stretch's direction from the mesh's tangents or
-	 * from the map's coordinates; a material without one takes a frame square to the surface.
-	 * Give it, or `anisotropyRotation`, when you create the material, to change it later.
-	 * The default is 0.
+	 * to 1: brushed metal shows a highlight across its grooves rather than around. A material with
+	 * a map takes the stretch's direction from the mesh's tangents or from the map's coordinates; a
+	 * material without one takes a frame square to the surface. Give it, or `anisotropyRotation`,
+	 * when you create the material, to change it later. The default is 0.
 	 */
 	anisotropy?: number;
 	/**
-	 * The direction along which the reflection stretches, in radians from the surface's tangent,
-	 * as three.js's `anisotropyRotation`. The default is 0.
+	 * The direction along which the reflection stretches, in radians from the surface's tangent.
+	 * The default is 0.
 	 */
 	anisotropyRotation?: number;
 }
 
 /**
- * Where a material's maps sit on the texture coordinates, as three.js's texture `offset`, `repeat`
- * and `rotation` place a texture, with its `center` at the coordinates' origin. A transform that
- * leaves a value out takes its default.
+ * Where a material's maps sit on the texture coordinates. The engine turns the coordinates by
+ * `rotation` about their origin, scales them by `repeat`, and then adds `offset`:
+ * u' = repeat.u × (u cos r + v sin r) + offset.u, and v' = repeat.v × (v cos r − u sin r) + offset.v.
+ * A transform that leaves a value out takes its default.
  *
  * @category api/materials
  */
@@ -2108,18 +2081,17 @@ export interface StandardMaps {
 	/** Normals in tangent space, in linear color, which `normalScale` scales. */
 	normalMap?: Texture;
 	/**
-	 * Heights in red, in linear color, which bend the normals as three.js's bump map does, by
-	 * `bumpScale`. A normal map wins over it, as in three.js, and so does a wireframe.
+	 * Heights in red, in linear color, which bend the normals by the change of the height from one
+	 * pixel to the next, times `bumpScale`. A normal map wins over it, and so does a wireframe.
 	 */
 	bumpMap?: Texture;
 	/**
 	 * Heights in red, in linear color, which move each vertex along its normal by
-	 * `displacementScale` and `displacementBias`, as three.js's displacement map does. Shadows and
-	 * the depth prepass follow the moved vertices, and culling grows each object's bounds to hold
-	 * them. Without a normal or bump map, the map's slope also bends the normals, so the light
-	 * follows the new shape, which three.js does not do. The vertex shader reads the map at its
-	 * full size, so the mesh needs vertices about as dense as the detail it should show. Raycasts,
-	 * outlines and debug views see the mesh before it moves.
+	 * `displacementScale` and `displacementBias`. Shadows and the depth prepass follow the moved
+	 * vertices, and culling grows each object's bounds to hold them. Without a normal or bump map,
+	 * the map's slope also bends the normals, so the light follows the new shape. The vertex shader
+	 * reads the map at its full size, so the mesh needs vertices about as dense as the detail it
+	 * should show. Raycasts, outlines and debug views see the mesh before it moves.
 	 */
 	displacementMap?: Texture;
 	/**
@@ -2224,30 +2196,28 @@ export interface MaterialFeatures {
 	/** Takes the scene's fog. False keeps the material's color at every distance. The default is true. */
 	fog?: boolean;
 	/**
-	 * Keeps the color as the display shows it, as three.js's `toneMapped: false` does. The tone
-	 * curve leaves it alone: the 8-bit path decides that in the shader of the material's own build,
-	 * and the HDR path's final pass reads a mask of these surfaces and skips the curve where one
-	 * draws. A blended surface keeps the curve on the HDR path, since a blended pixel mixes two
-	 * surfaces. The vignette and the sRGB encoding still apply, and the exposure already scales
-	 * the material's colors, so the color shows brighter than the same color tone mapped. The
-	 * default is true.
+	 * False keeps the color as the display shows it. The tone curve leaves it alone: the 8-bit path
+	 * decides that in the shader of the material's own build, and the HDR path's final pass reads a
+	 * mask of these surfaces and skips the curve where one draws. A blended surface keeps the curve
+	 * on the HDR path, since a blended pixel mixes two surfaces. The vignette and the sRGB encoding
+	 * still apply, and the exposure already scales the material's colors, so the color shows
+	 * brighter than the same color tone mapped. The default is true.
 	 */
 	toneMapped?: boolean;
 	/** How the material uses its alpha. The default is `opaque`. */
 	alphaMode?: AlphaMode;
 	/**
-	 * With the `mask` alpha mode, smooths the cut edges with MSAA, as three.js's
-	 * `alphaToCoverage` does: the alpha fades over about one pixel above `alphaCutoff`, and covers
-	 * that share of the pixel. Without MSAA the mask cuts as without it. False gives three.js's hard
-	 * cut edges of `alphaTest`. A custom material takes it where its WGSL sets or reads the
-	 * surface's `alpha`, and a development build throws E1217 otherwise. The default is true.
+	 * With the `mask` alpha mode, smooths the cut edges with MSAA: the alpha fades over about one
+	 * pixel above `alphaCutoff`, and covers that share of the pixel. Without MSAA the mask cuts as
+	 * without it. False gives hard cut edges. A custom material takes it where its WGSL sets or
+	 * reads the surface's `alpha`, and a development build throws E1217 otherwise. The default is
+	 * true.
 	 */
 	alphaToCoverage?: boolean;
 	/**
 	 * With the `blend` alpha mode and `doubleSided`, draws both faces in one draw, in the mesh's
-	 * order, as three.js's `forceSinglePass` does. By default such a surface draws its back faces
-	 * first and then its front faces, so its near side always covers its far side. The default is
-	 * false.
+	 * order. By default such a surface draws its back faces first and then its front faces, so its
+	 * near side always covers its far side. The default is false.
 	 */
 	forceSinglePass?: boolean;
 	/** With the `blend` alpha mode, how the surface meets what lies behind it. The default is `normal`. */
@@ -2255,25 +2225,25 @@ export interface MaterialFeatures {
 	/** False to write no depth, so the surface hides nothing behind it. The default is true. */
 	depthWrite?: boolean;
 	/**
-	 * False to draw the surface whatever lies in front of it. It then writes no depth either, as
-	 * in three.js's WebGL renderer. The default is true.
+	 * False to draw the surface whatever lies in front of it. It then writes no depth either. The
+	 * default is true.
 	 */
 	depthTest?: boolean;
 	/**
-	 * False to write no color, so the surface shows nothing itself and hides what lies behind it
-	 * by the depth it writes, as three.js's `colorWrite: false` does. Its objects draw before the
-	 * opaque objects that write color, so nothing behind it shows through. With the `mask` or
-	 * `hash` alpha mode, the parts that the alpha drops write no depth either, so the surface cuts
-	 * a shape out of the space it holds. A blended surface keeps its place among the blended
-	 * objects, which `setRenderOrder` orders. The default is true.
+	 * False to write no color, so the surface shows nothing itself and hides what lies behind it by
+	 * the depth it writes. Its objects draw before the opaque objects that write color, so nothing
+	 * behind it shows through. With the `mask` or `hash` alpha mode, the parts that the alpha drops
+	 * write no depth either, so the surface cuts a shape out of the space it holds. A blended
+	 * surface keeps its place among the blended objects, which `setRenderOrder` orders. The default
+	 * is true.
 	 */
 	colorWrite?: boolean;
-	/** Moves the surface's depth, as three.js's polygon offset does. The default is no bias. */
+	/** Moves the surface's depth before the depth test. The default is no bias. */
 	depthBias?: DepthBias;
 	/**
-	 * Draws the edges of each triangle as lines one pixel wide, with the material's own shading,
-	 * as three.js's `wireframe` does. Edges that two triangles share draw twice. Its shadows draw
-	 * lines too. Flat shading and bump maps have no effect on it. The default is false.
+	 * Draws the edges of each triangle as lines one pixel wide, with the material's own shading.
+	 * Edges that two triangles share draw twice. Its shadows draw lines too. Flat shading and bump
+	 * maps have no effect on it. The default is false.
 	 */
 	wireframe?: boolean;
 }
@@ -2300,14 +2270,15 @@ export interface StandardBaseOptions extends StandardValues, MaterialFeatures {
 	 */
 	flatShading?: boolean;
 	/**
-	 * Where a light map's texture coordinates start, as three.js's `texture.offset`. A bake places
-	 * each light map on a mesh with its own scale and offset, apart from the other maps. It takes
-	 * two numbers, and needs a `lightMap`. The default leaves the coordinates alone.
+	 * Where a light map's texture coordinates start: the engine adds it to the coordinates after
+	 * `lightMapRepeat` scales them. A bake places each light map on a mesh with its own scale and
+	 * offset, apart from the other maps. It takes two numbers, and needs a `lightMap`. The default
+	 * leaves the coordinates alone.
 	 */
 	lightMapOffset?: readonly [number, number];
 	/**
-	 * How a light map's texture coordinates stretch, as three.js's `texture.repeat`. It takes two
-	 * numbers, and needs a `lightMap`. The default is `[1, 1]`.
+	 * How a light map's texture coordinates stretch: the engine multiplies the coordinates by it.
+	 * It takes two numbers, and needs a `lightMap`. The default is `[1, 1]`.
 	 */
 	lightMapRepeat?: readonly [number, number];
 	/**
@@ -2419,8 +2390,7 @@ export interface UnlitOptions extends UnlitValues, MaterialFeatures {
 export interface ShadowCatcherValues extends MaterialOptions {}
 
 /**
- * Options of `materials.shadowCatcher`, a material that draws only the shadows that fall on it, as
- * three.js's `ShadowMaterial`.
+ * Options of `materials.shadowCatcher`, a material that draws only the shadows that fall on it.
  *
  * @category api/materials
  */
@@ -4347,12 +4317,11 @@ export class Material<Values extends MaterialOptions = MaterialOptions> {
 	}
 
 	/**
-	 * Destroys the material, like three.js's `material.dispose()`. Objects and instance batches that
-	 * still use it draw nothing until `setMaterial` gives them another material. Once no object uses
-	 * it, its place in the engine's table of materials goes to the next material. When the last
-	 * material of a custom material's WGSL goes, the engine frees that WGSL's pipelines. The
-	 * material's textures stay, so destroy them apart. Later calls on the material, and calls that
-	 * pass it, throw E1101.
+	 * Destroys the material. Objects and instance batches that still use it draw nothing until
+	 * `setMaterial` gives them another material. Once no object uses it, its place in the engine's
+	 * table of materials goes to the next material. When the last material of a custom material's
+	 * WGSL goes, the engine frees that WGSL's pipelines. The material's textures stay, so destroy
+	 * them apart. Later calls on the material, and calls that pass it, throw E1101.
 	 */
 	destroy(): void {
 		const { core } = this;
@@ -4413,9 +4382,8 @@ class ShaderMaterial extends Material<ShaderValues> {
 
 /**
  * Material factories. The standard material follows glTF's metallic-roughness model and shades
- * with the formulas of three.js's `MeshStandardMaterial`. The unlit material shows its color as
- * three.js's `MeshBasicMaterial` does. The shadow-catcher material shows only the main directional
- * light's shadows, as three.js's `ShadowMaterial`.
+ * with Lambert diffuse light and a GGX highlight. The unlit material shows its color whatever the
+ * lights. The shadow-catcher material shows only the main directional light's shadows.
  *
  * @category api/materials
  */
@@ -4587,8 +4555,7 @@ export class Materials {
 	}
 
 	/**
-	 * A lit material with glTF's metallic-roughness model, like three.js's
-	 * `MeshStandardMaterial`.
+	 * A lit material with glTF's metallic-roughness model.
 	 */
 	standard(options: StandardOptions = {}): Material<StandardValues> {
 		return this.create<StandardValues>(SHADING_LIT, options, 'materials.standard');
@@ -4596,12 +4563,12 @@ export class Materials {
 
 	/**
 	 * A decal's material: the standard material, projected onto every opaque surface inside the
-	 * box of each object that it draws, as three.js's `DecalGeometry` places a decal. Give it to a
-	 * mesh of `geometry.box()`: the object's position, rotation and scale place the box, and the
-	 * material's maps stretch over the box's x and y sides, seen along its z axis. The surfaces
-	 * inside take its color, roughness, metalness, normal map and emissive light, lit by the
-	 * scene's lights, and blend with them as far as its alpha says. A decal draws after the opaque
-	 * objects, and marks no blended surface. It casts no shadow.
+	 * box of each object that it draws. Give it to a mesh of `geometry.box()`: the object's
+	 * position, rotation and scale place the box, and the material's maps stretch over the box's x
+	 * and y sides, seen along its z axis. The surfaces inside take its color, roughness, metalness,
+	 * normal map and emissive light, lit by the scene's lights, and blend with them as far as its
+	 * alpha says. A decal draws after the opaque objects, and marks no blended surface. It casts no
+	 * shadow.
 	 */
 	decal(options: DecalOptions = {}): Material<DecalValues> {
 		return this.create<DecalValues>(
@@ -4613,9 +4580,8 @@ export class Materials {
 	}
 
 	/**
-	 * A material that ignores lights and shows its color unlit, like three.js's
-	 * `MeshBasicMaterial`. The exposure and the tone mapping still apply to it, as three.js applies
-	 * them to that material.
+	 * A material that ignores lights and shows its color unlit. The exposure and the tone mapping
+	 * still apply to it.
 	 */
 	unlit(options: UnlitOptions = {}): Material<UnlitValues> {
 		const shading = options.map ? SHADING_UNLIT_MAP : SHADING_UNLIT;
@@ -4623,12 +4589,11 @@ export class Materials {
 	}
 
 	/**
-	 * A material that draws only the shadows that fall on it, as three.js's `ShadowMaterial`: its
-	 * `color` where the main directional light's shadow falls, and nothing where the light reaches
-	 * it, at `opacity`. The mesh must receive shadows (`setReceiveShadows(true)`), as three.js's
-	 * `receiveShadow` must be set. Every shadow that falls on the surface comes from the main
-	 * directional light; point and spot lights cast none onto it. The default color is black, as
-	 * three.js's. The material blends, so it draws in the transparent pass after the opaque
+	 * A material that draws only the shadows that fall on it: its `color` where the main
+	 * directional light's shadow falls, and nothing where the light reaches it, at `opacity`. The
+	 * mesh must receive shadows (`setReceiveShadows(true)`). Every shadow that falls on the surface
+	 * comes from the main directional light; point and spot lights cast none onto it. The default
+	 * color is black. The material blends, so it draws in the transparent pass after the opaque
 	 * objects, and the scene's fog leaves it alone. It takes no texture maps.
 	 */
 	shadowCatcher(options: ShadowCatcherOptions = {}): Material<ShadowCatcherValues> {

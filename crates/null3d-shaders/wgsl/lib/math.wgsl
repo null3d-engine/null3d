@@ -11,7 +11,7 @@ const TAU: f32 = 6.283185307179586;
 const HALF_PI: f32 = 1.5707963267948966;
 /// One over pi.
 const INV_PI: f32 = 0.3183098861837907;
-/// A small positive number that keeps a divisor away from zero, the same as three.js's `EPSILON`.
+/// A small positive number, one millionth, that keeps a divisor away from zero.
 const EPSILON: f32 = 1e-6;
 
 /// Returns x times x.

@@ -4,8 +4,6 @@
 // checks again only the files that the change reaches. A project's output prints whole when it ends,
 // and the command fails when any project fails.
 //   bun tools/typecheck.ts
-// `--vegetation` checks the vegetation add-on's projects alone, which `bun run test:vegetation` asks for:
-//   bun tools/typecheck.ts --vegetation
 // `--shaders` first brings the shader modules up to date, which the engine's projects import. When
 // that needs a build while another checkout's shader build holds the machine's lock, it checks
 // against the modules in place instead of waiting, and builds them and checks again only when a
@@ -18,21 +16,8 @@ import { join } from 'node:path';
 import { acquireLock, cacheRoot, HOLDER_WATCH } from './lib/build-cache';
 import { refuseInQuietWindow } from './lib/quiet-window';
 import { ensureShaderModules, shaderModulesUnlessBusy } from './lib/shader-modules';
-import { vegetationOn } from './lib/vegetation-switch';
 
 const ROOT = join(import.meta.dirname, '..');
-
-/**
- * The vegetation add-on's projects: its package, and its tools, tests and pages outside it. The check
- * takes them only with the add-on's switch on, since the add-on is a work in progress that no CI job
- * checks (D-378).
- */
-export const VEGETATION_PROJECTS = [
-	'packages/vegetation',
-	'packages/vegetation/tsconfig.test.json',
-	'tsconfig.vegetation.json',
-	'tests/pages/tsconfig.vegetation.json',
-];
 
 /** Every project that the check covers, by its folder or its config file. */
 export const PROJECTS = [
@@ -73,7 +58,6 @@ export const PROJECTS = [
 	'examples/tsconfig.test.json',
 	'bench',
 	'bench/tsconfig.node.json',
-	...(vegetationOn() ? VEGETATION_PROJECTS : []),
 ];
 
 /**
@@ -201,10 +185,7 @@ if (import.meta.main) {
 	const started = performance.now();
 	let results: Checked[];
 	try {
-		results = await main(
-			process.argv.includes('--shaders'),
-			process.argv.includes('--vegetation') ? VEGETATION_PROJECTS : PROJECTS,
-		);
+		results = await main(process.argv.includes('--shaders'), PROJECTS);
 	} catch (e) {
 		console.error(`error: ${(e as Error).message}`);
 		process.exit(1);

@@ -468,27 +468,30 @@ describe('releaseProblems', () => {
 	];
 	const roadmap = '# x\n\n## Roadmap\n\n| Release | What it adds |\n';
 
-	it('lets patch releases through, roadmap and planned pages included', () => {
+	const plain = '# x\n';
+
+	it('lets patch releases through with planned pages, and the roadmap before 0.1.0', () => {
 		expect(releaseProblems('0.0.4', pages, roadmap)).toEqual([]);
-		expect(releaseProblems('0.1.3', pages, roadmap)).toEqual([]);
+		expect(releaseProblems('0.1.3', pages, plain)).toEqual([]);
 	});
 
 	it('refuses a minor release while a page it ships is still planned', () => {
-		expect(releaseProblems('0.1.0', pages, roadmap)).toEqual([
+		expect(releaseProblems('0.1.0', pages, plain)).toEqual([
 			'docs/concepts/lighting.md is still planned, and 0.1.0 ships its feature (since 0.1)',
 		]);
-		expect(releaseProblems('0.2.0', pages, roadmap)).toHaveLength(2);
+		expect(releaseProblems('0.2.0', pages, plain)).toHaveLength(2);
 	});
 
-	it('refuses a public release, from 1.0 on, while the README has the roadmap', () => {
+	it('refuses a public release, from 0.1.0 on, while the README has the roadmap', () => {
 		const shipped = pages.filter((p) => p.status !== 'planned');
-		expect(releaseProblems('1.0.0', shipped, roadmap)).toEqual([
-			'README.md still has the roadmap, which is internal; remove it before the public 1.0.0 release',
+		expect(releaseProblems('0.1.0', shipped, roadmap)).toEqual([
+			'README.md still has the roadmap, which is internal; remove it before the public 0.1.0 release',
 		]);
-		expect(releaseProblems('1.2.1', shipped, 'Everything else planned, by version')).toHaveLength(
+		expect(releaseProblems('0.1.3', shipped, 'Everything else planned, by version')).toHaveLength(
 			1,
 		);
-		expect(releaseProblems('1.0.0', shipped, '# x\n')).toEqual([]);
+		expect(releaseProblems('1.0.0', shipped, roadmap)).toHaveLength(1);
+		expect(releaseProblems('0.1.0', shipped, plain)).toEqual([]);
 	});
 });
 

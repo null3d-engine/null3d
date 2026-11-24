@@ -7,8 +7,8 @@ import type { OrthographicCamera, PerspectiveCamera, SketchContext } from '@null
 import { CameraPose } from './camera-pose';
 
 /**
- * Options for `createFlyControls`, with three.js's names and defaults. The controls keep each
- * option as a property of the same name, which a sketch can change at any time.
+ * Options for `createFlyControls`. The controls keep each option as a property of the same name,
+ * which a sketch can change at any time.
  *
  * @category api/controls
  */
@@ -18,8 +18,8 @@ export interface FlyControlsOptions {
 	/** How fast the camera moves, in world units per second. The default is 1. */
 	movementSpeed?: number;
 	/**
-	 * How fast the camera turns, in radians per second at full turn: about twice this, as three.js
-	 * counts it. The default is 0.005.
+	 * How fast the camera turns: about twice this, in radians per second, at full turn. The
+	 * default is 0.005.
 	 */
 	rollSpeed?: number;
 	/**
@@ -182,9 +182,8 @@ export class FlyControls {
 }
 
 /**
- * Creates fly controls, which three.js calls `FlyControls`. W, A, S, D, R and F move the camera,
- * the arrow keys turn it, Q and E roll it, and the pointer steers it. Call `controls.update(dt)`
- * once per frame in `onUpdate`.
+ * Creates fly controls. W, A, S, D, R and F move the camera, the arrow keys turn it, Q and E roll
+ * it, and the pointer steers it. Call `controls.update(dt)` once per frame in `onUpdate`.
  *
  * @category api/controls
  */

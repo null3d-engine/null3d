@@ -1,4 +1,4 @@
-// The first GPU grass picture: a hill of tufts grown by the vegetation add-on. The grass stands on
+// The first GPU grass picture: a hill of tufts grown by the grass add-on. The grass stands on
 // a height function, turns and tints itself by integer hash, and bends in the wind add-on's field,
 // which this picture holds still. The camera and the light are fixed, so two runs draw the same
 // frame.

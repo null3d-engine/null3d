@@ -38,7 +38,7 @@ A perspective camera shows near things larger than far things, as the eye does.
 - `near` and `far` are the distances to the nearest and farthest things the camera shows. The defaults are 0.1 and 2000.
 - `setFov(degrees)` and `setNearFar(near, far)` change the lens later. The `fov`, `near` and `far` properties read it.
 
-The defaults match three.js's `PerspectiveCamera`. The aspect ratio follows the canvas in every frame, so a camera needs no call when the canvas changes size.
+The aspect ratio follows the canvas in every frame, so a camera needs no call when the canvas changes size.
 
 The field of view goes from 0 to 180 degrees, and the near plane must lie in front of the camera, beyond 0. In development builds, values outside these ranges throw E1108.
 
@@ -54,7 +54,7 @@ post.set({ dof: { aperture: 1.8, focusDistance: 4 } });
 
 [Depth of field](post.md#depth-of-field) takes the active camera's focal length unless its settings give one, so the blur matches the framing. The aperture and the focus distance live in `post.set`'s `dof` settings, because they change only the blur. The [depth of field demo](https://github.com/null3d-engine/null3d/tree/main/examples/camera-lens) runs a dolly zoom. Its lens goes from 35 to 85 mm while the camera backs away, so the board keeps its size.
 
-three.js's `setFocalLength` measures its film gauge, 35 mm by default, along the canvas's longer side. null3D measures the sensor's 24 mm along the height, so the field of view stays the same on every canvas shape. The two agree on a square canvas with three.js's `filmGauge` set to 24. A focal length that is not above 0 throws E1108 in development builds.
+The sensor's 24 mm side lies along the canvas's height, so a focal length gives the same vertical field of view on every canvas shape. A focal length that is not above 0 throws E1108 in development builds.
 
 ## Orthographic cameras
 
@@ -65,10 +65,10 @@ const camera = scene.createOrthographicCamera({ height: 20, near: 1, far: 200, p
 scene.setActiveCamera(camera);
 ```
 
-- `height` is the height of the view in world units. The width follows the canvas's aspect ratio in every frame. The default height is 2, as in three.js.
-- `left`, `right`, `top` and `bottom` give the four edges instead, as three.js's `OrthographicCamera` takes them. The view then keeps these edges on any canvas, and stretches to fill it. Give all four edges and no `height`.
+- `height` is the height of the view in world units. The width follows the canvas's aspect ratio in every frame. The default height is 2.
+- `left`, `right`, `top` and `bottom` give the four edges instead. The view then keeps these edges on any canvas, and stretches to fill it. Give all four edges and no `height`.
 - `near` and `far` are the distances along the view to its nearest and farthest planes. The defaults are 0.1 and 2000. The near plane can lie behind the camera, because nothing in the view grows as it gets closer.
-- `setOrthoHeight(height)` zooms: a smaller height shows less of the scene, and shows it larger. A view made from four edges scales about its center and keeps its shape, as three.js's `zoom` scales it.
+- `setOrthoHeight(height)` zooms: a smaller height shows less of the scene, and shows it larger. A view made from four edges scales about its center and keeps its shape.
 - The `height` property reads the view's height. The `width` property reads the width of a view made from edges, and is `undefined` while the width follows the canvas.
 
 In development builds, a view with no size throws E1108. So does a far plane that is not beyond the near plane, for both kinds of camera.

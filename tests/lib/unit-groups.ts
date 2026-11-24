@@ -12,12 +12,6 @@
 // file directly under `examples`, and a test file with another extension, are outside it.
 import { readdirSync, realpathSync, statSync } from 'node:fs';
 import { join } from 'node:path';
-import {
-	VEGETATION_FILES,
-	VEGETATION_PACKAGES,
-	VEGETATION_SWITCH,
-	vegetationOn,
-} from '../../tools/lib/vegetation-switch.ts';
 
 /** The repository, which the groups' paths are relative to. */
 export const REPO_ROOT = join(import.meta.dirname, '..', '..');
@@ -68,15 +62,10 @@ export function foldersHoldingTests(parent: string): string[] {
 		.sort();
 }
 
-/**
- * A group of the run: the paths it takes, and any paths under one of them that another group owns and
- * this one leaves out.
- */
+/** A group of the run: the paths it takes. */
 export interface UnitGroup {
 	/** The paths the group runs. */
 	readonly paths: readonly string[];
-	/** Patterns under `paths` that the group leaves out, because a group of their own holds them. */
-	readonly ignore?: readonly string[];
 	/**
 	 * The seconds the group took in a whole run on the development Mac, from the run's own group
 	 * lines. A group the run does not name weighs a second, so it starts with the short work.
@@ -84,69 +73,8 @@ export interface UnitGroup {
 	readonly seconds?: number;
 }
 
-/**
- * Whether the run takes the vegetation add-on's tests: only with its switch on, since the add-on is a
- * work in progress that no CI job tests (D-378). Without it the run reads none of its folders.
- */
-const VEGETATION = vegetationOn();
-
-/**
- * The species walk's slices, which take a group each. The walk is the run's longest single piece of
- * work, and the run starts a group only after the one before it has ended, so one group of it sets
- * the run's floor whatever the lanes.
- */
-const SPECIES_SLICES: readonly string[] = VEGETATION
-	? readdirSync(join(REPO_ROOT, 'packages/vegetation/src/species'))
-			.filter((name) => /^species-slice-\d+\.test\.ts$/.test(name))
-			.map((name) => `packages/vegetation/src/species/${name}`)
-			.sort()
-	: [];
-
-/**
- * The plant package's own folders that take a group each. The LOD folder holds the plant cases a
- * triangle maximum is tried on, which run for minutes each and made the package one group of more
- * than fifteen minutes: apart, they take a lane of their own and the two lanes finish nearer
- * together.
- */
-const PLANT_FOLDERS: readonly string[] = ['packages/vegetation/src/lod'];
-
-/** The plant groups' measured seconds: the package's folder, its species slices in name order, and the LOD folder. */
-const PLANT_SECONDS = { folder: 356, slices: [27, 77, 135, 79], lod: 114 } as const;
-
-/** The seconds each other package's folder took in a whole run; a folder not named here weighs nothing. */
+/** The seconds each package's folder took in a whole run; a folder not named here weighs nothing. */
 const PACKAGE_SECONDS: Readonly<Record<string, number>> = { cli: 23, engine: 18, 'vite-plugin': 2 };
-
-/**
- * The groups one package folder takes: the folder, and a group per slice that the folder leaves out.
- * The vegetation add-on's packages take none unless its switch is on.
- */
-function groupsOfPackage(name: string): UnitGroup[] {
-	if (!VEGETATION && VEGETATION_PACKAGES.includes(name)) return [];
-	const paths = [`packages/${name}`];
-	if (name !== 'vegetation' || SPECIES_SLICES.length === 0)
-		return [{ paths, seconds: PACKAGE_SECONDS[name] ?? 0 }];
-	const ignore = [
-		...SPECIES_SLICES.map((slice) => `**/${slice.split('/').pop()}`),
-		...PLANT_FOLDERS.map((folder) => `**/${folder.split('/').slice(-2).join('/')}/**`),
-	];
-	return [
-		{ paths, ignore, seconds: PLANT_SECONDS.folder },
-		...SPECIES_SLICES.map((slice, index) => ({
-			paths: [slice],
-			seconds: PLANT_SECONDS.slices[index] ?? 0,
-		})),
-		...PLANT_FOLDERS.map((folder) => ({ paths: [folder], seconds: PLANT_SECONDS.lod })),
-	];
-}
-
-/**
- * The patterns that leave the vegetation add-on's own files under `folder` out of a group, unless its
- * switch is on.
- */
-function vegetationIgnore(folder: string): string[] {
-	if (VEGETATION) return [];
-	return VEGETATION_FILES.filter((glob) => glob.startsWith(folder)).map((glob) => `**/${glob}`);
-}
 
 /**
  * The groups of the run: the tools, each package, the benchmark's scenes and pages, the test
@@ -158,29 +86,13 @@ function vegetationIgnore(folder: string): string[] {
  */
 export const UNIT_GROUPS: readonly UnitGroup[] = (
 	[
-		{ paths: ['tools'], ignore: vegetationIgnore('tools/'), seconds: 66 },
-		...readdirSync(join(REPO_ROOT, 'packages')).flatMap((name) => groupsOfPackage(name)),
+		{ paths: ['tools'], seconds: 66 },
+		...readdirSync(join(REPO_ROOT, 'packages')).map((name) => ({
+			paths: [`packages/${name}`],
+			seconds: PACKAGE_SECONDS[name] ?? 0,
+		})),
 		{ paths: ['bench/scenes', 'bench/pages', 'bench/lib'], seconds: 11 },
-		{ paths: ['tests/lib'], ignore: vegetationIgnore('tests/lib/'), seconds: 30 },
+		{ paths: ['tests/lib'], seconds: 30 },
 		{ paths: foldersHoldingTests('examples').map((name) => `examples/${name}`), seconds: 25 },
 	] satisfies UnitGroup[]
 ).sort((a, b) => (b.seconds ?? 1) - (a.seconds ?? 1));
-
-/**
- * The vegetation add-on's groups alone, for `bun run test:vegetation`: its packages' groups, and one
- * group of its test files outside them. Its switch must be on.
- */
-export function vegetationUnitGroups(): UnitGroup[] {
-	if (!VEGETATION) throw new Error(`the vegetation add-on's tests run with ${VEGETATION_SWITCH}=1`);
-	const outside = VEGETATION_FILES.filter(
-		(glob) => glob.startsWith('tools/') || glob.startsWith('tests/lib/'),
-	).flatMap((glob) =>
-		[...new Bun.Glob(glob).scanSync({ cwd: REPO_ROOT })].filter((path) =>
-			path.endsWith(TEST_SUFFIX),
-		),
-	);
-	return [
-		...VEGETATION_PACKAGES.flatMap((name) => groupsOfPackage(name)),
-		{ paths: [...new Set(outside)].sort() },
-	];
-}

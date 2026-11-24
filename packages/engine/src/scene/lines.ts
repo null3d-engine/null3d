@@ -31,9 +31,8 @@ import type {
 import type { Vec3 } from './scene';
 
 /**
- * Which points each segment joins. With `segments`, each pair of points makes a segment, like
- * three.js's `LineSegments`. With `strip`, every point joins the next, like `Line` and `Line2`. With
- * `loop`, the last point also joins the first, like `LineLoop`.
+ * Which points each segment joins. With `segments`, each pair of points makes a segment. With
+ * `strip`, every point joins the next. With `loop`, the last point also joins the first.
  *
  * @category api/lines
  */
@@ -41,8 +40,8 @@ export type LineMode = 'segments' | 'strip' | 'loop';
 
 /**
  * The values of a line batch's material, which `lines.material.set` changes at any time. The dash
- * values act on dashed lines, as three.js's `LineMaterial` takes them. The metalness, roughness and
- * emissive values act on lit lines, as a standard material takes them.
+ * values act on dashed lines. The metalness, roughness and emissive values act on lit lines, as a
+ * standard material takes them.
  *
  * @category api/lines
  */
@@ -85,22 +84,19 @@ export interface LineOptions
 	colors?: ArrayLike<number>;
 	/** Which points each segment joins. The default is `strip`. */
 	mode?: LineMode;
-	/**
-	 * The width of the lines: CSS pixels, or world units with `worldUnits`. The default is 1, as
-	 * three.js's `linewidth`.
-	 */
+	/** The width of the lines: CSS pixels, or world units with `worldUnits`. The default is 1. */
 	width?: number;
 	/**
-	 * True gives the width in world units, so far lines look thinner, as three.js's `worldUnits`
-	 * does. False gives it in CSS pixels. The default is false.
+	 * True gives the width in world units, so far lines look thinner. False gives it in CSS pixels,
+	 * so every line keeps its width on screen. The default is false.
 	 */
 	worldUnits?: boolean;
 	/** Draws the lines as dashes, which `dashSize`, `gapSize` and the other dash values shape. */
 	dashed?: boolean;
 	/**
 	 * Lights the lines as a standard material lights a surface that faces the camera: the sun, the
-	 * point and spot lights and the ambient light shade them. False draws the color as it is, as
-	 * three.js's line materials do. The default is false.
+	 * point and spot lights and the ambient light shade them. False draws the color as it is,
+	 * whatever the lights. The default is false.
 	 */
 	lit?: boolean;
 	/** Every point updates and uploads every frame; a static batch updates points marked dirty only. */
@@ -113,7 +109,7 @@ export interface LineOptions
 	 * the world's origin.
 	 */
 	origin?: Vec3;
-	/** How the lines use their opacity. The default is `opaque`, as three.js's lines are. */
+	/** How the lines use their opacity. The default is `opaque`. */
 	alphaMode?: 'opaque' | 'blend';
 }
 
@@ -300,9 +296,9 @@ export interface LineBatchRows extends PointerRows {
 
 /**
  * Lines of any width: segments between points, each drawn as a quad with round ends that faces the
- * camera, like three.js's `Line2`. Write points straight into the typed arrays, as for an instance
- * batch. A dynamic batch updates every segment every frame, and a static batch updates the segments
- * of the points you mark dirty.
+ * camera. Write points straight into the typed arrays, as for an instance batch. A dynamic batch
+ * updates every segment every frame, and a static batch updates the segments of the points you
+ * mark dirty.
  *
  * @category api/lines
  */

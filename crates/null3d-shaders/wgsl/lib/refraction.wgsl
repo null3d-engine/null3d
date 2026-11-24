@@ -56,7 +56,7 @@ fn volume_attenuation(distance: f32, color: vec3f, attenuation_distance: f32) ->
 }
 
 /// The roughness that blurs the light through a surface: none at an index of refraction of 1, and
-/// all of its roughness from 1.5, as three.js scales it.
+/// all of its roughness from 1.5, in a straight line between them.
 fn refraction_roughness(roughness: f32, ior: f32) -> f32 {
     return roughness * saturate(ior * 2.0 - 2.0);
 }
@@ -225,8 +225,8 @@ fn channel_light(
 /// environment's along the ray without a copy, times what the volume lets through over the ray.
 /// `surface_at` is the fragment's position, `thickness` and `ior` the volume's thickness and index
 /// of refraction, `attenuation` its color and distance, and `scale` the object's scale along each
-/// axis. `dispersion` spreads the index of refraction over three rays, one per color, as three.js
-/// does: red takes the lowest index, 20 divided by the Abbe number away from the volume's.
+/// axis. `dispersion` spreads the index of refraction over three rays, one per color: red's index
+/// is (ior - 1) x 0.025 x `dispersion` below the volume's, blue's as far above, and green keeps it.
 fn transmitted_light(
     surface_at: vec3f,
     relative: vec3f,
