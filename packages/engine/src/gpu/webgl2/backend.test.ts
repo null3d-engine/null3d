@@ -459,6 +459,93 @@ describe('WebGL2Backend', () => {
 		expect([...backend.gpuMemory.bytes]).toEqual([0, 0]);
 	});
 
+	it("compiles a stored list's programs ahead, and waits for one only once a pipeline takes it", async () => {
+		let linked = false;
+		const parallel = { COMPLETION_STATUS_KHR: 0x91b1 };
+		const { gl, calls } = fakeContext(false, (name, args) => {
+			if (name === 'getExtension' && args[0] === 'KHR_parallel_shader_compile') return parallel;
+			if (name === 'getProgramParameter' && args[1] === parallel.COMPLETION_STATUS_KHR)
+				return linked;
+			return undefined;
+		});
+		const canvas = { width: 4, height: 4 } as OffscreenCanvas;
+		const backend = new WebGL2Backend(gl, canvas, await loadGlslShaders(0), true, 'reversed');
+		const stage = { source: '', uniformBlocks: [], textures: [] };
+		const shader: ShaderVariants = {
+			table: { permutation: 0, wgsl: null, glsl: { main: { vertex: stage, fragment: stage } } },
+		};
+		backend.defineTemplate(G.TEMPLATE_CUSTOM_FIRST, { shader, pipeline: 'main' });
+		const links = () => calls.filter((name) => name === 'linkProgram').length;
+		const before = links();
+		const operands = [
+			G.TEMPLATE_CUSTOM_FIRST,
+			0,
+			G.FORMAT_RGBA8_UNORM,
+			G.FORMAT_NONE,
+			1,
+			G.STATE_CULL_NONE,
+			0,
+			0,
+			0,
+		];
+		backend.buildEarly(Uint32Array.of(G.OP_CREATE_RENDER_PIPELINE, ...operands));
+		expect(links()).toBe(before + 1);
+		// No frame waits for a program that no pipeline has taken.
+		expect(backend.building).toBe(false);
+		const words = Uint32Array.of(G.OP_CREATE_RENDER_PIPELINE | (11 << 8), 4, ...operands);
+		backend.prepare(words, 0, words.length);
+		expect(links()).toBe(before + 1);
+		expect(backend.building).toBe(true);
+		linked = true;
+		expect(backend.building).toBe(false);
+		expect(Array.from(backend.takeListing() ?? [])).toEqual([
+			G.OP_CREATE_RENDER_PIPELINE,
+			...operands,
+		]);
+	});
+
+	it('compiles the program of a pipeline that a list before the first frame creates after other commands in the background', async () => {
+		let linked = false;
+		const parallel = { COMPLETION_STATUS_KHR: 0x91b1 };
+		const { gl, calls } = fakeContext(false, (name, args) => {
+			if (name === 'getExtension' && args[0] === 'KHR_parallel_shader_compile') return parallel;
+			if (name === 'getProgramParameter' && args[1] === parallel.COMPLETION_STATUS_KHR)
+				return linked;
+			return undefined;
+		});
+		const canvas = { width: 4, height: 4 } as OffscreenCanvas;
+		const backend = new WebGL2Backend(gl, canvas, await loadGlslShaders(0), true, 'reversed');
+		const stage = { source: '', uniformBlocks: [], textures: [] };
+		const shader: ShaderVariants = {
+			table: { permutation: 0, wgsl: null, glsl: { main: { vertex: stage, fragment: stage } } },
+		};
+		backend.defineTemplate(G.TEMPLATE_CUSTOM_FIRST, { shader, pipeline: 'main' });
+		const links = () => calls.filter((name) => name === 'linkProgram').length;
+		const before = links();
+		const create = [
+			G.OP_CREATE_RENDER_PIPELINE | (11 << 8),
+			4,
+			G.TEMPLATE_CUSTOM_FIRST,
+			0,
+			G.FORMAT_RGBA8_UNORM,
+			G.FORMAT_NONE,
+			1,
+			G.STATE_CULL_NONE,
+			0,
+			0,
+			0,
+		];
+		const words = Uint32Array.of(G.OP_RESIZE_CANVAS | (3 << 8), 4, 4, ...create);
+		const from = backend.prepare(words, 0, words.length);
+		expect(from).toBe(0);
+		expect(links()).toBe(before + 1);
+		expect(backend.building).toBe(true);
+		linked = true;
+		expect(backend.building).toBe(false);
+		backend.replay(words, new Float32Array(words.buffer), from, words.length, new ArrayBuffer(0));
+		expect(links()).toBe(before + 1);
+	});
+
 	it("reads a copied box into engine memory with WebGPU's row spacing once its fence signals, and raises its slot once", async () => {
 		let signalled = false;
 		const { gl, calls, log } = fakeContext(false, (name, args) => {

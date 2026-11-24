@@ -121,7 +121,20 @@ export interface RendererOptions {
 	 * WebGPU the device that it asked for, which the first renderer takes.
 	 */
 	early?: EarlyStart;
+	/**
+	 * The pipeline list of the pipelines that the first frame of the sketch's last start built,
+	 * which a scene's renderer starts to build at once (`gpu/early-builds.ts`).
+	 */
+	earlyBuilds?: Uint32Array;
+	/**
+	 * Hears the pipeline list of the pipelines that a scene's renderer built for its first frame,
+	 * once that frame has drawn.
+	 */
+	listBuilds?: (list: Uint32Array) => void;
 }
+
+/** What a scene's renderer does with pipeline lists, as `RendererOptions` gives it. */
+export type PipelineLists = Pick<RendererOptions, 'earlyBuilds' | 'listBuilds'>;
 
 /**
  * What the thread that draws can start as soon as the probe has chosen the GPU path, before the

@@ -158,6 +158,11 @@ export interface Switches {
 	 */
 	freshCheck: boolean;
 	/**
+	 * True when ?builds=fresh makes the first frame start every pipeline build itself, as on a first
+	 * visit, instead of building the stored list of an earlier start's first frame ahead of it.
+	 */
+	freshBuilds: boolean;
+	/**
 	 * True when ?two-step=report makes a development page log the two-step pass's answers once the
 	 * first frame is on screen: whether the frame wanted the pass, declared it, had its second step
 	 * built and drew it, the render scale, and whether the browser has
@@ -454,6 +459,7 @@ export function parseSwitches(search: string): Switches {
 		parallelCompile: params.get('compile') !== 'wait',
 		freshShaders: params.get('shaders') === 'fresh',
 		freshCheck: params.get('check') === 'fresh',
+		freshBuilds: params.get('builds') === 'fresh',
 		wakeByMessage: params.get('wake') === 'message',
 		twoStep: params.get('two-step') === 'report',
 		displayChecks: params.get('display-check') !== 'off',

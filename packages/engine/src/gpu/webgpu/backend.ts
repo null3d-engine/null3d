@@ -10,6 +10,7 @@ import { DEV } from '../../shared/dev';
 import { ImageTable } from '../../shared/images';
 import { DROP_COUNTED_LABEL } from '../../shared/metrics';
 import type { DeviceShaderSet } from '../device-shaders';
+import { type EarlyBuild, EarlyBuilds, keyOf, PipelineListing } from '../early-builds';
 import { JoinedBuilds, joinedReady } from '../effect-join';
 import {
 	CLOUD_FIELD_WORD,
@@ -199,6 +200,29 @@ export class WebGPUBackend {
 	 * skinning pass's, which loads with the first skinned mesh. Each builds once its file arrives.
 	 */
 	private readonly parkedCompute: Uint32Array[] = [];
+	/** The create commands of the pipelines that the lists before the first frame create. */
+	private readonly listing = new PipelineListing();
+	/** The builds of the pipelines that the last start's first frame built, until this first frame. */
+	private early: EarlyBuilds<GPURenderPipeline | GPUComputePipeline> | undefined;
+	/**
+	 * The builds of the pipelines that a list before the first frame creates after other commands,
+	 * by the id that the command creates, with the command's key. They start when the list is
+	 * prepared, and the frame waits for them.
+	 */
+	private readonly ahead = new Map<
+		number,
+		{ key: string; build: EarlyBuild<GPURenderPipeline | GPUComputePipeline> }
+	>();
+	/**
+	 * The builds of `ahead` by the command's key: commands of equal operands under other ids, such
+	 * as an add-on's compute passes of one shader, share one build. Built one after another, the
+	 * browser's cache of equal pipelines answers each after the first; started at once, each would
+	 * compile the shader again.
+	 */
+	private readonly aheadByKey = new Map<
+		string,
+		EarlyBuild<GPURenderPipeline | GPUComputePipeline>
+	>();
 	/**
 	 * True when the vertex shaders skin skinned meshes, so a preload of skinning prepares the
 	 * shaders of its SKIN builds.
@@ -889,10 +913,112 @@ export class WebGPUBackend {
 			const header = words[i] as number;
 			const op = header & 0xff;
 			if (op !== G.OP_CREATE_RENDER_PIPELINE && op !== G.OP_CREATE_COMPUTE_PIPELINE) break;
+			this.listing.add(op, words, i + 1);
 			this.createPipeline(op, words, i + 1, true);
 			i += header >>> 8;
 		}
+		if (this.listing.active) this.buildAhead(words, i, end);
 		return i;
+	}
+
+	/**
+	 * Starts to build, in the background, each pipeline that the list in `words[start, end)` creates
+	 * after other commands, such as an add-on's compute pass. The frame before the first one then
+	 * waits for them, as for the pipelines at the list's front, and its replay takes them. Without
+	 * this, its replay would build each at once, and the GPU would compile them one after another
+	 * inside the first frame.
+	 */
+	private buildAhead(words: Uint32Array, start: number, end: number): void {
+		for (let i = start; i < end; ) {
+			const header = words[i] as number;
+			const length = header >>> 8;
+			if (length === 0) return;
+			const op = header & 0xff;
+			const id = words[i + 1] as number;
+			if (
+				(op === G.OP_CREATE_RENDER_PIPELINE || op === G.OP_CREATE_COMPUTE_PIPELINE) &&
+				!this.ahead.has(id)
+			) {
+				const key = keyOf(op, words, i + 1);
+				let build = this.aheadByKey.get(key);
+				if (!build) {
+					build = this.early?.take(op, words, i + 1) ?? this.startAhead(op, words, i + 1);
+					if (build) {
+						this.aheadByKey.set(key, build);
+						this.builds++;
+						build.done
+							.then(
+								() => undefined,
+								() => undefined,
+							)
+							.finally(() => {
+								this.builds--;
+							});
+					}
+				}
+				if (build) this.ahead.set(id, { key, build });
+			}
+			i += length;
+		}
+	}
+
+	/**
+	 * The background build of the create command `op` whose operands start at `a`, or undefined
+	 * while its shader has not arrived or when it builds when its command comes.
+	 */
+	private startAhead(
+		op: number,
+		words: Uint32Array,
+		a: number,
+	): EarlyBuild<GPURenderPipeline | GPUComputePipeline> | undefined {
+		const template = words[a + 1] as number;
+		const permutation = words[a + 2] as number;
+		let done: Promise<GPURenderPipeline | GPUComputePipeline>;
+		try {
+			if (op === G.OP_CREATE_COMPUTE_PIPELINE) {
+				if (!this.computeReady(template, permutation)) return undefined;
+				done = this.device.createComputePipelineAsync(
+					this.pipelines.compute(template, permutation),
+				);
+			} else {
+				if (this.joins.joined(template) || !this.templateReady(template, permutation))
+					return undefined;
+				done = this.device.createRenderPipelineAsync(this.renderDescriptor(words, a));
+			}
+		} catch {
+			return undefined;
+		}
+		const made: EarlyBuild<GPURenderPipeline | GPUComputePipeline> = {
+			pipeline: undefined,
+			failed: false,
+			done,
+		};
+		done.then(
+			(pipeline) => {
+				made.pipeline = pipeline;
+			},
+			() => {
+				made.failed = true;
+			},
+		);
+		return made;
+	}
+
+	/**
+	 * The built pipeline of a create command that the list creates after other commands, whose build
+	 * started when the list was prepared, or undefined when there is none, as after the first frame.
+	 */
+	private takeAhead(
+		op: number,
+		words: Uint32Array,
+		a: number,
+	): GPURenderPipeline | GPUComputePipeline | undefined {
+		if (this.ahead.size === 0) return undefined;
+		const id = words[a] as number;
+		const ahead = this.ahead.get(id);
+		if (!ahead) return undefined;
+		this.ahead.delete(id);
+		return ahead.key === keyOf(op, words, a) ? ahead.build.pipeline : undefined;
 	}
 
 	/**
@@ -997,6 +1123,60 @@ export class WebGPUBackend {
 	}
 
 	/**
+	 * Starts to build the pipelines of `list`, a pipeline list of the pipelines that the first frame
+	 * of the sketch's last start built (`gpu/early-builds.ts`). Each build starts once its shader is
+	 * there, and a create command of the same pipeline takes it. A joined shader's pipelines build
+	 * when their command comes, as their failure sends the effects back to a pass each.
+	 */
+	buildEarly(list: Uint32Array): void {
+		this.early?.stop();
+		this.early = new EarlyBuilds<GPURenderPipeline | GPUComputePipeline>(list, (op, operands) => {
+			const template = operands[1] as number;
+			const permutation = operands[2] as number;
+			if (op === G.OP_CREATE_COMPUTE_PIPELINE) {
+				if (!this.computeReady(template, permutation)) return undefined;
+				return this.device.createComputePipelineAsync(
+					this.pipelines.compute(template, permutation),
+				);
+			}
+			if (this.joins.joined(template)) return null;
+			if (!this.templateReady(template, permutation)) return undefined;
+			return this.device.createRenderPipelineAsync(this.renderDescriptor(operands, 0));
+		});
+	}
+
+	/**
+	 * Ends the list of the pipelines that the frames before the first one created, and returns it,
+	 * once: the first frame has drawn. The builds of the last start's list that no command took
+	 * stop.
+	 */
+	takeListing(): Uint32Array | undefined {
+		this.early?.stop();
+		this.early = undefined;
+		this.ahead.clear();
+		this.aheadByKey.clear();
+		return this.listing.take();
+	}
+
+	/**
+	 * Gives the pipeline `id` of `table` the build that started for it ahead of its command: at once
+	 * when it is built, else when it is.
+	 */
+	private adopt<T>(table: (T | null | undefined)[], id: number, early: EarlyBuild<unknown>): void {
+		const pipeline = early.pipeline as T | undefined;
+		if (pipeline) {
+			table[id] = pipeline;
+			return;
+		}
+		table[id] = null;
+		this.builds++;
+		(early.done as Promise<T>).then(
+			(built) => this.built(table, id, built),
+			(error: unknown) => this.failed(error),
+		);
+	}
+
+	/**
 	 * Makes the skinning pass write normals and tangents as 32-bit floats, as the core's skinned
 	 * vertices hold them in the skinning modes that measure 8-bit ones against floats.
 	 */
@@ -1063,11 +1243,20 @@ export class WebGPUBackend {
 				this.parkedCompute.push(words.slice(a, a - 1 + ((words[a - 1] as number) >>> 8)));
 				return;
 			}
-			const descriptor = this.pipelines.compute(words[a + 1] as number, words[a + 2] as number);
-			if (!background) {
-				this.computePipelines[id] = device.createComputePipeline(descriptor);
+			const early = background ? this.early?.take(op, words, a) : undefined;
+			if (early) {
+				this.adopt(this.computePipelines, id, early);
 				return;
 			}
+			if (!background) {
+				this.computePipelines[id] =
+					(this.takeAhead(op, words, a) as GPUComputePipeline | undefined) ??
+					device.createComputePipeline(
+						this.pipelines.compute(words[a + 1] as number, words[a + 2] as number),
+					);
+				return;
+			}
+			const descriptor = this.pipelines.compute(words[a + 1] as number, words[a + 2] as number);
 			this.computePipelines[id] = null;
 			this.builds++;
 			device.createComputePipelineAsync(descriptor).then(
@@ -1085,17 +1274,24 @@ export class WebGPUBackend {
 			this.parked.push(words.slice(a, a - 1 + ((words[a - 1] as number) >>> 8)));
 			return;
 		}
-		const descriptor = this.renderDescriptor(words, a);
 		// A joined shader always builds in the background, so a frame never waits for it and its
 		// failure only sends its effects back to a pass each.
 		const template = words[a + 1] as number;
 		const joined = this.joins.joined(template);
 		if (DEV && !joined && this.images.shaders.has(template))
 			this.customOperands.set(id, words.slice(a, a + RENDER_PIPELINE_OPERANDS));
-		if (!background && !joined) {
-			this.renderPipelines[id] = device.createRenderPipeline(descriptor);
+		const early = background && !joined ? this.early?.take(op, words, a) : undefined;
+		if (early) {
+			this.adopt(this.renderPipelines, id, early);
 			return;
 		}
+		if (!background && !joined) {
+			this.renderPipelines[id] =
+				(this.takeAhead(op, words, a) as GPURenderPipeline | undefined) ??
+				device.createRenderPipeline(this.renderDescriptor(words, a));
+			return;
+		}
+		const descriptor = this.renderDescriptor(words, a);
 		this.renderPipelines[id] = null;
 		this.builds++;
 		const start = performance.now();
@@ -1347,6 +1543,7 @@ export class WebGPUBackend {
 				case G.OP_CREATE_RENDER_PIPELINE:
 				case G.OP_CREATE_COMPUTE_PIPELINE:
 					// A list that creates a pipeline after other commands builds it at once.
+					this.listing.add(op, words, a);
 					this.createPipeline(op, words, a, false);
 					break;
 				case G.OP_CREATE_BIND_GROUP:
@@ -1696,6 +1893,8 @@ export class WebGPUBackend {
 	}
 
 	destroy(): void {
+		this.early?.stop();
+		this.early = undefined;
 		for (let id = 0; id < this.buffers.length; id++) this.releaseBuffer(id);
 		for (let id = 0; id < this.textures.length; id++) this.releaseTexture(id);
 		this.bindGroupWords.length = 0;

@@ -16,6 +16,7 @@ describe('parseSwitches', () => {
 			parallelCompile: true,
 			freshShaders: false,
 			freshCheck: false,
+			freshBuilds: false,
 			twoStep: false,
 			wakeByMessage: false,
 			displayChecks: true,
@@ -293,6 +294,11 @@ describe('parseSwitches', () => {
 	it('measures the preset again with ?check=fresh only', () => {
 		expect(parseSwitches('?check=fresh').freshCheck).toBe(true);
 		expect(parseSwitches('?check=stored').freshCheck).toBe(false);
+	});
+
+	it('builds every pipeline when the first frame asks with ?builds=fresh only', () => {
+		expect(parseSwitches('?builds=fresh').freshBuilds).toBe(true);
+		expect(parseSwitches('?builds=stored').freshBuilds).toBe(false);
 	});
 
 	it('makes the threads wake each other with messages with ?wake=message only', () => {

@@ -27,6 +27,7 @@ import {
 	replyToPage,
 	replyWithCapture,
 	type SketchWorkerMessage,
+	sendPipelineList,
 	startSteps,
 	startWorker,
 	startWorkerCore,
@@ -197,6 +198,7 @@ startWorker('sketch', step, async (event: MessageEvent<SketchWorkerMessage>) => 
 						fault,
 						gpuError: (outOfMemory, text) =>
 							replyToPage({ type: 'gpu-error', role: 'sketch', outOfMemory, message: text }),
+						listBuilds: message.renderer.keepBuilds ? sendPipelineList : undefined,
 					}),
 				);
 				if (!drawing) return;

@@ -17,6 +17,7 @@ import {
 	replyToPage,
 	replyWithCapture,
 	type ShaderPreload,
+	sendPipelineList,
 	startSteps,
 	startWorker,
 } from './protocol';
@@ -70,6 +71,7 @@ startWorker(
 							replyToPage({ type: 'fault', role: 'render', message: messageOf(error) }),
 						gpuError: (outOfMemory, text) =>
 							replyToPage({ type: 'gpu-error', role: 'render', outOfMemory, message: text }),
+						listBuilds: message.keepBuilds ? sendPipelineList : undefined,
 					}),
 				);
 				if (!drawing) return;

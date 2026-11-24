@@ -17,6 +17,7 @@ import { contextLoss } from './loss';
 import {
 	type FrameInput,
 	linearToSrgb,
+	type PipelineLists,
 	type RenderCanvas,
 	type Renderer,
 	type RendererOptions,
@@ -50,6 +51,7 @@ export function webgl2Renderer(
 		options.device,
 		options.imageTable,
 		shaders,
+		options,
 	);
 }
 
@@ -155,6 +157,7 @@ class WebGL2SceneRenderer implements Renderer {
 		device: CoreDevice,
 		images: ImageTable | undefined,
 		shaders: DeviceShaderSet,
+		lists: PipelineLists,
 	) {
 		this.lost = contextLoss(canvas, this.release.signal);
 		this.backend = new WebGL2Backend(
@@ -175,7 +178,7 @@ class WebGL2SceneRenderer implements Renderer {
 		this.canvasFormat = device.transparent ? gl.RGBA8 : gl.RGB8;
 		this.completions = metrics && new FenceCompletion(gl, metrics);
 		this.timer = metrics && WebGL2GpuTimer.create(gl, metrics);
-		this.frames = new FrameReplay(this.backend, memory, control);
+		this.frames = new FrameReplay(this.backend, memory, control, lists);
 	}
 
 	/** The frame's draw list resizes the canvas, in the frame built for the new size. */

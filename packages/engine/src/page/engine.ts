@@ -126,6 +126,7 @@ import {
 	takeWhenFree,
 } from './ownership';
 import { PermutationRecording } from './permutation-recording';
+import { PipelineStore, pipelineConditions } from './pipeline-store';
 import { type PointerLockOptions, requestPointerLock } from './pointer-lock';
 import { watchPreferences } from './preferences';
 import { NO_HISTORY, StartMarker } from './start-marker';
@@ -467,8 +468,8 @@ export interface EngineOptions {
 	 * lets light through to its other side,
 	 * `'subsurface'` with the first material with a `subsurfaceRadius` while the subsurface blur has
 	 * taps, `'coat_sheen'` with the first material with a clear coat or a sheen, `'weighted'` with
-	 * the first material of the `weighted` blending, and `'occlusion'` with the first opaque object that
-	 * may hide others while GPU occlusion culling runs on WebGPU. WebGPU morphs in the skinning pass, so there
+	 * the first material of the `weighted` blending, and `'occlusion'` with the first opaque
+	 * material while GPU occlusion culling runs on WebGPU. WebGPU morphs in the skinning pass, so there
 	 * `'morph'` loads the skinning shaders, and WebGL2 has no `'occlusion'` shaders to load. Listed
 	 * features download beside the engine's own
 	 * shaders, so the start waits only for the largest. The shaders that two or more listed features
@@ -1011,6 +1012,8 @@ interface WorkerEvents {
 	recording?(bytes: Uint8Array): void;
 	/** What a replay gave, after the sketch thread ran the recording's frames. */
 	replay?(result: ReplayResult): void;
+	/** The pipeline list of the pipelines that the first frame built, which the page stores. */
+	pipelineList?(list: Uint32Array): void;
 }
 
 /**
@@ -1152,6 +1155,9 @@ export class EngineWorker {
 						// A job worker that failed has left the job system, so a stop need not wait for it.
 						if (reply.role === 'job') markStopped();
 						failed(reply.message);
+						return;
+					case 'pipeline-list':
+						events.pipelineList?.(reply.list);
 						return;
 					case 'progress':
 						// The first step says that the worker's script and the files that it imports
@@ -2045,6 +2051,8 @@ async function startEngine(
 	if (options.onSketchError) sketchErrorHandlers.add(options.onSketchError);
 	/** Where a start that checks its preset keeps the check's result for later starts. */
 	let checkStore: CheckStore | undefined;
+	/** The stored list of the first frame's pipelines, on a start that keeps one. */
+	let pipelineStore: PipelineStore | undefined;
 	/**
 	 * Ends the start when the caller cancels it, or when a thread fails before the engine has
 	 * started. A thread that fails then, such as the one that draws, leaves the start waiting for
@@ -2106,6 +2114,7 @@ async function startEngine(
 			}
 			if (update.checked) endCheck();
 		},
+		pipelineList: (list) => pipelineStore?.save(list),
 		stats: (show) => statsSwitch.show(show),
 		labelSlot: (id, table, slot, generation) => pageLabels?.setSlot(id, table, slot, generation),
 		jobsWanted: (count) => growJobs?.(count),
@@ -2662,6 +2671,22 @@ async function startEngine(
 			expectedObjects,
 			gpuOcclusion: quality.settings.gpuOcclusion,
 		});
+		// A live start keeps the list of its first frame's pipelines, and builds the list that the last
+		// start at the same preset kept as soon as the thread that draws can. A hold, a replay and a
+		// recording of permutation words draw what they hold, so they neither read nor keep one.
+		if (hold === undefined && replay === undefined && !rendererSetup.recordPermutations) {
+			pipelineStore = new PipelineStore(
+				sketchUrl,
+				pipelineConditions(
+					tier,
+					device.shaderBits,
+					preset,
+					tier === 'webgl2' ? undefined : (report.webgpu.preferredCanvasFormat ?? undefined),
+				),
+			);
+			rendererSetup.keepBuilds = true;
+			if (!switches.freshBuilds) rendererSetup.earlyBuilds = pipelineStore.read();
+		}
 		// The GPU path and the device choose the renderers and the shader files that the thread that
 		// draws loads first, and the GPU device that it asks for, so it starts them now, while the core
 		// downloads.
@@ -2781,6 +2806,7 @@ async function startEngine(
 				sketch,
 				...images,
 				presented: () => labels.update(),
+				listBuilds: rendererSetup.keepBuilds ? (list) => pipelineStore?.save(list) : undefined,
 				fail: pageLoss,
 				fault: (error) => onFailure(failureError('the drawing on the page', messageOf(error))),
 				gpuError: (outOfMemory, message) =>

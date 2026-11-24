@@ -78,6 +78,16 @@ export interface RendererSetup extends FramePacing {
 	 * thread that draws loads the tier's shaders with the first generator that it runs.
 	 */
 	cloudSteps?: number;
+	/**
+	 * The pipeline list of the first frame of the sketch's last start, whose pipelines the thread
+	 * starts to build at once (`gpu/early-builds.ts`).
+	 */
+	earlyBuilds?: Uint32Array;
+	/**
+	 * True when the page stores pipeline lists: the thread sends the list of its first frame's
+	 * pipelines once that frame has drawn.
+	 */
+	keepBuilds?: boolean;
 }
 
 export type SketchWorkerInit = CoreHandoff & {
@@ -193,6 +203,8 @@ export type WorkerReply =
 	 * that gets no reply from a worker reads them to learn which step never finished.
 	 */
 	| { type: 'progress'; role: 'sketch' | 'render' | 'job'; step: string }
+	/** The pipeline list of the pipelines that the first frame built, which the page stores. */
+	| { type: 'pipeline-list'; list: Uint32Array }
 	/** The browser took the GPU away from the worker that draws, which stopped drawing. */
 	| { type: 'lost'; role: 'sketch' | 'render'; reason: string }
 	| { type: 'sketch-message'; name: string; data: unknown }
@@ -254,6 +266,11 @@ export type SketchWorkerMessage =
 /** Sends a reply from a worker to the page, moving the `transfer` objects instead of copying them. */
 export function replyToPage(message: WorkerReply, transfer: Transferable[] = []): void {
 	postMessage(message, { transfer });
+}
+
+/** Sends the page the pipeline list of the first frame, which the page stores for the next start. */
+export function sendPipelineList(list: Uint32Array): void {
+	replyToPage({ type: 'pipeline-list', list }, [list.buffer]);
 }
 
 /**

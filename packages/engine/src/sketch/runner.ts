@@ -804,6 +804,11 @@ export class SketchRunner {
 		// Alpha to coverage fades a mask's edges only on targets with MSAA.
 		this.preloads = new ShaderPreloads(sketch.sendPreload);
 		this.preloads.setUsable('coverage', device.antialias === ANTIALIAS_MSAA);
+		this.preloads.setPassFacts({
+			tier: sketch.capabilities.tier,
+			device,
+			settings: () => this.quality.settings,
+		});
 		const { governor } = this;
 		const bloomSize = () => this.bloomSetting / 2 ** governor.bloomHalvings;
 		this.quality = new SketchQuality(

@@ -267,6 +267,11 @@ export interface Program {
 	 * which leaves its draws drawing nothing while its effects go back to a pass each.
 	 */
 	joined?: { readonly template: number; readonly start: number; failed: boolean };
+	/**
+	 * True for a program that a start compiles ahead of its pipeline, from the list of the last
+	 * start's first frame: no frame waits for it until a pipeline takes it.
+	 */
+	early?: boolean;
 }
 
 /** A render pipeline: its program, and the fixed-function state and vertex format it asks for. */

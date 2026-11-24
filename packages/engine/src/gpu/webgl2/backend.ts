@@ -25,6 +25,7 @@ import type { DepthMode } from '../../page/switches';
 import { DEV } from '../../shared/dev';
 import { ImageTable } from '../../shared/images';
 import type { DeviceShaderSet } from '../device-shaders';
+import { EarlyBuilds, PipelineListing } from '../early-builds';
 import { JoinedBuilds, joinedReady } from '../effect-join';
 import {
 	CLOUD_FIELD_WORD,
@@ -548,6 +549,10 @@ export class WebGL2Backend {
 	 * draws draw nothing.
 	 */
 	private readonly parked = new Map<number, Uint32Array>();
+	/** The create commands of the pipelines that the lists before the first frame create. */
+	private readonly listing = new PipelineListing();
+	/** The compiles of the programs that the last start's first frame built, until this first frame. */
+	private early: EarlyBuilds<never> | undefined;
 	/**
 	 * In development builds, the programs that a hot update of a custom material's shader compiles,
 	 * each under the key of the program it replaces once it has compiled. `relinked` is set once the
@@ -799,10 +804,37 @@ export class WebGL2Backend {
 		this.replayWord = -1;
 		let i = start;
 		while (i < end && ((words[i] as number) & 0xff) === G.OP_CREATE_RENDER_PIPELINE) {
+			this.listing.add(G.OP_CREATE_RENDER_PIPELINE, words, i + 1);
 			this.createPipeline(words, i + 1, true);
 			i += (words[i] as number) >>> 8;
 		}
+		if (this.listing.active && this.parallel) this.compileAhead(words, i, end);
 		return i;
+	}
+
+	/**
+	 * Starts to compile, in the background, the program of each pipeline that the list in
+	 * `words[start, end)` creates after other commands. The frame before the first one then waits
+	 * for them, as for the programs of the pipelines at the list's front, instead of its first draw
+	 * with each waiting for its compile.
+	 */
+	private compileAhead(words: Uint32Array, start: number, end: number): void {
+		for (let i = start; i < end; ) {
+			const header = words[i] as number;
+			const length = header >>> 8;
+			if (length === 0) return;
+			if ((header & 0xff) === G.OP_CREATE_RENDER_PIPELINE) {
+				const template = words[i + 2] as number;
+				const permutation = words[i + 3] as number;
+				try {
+					if (!this.joins.joined(template) && this.templateReady(template, permutation))
+						this.programOf(template, permutation, true);
+				} catch {
+					// The pipeline's own command meets the error.
+				}
+			}
+			i += length;
+		}
 	}
 
 	/**
@@ -938,6 +970,41 @@ export class WebGL2Backend {
 					if (build.glsl?.[template.pipeline]) this.programOf(id, build.permutation, true);
 			});
 		}
+	}
+
+	/**
+	 * Starts to compile the programs of `list`, a pipeline list of the pipelines that the first frame
+	 * of the sketch's last start built (`gpu/early-builds.ts`). Each compile starts once its shader
+	 * is there, and a pipeline of the same template and permutation takes the program. No frame
+	 * waits for a program that no pipeline takes. A joined shader's program compiles when its
+	 * pipeline comes, as its failure sends the effects back to a pass each.
+	 */
+	buildEarly(list: Uint32Array): void {
+		this.early?.stop();
+		this.early = new EarlyBuilds<never>(list, (op, operands) => {
+			const template = operands[1] as number;
+			const permutation = operands[2] as number;
+			if (op !== G.OP_CREATE_RENDER_PIPELINE || this.joins.joined(template)) return null;
+			if (!this.templateReady(template, permutation)) return undefined;
+			const key = `${template} ${permutation}`;
+			if (this.programs.has(key)) return null;
+			const glsl = this.need(this.templates, template, 'render pipeline template');
+			const program = createProgram(this.gl, glsl, permutation);
+			program.early = true;
+			this.programs.set(key, program);
+			return null;
+		});
+	}
+
+	/**
+	 * Ends the list of the pipelines that the frames before the first one created, and returns it,
+	 * once: the first frame has drawn. The compiles of the last start's list that have not started
+	 * stop.
+	 */
+	takeListing(): Uint32Array | undefined {
+		this.early?.stop();
+		this.early = undefined;
+		return this.listing.take();
 	}
 
 	/** Creates each parked pipeline whose custom material's shader has arrived. */
@@ -1176,6 +1243,7 @@ export class WebGL2Backend {
 				}
 				case G.OP_CREATE_RENDER_PIPELINE:
 					// A list that creates a pipeline after other commands waits for it at its first draw.
+					this.listing.add(op, words, a);
 					this.createPipeline(words, a, false);
 					break;
 				case G.OP_CREATE_BIND_GROUP: {
@@ -1386,6 +1454,13 @@ export class WebGL2Backend {
 				// effects stay one pass each after the first frame, which waits for every program.
 				joined.failed = true;
 				this.joins.keptApart(template);
+			}
+		} else if (program.early) {
+			// A program that compiled ahead of its pipeline: the frames wait for it from now on.
+			program.early = undefined;
+			if (background && this.parallel) {
+				program.background = true;
+				this.compiling.push(program);
 			}
 		}
 		return program;
@@ -3226,6 +3301,8 @@ export class WebGL2Backend {
 	}
 
 	destroy(): void {
+		this.early?.stop();
+		this.early = undefined;
 		const gl = this.gl;
 		for (let id = 0; id < this.buffers.length; id++) this.destroyBuffer(id);
 		for (let id = 0; id < this.textures.length; id++) this.destroyTexture(id);

@@ -18,6 +18,7 @@ import { deviceLoss, type GpuErrorReport, GpuErrorWatch } from './loss';
 import {
 	type FrameInput,
 	linearToSrgb,
+	type PipelineLists,
 	type RenderCanvas,
 	type Renderer,
 	type RendererOptions,
@@ -50,6 +51,7 @@ export function webgpuRenderer(
 		shaders,
 		options.device.transparent,
 		options.device.skinning,
+		options,
 		options.gpuError,
 	);
 }
@@ -184,6 +186,7 @@ class WebGPUSceneRenderer implements Renderer {
 		shaders: DeviceShaderSet,
 		readonly transparent: boolean,
 		skinning: number,
+		lists: PipelineLists,
 		gpuError?: GpuErrorReport,
 	) {
 		this.lost = deviceLoss(device, () => this.simulated);
@@ -214,7 +217,7 @@ class WebGPUSceneRenderer implements Renderer {
 		shaders.onPreloaded((features, module) => this.backend.precompile(features, module));
 		this.backend.timer = metrics && GpuTimer.create(device, metrics, this.backend.gpuMemory);
 		this.completions = metrics && new QueueCompletion(device.queue, metrics);
-		this.frames = new FrameReplay(this.backend, memory, control);
+		this.frames = new FrameReplay(this.backend, memory, control, lists);
 	}
 
 	/** The frame's draw list resizes the canvas, in the frame built for the new size. */
