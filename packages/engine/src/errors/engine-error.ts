@@ -6,8 +6,10 @@
 //
 // A thread can hold two copies of this module: in a production build, the sketch worker runs the
 // engine's worker code, and the sketch's bundle imports the engine again from the page's file. So
-// the table of fixes and the mark on each error live under registered symbols, which every copy in
-// the thread shares. Each copy then reads the same table, and instanceof accepts the errors of both.
+// the table of fixes, its load and the mark on each error live under registered symbols, which
+// every copy in the thread shares. Each copy then reads the same table, waits for the same load, and
+// instanceof accepts the errors of both. A copy that loaded the table on its own would leave its
+// errors short after the other copy's had their fixes, while a second file downloads.
 // The docs address, the message's form and the mark live in engine-error-core.ts, which code that
 // may not load the fixes, such as a simulation's math, throws its errors from.
 
@@ -16,9 +18,14 @@ import type { ErrorCode, ErrorFixes } from './fixes';
 
 /** The key of the thread's table of fixes on its global object. */
 const FIXES = Symbol.for('null3d.errorFixes');
+/** The key of the thread's load of that table, which the first copy to need it starts. */
+const LOAD = Symbol.for('null3d.errorFixesLoad');
 
-/** The thread's global object, which holds the table of fixes for every copy of this module. */
-const thread = globalThis as { [FIXES]?: ErrorFixes };
+/**
+ * The thread's global object, which holds the table of fixes and its load for every copy of this
+ * module.
+ */
+const thread = globalThis as { [FIXES]?: ErrorFixes; [LOAD]?: Promise<ErrorFixes> };
 
 /**
  * Every code, joined, so an error keeps its code before the file of fixes arrives. A test keeps it
@@ -37,7 +44,7 @@ interface Waiting {
 }
 
 const waiting: Waiting[] = [];
-/** The load of the fixes, which one thread starts once. */
+/** This copy's wait for the thread's load of the fixes, which settles its own waiting errors. */
 let loading: Promise<void> | undefined;
 
 /** Tells each waiting error the fix, unless its message holds other text by now. */
@@ -47,19 +54,23 @@ function settle(fixes: ErrorFixes): void {
 	}
 }
 
-/** Loads the thread's file of fixes, once, and gives each error that waits its fix. */
+/**
+ * Loads the thread's file of fixes, once for every copy of this module in the thread, and gives
+ * each error of this copy that waits its fix.
+ */
 function loadFixes(): Promise<void> {
 	if (thread[FIXES] !== undefined) return Promise.resolve();
-	loading ??= import('./fixes').then(
-		({ ERROR_FIXES }) => {
-			thread[FIXES] ??= ERROR_FIXES;
-			settle(thread[FIXES]);
-		},
-		() => {
-			// The text is a hint: an error keeps its code and detail when the file does not arrive.
-			loading = undefined;
-		},
-	);
+	if (loading) return loading;
+	thread[LOAD] ??= import('./fixes').then(({ ERROR_FIXES }) => {
+		thread[FIXES] ??= ERROR_FIXES;
+		return thread[FIXES];
+	});
+	loading = thread[LOAD].then(settle, () => {
+		// The text is a hint: an error keeps its code and detail when the file does not arrive, and
+		// a later error tries again.
+		loading = undefined;
+		thread[LOAD] = undefined;
+	});
 	return loading;
 }
 

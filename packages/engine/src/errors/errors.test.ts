@@ -5,12 +5,14 @@ import { checkNumber, checkVector, DEV } from './checks';
 import { ERRORS } from './codes';
 import { type CoreErrors, coreFailure } from './core-failure';
 import { EngineError, isErrorCode, setErrorFixes } from './engine-error';
-import { ERROR_FIXES, type ErrorCode } from './fixes';
+import { ERROR_FIXES, type ErrorCode, type ErrorFixes } from './fixes';
 
 const DOCS = 'https://github.com/null3d-engine/null3d/blob/generated/docs/errors/';
 
 /** Where a thread keeps its table of fixes: on its global object, under a registered symbol. */
 const FIXES_KEY = Symbol.for('null3d.errorFixes');
+/** The key under which the thread keeps its load of the table, which every copy waits for. */
+const LOAD_KEY = Symbol.for('null3d.errorFixesLoad');
 
 /**
  * A second copy of the error module in this thread, as a production build gives the sketch worker:
@@ -143,6 +145,28 @@ describe('the fixes that load at the first error', () => {
 			await copy.errorFixesReady();
 			expect(error?.message).toBe(`E1108: what failed. ${ERROR_FIXES.E1108} See ${DOCS}E1108.md`);
 		} finally {
+			setErrorFixes(ERROR_FIXES);
+		}
+	});
+
+	it('waits for the load that another copy in the thread started, not a load of its own', async () => {
+		const shared = globalThis as Record<symbol, unknown>;
+		delete shared[FIXES_KEY];
+		let land: (fixes: ErrorFixes) => void = () => {};
+		shared[LOAD_KEY] = new Promise<ErrorFixes>((resolve) => {
+			land = resolve;
+		});
+		try {
+			const copy = await freshCopy('shares');
+			const error = new copy.EngineError('E1108', 'what failed.');
+			// A load of its own would have given the fix by now, as the file is in memory here.
+			await new Promise((resolve) => setTimeout(resolve, 10));
+			expect(error.message).toBe(`E1108: what failed. See ${DOCS}E1108.md`);
+			land(ERROR_FIXES);
+			await copy.errorFixesReady();
+			expect(error.message).toBe(`E1108: what failed. ${ERROR_FIXES.E1108} See ${DOCS}E1108.md`);
+		} finally {
+			delete shared[LOAD_KEY];
 			setErrorFixes(ERROR_FIXES);
 		}
 	});
