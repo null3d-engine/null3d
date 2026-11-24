@@ -106,9 +106,10 @@ export interface RendererOptions {
 	 */
 	gpuSamples?: 'every';
 	/**
-	 * Hears a WebGPU error that no error scope caught: with `outOfMemory`, the GPU had no room for
-	 * an object, else it rejected a command. `message` is the GPU path's own text. The thread that
-	 * draws reports each kind once per device, as E1304 or E1305.
+	 * Hears a GPU failure that the engine draws on after: a WebGPU error that no error scope caught,
+	 * as the GPU had no room for an object or rejected a command, or a pipeline of the scene's
+	 * objects that the GPU's driver refused twice, on either GPU path. `message` is the GPU path's
+	 * own text. The thread that draws reports each kind once per device, as E1304, E1305 or E1307.
 	 */
 	gpuError?: GpuErrorReport;
 	/**

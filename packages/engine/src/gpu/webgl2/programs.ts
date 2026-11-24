@@ -272,6 +272,12 @@ export interface Program {
 	 * start's first frame: no frame waits for it until a pipeline takes it.
 	 */
 	early?: boolean;
+	/**
+	 * For a program of a template that draws the scene's meshes: its template and permutation, which
+	 * name it, and whether the driver refused to link it twice, which leaves its draws drawing
+	 * nothing while the frames go on.
+	 */
+	objects?: { readonly template: number; readonly permutation: number; refused: boolean };
 }
 
 /** A render pipeline: its program, and the fixed-function state and vertex format it asks for. */
@@ -581,9 +587,12 @@ export function linkLogs(gl: WebGL2RenderingContext, p: Program): string {
 		.join('\n');
 }
 
+/** A program whose link the driver refused, with the logs of its program and shaders. */
+export class LinkFailure extends Error {}
+
 /** The error of a program whose link failed, with the logs of its program and shaders. */
 function linkError(gl: WebGL2RenderingContext, p: Program, attempt: string): Error {
-	return new Error(`a WebGL2 program failed to link${attempt}: ${linkLogs(gl, p)}`);
+	return new LinkFailure(`a WebGL2 program failed to link${attempt}: ${linkLogs(gl, p)}`);
 }
 
 /**

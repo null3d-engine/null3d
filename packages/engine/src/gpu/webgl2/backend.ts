@@ -35,6 +35,7 @@ import {
 } from '../environment-words';
 import { floatOfBits } from '../float-bits';
 import { GpuMemory, textureBytes } from '../memory';
+import { pipelineName } from '../pipeline-name';
 import type { ReadSink } from '../readback';
 import { variantFor } from '../variants';
 import {
@@ -53,6 +54,7 @@ import {
 	customTemplate,
 	engineTemplates,
 	type GlslTemplate,
+	LinkFailure,
 	linkLogs,
 	metalFault,
 	mipmapTemplate,
@@ -564,7 +566,16 @@ export class WebGL2Backend {
 	 * bits. Without it, every pipeline's build must be in the shaders that the backend got.
 	 */
 	moreShaders: DeviceShaderSet | undefined;
-	/** True while the current pipeline's program is compiling: draws draw nothing until it is set again. */
+	/**
+	 * Hears each program of the scene's objects that the driver refused to link twice, by its
+	 * pipeline's name and the link's logs. Its draws draw nothing from then on, and the frames go
+	 * on without them.
+	 */
+	refused: ((pipeline: string, reason: string) => void) | undefined;
+	/**
+	 * True while the current pipeline's program is compiling, or after the driver refused it: draws
+	 * draw nothing until it is set again.
+	 */
 	private skipDraws = false;
 	private readonly anisotropic: EXT_texture_filter_anisotropic | null;
 	private readonly maxAnisotropy: number;
@@ -1398,6 +1409,35 @@ export class WebGL2Backend {
 		return program;
 	}
 
+	/**
+	 * Puts a program of the scene's objects in use, as `useProgram` does, and returns true. A link
+	 * that the driver refused links once more, from new shaders: a driver can run short of memory
+	 * while it links. A second refusal marks the program, so its draws draw nothing from then on,
+	 * reports it, and returns false. Any other failure, such as a material with more textures than
+	 * the stages hold, still stops the replay, and so does a link on a lost context, which the
+	 * renderer recovers from as a loss.
+	 */
+	private useObjectsProgram(program: Program): boolean {
+		const objects = program.objects as NonNullable<Program['objects']>;
+		const refusal = (error: unknown) => error instanceof LinkFailure && !this.gl.isContextLost();
+		try {
+			this.useProgram(program);
+			return true;
+		} catch (error) {
+			if (!refusal(error)) throw error;
+		}
+		relink(this.gl, program);
+		try {
+			this.useProgram(program);
+			return true;
+		} catch (error) {
+			if (!refusal(error) || !(error instanceof LinkFailure)) throw error;
+			objects.refused = true;
+			this.refused?.(pipelineName(objects.template, objects.permutation), error.message);
+			return false;
+		}
+	}
+
 	/** Puts a program in use, first checking its link and binding its slots at its first use. */
 	private useProgram(program: Program): void {
 		if (!program.ready) {
@@ -1446,6 +1486,7 @@ export class WebGL2Backend {
 				? { template, start: performance.now(), failed: false }
 				: undefined;
 			if (joined) program.joined = joined;
+			if (glsl.meshPrepass) program.objects = { template, permutation, refused: false };
 			if ((background || joined) && this.parallel) {
 				program.background = true;
 				this.compiling.push(program);
@@ -2911,13 +2952,21 @@ export class WebGL2Backend {
 
 	private setPipeline(p: Pipeline): void {
 		const program = p.program;
-		this.skipDraws = program.joined?.failed === true || !this.compiled(program);
+		this.skipDraws =
+			program.joined?.failed === true ||
+			program.objects?.refused === true ||
+			!this.compiled(program);
 		if (this.skipDraws) return;
 		if (program.joined) {
 			try {
 				this.useProgram(program);
 			} catch (error) {
 				this.joinFailed(program, error instanceof Error ? error.message : String(error));
+				this.skipDraws = true;
+				return;
+			}
+		} else if (program.objects) {
+			if (!this.useObjectsProgram(program)) {
 				this.skipDraws = true;
 				return;
 			}

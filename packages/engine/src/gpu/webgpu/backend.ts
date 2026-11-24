@@ -148,6 +148,23 @@ interface MipChain {
 	readonly passes: GPURenderPassDescriptor[];
 }
 
+/** A render pipeline whose build the GPU's driver refused once, with what builds it again. */
+interface RefusedBuild {
+	readonly id: number;
+	readonly template: number;
+	readonly permutation: number;
+	readonly descriptor: GPURenderPipelineDescriptor;
+}
+
+/**
+ * True for a pipeline build that the GPU's driver refused, as a `GPUPipelineError` whose reason is
+ * `internal`: it ran out of memory, or its compiler refused the shader. The browser's validation
+ * of the engine's descriptor gives the reason `validation`.
+ */
+export function refusedByDriver(error: unknown): boolean {
+	return (error as { reason?: unknown } | null)?.reason === 'internal';
+}
+
 export class WebGPUBackend {
 	private readonly buffers: (GPUBuffer | undefined)[] = [];
 	private readonly textures: (GPUTexture | undefined)[] = [];
@@ -173,15 +190,31 @@ export class WebGPUBackend {
 	private mipSampler: GPUSampler | undefined;
 	/** What making each texture's mip levels draws with, by texture id, once it made them. */
 	private readonly mipChains: (MipChain | undefined)[] = [];
-	/** Pipelines by id: null while one builds, and undefined for an id that names none. */
+	/**
+	 * Pipelines by id: null while one builds or after the GPU's driver refused it, and undefined for
+	 * an id that names none. A null pipeline's draws draw nothing.
+	 */
 	private readonly renderPipelines: (GPURenderPipeline | null | undefined)[] = [];
 	/** True for each render pipeline, by id, that draws lines rather than triangles. */
 	private readonly lineLists: boolean[] = [];
 	/** True while the render pass's pipeline draws lines. */
 	private lines = false;
 	private readonly computePipelines: (GPUComputePipeline | null | undefined)[] = [];
-	/** Pipelines that are building, or that wait for their custom material's shader. */
+	/** Pipelines that are building, or that wait for their custom material's shader or a retry. */
 	private builds = 0;
+	/** The builds that the browser runs now. */
+	private running = 0;
+	/**
+	 * The render pipelines of the scene's objects whose build the GPU's driver refused once. Each
+	 * builds once more, alone, once no other build runs: a driver can run short of memory while it
+	 * compiles many shaders at once.
+	 */
+	private readonly retries: RefusedBuild[] = [];
+	/**
+	 * Hears each render pipeline that the GPU's driver refused twice, by its name and the driver's
+	 * reason. Its draws draw nothing from then on, and the frames go on without them.
+	 */
+	refused: ((pipeline: string, reason: string) => void) | undefined;
 	/**
 	 * The operands of each `CreateRenderPipeline` whose custom material's shader has not reached
 	 * this thread yet. Each builds once its shader arrives.
@@ -1043,6 +1076,7 @@ export class WebGPUBackend {
 	get building(): boolean {
 		if (DEV && this.images.replaced.length > 0) this.swapReplaced();
 		if (this.parked.length > 0 || this.parkedCompute.length > 0) this.unpark();
+		if (this.retries.length > 0 && this.running === 0) this.retryRefused();
 		return this.builds > 0;
 	}
 
@@ -1063,6 +1097,7 @@ export class WebGPUBackend {
 				const swap = ++this.swapCount;
 				this.swaps.set(id, swap);
 				this.builds++;
+				this.running++;
 				this.counts.pipelines++;
 				const keep = (error: unknown) =>
 					console.error(
@@ -1076,6 +1111,7 @@ export class WebGPUBackend {
 					}, keep)
 					.finally(() => {
 						this.builds--;
+						this.running--;
 					});
 			}
 		}
@@ -1259,9 +1295,16 @@ export class WebGPUBackend {
 			const descriptor = this.pipelines.compute(words[a + 1] as number, words[a + 2] as number);
 			this.computePipelines[id] = null;
 			this.builds++;
+			this.running++;
 			device.createComputePipelineAsync(descriptor).then(
-				(pipeline) => this.built(this.computePipelines, id, pipeline),
-				(error: unknown) => this.failed(error),
+				(pipeline) => {
+					this.running--;
+					this.built(this.computePipelines, id, pipeline);
+				},
+				(error: unknown) => {
+					this.running--;
+					this.failed(error);
+				},
 			);
 			return;
 		}
@@ -1294,16 +1337,57 @@ export class WebGPUBackend {
 		const descriptor = this.renderDescriptor(words, a);
 		this.renderPipelines[id] = null;
 		this.builds++;
+		this.running++;
 		const start = performance.now();
+		const permutation = words[a + 2] as number;
 		device.createRenderPipelineAsync(descriptor).then(
 			(pipeline) => {
+				this.running--;
 				if (joined) this.joins.built(template, performance.now() - start);
 				this.built(this.renderPipelines, id, pipeline);
 			},
 			(error: unknown) => {
-				if (!joined) return this.failed(error);
+				this.running--;
+				if (!joined) return this.refusedOnce({ id, template, permutation, descriptor }, error);
 				this.builds--;
 				this.joins.failed(template, error);
+			},
+		);
+	}
+
+	/**
+	 * Hears that a render pipeline did not build. A pipeline of the scene's objects that the GPU's
+	 * driver refused waits for its retry, and still counts as building. Any other failure, such as
+	 * a descriptor that the browser's validation refused, is an engine fault, which the next replay
+	 * reports.
+	 */
+	private refusedOnce(build: RefusedBuild, error: unknown): void {
+		if (refusedByDriver(error) && this.pipelines.drawsObjects(build.template))
+			this.retries.push(build);
+		else this.failed(error);
+	}
+
+	/**
+	 * Builds the first pipeline that waits for its retry. A second refusal leaves its draws drawing
+	 * nothing, so the frames go on without those objects, and the backend reports it.
+	 */
+	private retryRefused(): void {
+		const build = this.retries.shift() as RefusedBuild;
+		this.running++;
+		this.device.createRenderPipelineAsync(build.descriptor).then(
+			(pipeline) => {
+				this.running--;
+				this.built(this.renderPipelines, build.id, pipeline);
+			},
+			(error: unknown) => {
+				this.running--;
+				this.builds--;
+				// A pipeline destroyed meanwhile is no loss.
+				if (this.renderPipelines[build.id] === null)
+					this.refused?.(
+						this.pipelines.describe(build.template, build.permutation),
+						messageOf(error),
+					);
 			},
 		);
 	}
@@ -1338,6 +1422,11 @@ export class WebGPUBackend {
 		const parked = this.parked.findIndex((operands) => operands[0] === id);
 		if (parked >= 0) {
 			this.parked.splice(parked, 1);
+			this.builds--;
+		}
+		const retry = this.retries.findIndex((build) => build.id === id);
+		if (retry >= 0) {
+			this.retries.splice(retry, 1);
 			this.builds--;
 		}
 		this.renderPipelines[id] = undefined;

@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
-import { GpuErrorWatch } from './loss';
+import { GpuErrorWatch, GpuReports } from './loss';
 
 /** Stand-ins for the browser's error classes, which Bun lacks. */
 class FakeGpuError {
@@ -29,9 +29,9 @@ function fakeDevice() {
 describe('GpuErrorWatch', () => {
 	it('reports the first error of each kind once, and counts the rest', () => {
 		const device = fakeDevice();
-		const reports: [boolean, string][] = [];
-		const watch = new GpuErrorWatch(device as unknown as GPUDevice, (outOfMemory, message) =>
-			reports.push([outOfMemory, message]),
+		const reports: [string, string][] = [];
+		const watch = new GpuErrorWatch(device as unknown as GPUDevice, (kind, message) =>
+			reports.push([kind, message]),
 		);
 		const warn = console.warn;
 		const warnings: unknown[] = [];
@@ -46,8 +46,8 @@ describe('GpuErrorWatch', () => {
 			console.warn = warn;
 		}
 		expect(reports).toEqual([
-			[false, 'Buffer size exceeds the max buffer size limit.'],
-			[true, 'Not enough memory left.'],
+			['rejected', 'Buffer size exceeds the max buffer size limit.'],
+			['memory', 'Not enough memory left.'],
 		]);
 		expect(watch.repeated).toBe(3);
 		// Tests run as a development build, which says once that more errors came.
@@ -58,12 +58,33 @@ describe('GpuErrorWatch', () => {
 		delete scope.GPUOutOfMemoryError;
 		try {
 			const device = fakeDevice();
-			const reports: boolean[] = [];
-			new GpuErrorWatch(device as unknown as GPUDevice, (outOfMemory) => reports.push(outOfMemory));
+			const reports: string[] = [];
+			new GpuErrorWatch(device as unknown as GPUDevice, (kind) => reports.push(kind));
 			device.fire(new FakeOutOfMemoryError('Not enough memory left.'));
-			expect(reports).toEqual([false]);
+			expect(reports).toEqual(['rejected']);
 		} finally {
 			scope.GPUOutOfMemoryError = FakeOutOfMemoryError;
 		}
+	});
+});
+
+describe('GpuReports', () => {
+	it("reports a pipeline that the driver refused apart from the device's errors", () => {
+		const reports: [string, string][] = [];
+		const gpu = new GpuReports((kind, message) => reports.push([kind, message]));
+		const warn = console.warn;
+		console.warn = () => {};
+		try {
+			gpu.hear('rejected', 'Invalid BindGroup.');
+			gpu.hear('pipeline', 'mesh lit: CreateGraphicsPipelines failed with VK_ERROR_UNKNOWN');
+			gpu.hear('pipeline', 'custom material 135: CreateGraphicsPipelines failed');
+		} finally {
+			console.warn = warn;
+		}
+		expect(reports).toEqual([
+			['rejected', 'Invalid BindGroup.'],
+			['pipeline', 'mesh lit: CreateGraphicsPipelines failed with VK_ERROR_UNKNOWN'],
+		]);
+		expect(gpu.repeated).toBe(1);
 	});
 });

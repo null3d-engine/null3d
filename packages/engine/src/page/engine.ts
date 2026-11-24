@@ -42,6 +42,7 @@ import {
 } from '../quality/presets';
 import type { DrawingSetup } from '../render/draw';
 import { type DrawModule, loadDrawModule, preloadDrawing } from '../render/load-draw';
+import type { GpuErrorKind } from '../render/loss';
 import type { Drawing } from '../render/recovery';
 import type { DrawingPreload, EarlyStart, Renderer, Tier } from '../render/renderer';
 import type { FeatureStats } from '../scene/features';
@@ -320,7 +321,8 @@ export interface EngineOptions {
 	 * one more copy of each image in memory. False frees each copy once no frame reads it, and such
 	 * a texture draws with its color alone until the sketch gives it texels again. Without this
 	 * option, a phone and a tablet keep copies and a desktop does not, because a phone or a tablet
-	 * is likeliest to lose its GPU.
+	 * is likeliest to lose its GPU. With copies, the engine also gives its GPU back while the browser
+	 * keeps the page in its back/forward cache, and starts a new device when the page shows again.
 	 */
 	keepTextureCopies?: boolean;
 	/**
@@ -738,11 +740,12 @@ export interface Engine {
 	 * not carry on with a new device (E1302), or an engine thread failed (E1404). A custom shader's
 	 * builds that a pipeline needs and that did not download fail the thread that draws with E1424.
 	 * After E1404 or E1424 the engine draws no new frames: destroy it and start a new one. On WebGPU,
-	 * the GPU can also run out of memory (E1304) or reject the engine's work (E1305), and the engine
-	 * draws on without the objects that failed. The engine reports each failure once. A failure that
-	 * no handler listened for when the engine reported it reaches the first handler that listens, so
-	 * a failure that the app could not hear yet still arrives, and the engine also logs it to the
-	 * console. A failure that ends the frames reaches these handlers before `onStop`'s. Returns a
+	 * the GPU can also run out of memory (E1304) or reject the engine's work (E1305). On either GPU
+	 * path, its driver can refuse to build a pipeline that draws objects of the scene twice (E1307).
+	 * After these three the engine draws on without the objects that failed. The engine reports each
+	 * failure once. A failure that no handler listened for when the engine reported it reaches the
+	 * first handler that listens, so a failure that the app could not hear yet still arrives, and the
+	 * engine also logs it to the console. A failure that ends the frames reaches these handlers before `onStop`'s. Returns a
 	 * function that removes the handler.
 	 */
 	onFailure(handler: (error: EngineError) => void): () => void;
@@ -1017,13 +1020,22 @@ interface WorkerEvents {
 }
 
 /**
- * The error of a GPU that ran out of memory (E1304) or rejected a command (E1305), on `thread`, such
- * as "the render worker".
+ * The error of a GPU that ran out of memory (E1304), rejected a command (E1305), or whose driver
+ * could not build a pipeline of the scene's objects (E1307), on `thread`, such as "the render
+ * worker". `message` names the pipeline for E1307.
  */
-export function gpuFailure(thread: string, outOfMemory: boolean, message: string): EngineError {
-	return outOfMemory
-		? new EngineError('E1304', `${thread}'s GPU ran out of memory: ${message}.`)
-		: new EngineError('E1305', `${thread}'s GPU rejected a command: ${message}.`);
+export function gpuFailure(thread: string, kind: GpuErrorKind, message: string): EngineError {
+	switch (kind) {
+		case 'memory':
+			return new EngineError('E1304', `${thread}'s GPU ran out of memory: ${message}.`);
+		case 'rejected':
+			return new EngineError('E1305', `${thread}'s GPU rejected a command: ${message}.`);
+		case 'pipeline':
+			return new EngineError(
+				'E1307',
+				`${thread}'s GPU driver could not build the pipeline of ${message}.`,
+			);
+	}
 }
 
 /**
@@ -1147,7 +1159,7 @@ export class EngineWorker {
 						return;
 					case 'gpu-error':
 						events.failure(
-							gpuFailure(`the ${reply.role} worker`, reply.outOfMemory, reply.message),
+							gpuFailure(`the ${reply.role} worker`, reply.kind, reply.message),
 							false,
 						);
 						return;
@@ -2371,6 +2383,20 @@ async function startEngine(
 		stopJobs();
 		waitForJobWorkersToLeave(slots);
 	};
+	/**
+	 * Gives the GPU back while the browser keeps the page in its back/forward cache, and takes a new
+	 * device when the page shows again, as after a GPU loss. Without it, the cached page holds every
+	 * texture and buffer, and a phone or tablet can lack the memory for the next page: a repeat
+	 * visit of the same page meets the cached one's GPU memory (D-390). The engine listens only where
+	 * it keeps texture copies, which bring every map back on the new device.
+	 */
+	const pageCached = (event: PageTransitionEvent) => {
+		if (!event.persisted) return;
+		const cached = event.type === 'pagehide';
+		if (!localDrawing) rendererHost?.send({ type: 'page-cache', cached });
+		else if (cached) localDrawing.enterPageCache();
+		else void localDrawing.leavePageCache();
+	};
 	/** On the dev server, hands each hot update of WGSL to the thread that runs the sketch. */
 	const updateShaders = (event: Event) => {
 		const updates = (event as CustomEvent<readonly WgslUpdate[]>).detail;
@@ -2395,6 +2421,8 @@ async function startEngine(
 			stopJobs();
 			removeMeasurementRelease();
 			globalThis.removeEventListener?.('pagehide', stopJobsAsPageLeaves);
+			globalThis.removeEventListener?.('pagehide', pageCached);
+			globalThis.removeEventListener?.('pageshow', pageCached);
 			globalThis.removeEventListener?.(WGSL_UPDATE_EVENT, updateShaders);
 			statsSwitch.show(false);
 			for (const slot of [
@@ -2809,12 +2837,15 @@ async function startEngine(
 				listBuilds: rendererSetup.keepBuilds ? (list) => pipelineStore?.save(list) : undefined,
 				fail: pageLoss,
 				fault: (error) => onFailure(failureError('the drawing on the page', messageOf(error))),
-				gpuError: (outOfMemory, message) =>
-					onFailure(gpuFailure('the page', outOfMemory, message), false),
+				gpuError: (kind, message) => onFailure(gpuFailure('the page', kind, message), false),
 			});
 		};
 
 		if (threads && jobWorkers > 0) globalThis.addEventListener?.('pagehide', stopJobsAsPageLeaves);
+		if (keepTextureCopies && hold === undefined) {
+			globalThis.addEventListener?.('pagehide', pageCached);
+			globalThis.addEventListener?.('pageshow', pageCached);
+		}
 		if (DEV) globalThis.addEventListener?.(WGSL_UPDATE_EVENT, updateShaders);
 
 		/**

@@ -301,6 +301,14 @@ const DOCS = {
 			'E1306: this browser runs the WebKit engine of Safari 17, and the engine needs Safari 18 or later.',
 		since: '0.2',
 	},
+	E1307: {
+		title: 'Pipeline not built',
+		cause:
+			"After the start, the GPU's driver could not build a pipeline that draws objects of the scene. It refused the pipeline among the other builds, and again when the engine built it alone. A driver does this when it runs short of memory as it compiles the shader, or when its compiler fails on the shader. On WebGL2, a program that the driver refuses to link twice counts the same. The message names the pipeline: its template, such as a custom material, and the pass that its build draws in. The objects that draw with it are missing from that pass. The engine reports the first time this happens on each GPU device, and draws on.",
+		example:
+			"E1307: the render worker's GPU driver could not build the pipeline of custom material 135, so the objects that draw with it are missing. It failed twice, the second time alone: CreateGraphicsPipelines failed with VK_ERROR_UNKNOWN.",
+		since: '0.3',
+	},
 	E1401: {
 		title: 'Not a sketch module',
 		cause:

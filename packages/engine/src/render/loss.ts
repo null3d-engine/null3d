@@ -61,49 +61,79 @@ export function contextRestored(gl: WebGL2RenderingContext): Promise<void> {
 }
 
 /**
- * Hears a WebGPU error that no error scope caught: with `outOfMemory`, the GPU had no room for an
- * object, else it rejected a command. `message` is the GPU path's own text.
+ * What a GPU failure that the engine draws on after was: the GPU had no room for an object, it
+ * rejected a command, or its driver could not build a pipeline that draws objects of the scene.
  */
-export type GpuErrorReport = (outOfMemory: boolean, message: string) => void;
+export type GpuErrorKind = 'memory' | 'rejected' | 'pipeline';
 
-/** Says a GPU error when no report was asked for, so that it never goes unheard. */
-function logGpuError(outOfMemory: boolean, message: string): void {
-	console.error(
-		`null3D: ${outOfMemory ? 'the GPU ran out of memory' : 'the GPU rejected a command'}: ${message}`,
-	);
+/** Hears a GPU failure that the engine draws on after: its kind, and the GPU path's own text. */
+export type GpuErrorReport = (kind: GpuErrorKind, message: string) => void;
+
+const KIND_TEXT: Readonly<Record<GpuErrorKind, string>> = {
+	memory: 'the GPU ran out of memory',
+	rejected: 'the GPU rejected a command',
+	pipeline: "the GPU's driver could not build a pipeline",
+};
+
+/**
+ * The message of a pipeline that the driver refused twice, as `GpuErrorReport` hears it: the
+ * pipeline's name, then the driver's reason, without the browser's lines of where in its code the
+ * reason arose.
+ */
+export function refusalText(pipeline: string, reason: string): string {
+	const said = reason.split('\n')[0]?.trim() || 'the driver gave no reason';
+	return `${pipeline}, so the objects that draw with it are missing. It failed twice, the second time alone: ${said.replace(/\.$/, '')}`;
+}
+
+/** Says a GPU failure when no report was asked for, so that it never goes unheard. */
+function logGpuError(kind: GpuErrorKind, message: string): void {
+	console.error(`null3D: ${KIND_TEXT[kind]}: ${message}`);
 }
 
 /**
- * Listens for a device's uncaptured errors, which cost nothing per frame. The first error of each
- * kind, out of memory or rejected, goes to `report`. Later ones are counted, and development
- * builds say once that more came.
+ * Reports the first GPU failure of each kind on one device to `report`. Later ones are counted,
+ * and development builds say once that more came.
  */
-export class GpuErrorWatch {
-	/** The errors of a kind that was reported already. */
+export class GpuReports {
+	/** The failures of a kind that was reported already. */
 	repeated = 0;
-	private reported = { outOfMemory: false, rejected: false };
+	private readonly reported = { memory: false, rejected: false, pipeline: false };
 	private warned = false;
 
+	constructor(private readonly report: GpuErrorReport = logGpuError) {}
+
+	/** Hears a failure of `kind`, with the GPU path's own text. */
+	hear(kind: GpuErrorKind, message: string): void {
+		if (!this.reported[kind]) {
+			this.reported[kind] = true;
+			this.report(kind, message);
+			return;
+		}
+		this.repeated++;
+		if (DEV && !this.warned) {
+			this.warned = true;
+			console.warn(`null3D: the GPU reported more failures after the first: ${message}`);
+		}
+	}
+}
+
+/**
+ * Listens for a device's uncaptured errors, which cost nothing per frame, and reports them as
+ * `GpuReports` does: an error that a `GPUOutOfMemoryError` carries as out of memory, and any other
+ * as rejected.
+ */
+export class GpuErrorWatch extends GpuReports {
 	constructor(
 		private readonly device: GPUDevice,
-		report: GpuErrorReport = logGpuError,
+		report?: GpuErrorReport,
 	) {
+		super(report);
 		device.onuncapturederror = (event) => {
 			const { error } = event;
 			// Older browsers, and some workers, lack the class.
 			const outOfMemory =
 				typeof GPUOutOfMemoryError === 'function' && error instanceof GPUOutOfMemoryError;
-			const kind = outOfMemory ? 'outOfMemory' : 'rejected';
-			if (!this.reported[kind]) {
-				this.reported[kind] = true;
-				report(outOfMemory, error.message);
-				return;
-			}
-			this.repeated++;
-			if (DEV && !this.warned) {
-				this.warned = true;
-				console.warn(`null3D: the GPU reported more errors after the first: ${error.message}`);
-			}
+			this.hear(outOfMemory ? 'memory' : 'rejected', error.message);
 		};
 	}
 

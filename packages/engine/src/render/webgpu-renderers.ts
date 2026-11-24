@@ -14,7 +14,7 @@ import { RenderPassSetup, submitOne } from '../gpu/webgpu/reusable';
 import { DEV } from '../shared/dev';
 import type { ImageTable } from '../shared/images';
 import { Counter, type FrameRecorder, Phase } from '../shared/metrics';
-import { deviceLoss, type GpuErrorReport, GpuErrorWatch } from './loss';
+import { deviceLoss, type GpuErrorReport, GpuErrorWatch, refusalText } from './loss';
 import {
 	type FrameInput,
 	linearToSrgb,
@@ -210,6 +210,8 @@ class WebGPUSceneRenderer implements Renderer {
 			images,
 		);
 		this.backend.moreShaders = shaders;
+		this.backend.refused = (pipeline, reason) =>
+			this.errors.hear('pipeline', refusalText(pipeline, reason));
 		// The skinning pass writes 32-bit float directions in the modes that measure 8-bit ones.
 		if (skinning === SKINNING_FULL || skinning === SKINNING_SKIP_ONLY)
 			this.backend.skinWithFloatDirections();

@@ -20,6 +20,8 @@ interface MapResult {
 	/** The middle pixel before and after the loss, as four bytes. */
 	before: number[];
 	after: number[];
+	/** The frames drawn while the page sat in the back/forward cache, for `?cache`. */
+	cachedFrames: number | null;
 	error?: string;
 }
 
@@ -74,6 +76,18 @@ for (const gpu of ['webgpu', 'webgl2'] as const) {
 		const result = await pageResult<MapResult>(page, 60_000);
 		expect(result.error).toBeUndefined();
 		expect(result.code).toBeNull();
+		expect(showsMap(result.before), `before ${result.before.join(', ')}`).toBe(true);
+		expect(showsMap(result.after), `after ${result.after.join(', ')}`).toBe(true);
+	});
+
+	test(`a page in the back/forward cache gives its GPU back and draws its map again on ${gpu}`, async ({
+		page,
+	}) => {
+		await page.goto(`map-loss.html?gpu=${gpu}&copies=on&cache`);
+		const result = await pageResult<MapResult>(page, 60_000);
+		expect(result.error).toBeUndefined();
+		expect(result.code).toBeNull();
+		expect(result.cachedFrames).toBe(0);
 		expect(showsMap(result.before), `before ${result.before.join(', ')}`).toBe(true);
 		expect(showsMap(result.after), `after ${result.after.join(', ')}`).toBe(true);
 	});

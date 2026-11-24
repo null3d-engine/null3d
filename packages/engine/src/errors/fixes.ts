@@ -80,6 +80,8 @@ export const ERROR_FIXES = {
 		"Read the message: it quotes the GPU path. A buffer or texture past the device's limits names the limit: make the scene smaller there. Otherwise this is an engine bug: report it with the message and the browser.",
 	E1306:
 		'Update Safari to version 18 or later. On iPhone and iPad, update iOS or iPadOS to 18 or later, which updates the engine of every browser there.',
+	E1307:
+		"The engine draws on without those objects. Read the message: it names the pipeline and quotes the driver. When it names a custom material, check that material's WGSL on the device. A shorter shader, with fewer texture reads, loops and calls, gives the driver less to compile. On a device with little memory, use less of it: a lower quality preset, smaller textures and fewer objects. Update the browser and the device's system software. If the message names an engine template, report it with the device.",
 	E1401:
 		'End the sketch module with export default defineSketch(...), and pass that module to createEngine.',
 	E1402:

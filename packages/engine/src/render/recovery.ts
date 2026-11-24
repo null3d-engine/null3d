@@ -2,7 +2,8 @@
 // new renderer on the same canvas, tells the sketch thread to record a frame that creates every GPU
 // object again, and starts a new loop. After too many losses in a short time, or when no new device
 // starts, it stops and reports the loss. Hold mode draws one frame on one device, so there a loss
-// is reported at once.
+// is reported at once. A page that the browser keeps in its back/forward cache gives its GPU back
+// the same way, and takes a new one when it shows again, without counting a loss.
 
 import { messageOf } from '../errors/message';
 import { type CanvasHolder, releaseCanvas } from '../gpu/canvas-release';
@@ -38,6 +39,8 @@ export class Drawing<R extends Recoverable> {
 	private live: R | undefined;
 	/** The recovery under way, which a stop waits for. */
 	private recovering: Promise<void> | undefined;
+	/** True while the page sits in the back/forward cache, with no renderer. */
+	private released = false;
 
 	/**
 	 * Starts drawing with `renderer`. `create` makes a replacement on the same canvas, `run` starts a
@@ -91,20 +94,30 @@ export class Drawing<R extends Recoverable> {
 			this.fail(`${reason}, and the GPU was lost ${this.losses.length} times within a minute`);
 			return;
 		}
+		if (await this.restart(reason))
+			console.warn(
+				`null3D: the browser took the GPU away (${reason}); the engine started a new device.`,
+			);
+	}
+
+	/**
+	 * Makes a new renderer on the canvas, tells the sketch thread to create every GPU object again,
+	 * and starts a new loop. Returns false when the engine stopped meanwhile, or when no device
+	 * started, which `reason` explains to the page.
+	 */
+	private async restart(reason: string): Promise<boolean> {
 		try {
 			this.renderer = await this.create();
 		} catch (error) {
 			this.fail(`${reason}, and no new GPU device started: ${messageOf(error)}`);
-			return;
+			return false;
 		}
 		this.live = this.renderer;
-		if (this.stopped) return;
+		if (this.stopped) return false;
 		Atomics.add(this.slots, Slot.GpuEpoch, 1);
 		this.loop = this.run(this.renderer);
 		this.watch();
-		console.warn(
-			`null3D: the browser took the GPU away (${reason}); the engine started a new device.`,
-		);
+		return true;
 	}
 
 	/**
@@ -113,6 +126,36 @@ export class Drawing<R extends Recoverable> {
 	 */
 	async nextFrame(): Promise<void> {
 		await (this.loop.drawHeld?.() ?? nextFrameTaken(this.slots));
+	}
+
+	/**
+	 * Gives the GPU back while the page sits in the browser's back/forward cache: stops the loop and
+	 * destroys the renderer, with its textures, buffers and device. A small device then has the
+	 * room for the next page. Hold mode, and a drawing that recovers from a loss or has stopped, keep
+	 * what they have.
+	 */
+	enterPageCache(): void {
+		if (!this.recovers || this.stopped || this.released || this.recovering) return;
+		this.released = true;
+		this.loop.stop();
+		this.live = undefined;
+		this.renderer.destroy();
+	}
+
+	/**
+	 * Takes a new renderer once the page shows again after `enterPageCache`, as a recovery from a GPU loss
+	 * does: the sketch thread records a frame that creates every GPU object again. It counts no loss.
+	 */
+	leavePageCache(): Promise<void> {
+		if (!this.released || this.stopped) return Promise.resolve();
+		this.released = false;
+		this.recovering = this.restart('the page came back from the back/forward cache').then(
+			() => undefined,
+		);
+		void this.recovering.finally(() => {
+			this.recovering = undefined;
+		});
+		return this.recovering;
 	}
 
 	/** Acts out a loss of the GPU, which the engine then recovers from as from a real one. */

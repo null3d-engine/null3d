@@ -8,6 +8,7 @@ import type { HoldScript, HoldScriptResult } from '../page/hold';
 import type { CoreDevice } from '../page/limits';
 import type { GlTimingMode } from '../page/switches';
 import type { FramePacing } from '../render/loop';
+import type { GpuErrorKind } from '../render/loss';
 import type { DrawingPreload, Tier } from '../render/renderer';
 import { awaitLater } from '../shared/await-later';
 import { type Build, loadGlue, type StartedCore, startCore } from '../shared/core';
@@ -152,13 +153,16 @@ export type JobWorkerInit = CoreHandoff & {
 
 /**
  * A request any worker that owns a renderer takes: a capture, which it answers with the frame's
- * pixels, or with a PNG file of the frame when `image` is true; a simulated loss; a stop, which it
- * answers once it has destroyed its GPU objects and its device; or a park after the stop, which lets
- * go of the engine's core and keeps the canvas for the next engine.
+ * pixels, or with a PNG file of the frame when `image` is true; a simulated loss; the page's entry
+ * into the browser's back/forward cache, when `cached` is true, which gives the GPU back, and its
+ * return from it, which takes a new device; a stop, which it answers once it has destroyed its GPU
+ * objects and its device; or a park after the stop, which lets go of the engine's core and keeps
+ * the canvas for the next engine.
  */
 export type RendererRequest =
 	| { type: 'capture'; image?: boolean }
 	| { type: 'lose-gpu' }
+	| { type: 'page-cache'; cached: boolean }
 	| { type: 'stop-drawing' }
 	| { type: 'park' }
 	/** Gives the permutation words that the drawing thread's pipelines asked for while it recorded. */
@@ -192,8 +196,11 @@ export type WorkerReply =
 	 * job worker's part in the job system. The page reports it as E1404.
 	 */
 	| { type: 'fault'; role: 'sketch' | 'render' | 'job'; index?: number; message: string }
-	/** The GPU of the thread that draws ran out of memory or rejected a command; the engine draws on. */
-	| { type: 'gpu-error'; role: 'sketch' | 'render'; outOfMemory: boolean; message: string }
+	/**
+	 * The GPU of the thread that draws ran out of memory, rejected a command, or its driver could not
+	 * build a pipeline of the scene's objects; the engine draws on.
+	 */
+	| { type: 'gpu-error'; role: 'sketch' | 'render'; kind: GpuErrorKind; message: string }
 	/** A job worker left the job system after the engine stopped, so it no longer blocks. */
 	| { type: 'stopped'; role: 'job'; index: number }
 	/** The worker that draws stopped drawing, and destroyed its GPU objects and its device. */

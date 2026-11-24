@@ -196,8 +196,8 @@ startWorker('sketch', step, async (event: MessageEvent<SketchWorkerMessage>) => 
 						imageTable,
 						fail: (reason) => replyToPage({ type: 'lost', role: 'sketch', reason }),
 						fault,
-						gpuError: (outOfMemory, text) =>
-							replyToPage({ type: 'gpu-error', role: 'sketch', outOfMemory, message: text }),
+						gpuError: (kind, text) =>
+							replyToPage({ type: 'gpu-error', role: 'sketch', kind, message: text }),
 						listBuilds: message.renderer.keepBuilds ? sendPipelineList : undefined,
 					}),
 				);
@@ -254,6 +254,9 @@ startWorker('sketch', step, async (event: MessageEvent<SketchWorkerMessage>) => 
 		replyToPage({ type: 'recorded', role: 'sketch', permutations: stopRecordingPermutations() });
 	} else if (message.type === 'lose-gpu') {
 		host.drawing?.simulateLoss();
+	} else if (message.type === 'page-cache') {
+		if (message.cached) host.drawing?.enterPageCache();
+		else await host.drawing?.leavePageCache();
 	} else if (message.type === 'stop-drawing') {
 		releaseEarly();
 		runner?.dispose();

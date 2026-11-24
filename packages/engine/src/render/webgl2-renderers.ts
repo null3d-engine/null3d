@@ -13,7 +13,7 @@ import { Slot } from '../shared/control';
 import { DEV } from '../shared/dev';
 import type { ImageTable } from '../shared/images';
 import { type FrameRecorder, Phase } from '../shared/metrics';
-import { contextLoss } from './loss';
+import { contextLoss, type GpuErrorReport, GpuReports, refusalText } from './loss';
 import {
 	type FrameInput,
 	linearToSrgb,
@@ -52,6 +52,7 @@ export function webgl2Renderer(
 		options.imageTable,
 		shaders,
 		options,
+		options.gpuError,
 	);
 }
 
@@ -146,7 +147,8 @@ class WebGL2SceneRenderer implements Renderer {
 	 * shared memory, the device says so, and the backend copies uploads out of engine memory first.
 	 * The device also gives the depth mode, and whether the canvas is transparent, with alpha.
 	 * `images` holds the images that texture uploads read. `shaders` are the GLSL builds that the
-	 * device loaded, which load another module when a pipeline needs it.
+	 * device loaded, which load another module when a pipeline needs it. `gpuError` hears the first
+	 * program of the scene's objects that the driver refused to link.
 	 */
 	constructor(
 		readonly canvas: RenderCanvas,
@@ -158,6 +160,7 @@ class WebGL2SceneRenderer implements Renderer {
 		images: ImageTable | undefined,
 		shaders: DeviceShaderSet,
 		lists: PipelineLists,
+		gpuError?: GpuErrorReport,
 	) {
 		this.lost = contextLoss(canvas, this.release.signal);
 		this.backend = new WebGL2Backend(
@@ -173,6 +176,9 @@ class WebGL2SceneRenderer implements Renderer {
 		);
 		this.slots = new Int32Array(control);
 		this.backend.moreShaders = shaders;
+		const reports = new GpuReports(gpuError);
+		this.backend.refused = (pipeline, reason) =>
+			reports.hear('pipeline', refusalText(pipeline, reason));
 		shaders.onPreloaded((features, module) => this.backend.precompile(features, module));
 		this.transparent = device.transparent;
 		this.canvasFormat = device.transparent ? gl.RGBA8 : gl.RGB8;
