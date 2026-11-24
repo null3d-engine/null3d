@@ -1,10 +1,11 @@
 //! The job system with real threads: coverage of every index, nested and back-to-back jobs,
-//! panics, background tasks and their priority, and shutdown. The checks hold on a busy machine:
-//! no test needs a thread to run within a set time.
+//! panics, background tasks and their priority, the memory hook, and shutdown. The checks hold on a
+//! busy machine: no test needs a thread to run within a set time.
 #![allow(clippy::disallowed_methods)] // Tests time work and sleep on native threads.
 
 mod common;
 
+use std::cell::Cell;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::OnceLock;
@@ -293,6 +294,72 @@ fn a_background_task_queued_before_any_job_worker_joined_asks_for_one_and_runs()
         .take()
         .expect("the hook started a job worker");
     assert_eq!(worker.join().unwrap(), LoopExit::Stopped);
+}
+
+thread_local! {
+    /// True once the memory hook has run on this thread and no work has used the call since.
+    static REFRESHED: Cell<bool> = const { Cell::new(false) };
+}
+/// The memory hook's calls on the thread that called `parallel_for` in the hook test.
+static CALLER_REFRESHES: AtomicU32 = AtomicU32::new(0);
+/// The memory hook's calls on the hook test's job workers.
+static WORKER_REFRESHES: AtomicU32 = AtomicU32::new(0);
+/// The thread that calls `parallel_for` in the hook test.
+static HOOK_CALLER: OnceLock<std::thread::ThreadId> = OnceLock::new();
+/// The hook test's background tasks that found the hook run before them.
+static HOOKED_TASKS: AtomicU32 = AtomicU32::new(0);
+
+fn note_refresh() {
+    REFRESHED.set(true);
+    if HOOK_CALLER.get() == Some(&std::thread::current().id()) {
+        CALLER_REFRESHES.fetch_add(1, Ordering::SeqCst);
+    } else {
+        WORKER_REFRESHES.fetch_add(1, Ordering::SeqCst);
+    }
+}
+
+fn hooked_task(_: u64, worker: WorkerId) {
+    assert_ne!(worker, WorkerId::CALLER);
+    if REFRESHED.replace(false) {
+        HOOKED_TASKS.fetch_add(1, Ordering::SeqCst);
+    }
+}
+
+#[test]
+fn the_memory_hook_runs_before_each_piece_of_work_a_job_worker_takes_and_after_each_loop() {
+    HOOK_CALLER.set(std::thread::current().id()).unwrap();
+    let pool = Workers::with_config(JobConfig {
+        workers: 2,
+        refresh_memory: Some(note_refresh),
+        ..JobConfig::default()
+    });
+    let jobs = pool.jobs();
+    // Each chunk holds its thread until all three threads hold one, so each job worker takes
+    // exactly one chunk, and checks that the hook ran on its thread first.
+    let joined = AtomicU64::new(0);
+    jobs.parallel_for(3, 1, &|_, worker| {
+        if worker != WorkerId::CALLER {
+            assert!(
+                REFRESHED.replace(false),
+                "the hook runs before a job worker's chunk"
+            );
+        }
+        wait_for_every_thread(&joined, worker, 3);
+    });
+    assert_eq!(WORKER_REFRESHES.load(Ordering::SeqCst), 2);
+    assert_eq!(CALLER_REFRESHES.load(Ordering::SeqCst), 1);
+    jobs.spawn_background(BackgroundTask {
+        run: hooked_task,
+        arg: 0,
+    })
+    .unwrap();
+    wait_until("the background task to run after the hook", || {
+        HOOKED_TASKS.load(Ordering::SeqCst) == 1
+    });
+    assert_eq!(WORKER_REFRESHES.load(Ordering::SeqCst), 3);
+    // A loop that runs inline hands nothing to another thread, so the hook does not run.
+    jobs.parallel_for(1, 1, &|_, _| {});
+    assert_eq!(CALLER_REFRESHES.load(Ordering::SeqCst), 1);
 }
 
 /// Numbers that every thread draws from one sequence, so a test can order what the threads did

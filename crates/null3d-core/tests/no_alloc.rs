@@ -8,7 +8,7 @@
 mod common;
 
 use std::cell::Cell;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 use common::{
@@ -595,6 +595,13 @@ fn frame_allocations(jobs: &JobSystem) -> u64 {
     allocations
 }
 
+/// The calls to the job system's memory hook in the frame test.
+static MEMORY_REFRESHES: AtomicU32 = AtomicU32::new(0);
+
+fn count_memory_refresh() {
+    MEMORY_REFRESHES.fetch_add(1, Ordering::Relaxed);
+}
+
 #[test]
 fn frames_allocate_nothing() {
     let _exclusive = CountingAllocator::exclusive();
@@ -602,12 +609,15 @@ fn frames_allocate_nothing() {
     let pool = Workers::with_setup(
         JobConfig {
             workers: 4,
+            refresh_memory: Some(count_memory_refresh),
             ..JobConfig::default()
         },
         CountingAllocator::track_this_thread,
     );
     let allocations = frame_allocations(pool.jobs());
     assert_eq!(allocations, 0, "frames made {allocations} allocator calls");
+    // The frames ran the memory hook, which the WebAssembly build gives every job system.
+    assert!(MEMORY_REFRESHES.load(Ordering::Relaxed) > 0);
 
     // The counter sees allocations on job workers: a loop whose worker chunks each allocate
     // once must be counted. The caller's chunks wait for a worker chunk, so one runs.
