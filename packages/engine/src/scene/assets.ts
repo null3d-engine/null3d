@@ -26,9 +26,13 @@ import type { Geometry, Material, Materials, MeshGeometry } from './resources';
 import type { Scene } from './scene';
 import type { Texture, TextureColorSpace, TextureOptions, Textures } from './textures';
 
-// The thread that runs a live sketch makes the downloads of its list from this module, before the
-// engine's core has arrived, so they share this module's file.
-export { Downloads };
+/**
+ * @internal The thread that runs a live sketch makes the downloads of its list from this module,
+ * before the engine's core has arrived, so they share this module's file. The class is internal,
+ * so the published declarations leave out this export as they leave out the class: a re-export of
+ * its own, unlike an export of the imported name, takes no import with it into them.
+ */
+export { Downloads } from './downloads';
 
 /**
  * The options of `assets.loadTexture`: how the image decodes, and the texture's options. A KTX2

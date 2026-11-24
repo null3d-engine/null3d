@@ -240,15 +240,16 @@ export interface SketchCore {
 	 */
 	hearAddons?(heard: (name: string) => void): () => void;
 	/**
-	 * The downloads of a live sketch's list for this start, which the thread began as the sketch's
-	 * module loaded. The runner begins them at the setup when the thread did not.
+	 * @internal The downloads of a live sketch's list for this start, which the thread began as the
+	 * sketch's module loaded. The runner begins them at the setup when the thread did not.
 	 */
 	listed?: ListedFiles;
 }
 
 /**
- * The downloads of a sketch's list for one start. The thread that runs the sketch begins them as
- * its module loads, or the runner at the setup, whichever comes first, and only once.
+ * @internal The downloads of a sketch's list for one start. The thread that runs the sketch begins
+ * them as its module loads, or the runner at the setup, whichever comes first, and only once. Like
+ * the class of the downloads, it stays out of the published declarations.
  */
 export interface ListedFiles {
 	downloads?: Promise<Downloads>;
@@ -305,9 +306,10 @@ function listedAddresses(list: unknown, base: string): URL[] {
 }
 
 /**
- * Begins the downloads of a live sketch's list, unless `files` holds them already: the first two
- * fetches at once, and the assets loader's code beside them, whose downloads read the bodies as
- * they arrive and start the rest. A list that is not valid begins nothing, and the setup reports it.
+ * @internal Begins the downloads of a live sketch's list, unless `files` holds them already: the
+ * first two fetches at once, and the assets loader's code beside them, whose downloads read the
+ * bodies as they arrive and start the rest. A list that is not valid begins nothing, and the setup
+ * reports it.
  */
 export function startListedFiles(files: ListedFiles, sketch: SketchDefinition, base: string): void {
 	const list = sketch.options.downloads;
