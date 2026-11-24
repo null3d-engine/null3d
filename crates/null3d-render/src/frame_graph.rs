@@ -6353,7 +6353,9 @@ impl FrameGraph {
                 self.refill |= 1 << place;
             }
         }
-        // Every other texture keeps its own place where the slot there holds what it needs.
+        // Every other texture keeps its own place where the slot there holds what it needs, and
+        // then any free slot that holds it: one that a view's target moved keeps the slot that it
+        // took, so the next make does not make it again.
         for index in 0..count {
             if self.slots[index] == NO_SLOT
                 && !self.slot_taken[index]
@@ -6361,6 +6363,18 @@ impl FrameGraph {
             {
                 self.slots[index] = index as u32;
                 self.slot_taken[index] = true;
+            }
+        }
+        for index in 0..count {
+            if self.slots[index] != NO_SLOT {
+                continue;
+            }
+            let new = Some(wanted(index));
+            if let Some(slot) =
+                (0..self.made.len()).find(|&slot| !self.slot_taken[slot] && self.made[slot] == new)
+            {
+                self.slots[index] = slot as u32;
+                self.slot_taken[slot] = true;
             }
         }
         // The rest are made in a free slot: their own place where it is free, or the first free.
@@ -12975,6 +12989,40 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// A texture that a view's target moved from its place keeps the slot that it took, so a later
+    /// make of the plan's textures, after a pass comes and goes, makes nothing again.
+    #[test]
+    fn a_texture_that_a_kept_target_moved_is_not_made_again() {
+        let mut frames = frame_graph(format::RGBA16_FLOAT, Antialias::Msaa, true, false);
+        let stopped = stopped_pass(&mut frames, compute(true));
+        frames.bind_shadow_map(CascadeDepth::Unorm16);
+        frames.sync(&[View::default(), stopped]);
+        probe_frame(&mut frames, (64, 48));
+        probe_frame(&mut frames, (64, 48));
+        let fixed = frames.view_target(ViewId::from_index(1)).unwrap();
+        for _ in 0..3 {
+            frames.set_depth_prepass(true);
+            frames.sync(&[View::default(), stopped]);
+            let (prepared, _u, _r) = probe_frame(&mut frames, (64, 48));
+            frames.set_depth_prepass(false);
+            frames.sync(&[View::default(), stopped]);
+            let (again, _u, _r) = probe_frame(&mut frames, (64, 48));
+            let remade: Vec<u32> = operands(&again, Op::CreateTexture)
+                .iter()
+                .map(|texture| texture[0])
+                .collect();
+            assert!(
+                remade.is_empty(),
+                "the plan's textures return to what they were, so nothing is made again: {remade:?} (the prepass's make: {:?})",
+                operands(&prepared, Op::CreateTexture)
+                    .iter()
+                    .map(|texture| texture[0])
+                    .collect::<Vec<_>>()
+            );
+        }
+        assert_eq!(frames.view_target(ViewId::from_index(1)).unwrap(), fixed);
     }
 
     /// A move to the 8-bit path makes a full-screen pass's target again in the new format, which
