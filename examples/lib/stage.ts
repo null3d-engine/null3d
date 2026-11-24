@@ -328,6 +328,11 @@ export interface Stage {
 		readonly toward: readonly [number, number, number];
 		readonly color: readonly [number, number, number];
 	};
+	/**
+	 * Resolves once the light maps that the mood on show needs have arrived: the sky's for an hour,
+	 * the room's for the studio. A held frame waits for it, so it draws the light its mood describes.
+	 */
+	ready(): Promise<void>;
 	/** Eases toward the target and applies it. Call once per frame with the frame's step. */
 	update(dt: number): void;
 	/** Turns a part of the look on or off; every part starts on. It stays so in every later mood. */
@@ -344,16 +349,29 @@ export const isMood = (name: unknown): name is Mood => MOODS.includes(name as Mo
 
 type Vec3 = [number, number, number];
 
+/**
+ * A light map as a scene hands it to the stage: made, still being made, or, for a map that only
+ * one mood needs, a function that starts making it when that mood is first picked.
+ */
+export type StageMap = Environment | Promise<Environment> | (() => Promise<Environment>);
+
 /** True for a map that a scene hands over still being made, rather than one already in hand. */
-const arrivesLater = (map: Environment | Promise<Environment>): map is Promise<Environment> =>
+const arrivesLater = (map: StageMap): map is Promise<Environment> =>
 	typeof (map as Promise<Environment>).then === 'function';
 
-/** Sets the scene's light, sky, fog and exposure, eased from one mood to the next. */
+/** True for a map that the stage makes itself, when its mood is first picked. */
+const madeOnUse = (map: StageMap): map is () => Promise<Environment> => typeof map === 'function';
+
+/**
+ * Sets the scene's light, sky, fog and exposure, eased from one mood to the next. The room lights
+ * the studio alone, so a scene may hand it over as a function, and the stage makes it the first
+ * time the studio is picked: the map then costs nothing while the scene starts.
+ */
 export function createMoods(
 	ctx: SketchContext,
 	sun: DirectionalLight,
 	sky: Environment | Promise<Environment>,
-	room: Environment | Promise<Environment>,
+	room: StageMap,
 	options: StageOptions,
 ): Stage {
 	const { scene, post, time } = ctx;
@@ -364,7 +382,10 @@ export function createMoods(
 	 * arrives the look is written without that part, and the arrival writes the look again.
 	 */
 	let skyMap: Environment | undefined = arrivesLater(sky) ? undefined : sky;
-	let roomMap: Environment | undefined = arrivesLater(room) ? undefined : room;
+	let roomMap: Environment | undefined = arrivesLater(room) || madeOnUse(room) ? undefined : room;
+	/** The arrival of each map, which `ready` waits on; the room's starts when the studio needs it. */
+	const skyArrives = Promise.resolve(sky);
+	let roomArrives = madeOnUse(room) ? undefined : Promise.resolve(room);
 	const {
 		heading,
 		fogDensity,
@@ -660,6 +681,28 @@ export function createMoods(
 	/** The hour that the look holds now, for a change that re-aims it. */
 	const hourNow = (): number => manualHours ?? (wasAuto ? autoHours : HOURS[mood as FixedMood]);
 
+	/** Takes the sky's map once it is made, and writes the hour's look with it. */
+	const skyLanded = (made: Environment): void => {
+		skyMap = made;
+		if (mood === 'Studio' || !started) return;
+		needsLook = true;
+		still = false;
+		apply();
+	};
+	/** Takes the room's map once it is made, and writes the studio's look with it. */
+	const roomLanded = (made: Environment): void => {
+		roomMap = made;
+		if (mood === 'Studio') toStudio();
+	};
+	/** Starts making the room's map the first time the studio needs it, when the stage makes it. */
+	const askRoom = (): Promise<Environment> => {
+		if (!roomArrives) {
+			roomArrives = madeOnUse(room) ? room() : Promise.resolve(room);
+			void roomArrives.then(roomLanded);
+		}
+		return roomArrives;
+	};
+
 	const stage: Stage = {
 		get mood() {
 			return mood;
@@ -700,6 +743,7 @@ export function createMoods(
 			still = false;
 			if (next === 'Studio') {
 				targetHours = Number.NaN;
+				void askRoom();
 				toStudio();
 				return;
 			}
@@ -745,6 +789,9 @@ export function createMoods(
 			ease(dt);
 			apply();
 		},
+		async ready() {
+			await (mood === 'Studio' ? askRoom() : skyArrives);
+		},
 		setShafts(on) {
 			shafts = on && options.volumetric !== undefined;
 			// The frame writes the fog every time the look moves, so ask for it now.
@@ -766,19 +813,10 @@ export function createMoods(
 			else apply();
 		},
 	};
-	// A map that the scene handed over still being made writes the look as it arrives. A scene
-	// waits for its maps before the first frame, so that frame draws the light its hours describe.
-	if (arrivesLater(sky) || arrivesLater(room)) {
-		void Promise.all([Promise.resolve(sky), Promise.resolve(room)]).then(([skyMade, roomMade]) => {
-			skyMap = skyMade;
-			roomMap = roomMade;
-			if (mood === 'Studio') toStudio();
-			else if (started) {
-				needsLook = true;
-				still = false;
-				apply();
-			}
-		});
-	}
+	// A map that the scene handed over still being made writes the look as it arrives: the sky's
+	// the hours' look, and the room's the studio's. A held frame waits for `ready`, so it draws the
+	// light its mood describes.
+	if (arrivesLater(sky)) void sky.then(skyLanded);
+	if (arrivesLater(room)) void room.then(roomLanded);
 	return stage;
 }

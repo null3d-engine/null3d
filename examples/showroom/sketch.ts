@@ -44,10 +44,7 @@ const GOVERNOR = params.get('governor') !== 'off';
 export default defineSketch(async (ctx) => {
 	const { scene, assets, post, page, quality, render, textures, time } = ctx;
 	page.post('loading', 'Building the studio');
-	const [sky, room] = await Promise.all([
-		assets.skyEnvironment(),
-		assets.builtinEnvironment('room'),
-	]);
+	const sky = await assets.skyEnvironment();
 	const sun = scene.createDirectionalLight({
 		castShadows: !WITHOUT.has('shadows'),
 		layers: SUN_LAYERS,
@@ -89,7 +86,8 @@ export default defineSketch(async (ctx) => {
 	scene.setActiveCamera(camera);
 	const target: [number, number, number] = [TARGET[0], TARGET[1], TARGET[2]];
 	// A night sky beyond the street with thick air the lamps light; the softboxes carry the studio.
-	const stage = createMoods(ctx, sun, sky, room, {
+	// The room's map lights the Studio mood alone, so the stage makes it when that mood is picked.
+	const stage = createMoods(ctx, sun, sky, () => assets.builtinEnvironment('room'), {
 		heading: HEADING,
 		fogDensity: FOG_DENSITY,
 		cloudCoverage: 0.28,
@@ -127,6 +125,8 @@ export default defineSketch(async (ctx) => {
 		target,
 		focalLength: FOCAL_LENGTH,
 	});
+	// A held frame draws the light that its mood describes.
+	if (ctx.engine.held) await stage.ready();
 
 	return {
 		onUpdate(dt) {

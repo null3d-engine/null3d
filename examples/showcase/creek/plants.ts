@@ -75,13 +75,21 @@ export interface PlantModels {
 	readonly plants: Record<PlantKind, readonly Part[]>;
 }
 
+/** The planting's model files, which a scene may download ahead of `loadPlants`. */
+export const PLANT_FILES = {
+	pines: sampleUrl('sources/showcase/creek-pines/pines.glb'),
+	maples: sampleUrl('sources/showcase/creek-maples/maples.glb'),
+	garden: sampleUrl('sources/showcase/creek-garden-plants/garden.glb'),
+	plants: sampleUrl('sources/showcase/creek/plants.glb'),
+} as const;
+
 /** Loads the pines', the maples', the garden plants' and the ferns' and hostas' files at once. */
 export async function loadPlants({ assets }: SketchContext): Promise<PlantModels> {
 	const [pines, maples, garden, plantsFile] = await Promise.all([
-		assets.loadGltf(sampleUrl('sources/showcase/creek-pines/pines.glb')),
-		assets.loadGltf(sampleUrl('sources/showcase/creek-maples/maples.glb')),
-		assets.loadGltf(sampleUrl('sources/showcase/creek-garden-plants/garden.glb')),
-		assets.loadGltf(sampleUrl('sources/showcase/creek/plants.glb')),
+		assets.loadGltf(PLANT_FILES.pines),
+		assets.loadGltf(PLANT_FILES.maples),
+		assets.loadGltf(PLANT_FILES.garden),
+		assets.loadGltf(PLANT_FILES.plants),
 	]);
 	const pine = partsOf(pines);
 	const maple = partsOf(maples);

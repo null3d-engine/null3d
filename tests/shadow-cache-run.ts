@@ -139,8 +139,10 @@ try {
 						});
 						try {
 							record.displayProblem = await displayRateCheck(page);
+							// `grown` holds the first frame until the garden's models stand, so both sides
+							// time the finished scene.
 							const query =
-								`?mood=${mood}&preset=${preset}&gpu=${gpu}` +
+								`?mood=${mood}&preset=${preset}&gpu=${gpu}&grown` +
 								`&seconds=${seconds}&settle=${settle}${side.query}`;
 							await page.goto(
 								`http://localhost:${PORT}/tests/pages/creek-cascade-share.html${query}`,

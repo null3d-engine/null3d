@@ -114,6 +114,9 @@ run('demo-frames', async () => {
 		'without',
 		'walkers',
 		'shafts',
+		// Holds the first frame until the scene's models stand, so a scene that fills in after its
+		// first frame is measured finished.
+		'grown',
 	])
 		if (params.has(id)) sketch.searchParams.set(id, params.get(id) ?? '');
 	const runDemo = { ...demo, sketch };
