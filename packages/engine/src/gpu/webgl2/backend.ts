@@ -439,6 +439,11 @@ const NATIVE_MIP_FORMATS: ReadonlySet<number> = new Set([
  * filters. The engine's own draws make the levels of other textures, such as uploaded images
  * (`generateMipmaps` in the backend says why).
  */
+/** True when `error` is a link that the driver refused, on a context that is not lost. */
+function linkRefused(gl: WebGL2RenderingContext, error: unknown): error is LinkFailure {
+	return error instanceof LinkFailure && !gl.isContextLost();
+}
+
 function linearMips(format: number, usage: number, layers: number, mips: number): boolean {
 	const target = G.TEXTURE_USAGE_RENDER_ATTACHMENT | G.TEXTURE_USAGE_COPY_DST;
 	return (
@@ -1419,19 +1424,18 @@ export class WebGL2Backend {
 	 */
 	private useObjectsProgram(program: Program): boolean {
 		const objects = program.objects as NonNullable<Program['objects']>;
-		const refusal = (error: unknown) => error instanceof LinkFailure && !this.gl.isContextLost();
 		try {
 			this.useProgram(program);
 			return true;
 		} catch (error) {
-			if (!refusal(error)) throw error;
+			if (!linkRefused(this.gl, error)) throw error;
 		}
 		relink(this.gl, program);
 		try {
 			this.useProgram(program);
 			return true;
 		} catch (error) {
-			if (!refusal(error) || !(error instanceof LinkFailure)) throw error;
+			if (!linkRefused(this.gl, error)) throw error;
 			objects.refused = true;
 			this.refused?.(pipelineName(objects.template, objects.permutation), error.message);
 			return false;

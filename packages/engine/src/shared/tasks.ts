@@ -201,6 +201,12 @@ class Runners {
 	private worker: Worker | undefined;
 	/** True once the engine on this thread has stopped. */
 	private ended = false;
+	/**
+	 * The handler of the workers' answers. It is made once and bound to the loader, so every port
+	 * shares it, and the browser's heap profiler names it by its method, `answer`, in every build:
+	 * a production build renames the variable that an inline handler would be named after.
+	 */
+	private readonly answers = this.answer.bind(this);
 
 	constructor(private readonly stopped: () => void) {}
 
@@ -377,7 +383,7 @@ class Runners {
 			let runner = this.jobs[index];
 			if (!runner) {
 				const port = host.ports[index] as MessagePort;
-				port.onmessage = (event: MessageEvent<TaskAnswer>) => this.answer(event.data);
+				port.onmessage = this.answers;
 				runner = {
 					modules: new Set(),
 					running: 0,
@@ -413,7 +419,7 @@ class Runners {
 			error,
 		);
 		this.worker = worker;
-		worker.onmessage = (event: MessageEvent<TaskAnswer>) => this.answer(event.data);
+		worker.onmessage = this.answers;
 		watchWorkerError(worker, (message) => {
 			worker.terminate();
 			this.fail(message || 'its script did not load', error);
@@ -427,7 +433,9 @@ class Runners {
 		];
 	}
 
-	private answer(answer: TaskAnswer): void {
+	/** Settles the task that a worker's message answers. */
+	private answer(event: MessageEvent<TaskAnswer>): void {
+		const answer = event.data;
 		const waiting = this.waiting.get(answer.id);
 		if (!waiting) return;
 		this.waiting.delete(answer.id);
