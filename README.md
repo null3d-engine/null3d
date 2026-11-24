@@ -92,7 +92,7 @@ export default defineSketch(({ scene, geometry, materials }) => {
 - **Post effects.** [Bloom, ambient occlusion, screen-space reflections](https://github.com/null3d-engine/null3d/blob/generated/docs/api/post.md), depth of field, automatic exposure, outlines and color grading.
 - **Models and animation.** [glTF models](https://github.com/null3d-engine/null3d/blob/generated/docs/api/assets.md) with [skinned and morph animation](https://github.com/null3d-engine/null3d/blob/generated/docs/api/animation.md), blending and layers. KTX2 textures stay compressed on the GPU.
 - **Large scenes.** [Batches](https://github.com/null3d-engine/null3d/blob/generated/docs/concepts/instances.md) of thousands of copies of one mesh, [levels of detail](https://github.com/null3d-engine/null3d/blob/generated/docs/concepts/lod.md), culling on the GPU, and worlds far from the origin.
-- **World add-ons.** Water, terrain, grass, wind, particles, Gaussian splats and stand-in cards for far objects, each a package of its own.
+- **World add-ons.** Water, terrain, grass, wind, particles, Gaussian splats, stand-in cards for far objects and sound at places in the scene, each a package of its own.
 - **Interaction.** Keyboard, pointer, touch and gamepad [input](https://github.com/null3d-engine/null3d/blob/generated/docs/api/input.md), [picking](https://github.com/null3d-engine/null3d/blob/generated/docs/api/raycast.md), camera controls, and HTML labels that follow objects.
 - **Custom shaders.** You write [WGSL](https://github.com/null3d-engine/null3d/blob/generated/docs/guides/custom-shaders.md) once, and the build translates it for WebGL2. A surface function changes a material's look and keeps the engine's lighting.
 - **Quality that fits the device.** Four [quality presets](https://github.com/null3d-engine/null3d/blob/generated/docs/concepts/quality-presets.md) and dynamic resolution fit the work to the device. When frames take too long, the engine lowers its settings.
@@ -136,6 +136,7 @@ const dissolve = materials.shader({
 | [`@null3d/particles`](packages/particles) | GPU particles: emitters, bursts, sub-emitters, soft particles and flipbooks |
 | [`@null3d/splats`](packages/splats) | Gaussian splats, with levels of detail and depth mixing with meshes |
 | [`@null3d/impostors`](packages/impostors) | Stand-in cards and merged far geometry for many distant objects |
+| [`@null3d/sound`](packages/sound) | Sound at places in the scene: loops, groups of many sources and one-shots |
 | [`@null3d/three-compat`](packages/three-compat) | three.js's tone curves and outline look, for scenes ported from three.js |
 
 ## Performance
