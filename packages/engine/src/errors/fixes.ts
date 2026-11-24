@@ -45,7 +45,7 @@ export const ERROR_FIXES = {
 	E1213:
 		"Pass only the settings that the call has, each with a value that it takes. The call's docs page lists them.",
 	E1214:
-		'Give fixedRate the fixed steps per second, a number above 0 such as 60 or 120. Give maxFixedSteps a whole number of 1 or more, such as 8.',
+		"Give fixedRate the fixed steps per second, a number above 0 such as 60 or 120. Give maxFixedSteps a whole number of 1 or more, such as 8. Give downloads an array of the files that the setup loads, each a URL or an address string such as 'models/ship.glb'.",
 	E1215:
 		'Add the null3D Vite plugin to vite.config.ts. Write the WGSL in a template literal right after a /* wgsl */ comment, or import it from a .wgsl file. Declare fn surface(input: SurfaceInput) -> Surface, fn vertexOffset(input: VertexInput) -> vec3f or fn lobe(input: LobeInput) -> vec3f in it, with no @vertex or @fragment entry point. For a full shader, give the @vertex entry point an InstanceIn from null3d::mesh. For a draw that makes its own vertices, give it @builtin(vertex_index) and @builtin(instance_index) and no mesh attribute. Give post.addEffect() WGSL that declares fn effect(input: EffectInput) -> vec4f, post.set({ toneMapping }) WGSL that declares fn toneCurve(color: vec3f) -> vec3f, and scene.setSkyLayer() WGSL that declares fn skyLayer(input: SkyLayerInput) -> SkyLayer.',
 	E1216:
@@ -80,6 +80,8 @@ export const ERROR_FIXES = {
 		"Read the message: it quotes the GPU path. A buffer or texture past the device's limits names the limit: make the scene smaller there. Otherwise this is an engine bug: report it with the message and the browser.",
 	E1306:
 		'Update Safari to version 18 or later. On iPhone and iPad, update iOS or iPadOS to 18 or later, which updates the engine of every browser there.',
+	E1307:
+		"The engine draws on without those objects. Read the message: it names the pipeline and quotes the driver. When it names a custom material, check that material's WGSL on the device. A shorter shader, with fewer texture reads, loops and calls, gives the driver less to compile. On a device with little memory, use less of it: a lower quality preset, smaller textures and fewer objects. Update the browser and the device's system software. If the message names an engine template, report it with the device.",
 	E1401:
 		'End the sketch module with export default defineSketch(...), and pass that module to createEngine.',
 	E1402:
@@ -119,7 +121,7 @@ export const ERROR_FIXES = {
 	E1419:
 		"Wait for the other engine's destroy() promise before you start a new engine on its canvas. In React, call destroy() in the effect's cleanup. When the message says that no engine can draw on the canvas again, put a new canvas element in its place.",
 	E1420:
-		"Remove the sketch's timers, event listeners and message handlers in its onDestroy callback, which runs when the engine stops.",
+		"Remove the sketch's timers, event listeners and message handlers in its onDestroy callback, which runs when the engine stops. A page that destroys an engine before its first frame stops waiting for engine.firstFrame, or catches its rejection.",
 	E1421:
 		'Name each feature as the message lists it. Leave a feature out to let its shaders download the first time the sketch uses it.',
 	E1422:

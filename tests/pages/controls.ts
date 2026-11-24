@@ -42,6 +42,7 @@ run('controls', async () => {
 		antialias: 'msaa',
 	});
 	await engine.firstFrame;
+	await engine.presetChecked;
 
 	const { width, height } = CONTROLS_CANVAS;
 	const camera = new PerspectiveCamera(CONTROLS_VIEW.fov, width / height, 0.1, 100);

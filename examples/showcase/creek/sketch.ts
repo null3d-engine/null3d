@@ -11,6 +11,10 @@
 // depth of field, which focuses on the point that the camera looks at. The camera runs a cinematic
 // route that is made for this scene (see SHOTS); `c` hands it to the user. For held frames, the
 // sketch's address takes the mood too: `?mood=Night&dslr`.
+//
+// A live page draws the garden first, then downloads every model file at once and stands the models
+// as they land. A held frame, a replay and `?grown` start the downloads with the setup and wait for
+// them, so their first frame shows the finished garden.
 import {
 	type Camera,
 	defineSketch,
@@ -38,7 +42,7 @@ import { createAir } from './air';
 import { createCliff } from './cliff';
 import { createClouds } from './clouds';
 import { createFlora } from './flora';
-import { createGarden, loadGarden } from './garden';
+import { createGarden, GARDEN_FILES, loadGarden } from './garden';
 import {
 	CLOUD_TOP,
 	cameraFloor,
@@ -56,7 +60,7 @@ import {
 } from './land';
 import { createMoodSkies, SPRAY, sprayLight as sprayLightOf } from './lights';
 import { createCreekStage } from './look';
-import { createPlants, loadPlants } from './plants';
+import { createPlants, loadPlants, PLANT_FILES, type Plants } from './plants';
 import { SHOTS, WIDE, WIDE_LOOK } from './route';
 import { createCreekSound } from './sound';
 import { createSteps } from './steps';
@@ -141,6 +145,11 @@ const REFLECT_SCALE = Number(params.get('reflection-scale')) || undefined;
  * switch takes it.
  */
 const WITHOUT = new Set((params.get('without') ?? '').split(',').filter(Boolean));
+/**
+ * True draws the first frame with every model standing, as a held frame does, so a cost run on a
+ * slow link measures the finished garden.
+ */
+const GROWN = params.has('grown');
 /**
  * True holds the route at its opening shot and draws every cascade in every frame, so a probe can
  * time each cascade's pass on one view.
@@ -301,6 +310,28 @@ function createCreekWater(
 
 export default defineSketch(async (ctx) => {
 	const { scene, assets, post, quality, page, time } = ctx;
+	page.post('loading', 'Shaping the cliff');
+	reportLoading(ctx);
+	/**
+	 * A live page draws the garden first and stands its models as they land, on either GPU path. A
+	 * held frame, a replay and `?grown` wait for them, so their first frame shows the finished garden.
+	 */
+	const grownFirst = ctx.engine.held || GROWN;
+	/**
+	 * Resolves once a live page's first frame has drawn. Its model files all start to download then:
+	 * started with the setup, they take every connection of a server that speaks HTTP/1.1, and the
+	 * first frame's own code and shader files wait behind them.
+	 */
+	const firstFrame = ctx.engine.firstFrame;
+	// A first frame that waits for the models starts every download now, beside the build, and each
+	// load below takes its bytes from memory. A file that fails is reported by its load.
+	if (grownFirst)
+		void assets
+			.preload([
+				...Object.values(GARDEN_FILES),
+				...(WITHOUT.has('plants') ? [] : Object.values(PLANT_FILES)),
+			])
+			.catch(() => {});
 	if (!EFFECTS) {
 		const still = { contactShadowSteps: 0, bounceRays: 0 } as const;
 		await quality.set(still);
@@ -330,11 +361,12 @@ export default defineSketch(async (ctx) => {
 	// scene starts them as the settings say.
 	const tierCastShadows = quality.settings.castShadows;
 	const tierBloom = quality.settings.bloom;
-	reportLoading(ctx);
-	const [sky, room] = await Promise.all([
-		assets.skyEnvironment(),
-		assets.builtinEnvironment('room'),
-	]);
+	// On a live page the sky's light map builds on the GPU beside the scene's own build, and the stage
+	// takes it as it arrives; the room lights the studio alone, so the stage makes it when the studio
+	// is picked. The sky's map that a held frame draws with depends on when the GPU makes it, so a
+	// first frame that waits for the models makes both maps here, before the scene.
+	const sky = assets.skyEnvironment();
+	const maps = grownFirst ? await Promise.all([sky, assets.builtinEnvironment('room')]) : undefined;
 	const sun = scene.createDirectionalLight({
 		castShadows: tierCastShadows,
 		layers: SUN_LAYERS,
@@ -370,15 +402,46 @@ export default defineSketch(async (ctx) => {
 	createCliff(ctx, land.rim, detail.texture);
 	page.post('loading', 'Gathering the cloud');
 	const clouds = await createClouds(ctx, quality.preset);
-	page.post('loading', 'Setting the statue, the gate and the stones');
-	const models = await loadGarden(ctx);
-	createGarden(ctx, models, detail.rock, detail.texture);
+	page.post(
+		'loading',
+		grownFirst ? 'Setting the statue, the gate and the stones' : 'Setting the stones',
+	);
+	// On a live page the model groups stand as they land, and the bar under the demo's title counts
+	// them.
+	const groups = WITHOUT.has('plants') ? 1 : 2;
+	let standing = 0;
+	const stood = (): void => page.post('growing', { done: ++standing, total: groups });
+	const failed = (error: unknown): void =>
+		console.error('creek: a model file did not load, so its part of the garden stays bare', error);
+	if (!grownFirst) page.post('growing', { done: 0, total: groups });
+	const garden = grownFirst ? loadGarden(ctx) : firstFrame.then(() => loadGarden(ctx));
+	const gardenModels = grownFirst ? await garden : undefined;
+	if (gardenModels) createGarden(ctx, gardenModels, detail.rock, detail.texture);
+	else
+		void garden.then((models) => {
+			createGarden(ctx, models, detail.rock, detail.texture);
+			stood();
+		}, failed);
 	createSteps(ctx, detail.rock, detail.texture);
-	const stones = createStones(ctx, detail.rock, detail.texture, models.boulders);
-	page.post('loading', 'Planting the garden');
-	const plants = WITHOUT.has('plants')
-		? undefined
-		: createPlants(ctx, wind, placeValley(), await loadPlants(ctx));
+	const stones = createStones(
+		ctx,
+		detail.rock,
+		detail.texture,
+		gardenModels?.boulders ?? garden.then((models) => models.boulders),
+	);
+	let plants: Plants | undefined;
+	if (!WITHOUT.has('plants')) {
+		if (grownFirst) {
+			page.post('loading', 'Planting the garden');
+			plants = createPlants(ctx, wind, placeValley(), await loadPlants(ctx));
+		} else
+			void firstFrame
+				.then(() => loadPlants(ctx))
+				.then((models) => {
+					plants = createPlants(ctx, wind, placeValley(), models);
+					stood();
+				}, failed);
+	}
 	const water = WITHOUT.has('water')
 		? undefined
 		: createCreekWater(
@@ -434,7 +497,13 @@ export default defineSketch(async (ctx) => {
 
 	// The mood and the lens: from the address at the start, then from the HUD. The physical sky
 	// draws the real sun by day and the moon at night; Auto moves them across the sky.
-	const stage = createCreekStage(ctx, sun, sky, room, Number(params.get('background-fog')) || 0);
+	const stage = createCreekStage(
+		ctx,
+		sun,
+		maps?.[0] ?? sky,
+		maps?.[1] ?? (() => assets.builtinEnvironment('room')),
+		Number(params.get('background-fog')) || 0,
+	);
 	/**
 	 * The look the scene shows: two moods and the share of the second. An hour's look blends between
 	 * the moods on either side, so the fireflies, the air and the caustics change with the light.

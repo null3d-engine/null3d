@@ -22,6 +22,7 @@ run('bloom-switch', async () => {
 	const failures: string[] = [];
 	engine.onFailure((error) => failures.push(error.code));
 	await engine.firstFrame;
+	await engine.presetChecked;
 	const before = await engine.measure(SECONDS);
 	const settled = new Promise<{ frames: number; ms: number }>((resolve) => {
 		const off = engine.onSketchMessage((name, data) => {

@@ -44,6 +44,7 @@ run('sky-layer-sun', async () => {
 		maxPixelRatio: 1,
 	});
 	await engine.firstFrame;
+	await engine.presetChecked;
 	const frames: Capture[] = [];
 	const capture = async (stretch: number, frame: number) => {
 		const { width, height, pixels } = await engine.captureFrame();

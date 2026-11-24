@@ -16,6 +16,7 @@ import {
 	lowestTierSettings,
 	MIB,
 	presetArgument,
+	presetCheckOption,
 	presetOption,
 	presetSettings,
 	presetValue,
@@ -641,6 +642,22 @@ describe('targetFpsOption', () => {
 		);
 		for (const bad of [0, -60, 59.94, Number.POSITIVE_INFINITY, Number.NaN, '120', null])
 			expect(() => targetFpsOption(bad)).toThrow('E1213');
+	});
+});
+
+describe('presetCheckOption', () => {
+	it('takes during-play or before-play, and nothing for no choice', () => {
+		expect(presetCheckOption(undefined)).toBeUndefined();
+		expect(presetCheckOption('during-play')).toBe('during-play');
+		expect(presetCheckOption('before-play')).toBe('before-play');
+	});
+
+	it('refuses any other value, with E1213', () => {
+		expect(() => presetCheckOption('off')).toThrow(
+			`E1213: createEngine() got "off" for presetCheck, which is not 'during-play' or 'before-play'.`,
+		);
+		for (const bad of ['', true, false, null, 1])
+			expect(() => presetCheckOption(bad)).toThrow('E1213');
 	});
 });
 

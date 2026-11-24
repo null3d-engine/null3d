@@ -26,7 +26,7 @@ import { splatsFeature } from './feature';
 import { checkSplats, type SplatData, splatsError } from './format';
 // The module registers the glTF extension as the add-on loads.
 import './gltf';
-import { SplatSelector } from './select';
+import { SplatSelector, startSelectTask } from './select';
 import type { SelectAnswer } from './select-task';
 import splatShader from './splats.wgsl';
 import {
@@ -192,6 +192,10 @@ export async function createSplats(ctx: SketchContext, options: SplatsOptions): 
 			2110,
 			'give createSplats() the cloud as data, or the url of an SPZ file or a splat stream index.',
 		);
+	// The selection task and the SPZ reader load beside the cloud's download and the draw's setup,
+	// which need neither: only the first selection and the first chunk's decode wait for them.
+	startSelectTask();
+	if (options.url !== undefined) void loadSpzReader();
 	const source: Source =
 		options.data !== undefined
 			? { data: checkSplats(options.data, 'the splat cloud'), bytes: 0 }
@@ -580,9 +584,27 @@ export async function createSplats(ctx: SketchContext, options: SplatsOptions): 
 	};
 }
 
+/** The SPZ reader's module while it loads or once it has, which every cloud on the thread shares. */
+let spzReader: Promise<typeof import('./spz')> | undefined;
+
+/**
+ * Loads the SPZ reader once. A load that fails lets the next call try again, and its own handler
+ * keeps a call that nothing awaits from leaving the failure unhandled.
+ */
+function loadSpzReader(): Promise<typeof import('./spz')> {
+	if (!spzReader) {
+		const loading = import('./spz');
+		spzReader = loading;
+		loading.catch(() => {
+			if (spzReader === loading) spzReader = undefined;
+		});
+	}
+	return spzReader;
+}
+
 /** Reads one chunk file of a stream, which is an SPZ file. */
 async function decodeChunk(bytes: Uint8Array): Promise<SplatData> {
-	const { decodeSpz } = await import('./spz');
+	const { decodeSpz } = await loadSpzReader();
 	return decodeSpz(bytes);
 }
 
@@ -617,6 +639,6 @@ async function readSource(url: string | URL): Promise<Source> {
 		const stream = parseStreamIndex(text, address, `the splat stream ${address}`);
 		return { stream, bytes: stream.bytes };
 	}
-	const { decodeSpz } = await import('./spz');
+	const { decodeSpz } = await loadSpzReader();
 	return { data: await decodeSpz(bytes), bytes: bytes.byteLength };
 }

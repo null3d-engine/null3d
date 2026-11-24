@@ -30,6 +30,7 @@ async function start(): Promise<{ engine: Engine; canvas: HTMLCanvasElement }> {
 		gpu: gpu as 'webgpu' | 'webgl2',
 	});
 	await engine.firstFrame;
+	await engine.presetChecked;
 	return { engine, canvas };
 }
 

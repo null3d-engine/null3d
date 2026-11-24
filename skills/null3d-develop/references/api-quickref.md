@@ -36,12 +36,13 @@ const engine = await createEngine({
   sketch: new URL('./sketch.ts', import.meta.url),   // the sketch module
   preset: 'auto',        // 'auto' | 'low' | 'medium' | 'high' | 'ultra'; WebGL2 runs at most 'medium'
   targetFps: 'display',  // (0.2) the frame rate that the preset check and governor defend: 'display' for 120 or 144 Hz games, or a whole number; default the display's rate, at most 60
+  presetCheck: 'during-play',  // (0.3) the default: the preset check measures the first frames of play; 'before-play' makes createEngine wait for it behind the loading screen
   maxPixelRatio: 2,      // cap for devicePixelRatio in place of the preset's cap
   antialias: 'msaa',     // 'msaa' | 'fxaa' | 'none' in place of the preset's mode (FXAA on Low, MSAA above)
   depthPrepass: false,   // true draws opaque depth first, so each pixel shades once; presets: on for WebGL2, off for WebGPU
   gpuOcclusion: false,   // false keeps the GPU from skipping what large opaque objects hide (WebGPU only); on at High and Ultra on desktops
   softwareOcclusion: false,  // the same on WebGL2, on the job workers; presets leave it off; measure before keeping it
-  keepTextureCopies: true,   // (0.2) default true on phones and tablets, false on desktops: keep each texture's copy, so its map comes back after a GPU loss; false frees the copy (concepts/backends)
+  keepTextureCopies: true,   // (0.2) default true on phones and tablets, false on desktops: keep each texture's copy, so its map comes back after a GPU loss; false frees the copy. With copies, a page in the back/forward cache gives its GPU back (concepts/backends)
   shadowTiles: 8, shadowTileSize: 512, pointLightShadows: false,  // spot and point light shadows; the preset sets each
   heroTileSize: 2048,    // texels on each side of a hero shadow's tile: 1024, 2048 or 4096; the preset sets it
   gpu: 'auto',           // 'auto' | 'webgpu' | 'webgl2' (testing only)
@@ -51,7 +52,7 @@ const engine = await createEngine({
   maxLabels: 4096,                       // (0.2) the default; labels that ui.trackLabel holds at once, 1 to 65,536
   maxLabels3d: 256,                      // (0.2) the default; labels that are planes of the scene, 0 to 65,536
   expectedObjects: 22000,                // (0.2) the scene starts with room for this many objects (default 1,023) and never grows in play; it grows on its own past it
-  onProgress: (stage) => {},             // 'core', then 'sketch' after the setup and any preset check, then 'first-frame'; 'memory-wait' first if the browser refuses memory for 10 s (0.2)
+  onProgress: (stage) => {},             // 'core', then 'sketch' after the setup (and the preset check with presetCheck: 'before-play'), then 'first-frame'; 'memory-wait' first if the browser refuses memory for 10 s (0.2)
   onSketchMessage: (type, data) => {},     // sketch messages from the start of setup, such as load progress
   onSketchError: (error) => {},            // (0.2) each distinct error the sketch's own code threw in a frame; the engine keeps drawing
   onWorkerRetry: (worker, script) => {},   // (0.2) a worker's script did not load and the engine started a second copy; the console warns too
@@ -67,7 +68,7 @@ const engine = await createEngine({
 });
 // createEngine rejects with an EngineError when the browser cannot run the engine (error.code)
 
-await engine.firstFrame;                 // the GPU finished the first frame: remove the loading screen
+await engine.firstFrame;                 // the GPU finished the first frame: remove the loading screen; (0.3) rejects with the failure when the engine stops drawing first
 engine.postToSketch('difficulty', { level: 2 });            // an optional third argument lists transferables
 const off = engine.onSketchMessage((type, data) => { /* ... */ }); // the first handler also gets earlier messages
 off();                                   // every on... call returns a function that removes its handler
@@ -81,7 +82,7 @@ const metrics = await engine.measure(5);          // CPU time per thread and pha
 //   metrics.updatedFps: (0.2) frames per second whose scene update ran to its end; metrics.updateErrors: frames whose update threw
 engine.stats(true);                               // (0.2) the stats overlay on or off from the page, or options; the sketch's debug.stats shares it
 const frame = await engine.captureFrame();        // the next frame's { width, height, pixels }: RGBA8 rows, top row first
-engine.onFailure((error) => { /* error.code: E1302 GPU lost for good, E1404 engine thread failed; (0.2) E1304 GPU out of memory, E1305 GPU rejected work */ });
+engine.onFailure((error) => { /* error.code: E1302 GPU lost for good, E1404 engine thread failed; (0.2) E1304 GPU out of memory, E1305 GPU rejected work; (0.3) E1307 GPU driver refused a pipeline twice, its objects are missing */ });
 engine.onStop(() => { /* (0.3) once: destroy() began, or E1302, E1404 or E1424 ended the frames, after onFailure heard it; end the page's own loop */ });
 engine.onSketchError((error) => { /* (0.2) the sketch's update threw; the engine keeps drawing, and measure().updateErrors counts the frames */ });
 engine.simulateGpuLoss();                         // acts out a driver reset; the engine recovers
@@ -119,8 +120,12 @@ export default defineSketch(async (ctx) => {
 }, { fixedRate: 60, maxFixedSteps: 8 });  // optional; these are the defaults (E1214 out of range)
 ```
 
+- `downloads: ['models/ship.glb', 'env/sky.ktx2']` (0.3), beside the other options, names the files that the setup loads. A live start begins them as soon as the module has loaded, two at a time in the list's order. The setup's loads take them with no second download. A load of a later file moves it to the front, with up to four at once. List only what the first frame waits for. An entry that is not an address throws E1214. Hold mode, replays and recordings ignore the list (`api/sketch`, "The download list").
+- `serialLoadWarning: false` (0.3) turns off a development build's warning for a setup load that started only after another load's file had arrived. Use it only when the second address comes from the first file.
+
 - `setup` can be `async`. The first frame waits for its promise, and `createEngine` resolves only after it. An error it throws makes `createEngine` reject.
 - `ctx.engine.viewport` gives `{ width, height, pixelRatio }`: the canvas size in CSS pixels, and the pixel ratio the engine draws with. The engine reads them at the start of each frame. `ctx.engine.capabilities` holds the values of `engine.capabilities` on the page.
+- `ctx.engine.firstFrame` (0.3) resolves once the GPU has finished the first frame. Start the downloads of later stages in its `then`, never with a frame count. Never await it in the setup, which the first frame waits for. Hold mode and replays resolve it after their last frame, so load what a held frame shows in the setup when `ctx.engine.held` is true.
 - In `onLateUpdate`, `getWorldPosition` already gives this frame's positions, and setters show in the same frame. Structural changes made there, such as creating an object, wait for the next frame.
 - Fixed steps fall due from sketch time. The first frame and the first after a pause run none. A frame runs at most `maxFixedSteps` and drops the rest. `time` keeps the frame's values during the steps, so count simulation time with `step`. Read `wasPressed` in `onUpdate`, because some frames run no fixed step.
 - `rotation` takes a quaternion `(x, y, z, w)`. For a turn of `a` radians about an axis, put `sin(a/2)` along the axis and `cos(a/2)` in `w`. The engine scales one more than one per cent off unit length, so a mistyped quaternion still only turns the object.
@@ -482,7 +487,7 @@ On WebGL2 the maps of one standard material share six textures on the GPU. Maps 
 
 ```ts
 assets.onProgress((loaded, total, url) => page.post('loading', Math.min(1, loaded / Math.max(total, loaded))));  // returns a remover
-await assets.preload(['/tex/bricks.png', '/level.json']);      // later loads take these from memory
+await assets.preload(['/tex/bricks.png', '/level.json']);      // a later stage's files; the setup's go in defineSketch's downloads
 const data = await assets.loadJson('/level.json');             // also loadBinary, loadTexture
 const tiles = assets.cache('my-game/terrain', 3);             // (0.3) a namespace of the cache of derived data, kept across visits
 const stored = await tiles.get(key);                          // Uint8Array or undefined; never rejects. Make the data on every miss
@@ -755,10 +760,11 @@ const PARTICLES = { low: 500, medium: 2000, high: 5000, ultra: 10000 };  // your
 quality.onChange(() => { particles.setActiveCount(PARTICLES[quality.preset]); });
 const ai = quality.setBudget({ name: 'ai', ms: 2, min: 0.25, onScale: (scale) => { aiRate = scale; } });  // (0.2) the governor lowers it in steps of 0.25 before each render-scale step; ai.ms = 2 x scale; ai.remove()
 engine.mode.preset;                     // on the page: the preset, crashedStarts and memoryMaximumMiB
-engine.mode.presetCheck;                // what the preset check measured: { from, targetFps, rounds, reused }, or null
+await engine.presetChecked;             // (0.3) the preset check has ended: engine.mode.preset holds its choice
+engine.mode.presetCheck;                // what the preset check measured: { from, targetFps, rounds, reused }, or null (also while a check during play runs)
 ```
 
-The page's `?preset=low` switch fixes the preset for tests. After a start that crashed the tab, the engine starts one preset lower. When the engine chose the preset itself, it checks it with the scene that the setup built. It lowers the preset until the GPU holds the frame rate, before `createEngine` resolves, and keeps the settings that the setup changed with `quality.set`. The `setPreset` call keeps the last frame on screen until the new preset's pipelines are built. So call it from a menu or a loading screen. Dynamic resolution lowers the render scale by 0.05 after about a second over budget, and raises it after 5 seconds with time to spare. Hold mode draws at `maxRenderScale`. When the scale reaches `minRenderScale` and frames still run long, the frame-budget governor makes far shadow cascades draw less often, then uses the lighter shadow filter. It raises them again in the reverse order after a stable period.
+The page's `?preset=low` switch fixes the preset for tests. After a start that crashed the tab, the engine starts one preset lower. When the engine chose the preset itself, it checks it in the first frames of play, while the sketch runs. It lowers the preset until the GPU holds the frame rate, and keeps the settings that the sketch changed with `quality.set`. `engine.presetChecked` resolves once the check ends. With `presetCheck: 'before-play'`, the check measures the setup's scene before play, and `createEngine` waits for it. The `setPreset` call keeps the last frame on screen until the new preset's pipelines are built. So call it from a menu or a loading screen. Dynamic resolution lowers the render scale by 0.05 after about a second over budget, and raises it after 5 seconds with time to spare. Hold mode draws at `maxRenderScale`. When the scale reaches `minRenderScale` and frames still run long, the frame-budget governor makes far shadow cascades draw less often, then uses the lighter shadow filter. It raises them again in the reverse order after a stable period.
 
 ## 18. Messages and UI (`api/page`, `api/ui`)
 

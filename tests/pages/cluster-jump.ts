@@ -76,6 +76,7 @@ run('cluster-jump', async () => {
 	const failures: string[] = [];
 	engine.onFailure((error) => failures.push(error.code));
 	await engine.firstFrame;
+	await engine.presetChecked;
 	try {
 		const shares: number[] = [];
 		for (const [k, place] of PLACES.entries()) {

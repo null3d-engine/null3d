@@ -18,7 +18,8 @@ const params = new URL(import.meta.url).searchParams;
 const PHONE = params.get('phone') === '1';
 
 export default defineSketch(async (context) => {
-	const address = new URL('../../../examples/showcase/creek/sketch.ts', import.meta.url).href;
+	// The garden's models stand before the first frame, so every turn measures the finished scene.
+	const address = new URL('../../../examples/showcase/creek/sketch.ts?grown', import.meta.url).href;
 	const creek = (await import(/* @vite-ignore */ address)) as Showcase;
 	const callbacks = await creek.default.setup(context);
 	const set = (on: boolean) =>

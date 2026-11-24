@@ -21,13 +21,13 @@ import { createMoods, isMood, nightAlbedo } from '../../lib/stage';
 import { BIRD_COUNT, createBirds, ROOST_LAMPS } from './birds';
 import { SEA_LEVEL } from './island';
 import { createLand } from './land';
-import { loadLifeModels } from './models';
+import { LIFE_MODEL, loadLifeModels, PLANT_FILES } from './models';
 import { groundHeight } from './plan';
 import { createPoolWater } from './poolwater';
 import { createSea } from './sea';
 import { SHADOW_DISTANCE, SHADOW_REACH } from './shadow';
 import { createIslandSound } from './sound';
-import { createTown, type TownNight } from './town';
+import { createTown, TOWN_FILES, type TownNight } from './town';
 import { createPlaceholderModels, createTraffic, type TrafficOptions } from './traffic';
 import { CASTER_LAYER, createCypressSpires, createIslandWind, createTrees } from './trees';
 
@@ -160,11 +160,19 @@ export default defineSketch(
 		// which on a phone would grow the shadow maps again over the far hills.
 		const stretchable = preset !== 'low';
 		page.post('loading', 'Raising the island');
-		// The environment maps build on the GPU, and on a software GPU that takes minutes. Nothing that
-		// the visitor's controls need depends on them, so the loads run beside the scene's own build and
-		// the stage takes them when they arrive.
+		// The species and the lawns take seconds to grow. A live page draws the island without them,
+		// on either GPU path, and lets them appear as they land; a held picture, a replay, or a page
+		// that asks with `?grown` waits, so its first frame shows the finished scene.
+		const grownFirst = ctx.engine.held || params.has('grown');
+		// A first frame that waits for every model starts every download now, beside the build, and
+		// each load below takes its bytes from memory. A file that fails is reported by its load.
+		if (grownFirst)
+			void assets.preload([...TOWN_FILES, ...PLANT_FILES, LIFE_MODEL]).catch(() => {});
+		// The sky's light map builds on the GPU, and on a software GPU that takes minutes. Nothing that
+		// the visitor's controls need depends on it, so it builds beside the scene's own build and the
+		// stage takes it when it arrives. The room lights the studio alone, so the stage makes its map
+		// the first time the studio is picked.
 		const sky = assets.skyEnvironment();
-		const room = assets.builtinEnvironment('room');
 		const sun = scene.createDirectionalLight({
 			castShadows: true,
 			layers: SUN_LAYERS | CASTER_LAYER,
@@ -235,7 +243,7 @@ export default defineSketch(
 		// moves the sun and the moon across the sky; the other moods hold an hour. The controls and the
 		// camera's route come before the town: they need no part of it, and they post the HUD, so a
 		// visitor gets the controls while the island is still rising.
-		const stage = createMoods(ctx, sun, sky, room, {
+		const stage = createMoods(ctx, sun, sky, () => assets.builtinEnvironment('room'), {
 			heading: HEADING,
 			fogDensity: 0.000018,
 			// The studio's own haze would hide the island from an opening view hundreds of meters out.
@@ -330,21 +338,20 @@ export default defineSketch(
 		const pool = askedPool === null ? undefined : Number(askedPool);
 		const town = createTown(ctx, {
 			...(pool !== undefined && Number.isFinite(pool) && { lights: Math.max(0, pool) }),
-		}).then((made) => {
-			night = made;
 		});
+		// The town's models stand in the kit's place once they land, and its night takes over then.
+		const settleTown = (): Promise<void> =>
+			town.settle().then((made) => {
+				night = made;
+			});
+		// A first frame that waits for the town starts its models' loads now, beside the trees' build.
+		const townSettled = grownFirst ? settleTown() : undefined;
 		// `?poolwater=off` is a documented cost switch, like `?walkers`: the pools within reach of the
 		// camera draw with the water add-on, and the switch leaves them as the gardens' flat quads for
 		// a cost run. Every far pool keeps its quad either way.
 		const poolAsked = params.get('poolwater');
 		const poolwater = poolAsked === 'off' ? undefined : createPoolWater(ctx, camera, wind.field);
 		page.post('loading', 'Growing the trees');
-		// The species and the lawns take seconds to grow. A live page draws the island without them and
-		// lets them appear as they land; a held picture, a page that asks with `?grown`, or the WebGL2
-		// path waits, so its first frame shows the finished scene. The WebGL2 render plan cannot take
-		// the pipelines that a frame after the first adds, so that path grows before it draws.
-		const grownFirst =
-			ctx.engine.held || params.has('grown') || ctx.engine.capabilities.tier === 'webgl2';
 		// The real people and vehicle models replace the placeholders when they land; the motion system
 		// is the same either way. A held frame waits for them, so it never catches a placeholder.
 		const life = grownFirst
@@ -373,11 +380,8 @@ export default defineSketch(
 		});
 		// A live page loads the models after its first frame, so the load never holds the first frame.
 		// The placeholders move meanwhile, and they leave when the models stand.
-		let settling = false;
-		const settleTraffic = (): void => {
-			if (settling) return;
-			settling = true;
-			void loadLifeModels(ctx).then(
+		const settleTraffic = (): Promise<void> =>
+			loadLifeModels(ctx).then(
 				(models) => {
 					try {
 						const grown = createTraffic(ctx, models, trafficOptions);
@@ -398,7 +402,6 @@ export default defineSketch(
 						error,
 					),
 			);
-		};
 		// The cypresses need no species assets, so a page that grows the rest later places them before
 		// the first frame.
 		if (!grownFirst) createCypressSpires(ctx);
@@ -406,26 +409,39 @@ export default defineSketch(
 		const sound = createIslandSound(ctx, camera);
 		sound.setTraffic(traffic);
 		let trees: { update(): void; wind: Wind } | undefined;
-		let growing = false;
-		const grow = (): void => {
-			if (growing) return;
-			growing = true;
-			void createTrees(ctx, camera, { spires: false, wind }).then(
-				(grown) => {
-					trees = grown;
-					sound.setWind(grown.wind);
-				},
-				(error: unknown) => console.error(error),
-			);
+		/**
+		 * The downloads that a live page starts once its first frame has drawn: the forest's species
+		 * and lawns, the town's models and the people and vehicles. Started with the setup, they would
+		 * take every connection of a server that speaks HTTP/1.1, and the first frame's own code and
+		 * shader files would wait behind them. Each appears as it lands, and the page's growth bar
+		 * counts the three.
+		 */
+		const batches = 3;
+		let stood = 0;
+		const landed = (): void => page.post('growing', { done: ++stood, total: batches });
+		if (!grownFirst) page.post('growing', { done: 0, total: batches });
+		const loadLater = (): void => {
+			void createTrees(ctx, camera, { spires: false, wind })
+				.then(
+					(grown) => {
+						trees = grown;
+						sound.setWind(grown.wind);
+					},
+					(error: unknown) => console.error(error),
+				)
+				.then(landed);
+			void settleTown().then(landed, landed);
+			void settleTraffic().then(landed);
 		};
+		if (!grownFirst) void ctx.engine.firstFrame.then(loadLater);
 		if (grownFirst) {
 			trees = await createTrees(ctx, camera, { wind });
 			sound.setWind(trees.wind);
 			// A held frame waits for the town's models too, so it never catches the code-built
 			// landmarks beside the model ones.
-			await town;
+			await townSettled;
 			// The stage writes the light its maps give before the first frame draws.
-			await Promise.all([sky, room]);
+			await stage.ready();
 		}
 
 		const eye: [number, number, number] = [0, 0, 0];
@@ -433,10 +449,6 @@ export default defineSketch(
 		const tint: [number, number, number] = [1, 1, 1];
 		return {
 			onUpdate(dt) {
-				// The forest grows once the first frame has drawn, so its species and lawns cost nothing
-				// before it and appear as they land.
-				if (!grownFirst && time.frame >= 2) grow();
-				if (!grownFirst && time.frame >= 2) settleTraffic();
 				const t = time.now;
 				stage.update(dt);
 				// The scene's own ambient takes the hour, eased by the same share as the town's lamps.

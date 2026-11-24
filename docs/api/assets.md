@@ -15,14 +15,22 @@ The `assets` object of the sketch context downloads files and decodes them. Ever
 ```ts
 import { defineSketch } from '@null3d/engine';
 
-export default defineSketch(async ({ assets, page }) => {
-  assets.onProgress((loaded, total) => page.post('loading', Math.min(1, loaded / Math.max(total, loaded))));
-  await assets.preload(['/tex/bricks.png', '/tex/bricks-normal.png', '/levels/one.json']);
+const BRICKS = '/tex/bricks.png';
+const NORMALS = '/tex/bricks-normal.png';
+const LEVEL = '/levels/one.json';
 
-  const bricks = await assets.loadTexture('/tex/bricks.png', { wrap: 'repeat' });
-  const normals = await assets.loadTexture('/tex/bricks-normal.png', { colorSpace: 'linear', wrap: 'repeat' });
-  const level = await assets.loadJson<{ enemies: number }>('/levels/one.json');
-});
+export default defineSketch(
+  async ({ assets, page }) => {
+    assets.onProgress((loaded, total) => page.post('loading', Math.min(1, loaded / Math.max(total, loaded))));
+    const [bricks, normals, level] = await Promise.all([
+      assets.loadTexture(BRICKS, { wrap: 'repeat' }),
+      assets.loadTexture(NORMALS, { colorSpace: 'linear', wrap: 'repeat' }),
+      assets.loadJson<{ enemies: number }>(LEVEL),
+    ]);
+  },
+  // The three files start to download as soon as the module has loaded.
+  { downloads: [BRICKS, NORMALS, LEVEL] },
+);
 ```
 
 ## The calls
@@ -47,6 +55,8 @@ export default defineSketch(async ({ assets, page }) => {
 | `preload(urls)` | Nothing: it downloads the files ahead of their loads |
 | `onProgress(handler)` | A function that removes the handler |
 
+In [hold mode](../guides/testing.md#hold-mode), and while a recording replays, the calls run one at a time in the order the sketch made them. Each starts once the call before it has answered. A load makes its textures, meshes and materials as its files arrive, and the files arrive in another order on each run. A held frame would otherwise draw the scene's content in another order. Several loads at once therefore take longer there. A glTF extension handler's `load` must not wait for another `assets` call in hold mode, since that call waits for the load that runs the handler.
+
 ## glTF models
 
 `loadGltf` loads a glTF 2.0 model. It reads a `.glb` file, or a `.gltf` file with the buffers and images it names. It returns a `Prefab`, a template of the file's objects. The prefab makes each mesh, material and texture of the file once, and every copy of the model shares them. Then [`scene.instantiate`](scene.md#models-and-copies) creates a copy of its objects, or `scene.createInstances` draws many copies with instance batches. The [glTF model demo](https://github.com/null3d-engine/null3d/tree/main/examples/gltf-model) loads one and lights it with the built-in room.
@@ -65,7 +75,7 @@ export default defineSketch(async ({ scene, assets }) => {
 
 A model that the tool wrote with `--stages` holds its coarsest level. Each finer level downloads from a file of its own. `loadGltf` returns once the coarse level is ready. The copies that you make then refine as the finer levels arrive. The loader holds back a level that the camera never draws, and fetches it once the camera comes close enough to show it. So a page downloads the levels that its camera shows, and no others. `maxLevels` sets the most levels to load, the file's own counted first. Set 1 to draw the coarse level alone and download no stage. A model with a cluster tree streams the tree's bands the same way, and a band counts as a level. [Levels of detail](../concepts/lod.md#levels-from-the-asset-tool) explains the files.
 
-A worker parses the file outside the sketch's frames, and decodes the images that the file holds there. The first `loadGltf` call downloads the loader and its worker, about 15 KB after Brotli, so a page without glTF files downloads neither. The files that a `.gltf` file names download through `assets`, so `preload` and `onProgress` cover them too. The engine copies the vertex data into its own memory, and keeps no other copy of it.
+A worker parses the file outside the sketch's frames, and decodes the images that the file holds there. The first `loadGltf` call downloads the loader and its worker, about 15 KB after Brotli, so a page without glTF files downloads neither. The worker starts as soon as the loader has arrived, while the model file still downloads. The files that a `.gltf` file names download through `assets`, so `preload` and `onProgress` cover them too. The engine copies the vertex data into its own memory, and keeps no other copy of it.
 
 The `assets` API itself loads with its first call too, so a page that loads no file downloads none of it. Every call answers once that code has arrived. Two calls answer with a function of their own, `onProgress` and `registerGltfExtension`, so they answer at once and register the handler when it arrives.
 
@@ -238,6 +248,7 @@ export default defineSketch(async ({ scene, assets }) => {
 - An HDR map has faces of 256 texels, as the asset tool's default. An image wider than 2,048 texels becomes the averages of squares of its texels first. An unclipped sun, or other light beyond 65,408, keeps its share of the rough levels and the diffuse light. Only the sharpest level stops at 65,408, as in the tool's files.
 - The OpenEXR reader reads single-part files of scanlines with R, G and B channels, as half floats, floats or whole numbers. It reads every compression but DWAA and DWAB: none, RLE, ZIPS, ZIP, PIZ, PXR24, B44 and B44A. Tiled, deep and multi-part files fail with E1412, as do Radiance files stored from the bottom row up.
 - `builtinEnvironment` resolves once the code and the shaders that make the room are ready. The GPU then makes the whole map in the next frame, before that frame draws. So the first frame with the room already has its light. That frame takes longer by the map's GPU time: about 20 ms on a MacBook Pro, and 50 to 110 ms on recent phones. Ask for the room while the scene loads. During play, the call makes one long frame.
+- The first call of either starts the download of that code and those shaders at once. They then download while the engine and the scene start.
 - `skyEnvironment` loads the same code and shaders as the room, and resolves once they are ready. The next frame makes the whole map, in about 10 ms on a MacBook Pro. Until the scene's first sky background, the map shows the sky's defaults.
 - The sky's map follows the sky. After a change that shows, the map refreshes in 20 stages, one a frame. A sun that turns less than half a degree leaves the map as it is, and so does a color value that drifts by less than 2%. Slowly drifting clouds wait too, and their changes add up. One last refresh captures the sky exactly once it stops changing. The scene draws with the old map until the last stage. Each stage takes about 1 ms of GPU time on a MacBook Pro. The map leaves out the sun's disc, whose light the scene's directional light gives. [Lighting and environment](../concepts/lighting.md#sky-and-backgrounds) gives the detail.
 - `environment.destroy()` frees the cube map's GPU memory. The scene then draws without it.
@@ -291,9 +302,11 @@ A relative address resolves against the page's address, in every thread mode, as
 
 ## Loading screens
 
-`preload` downloads files ahead of the loads that use them, all at once, and resolves when every file has arrived. The next load of each address takes its file from memory, so it downloads nothing. The files wait in memory until then.
+The files that the setup loads start sooner when `defineSketch`'s `downloads` option names them. A live start then begins to download them as soon as the sketch's module has loaded, before the setup runs ([The download list](sketch.md#the-download-list)). A development build warns when one of the setup's loads waited for another ([Loads one after another](sketch.md#loads-one-after-another)).
 
-`onProgress` calls its handler as a download's bytes arrive and when one finishes or fails, with two counts: the bytes downloaded so far and the bytes expected so far, which are the lengths of the responses that gave one and 0 while none has. A response with no length still counts its bytes into the first count, so a page draws `Math.min(1, loaded / Math.max(total, loaded))`. A download that fails counts as finished too, so a loading bar reaches its end: it counts the bytes its response announced, or one byte when it announced none. Each call names the address whose bytes moved.
+`preload` downloads files ahead of the loads that use them, all at once, and resolves when every file has arrived. Use it for files that a later stage loads during play. The next load of each address takes its file from memory, so it downloads nothing. The files wait in memory until then.
+
+`onProgress` calls its handler as a download's bytes arrive and when one finishes or fails. It passes two counts: the bytes downloaded so far and the bytes expected so far. The expected bytes are the lengths of the responses that gave one, and 0 while none has. A response with no length still counts its bytes into the first count, so a page draws `Math.min(1, loaded / Math.max(total, loaded))`. A download that fails counts as finished too, so a loading bar reaches its end. It counts the bytes its response announced, or one byte when it announced none. Each call names the address whose bytes moved. The files of the download list count too, also the bytes that arrived before the setup added the handler.
 
 ```ts
 assets.onProgress((loaded, total, url) => page.post('loading', { loaded, total, url }));
@@ -306,7 +319,7 @@ await assets.preload(['/tex/a.png', '/tex/b.png', '/tex/c.png']);
 
 ## Caching
 
-Loads of one address at the same time share one download. Files that `preload` downloaded wait in memory until a load takes them. The HTTP cache keeps everything else, as it does for a page's own requests, so three.js's `THREE.Cache` has no counterpart.
+Loads of one address at the same time share one download. Files that `preload` or the download list downloaded wait in memory until a load takes them. The HTTP cache keeps everything else, as it does for a page's own requests, so three.js's `THREE.Cache` has no counterpart.
 
 A download that the network rejects, or that a server answers with a 5xx, is tried once more after a short wait. A tunnel or a proxy can refuse the first request of a session while the same file serves a moment later. A refused answer such as a 404, and a body that arrived but will not read, are reported at once.
 
@@ -361,7 +374,7 @@ Each call rejects with an engine error that says how to fix the problem:
 | [E1413](../errors/E1413.md) | A file from another origin, whose server did not allow the page to read it |
 | [E1208](../errors/E1208.md) | A texture option that the engine does not know, or one that a KTX2 file cannot take. Also numbers that `lutFromData` cannot make a table from |
 
-`preload` rejects with the error of the first file that fails. The files that arrived stay in memory, and a later load of the failed file tries again.
+`preload` rejects with the error of the first file that fails. The files that arrived stay in memory, and a later load of the failed file tries again. A file of the download list that fails has no caller to reject. The load that takes it rejects with its error, such as E1411, which names `defineSketch()`'s downloads.
 
 ## Models that users upload
 

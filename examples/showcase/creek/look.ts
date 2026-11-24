@@ -2,7 +2,7 @@
 // hazes its distance, and the stage of moods that carries both, so the garden's colors are set in
 // one place and a test can hold them.
 import type { DirectionalLight, Environment, SketchContext } from '@null3d/engine';
-import { createMoods, type Stage, type StageOptions } from '../../lib/stage';
+import { createMoods, type Stage, type StageMap, type StageOptions } from '../../lib/stage';
 import { CLOUD_TOP } from './land';
 
 /**
@@ -78,7 +78,7 @@ export function createCreekStage(
 	ctx: SketchContext,
 	sun: DirectionalLight,
 	sky: Environment | Promise<Environment>,
-	room: Environment | Promise<Environment>,
+	room: StageMap,
 	/** How much of the fog the sky and the background take, from 0 to 1. */
 	backgroundFog = 0,
 ): Stage {

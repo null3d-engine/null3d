@@ -36,6 +36,7 @@ run('object-events', async () => {
 		maxPixelRatio: 1,
 	});
 	await engine.firstFrame;
+	await engine.presetChecked;
 	window.objectEvents = (message) =>
 		new Promise((resolve) => {
 			const off = engine.onSketchMessage((name, data) => {

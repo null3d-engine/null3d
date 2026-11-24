@@ -20,8 +20,10 @@ run('warm-up', async () => {
 	});
 	const failures: string[] = [];
 	engine.onFailure((error) => failures.push(error.code));
-	// Play starts once the first frame, which built the scene's pipelines, is on screen.
+	// Play starts once the first frame, which built the scene's pipelines, is on screen. The page
+	// measures once the preset check has chosen the preset that play keeps.
 	await engine.firstFrame;
+	await engine.presetChecked;
 	const play = await engine.measure(SECONDS);
 	/** The depth prepass setting while the object warmed up, as the sketch reported it. */
 	let depthPrepass: boolean | undefined;

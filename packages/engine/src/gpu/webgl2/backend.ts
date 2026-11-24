@@ -25,6 +25,7 @@ import type { DepthMode } from '../../page/switches';
 import { DEV } from '../../shared/dev';
 import { ImageTable } from '../../shared/images';
 import type { DeviceShaderSet } from '../device-shaders';
+import { EarlyBuilds, PipelineListing } from '../early-builds';
 import { JoinedBuilds, joinedReady } from '../effect-join';
 import {
 	CLOUD_FIELD_WORD,
@@ -34,6 +35,7 @@ import {
 } from '../environment-words';
 import { floatOfBits } from '../float-bits';
 import { GpuMemory, textureBytes } from '../memory';
+import { pipelineName } from '../pipeline-name';
 import type { ReadSink } from '../readback';
 import { variantFor } from '../variants';
 import {
@@ -52,6 +54,7 @@ import {
 	customTemplate,
 	engineTemplates,
 	type GlslTemplate,
+	LinkFailure,
 	linkLogs,
 	metalFault,
 	mipmapTemplate,
@@ -436,6 +439,11 @@ const NATIVE_MIP_FORMATS: ReadonlySet<number> = new Set([
  * filters. The engine's own draws make the levels of other textures, such as uploaded images
  * (`generateMipmaps` in the backend says why).
  */
+/** True when `error` is a link that the driver refused, on a context that is not lost. */
+function linkRefused(gl: WebGL2RenderingContext, error: unknown): error is LinkFailure {
+	return error instanceof LinkFailure && !gl.isContextLost();
+}
+
 function linearMips(format: number, usage: number, layers: number, mips: number): boolean {
 	const target = G.TEXTURE_USAGE_RENDER_ATTACHMENT | G.TEXTURE_USAGE_COPY_DST;
 	return (
@@ -548,6 +556,10 @@ export class WebGL2Backend {
 	 * draws draw nothing.
 	 */
 	private readonly parked = new Map<number, Uint32Array>();
+	/** The create commands of the pipelines that the lists before the first frame create. */
+	private readonly listing = new PipelineListing();
+	/** The compiles of the programs that the last start's first frame built, until this first frame. */
+	private early: EarlyBuilds<never> | undefined;
 	/**
 	 * In development builds, the programs that a hot update of a custom material's shader compiles,
 	 * each under the key of the program it replaces once it has compiled. `relinked` is set once the
@@ -559,7 +571,16 @@ export class WebGL2Backend {
 	 * bits. Without it, every pipeline's build must be in the shaders that the backend got.
 	 */
 	moreShaders: DeviceShaderSet | undefined;
-	/** True while the current pipeline's program is compiling: draws draw nothing until it is set again. */
+	/**
+	 * Hears each program of the scene's objects that the driver refused to link twice, by its
+	 * pipeline's name and the link's logs. Its draws draw nothing from then on, and the frames go
+	 * on without them.
+	 */
+	refused: ((pipeline: string, reason: string) => void) | undefined;
+	/**
+	 * True while the current pipeline's program is compiling, or after the driver refused it: draws
+	 * draw nothing until it is set again.
+	 */
 	private skipDraws = false;
 	private readonly anisotropic: EXT_texture_filter_anisotropic | null;
 	private readonly maxAnisotropy: number;
@@ -799,10 +820,37 @@ export class WebGL2Backend {
 		this.replayWord = -1;
 		let i = start;
 		while (i < end && ((words[i] as number) & 0xff) === G.OP_CREATE_RENDER_PIPELINE) {
+			this.listing.add(G.OP_CREATE_RENDER_PIPELINE, words, i + 1);
 			this.createPipeline(words, i + 1, true);
 			i += (words[i] as number) >>> 8;
 		}
+		if (this.listing.active && this.parallel) this.compileAhead(words, i, end);
 		return i;
+	}
+
+	/**
+	 * Starts to compile, in the background, the program of each pipeline that the list in
+	 * `words[start, end)` creates after other commands. The frame before the first one then waits
+	 * for them, as for the programs of the pipelines at the list's front, instead of its first draw
+	 * with each waiting for its compile.
+	 */
+	private compileAhead(words: Uint32Array, start: number, end: number): void {
+		for (let i = start; i < end; ) {
+			const header = words[i] as number;
+			const length = header >>> 8;
+			if (length === 0) return;
+			if ((header & 0xff) === G.OP_CREATE_RENDER_PIPELINE) {
+				const template = words[i + 2] as number;
+				const permutation = words[i + 3] as number;
+				try {
+					if (!this.joins.joined(template) && this.templateReady(template, permutation))
+						this.programOf(template, permutation, true);
+				} catch {
+					// The pipeline's own command meets the error.
+				}
+			}
+			i += length;
+		}
 	}
 
 	/**
@@ -938,6 +986,41 @@ export class WebGL2Backend {
 					if (build.glsl?.[template.pipeline]) this.programOf(id, build.permutation, true);
 			});
 		}
+	}
+
+	/**
+	 * Starts to compile the programs of `list`, a pipeline list of the pipelines that the first frame
+	 * of the sketch's last start built (`gpu/early-builds.ts`). Each compile starts once its shader
+	 * is there, and a pipeline of the same template and permutation takes the program. No frame
+	 * waits for a program that no pipeline takes. A joined shader's program compiles when its
+	 * pipeline comes, as its failure sends the effects back to a pass each.
+	 */
+	buildEarly(list: Uint32Array): void {
+		this.early?.stop();
+		this.early = new EarlyBuilds<never>(list, (op, operands) => {
+			const template = operands[1] as number;
+			const permutation = operands[2] as number;
+			if (op !== G.OP_CREATE_RENDER_PIPELINE || this.joins.joined(template)) return null;
+			if (!this.templateReady(template, permutation)) return undefined;
+			const key = `${template} ${permutation}`;
+			if (this.programs.has(key)) return null;
+			const glsl = this.need(this.templates, template, 'render pipeline template');
+			const program = createProgram(this.gl, glsl, permutation);
+			program.early = true;
+			this.programs.set(key, program);
+			return null;
+		});
+	}
+
+	/**
+	 * Ends the list of the pipelines that the frames before the first one created, and returns it,
+	 * once: the first frame has drawn. The compiles of the last start's list that have not started
+	 * stop.
+	 */
+	takeListing(): Uint32Array | undefined {
+		this.early?.stop();
+		this.early = undefined;
+		return this.listing.take();
 	}
 
 	/** Creates each parked pipeline whose custom material's shader has arrived. */
@@ -1176,6 +1259,7 @@ export class WebGL2Backend {
 				}
 				case G.OP_CREATE_RENDER_PIPELINE:
 					// A list that creates a pipeline after other commands waits for it at its first draw.
+					this.listing.add(op, words, a);
 					this.createPipeline(words, a, false);
 					break;
 				case G.OP_CREATE_BIND_GROUP: {
@@ -1330,6 +1414,34 @@ export class WebGL2Backend {
 		return program;
 	}
 
+	/**
+	 * Puts a program of the scene's objects in use, as `useProgram` does, and returns true. A link
+	 * that the driver refused links once more, from new shaders: a driver can run short of memory
+	 * while it links. A second refusal marks the program, so its draws draw nothing from then on,
+	 * reports it, and returns false. Any other failure, such as a material with more textures than
+	 * the stages hold, still stops the replay, and so does a link on a lost context, which the
+	 * renderer recovers from as a loss.
+	 */
+	private useObjectsProgram(program: Program): boolean {
+		const objects = program.objects as NonNullable<Program['objects']>;
+		try {
+			this.useProgram(program);
+			return true;
+		} catch (error) {
+			if (!linkRefused(this.gl, error)) throw error;
+		}
+		relink(this.gl, program);
+		try {
+			this.useProgram(program);
+			return true;
+		} catch (error) {
+			if (!linkRefused(this.gl, error)) throw error;
+			objects.refused = true;
+			this.refused?.(pipelineName(objects.template, objects.permutation), error.message);
+			return false;
+		}
+	}
+
 	/** Puts a program in use, first checking its link and binding its slots at its first use. */
 	private useProgram(program: Program): void {
 		if (!program.ready) {
@@ -1378,6 +1490,7 @@ export class WebGL2Backend {
 				? { template, start: performance.now(), failed: false }
 				: undefined;
 			if (joined) program.joined = joined;
+			if (glsl.meshPrepass) program.objects = { template, permutation, refused: false };
 			if ((background || joined) && this.parallel) {
 				program.background = true;
 				this.compiling.push(program);
@@ -1386,6 +1499,13 @@ export class WebGL2Backend {
 				// effects stay one pass each after the first frame, which waits for every program.
 				joined.failed = true;
 				this.joins.keptApart(template);
+			}
+		} else if (program.early) {
+			// A program that compiled ahead of its pipeline: the frames wait for it from now on.
+			program.early = undefined;
+			if (background && this.parallel) {
+				program.background = true;
+				this.compiling.push(program);
 			}
 		}
 		return program;
@@ -2836,13 +2956,21 @@ export class WebGL2Backend {
 
 	private setPipeline(p: Pipeline): void {
 		const program = p.program;
-		this.skipDraws = program.joined?.failed === true || !this.compiled(program);
+		this.skipDraws =
+			program.joined?.failed === true ||
+			program.objects?.refused === true ||
+			!this.compiled(program);
 		if (this.skipDraws) return;
 		if (program.joined) {
 			try {
 				this.useProgram(program);
 			} catch (error) {
 				this.joinFailed(program, error instanceof Error ? error.message : String(error));
+				this.skipDraws = true;
+				return;
+			}
+		} else if (program.objects) {
+			if (!this.useObjectsProgram(program)) {
 				this.skipDraws = true;
 				return;
 			}
@@ -3226,6 +3354,8 @@ export class WebGL2Backend {
 	}
 
 	destroy(): void {
+		this.early?.stop();
+		this.early = undefined;
 		const gl = this.gl;
 		for (let id = 0; id < this.buffers.length; id++) this.destroyBuffer(id);
 		for (let id = 0; id < this.textures.length; id++) this.destroyTexture(id);

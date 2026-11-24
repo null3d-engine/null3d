@@ -15,6 +15,7 @@ run('plant-download', async () => {
 	sketch.searchParams.set('species', params.get('species') ?? '');
 	const engine = await createEngine({ canvas, sketch, maxPixelRatio: 1, preset });
 	await engine.firstFrame;
+	await engine.presetChecked;
 	progress('engine started');
 	const report = await new Promise<DownloadReport>((resolve, reject) => {
 		engine.onSketchMessage((name, data) => {

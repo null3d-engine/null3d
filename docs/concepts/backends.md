@@ -175,6 +175,8 @@ KTX2 textures take the compressed format of the first family that the device has
 
 A WebGPU device can be lost, for example after a driver reset, and so can a WebGL2 context. The thread that draws then makes a new device, or waits for the context to come back. It draws the whole scene again from data the engine kept. A texture from a file loads its file again. On a phone or a tablet the engine also keeps a copy of each texture's texels after their upload, so those maps come back too. The `keepTextureCopies` option of `createEngine` turns that on or off on any device ([Page API](../api/engine.md#options)). Keeping the copies costs about one more copy of each image in memory. Where no copy is kept, such a texture draws without its map until the sketch gives it texels again ([Textures](../api/textures.md#when-the-browser-takes-the-gpu-away)). The sketch worker keeps running, so your sketch's state survives. If the GPU is lost more than twice within one minute, or no new device starts, the engine stops drawing and reports E1302.
 
+The engine also gives the GPU away itself while the browser keeps the page in its back-forward cache, where it keeps texture copies. A cached page would otherwise hold all its GPU memory, and on a phone with little memory the next page could lack it. When the page shows again, the thread that draws makes a new device and draws the scene again, as after a loss. This counts as no loss.
+
 ## Minimum browsers
 
 | Browser | Minimum version |

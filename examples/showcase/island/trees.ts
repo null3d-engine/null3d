@@ -25,25 +25,26 @@ import { createWind, type Wind } from '@null3d/wind';
 import { type Stand, type SwayLook, standPart, swayingPart } from '../../lib/blender-models';
 import { Noise, random } from '../../lib/procedural';
 import { createSway } from '../../lib/sway';
-import { edgeGrid, inCore, read } from './ground';
+import { inCore } from './ground';
 import { beachShare, golfShare, inland, townShare } from './island';
 import { type Build, build, type Color, cypress, finish, quad, shrub } from './kit';
 import { loadPlants, type Plant, type PlantCard, type PlantKind, type Species } from './models';
 import {
 	CYPRESS,
 	canopyAt,
-	FILL_SPOTS,
+	fillSpots,
 	groundHeight,
 	LOTS,
 	type Lot,
 	OAK,
 	OLIVE,
 	ROADS,
-	SHRUBS,
+	roadEdge,
+	shrubSpots,
 	slopeAt,
 	standing,
-	TREE_SPOTS,
 	type TreeSpot,
+	treeSpots,
 	UMBRELLA,
 } from './plan';
 import { onRetainingWall, parkLawns } from './town';
@@ -94,9 +95,14 @@ const SCRUB_ROAD_CLEAR = 3;
  * never meets the wood in a straight edge. The plan's own shrubs keep clear of the town's ground,
  * the fairways and the beach, which leaves the strips between them bare. A spot takes scrub where
  * the ground is steep and a wood stands a few meters off, clear of roads, the beach, the fairways
- * and the town's core. The spots are fixed, so every preset stands the same ones.
+ * and the town's core. The spots are fixed, so every preset stands the same ones. They are placed
+ * at their first read.
  */
-export const EDGE_SCRUB: readonly TreeSpot[] = (() => {
+export const edgeScrub = (): readonly TreeSpot[] => (scrub ??= placeEdgeScrub());
+let scrub: readonly TreeSpot[] | undefined;
+
+/** Places the scrub along the rims of the bare patches. */
+function placeEdgeScrub(): TreeSpot[] {
 	let seed = 1729;
 	const next = () => {
 		seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
@@ -108,11 +114,12 @@ export const EDGE_SCRUB: readonly TreeSpot[] = (() => {
 	// The trees, in buckets ten meters across, so a rim finds its nearest without a scan.
 	const bucket = 10;
 	const bcell = (value: number) => Math.floor(value / bucket);
-	const trees = new Map<string, readonly TreeSpot[]>();
-	for (const spot of [...TREE_SPOTS, ...FILL_SPOTS]) {
+	const trees = new Map<string, TreeSpot[]>();
+	for (const spot of [...treeSpots(), ...fillSpots()]) {
 		const key = `${bcell(spot.x)},${bcell(spot.z)}`;
 		const list = trees.get(key);
-		trees.set(key, list ? [...list, spot] : [spot]);
+		if (list) list.push(spot);
+		else trees.set(key, [spot]);
 	}
 	const nearestTree = (x: number, z: number): number => {
 		let near = Number.POSITIVE_INFINITY;
@@ -157,7 +164,7 @@ export const EDGE_SCRUB: readonly TreeSpot[] = (() => {
 			}
 		}
 	return spots;
-})();
+}
 
 /**
  * The distance at which a tree and a shrub hand over from their meshes to their cards, in meters
@@ -258,9 +265,17 @@ function onHouse(): (x: number, z: number) => boolean {
  * The forest floor's plants: low scrub and fallen litter. The scrub holds the shade of a closed
  * wood and thins out into the open, and the litter lies everywhere that is not worked ground,
  * thicker under a crown. The spots come from one fixed seed, so every load stands the same ones,
- * and the plan's own spots are not moved.
+ * and the plan's own spots are not moved. They are placed at their first read.
  */
-const FLOOR: { undergrowth: readonly FloorSpot[]; litter: readonly FloorSpot[] } = (() => {
+interface Floor {
+	readonly undergrowth: readonly FloorSpot[];
+	readonly litter: readonly FloorSpot[];
+}
+let floor: Floor | undefined;
+const floorSpots = (): Floor => (floor ??= placeFloor());
+
+/** Places the forest floor's plants. */
+function placeFloor(): Floor {
 	const next = random(4801);
 	const held = onHouse();
 	const undergrowth: FloorSpot[] = [];
@@ -272,7 +287,7 @@ const FLOOR: { undergrowth: readonly FloorSpot[]; litter: readonly FloorSpot[] }
 			const pz = z + (next() - 0.5) * FLOOR_CELL * 0.8;
 			const [bush, leaf, size, turn] = [next(), next(), next(), next()];
 			if (inland(px, pz) < 7 || beachShare(px, pz) > 0.12) continue;
-			if (read(edgeGrid, px, pz) < 1.6 || slopeAt(px, pz) > 1.6) continue;
+			if (roadEdge(px, pz) < 1.6 || slopeAt(px, pz) > 1.6) continue;
 			if (inCore(px, pz) || held(px, pz) || lawns.some((lawn) => lawn.where(px, pz))) continue;
 			const shade = canopyAt(px, pz);
 			// The golf course's mown turf keeps clear, and its rough and its woods take the floor.
@@ -308,7 +323,7 @@ const FLOOR: { undergrowth: readonly FloorSpot[]; litter: readonly FloorSpot[] }
 				});
 		}
 	return { undergrowth, litter };
-})();
+}
 
 /**
  * A patch of fallen leaves and twigs, a few tens of centimeters across, lying a hair above the
@@ -456,12 +471,31 @@ export function handOverGroups<T>(stands: readonly T[], handOver: number): HandO
 	return groups.filter((group) => group.stands.length > 0);
 }
 
+/** The trees that stand at a preset's share, and the far canopy, with the wall's share left out. */
+interface TreeStands {
+	readonly kept: readonly TreeSpot[];
+	readonly fills: readonly TreeSpot[];
+}
+
+/**
+ * Each preset's stands, worked out once: a page that places the code spires before its first frame
+ * and grows the models after it reads the same stands twice.
+ */
+const standsByPreset = new Map<QualityPreset, TreeStands>();
+
 /** The trees that stand at the preset's share, and the far canopy, with the wall's share left out. */
-function treeStands(ctx: SketchContext): { kept: readonly TreeSpot[]; fills: readonly TreeSpot[] } {
+function treeStands(ctx: SketchContext): TreeStands {
 	const preset = ctx.quality.preset;
-	const onWall = onRetainingWall();
-	const kept = standing(TREE_SPOTS, TREE_SHARE[preset]).filter((spot) => !onWall(spot.x, spot.z));
-	return { kept, fills: standing(FILL_SPOTS, TREE_SHARE[preset]) };
+	let stands = standsByPreset.get(preset);
+	if (!stands) {
+		const onWall = onRetainingWall();
+		const kept = standing(treeSpots(), TREE_SHARE[preset]).filter(
+			(spot) => !onWall(spot.x, spot.z),
+		);
+		stands = { kept, fills: standing(fillSpots(), TREE_SHARE[preset]) };
+		standsByPreset.set(preset, stands);
+	}
+	return stands;
 }
 
 /** The code-built spires that stand in the cypress model's place until it loads, or when it cannot. */
@@ -676,20 +710,35 @@ export async function createTrees(
 	plant(
 		'oleander',
 		species.oleander,
-		[...standing(SHRUBS, TREE_SHARE[preset]), ...standing(EDGE_SCRUB, TREE_SHARE[preset])].map(
-			(spot, k) => ({
-				x: spot.x,
-				y: spot.y,
-				z: spot.z,
-				yaw: Math.imul(k + 1, 2654435761) / 683565275,
-				size: spot.scale,
-			}),
-		),
+		[
+			...standing(shrubSpots(), TREE_SHARE[preset]),
+			...standing(edgeScrub(), TREE_SHARE[preset]),
+		].map((spot, k) => ({
+			x: spot.x,
+			y: spot.y,
+			z: spot.z,
+			yaw: Math.imul(k + 1, 2654435761) / 683565275,
+			size: spot.scale,
+		})),
 		SHRUB_CARDS[preset],
 	);
 	// The floor under the near woods: low scrub that holds the shade, and fallen litter beneath it.
-	standFloor(ctx, shrub(180), FLOOR.undergrowth, FLOOR_SHARE[preset], FLOOR_REACH[preset], false);
-	standFloor(ctx, leafLitter(), FLOOR.litter, FLOOR_SHARE[preset], FLOOR_REACH[preset], false);
+	standFloor(
+		ctx,
+		shrub(180),
+		floorSpots().undergrowth,
+		FLOOR_SHARE[preset],
+		FLOOR_REACH[preset],
+		false,
+	);
+	standFloor(
+		ctx,
+		leafLitter(),
+		floorSpots().litter,
+		FLOOR_SHARE[preset],
+		FLOOR_REACH[preset],
+		false,
+	);
 	const lawns = await Promise.all(
 		parkLawns().map((lawn, k) =>
 			createGrass(ctx, {

@@ -32,6 +32,7 @@ run('plant-coverage', async () => {
 		setTimeout(() => reject(new Error('the sketch posted no crown boxes')), 150_000);
 	});
 	await engine.firstFrame;
+	await engine.presetChecked;
 	progress(`the first frame drew with crowns at ${facts.distances.join(', ')} m`);
 	const frame = await engine.captureFrame();
 	await engine.destroy();

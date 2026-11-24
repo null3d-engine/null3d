@@ -69,6 +69,7 @@ run('room-light', async () => {
 	const failures: string[] = [];
 	engine.onFailure((error) => failures.push(error.code));
 	await engine.firstFrame;
+	await engine.presetChecked;
 	// The dark sample comes before the request: on a fast GPU the environment can be ready before
 	// the first capture after the request, so no capture after it need be dark.
 	const dark = await engine.captureFrame();

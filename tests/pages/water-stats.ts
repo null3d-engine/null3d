@@ -42,6 +42,7 @@ run('water-stats', async () => {
 		stats: true,
 	});
 	await engine.firstFrame;
+	await engine.presetChecked;
 	const tier = engine.capabilities.tier;
 	// Only WebGPU times passes one by one. WebGL2 times the whole frame, so its row has no figure.
 	const stepTimer = tier === 'webgpu' && engine.capabilities.features.includes('timestamp-query');

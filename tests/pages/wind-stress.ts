@@ -59,6 +59,7 @@ run('wind-stress', async () => {
 	const failures: string[] = [];
 	engine.onFailure((error) => failures.push(error.message));
 	await engine.firstFrame;
+	await engine.presetChecked;
 
 	const read = (): Promise<StressState | null> =>
 		new Promise((resolve) => {

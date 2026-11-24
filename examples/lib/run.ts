@@ -317,8 +317,16 @@ export async function startDemo({
 	for (const [type, data] of early.splice(0))
 		for (const reader of engineReaders) reader(type, data);
 	// The overlay leaves once the first frame is drawn and the scene's own loading has gone quiet,
-	// so a stage that reports after the frame never changes a card that is already going.
-	void engine.firstFrame.then(reachedFirstFrame, reachedFirstFrame);
+	// so a stage that reports after the frame never changes a card that is already going. An engine
+	// that stops drawing before its first frame leaves the overlay to say why, unless the page
+	// aborted the demo, or the start failed for a reason that the overlay already shows: both stop
+	// the engine themselves.
+	let failedStart = false;
+	void engine.firstFrame.then(reachedFirstFrame, (error: unknown) => {
+		if (signal?.aborted || failedStart) return;
+		loader.fail(error instanceof Error ? error.message : String(error));
+		if (hud) hud.hidden = true;
+	});
 	// A demo with sound shows its speaker over the canvas's top right corner and plays its sound
 	// from the start. A held frame shows no controls, so it plays no sound.
 	const stage = canvas.parentElement;
@@ -341,6 +349,7 @@ export async function startDemo({
 			// would act on the demo leave, and so does the engine. A page that already aborted the
 			// demo may show another in those places, so the page is left as it is then.
 			const text = `The demo's page part did not start: ${error instanceof Error ? error.message : String(error)}`;
+			failedStart = true;
 			stop.abort();
 			if (!signal?.aborted) {
 				loader.fail(text);

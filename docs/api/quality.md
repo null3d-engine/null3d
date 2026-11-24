@@ -30,11 +30,12 @@ export default defineSketch(({ quality, page }) => {
 
 ## Choosing the preset on the page
 
-The page names the preset with the `preset` option of `createEngine`, or leaves the choice to the engine with `auto`, the default. The engine reports the preset that it runs in `engine.mode.preset`, and what the preset check measured in `engine.mode.presetCheck`:
+The page names the preset with the `preset` option of `createEngine`, or leaves the choice to the engine with `auto`, the default. The engine reports the preset that it runs in `engine.mode.preset`, and what the preset check measured in `engine.mode.presetCheck`. The check measures the first frames of play, so wait for `engine.presetChecked` before you read its choice:
 
 ```ts
 const engine = await createEngine({ canvas, sketch, preset: 'auto' });
 console.log(engine.mode.preset, engine.mode.crashedStarts, engine.mode.memoryMaximumMiB);
+await engine.presetChecked;
 console.log(engine.mode.presetCheck); // { from: 'high', targetFps: 60, rounds: [...], reused: false }, or null
 ```
 
@@ -42,6 +43,7 @@ console.log(engine.mode.presetCheck); // { from: 'high', targetFps: 60, rounds: 
 | --- | --- |
 | `preset: 'auto'` | The engine chooses the preset for the device, then checks it with the sketch's scene and lowers it where the GPU cannot hold the frame rate. |
 | `preset: 'low'` to `'ultra'` | Names the preset. The GPU path still caps it, and a crashed start lowers it. |
+| `presetCheck: 'during-play'` or `'before-play'` | When the preset check measures: in the first frames of play, the default, or before play, with `createEngine` waiting for it: [The preset check](../concepts/quality-presets.md#the-preset-check). |
 | `targetFps: 'display'` or a whole number | The frame rate that the preset check and the governor defend. Without it, the display's refresh rate, at most 60. `'display'` defends the display's full rate, and a number caps the target at that rate: [The target frame rate](../concepts/quality-presets.md#the-target-frame-rate). |
 | `maxPixelRatio` | Replaces the preset's pixel ratio cap. |
 | `antialias: 'msaa'`, `'fxaa'` or `'none'` | Replaces the preset's anti-aliasing mode. |
@@ -52,6 +54,7 @@ console.log(engine.mode.presetCheck); // { from: 'high', targetFps: 60, rounds: 
 | `?tier=lowest` | Starts in the lowest quality tier for tests and devices. The render scale fixes at a third, and the sun's cast shadows and bloom go off. WebGL2 also drops its depth prepass. The four presets keep their looks, and the governor enters the same tier when frames still miss at the preset's floor. |
 | `?tier=off` | Keeps the governor out of the lowest quality tier, so a test reads the presets' own settings and looks on a slow machine. |
 | `?target-fps=display` or `?target-fps=90` | Sets the target frame rate. It wins over the `targetFps` option. |
+| `?preset-check=during-play` or `?preset-check=before-play` | Sets when the preset check measures. It wins over the `presetCheck` option. |
 
 ## Settings
 
@@ -65,7 +68,7 @@ Most settings change during play. The preset tables' "Changes" column names the 
 
 [GPU tiers and backends](../concepts/backends.md#color-and-anti-aliasing-on-each-tier) compares the anti-aliasing modes on each GPU path.
 
-`quality.set(settings)` changes the settings it gets and keeps the others. It takes the settings that change during play, applies them from the next frame on, and returns a promise that resolves at once. Another setting, or a value outside the setting's range, throws [E1213](../errors/E1213.md) and changes nothing. So does a `minRenderScale` above `maxRenderScale`, an option of `createEngine` with a value that its setting does not take, and a preset name that `createEngine` does not know. To move both ends of the render scale's range past each other, give both in one call.
+`quality.set(settings)` changes the settings it gets and keeps the others. It takes the settings that change during play, applies them from the next frame on, and returns a promise that resolves at once. Another setting, or a value outside the setting's range, throws [E1213](../errors/E1213.md) and changes nothing. So does a `minRenderScale` above `maxRenderScale`, an option of `createEngine` with a value that its setting does not take, and a preset name that `createEngine` does not know. To move both ends of the render scale's range past each other, give both in one call. In the [lowest quality tier](../concepts/quality-presets.md#the-lowest-quality-tier), a `minRenderScale` above the tier's cap of the scale raises the cap to it instead. Only a `maxRenderScale` that the sketch set itself throws.
 
 ## Switching presets
 

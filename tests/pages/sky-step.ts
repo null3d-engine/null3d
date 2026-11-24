@@ -44,6 +44,7 @@ run('sky-step', async () => {
 		maxPixelRatio: 1,
 	});
 	await engine.firstFrame;
+	await engine.presetChecked;
 	const frames: { mirror: number[]; rough: number[] }[] = [];
 	const capture = async () => {
 		const { width, height, pixels } = await engine.captureFrame();

@@ -82,6 +82,7 @@ run('css3d-periodictable', async () => {
 		return element;
 	});
 	await engine.firstFrame;
+	await engine.presetChecked;
 	// A cell reaches the screen once the frame that placed it reaches the page: the engine writes
 	// its matrix then. Poll a bounded number of frames, as the 3D label test does, so a slow
 	// software renderer cannot hang the page.

@@ -115,7 +115,7 @@ M2-R18 built the loader and the bootstrap. [Implementation notes](../implementat
 Rule, by the coordinator: a decoder's task never holds up a frame.
 
 - A job worker leaves the job loop only between frame chunks. The sketch thread runs every chunk that no job worker claims, so a frame never waits for a worker that is away.
-- With two or more job workers, the first never takes tasks, so one job worker always serves the frames.
+- With two or more job workers running, the first takes no new task, so one job worker always serves the frames.
 - Measured on the Mac (M5 Max, Chrome, WebGPU, 12 s of S1 with the `decode` switch). The KTX2 sample model's 19 textures loaded round after round, 893 files per run. The meshopt sample model loaded after each round. With 16 job workers and with 2, every run kept 719 or 720 of 720 frames at 60 Hz. The busiest thread's CPU time per frame at the 99th percentile was:
 
 | Job workers | Without decoding | Transcoder in its own worker | Transcoder in the job workers |

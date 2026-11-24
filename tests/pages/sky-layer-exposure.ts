@@ -38,6 +38,7 @@ run('sky-layer-exposure', async () => {
 		maxPixelRatio: 1,
 	});
 	await engine.firstFrame;
+	await engine.presetChecked;
 	progress('the first frame');
 	const frames = [];
 	for (const [stretch, settings] of STRETCHES.entries()) {

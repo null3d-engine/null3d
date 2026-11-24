@@ -51,6 +51,7 @@ run('overload', async (): Promise<OverloadResult> => {
 			engine.postToSketch('load', count);
 		});
 	await engine.firstFrame;
+	await engine.presetChecked;
 	const steps: OverloadStep[] = [];
 	let overloaded: OverloadStep | null = null;
 	let displayHz: number | null = null;

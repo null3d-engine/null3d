@@ -133,6 +133,13 @@ extern "C" {
     fn console_error(text: &str);
 }
 
+/// Brings this thread's view of the shared memory's size up to date, so that its copies and fills
+/// reach memory that another thread grew: the job system's memory hook (see the heap module).
+fn refresh_memory() {
+    #[cfg(target_arch = "wasm32")]
+    heap::refresh_view();
+}
+
 /// Upload ranges one frame can list before it uploads everything instead.
 const UPLOAD_RANGES: u32 = 4096;
 
@@ -670,6 +677,7 @@ pub fn init_engine(
                 workers: job_workers,
                 clock: Some(performance_now),
                 want_workers: Some(want_job_workers),
+                refresh_memory: Some(refresh_memory),
                 ..JobConfig::default()
             }))
             .is_ok(),
@@ -6074,6 +6082,8 @@ pub fn clip_ready(ticket: u32) -> u32 {
         if Arc::strong_count(job) > 1 {
             return Ok(CLIP_PENDING);
         }
+        // The job worker that resampled the clip may have put it in memory that it grew.
+        refresh_memory();
         // A job that no task held runs here: without job workers, or with a full queue.
         if job.clip.get().is_none() {
             job.run();

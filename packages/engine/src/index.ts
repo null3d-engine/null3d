@@ -68,6 +68,7 @@ export type {
 } from './page/engine';
 export { createEngine } from './page/engine';
 export type {
+	DrawingStart,
 	FrameMetrics,
 	FrameSummary,
 	GpuPassStats,
@@ -93,7 +94,7 @@ export type { EngineLabels } from './page/labels';
 export type { PointerLockOptions } from './page/pointer-lock';
 export type { DepthMode, LatencyMode, SketchThread } from './page/switches';
 export type { VideoOptions } from './page/videos';
-export type { PresetCheck, PresetCheckRound, TargetFps } from './quality/check';
+export type { PresetCheck, PresetCheckRound, PresetCheckTiming, TargetFps } from './quality/check';
 export type { DeviceHints, DeviceKind } from './quality/chooser';
 export { deviceKind } from './quality/chooser';
 export { readDeviceHints } from './quality/device-hints';

@@ -46,6 +46,7 @@ async function start(pieces: boolean): Promise<Engine> {
 	}
 	const engine = await createEngine({ canvas, sketch, preset: 'high', maxPixelRatio: 1 });
 	await engine.firstFrame;
+	await engine.presetChecked;
 	return engine;
 }
 

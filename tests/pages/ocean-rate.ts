@@ -45,6 +45,7 @@ run('ocean-rate', async () => {
 	sketch.search = `?scale=1&fixed${every === null ? '' : `&every=${every}`}`;
 	const engine = await createEngine({ canvas, sketch, maxPixelRatio: 1 });
 	await engine.firstFrame;
+	await engine.presetChecked;
 	const settled = () =>
 		new Promise<void>((resolve) => {
 			let stop: () => void = () => {};

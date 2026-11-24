@@ -17,6 +17,7 @@ import { reasonOf } from '../errors/message';
 import * as C from '../generated/core';
 import { hexValue, invalidColor } from '../math/hex';
 import type { Vec3Like } from '../math/types';
+import { importOnce } from '../shared/import-once';
 import type { Quality } from '../sketch/quality';
 import { type ColorInput, writeLinearColor } from './color';
 import { type Effect, EffectChain, type EffectOptions } from './effects';
@@ -1568,13 +1569,16 @@ function checkGrading(grading: GradingSettings | false | undefined): void {
 	checkRange('grading.splitToning.strength', split.strength, 0, 1);
 }
 
+/** The full-screen feature adapter's module, shared by every call that waits for it. */
+const featureEffectCode = importOnce(() => import('./feature-effects'));
+
 /**
  * The full-screen feature adapter, which loads at the first call that places a feature, so a page
  * that places none downloads none of it. Throws E1406 when its code does not download.
  */
 async function loadFeatureEffects(call: string): Promise<typeof import('./feature-effects')> {
 	try {
-		return await import('./feature-effects');
+		return await featureEffectCode();
 	} catch (error) {
 		throw new EngineError(
 			'E1406',

@@ -29,6 +29,7 @@ run('render-scale', async () => {
 	const failures: string[] = [];
 	engine.onFailure((error) => failures.push(error.code));
 	await engine.firstFrame;
+	await engine.presetChecked;
 	const steady = await engine.measure(SECONDS);
 	const drawn = new Promise<number[]>((resolve) => {
 		const off = engine.onSketchMessage((name, data) => {

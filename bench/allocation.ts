@@ -438,7 +438,7 @@ export const WIND_BUDGETS: Record<(typeof WORKERS)[number], Record<string, numbe
  * 32-byte record above the wind's largest figure.
  */
 export const WIND_CALL_BUDGETS: Readonly<Record<string, number>> = {
-	'n.onmessage shared/tasks.ts': 368,
+	'answer shared/tasks.ts': 368,
 };
 
 /**
@@ -561,7 +561,7 @@ const CALL_BUDGETS: Readonly<Record<string, number>> = { '(IDLE)': 48, '(JS)': 2
 export const TASK_CALL_BUDGETS: Readonly<Record<string, number>> = {
 	'pose null3d/s1-sketch.ts': 128,
 	'run shared/tasks.ts': 560,
-	'n.onmessage shared/tasks.ts': 336,
+	'answer shared/tasks.ts': 336,
 	'send src/field.ts': 80,
 	'ask src/field.ts': 208,
 	'then (built-in)': 96,

@@ -117,7 +117,7 @@ for (const mode of ENGINE_MODES) {
 
 // The page starts the downloads that its start needs while the core downloads, and does not wait
 // until the core is ready. With worker threads it starts the workers, which load the core's loader
-// at once, and it fetches the sketch module into the browser's cache for the sketch worker. Where
+// at once, and the sketch worker imports the live sketch's module as soon as its script runs. Where
 // the page runs the sketch, in single-threaded mode and with the sketch on the main thread, it loads
 // the core's loader and the sketch module itself. Wherever the page draws, it loads the renderer
 // too.
@@ -133,7 +133,17 @@ for (const mode of ENGINE_MODES) {
 		expect(core).toBeGreaterThan(0);
 		// Each step's time is whole milliseconds since the page started, as resource timing counts.
 		const coreAt = Number.parseInt(trail[core] as string, 10);
-		const files: Record<string, RegExp> = { 'the sketch module': /\/empty-sketch[^/]*\.[jt]s$/ };
+		const files: Record<string, RegExp> = {};
+		// A sketch worker imports a live sketch's module itself, as soon as its script runs, and never
+		// waits for its own core first. Its script can run after the core has arrived, as on a local
+		// dev server, whose core takes milliseconds and whose worker script is many files.
+		if (mode.sketchThread === 'worker') {
+			const imported = step('null3d-sketch: progress (sketch import started)');
+			expect(imported, 'the sketch module').toBeGreaterThanOrEqual(0);
+			expect(imported, 'the sketch module').toBeLessThan(
+				step('null3d-sketch: progress (core started)'),
+			);
+		} else files['the sketch module'] = /\/empty-sketch[^/]*\.[jt]s$/;
 		// The loader is null3d.js, or null3d-<hash>.js once bundled, where the hash may hold any of
 		// the characters of URL-safe base64, the underscore among them.
 		if (mode.sketchThread === 'main') files["the core's loader"] = /\/null3d(-[\w-]+)?\.js$/;
@@ -588,27 +598,31 @@ async function jobWorkerFails(page: Page, worker: string): Promise<void> {
 // task to a job worker by index, started or not, gets no answer from a worker that did not start:
 // the page then draws nothing at all. In the real-browsers run, Firefox can lose the download of a
 // worker's core, which leaves one of two job workers gone. Each case here loads a page that must
-// finish a task of the loader, and every case keeps the engine to two job workers.
-for (const [what, stop] of [
-	[
-		'no job worker starts',
-		(page: Page) => page.context().route(JOB_WORKER, (route) => route.abort()),
-	],
-	['the second of two job workers starts', (page: Page) => jobWorkerFails(page, 'null3d-job-1')],
-	['the first of two job workers starts', (page: Page) => jobWorkerFails(page, 'null3d-job-0')],
-] as const) {
-	test(`a page draws where ${what}`, async ({ page }, testInfo) => {
-		test.skip(testInfo.project.name === 'production build', 'no image test page');
-		await stop(page);
-		const sketch = encodeURIComponent('/tests/pages/sketches/ktx2-hdr-sketch.ts');
-		await page.goto(
-			`image.html?gpu=webgl2&hold=0&preset=high&size=320x180&jobs=2&sketch=${sketch}`,
-		);
-		const result = await pageResult<{ error?: string; pixels?: string }>(page, 60_000);
-		expect(result.error).toBeUndefined();
-		expect(result.pixels?.length ?? 0).toBeGreaterThan(0);
-	});
-}
+// finish a task of the loader, and every case keeps the engine to two job workers. The task runs on
+// the first job worker that is ready, so the hold can read its frame back while the other one's
+// second copy still fails: that failure is reported, and the held frame still publishes. Every
+// thread mode with job workers runs each case.
+for (const mode of THREADED_MODES)
+	for (const [what, stop] of [
+		[
+			'no job worker starts',
+			(page: Page) => page.context().route(JOB_WORKER, (route) => route.abort()),
+		],
+		['the second of two job workers starts', (page: Page) => jobWorkerFails(page, 'null3d-job-1')],
+		['the first of two job workers starts', (page: Page) => jobWorkerFails(page, 'null3d-job-0')],
+	] as const) {
+		test(`a page draws where ${what}, ${mode.name}`, async ({ page }, testInfo) => {
+			test.skip(testInfo.project.name === 'production build', 'no image test page');
+			await stop(page);
+			const sketch = encodeURIComponent('/tests/pages/sketches/ktx2-hdr-sketch.ts');
+			await page.goto(
+				`image.html?gpu=webgl2&hold=0&preset=high&size=320x180&jobs=2&sketch=${sketch}&${mode.query}`,
+			);
+			const result = await pageResult<{ error?: string; pixels?: string }>(page, 60_000);
+			expect(result.error).toBeUndefined();
+			expect(result.pixels?.length ?? 0).toBeGreaterThan(0);
+		});
+	}
 
 for (const gpu of ['webgpu', 'webgl2'] as const) {
 	for (const mode of ENGINE_MODES) {

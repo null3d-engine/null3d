@@ -59,6 +59,31 @@ export function preloadImports(
 	return changed;
 }
 
+/**
+ * Adds to the code of a chunk that a worker imports by its address an import of every chunk that it
+ * reaches through others. A worker asks for a file's imports only once that file has arrived, and
+ * has no preload to ask sooner, so a chain of imports costs one round trip per step. The sketch
+ * worker imports a sketch this way, and a job worker a task. With every file named in the chunk
+ * itself, the worker asks for them all once the chunk arrives. The imports go after the chunk's
+ * code. A module runs its imports in the order of their places in its code, and each added chunk
+ * already runs earlier through the import that reaches it, so no module runs at another time than
+ * before. Returns true when the code changed.
+ */
+export function directImports(
+	code: MagicString,
+	fileName: string,
+	chunks: Readonly<Record<string, { imports: readonly string[] }>>,
+): boolean {
+	const direct = new Set(chunks[fileName]?.imports ?? []);
+	const reached = [...staticImports(fileName, chunks)].filter(
+		(name) => name !== fileName && !direct.has(name) && chunks[name] !== undefined,
+	);
+	if (reached.length === 0) return false;
+	const lines = reached.map((name) => `import ${JSON.stringify(importAddress(fileName, name))};`);
+	code.append(`\n${lines.join('\n')}\n`);
+	return true;
+}
+
 /** The plugin for each worker build. */
 export function workerPreloadPlugin(): Plugin {
 	return {

@@ -90,6 +90,14 @@ export interface DropInput {
 	readonly id: number;
 }
 
+/**
+ * An input that only starts the module in the worker, which a cloud sends before it knows its
+ * chunks, so its first selection finds the task loaded.
+ */
+export interface StartInput {
+	readonly op: 'start';
+}
+
 /** The module, which the worker instantiates at its first task and keeps. */
 let wasm: SplatWasm | undefined;
 /**
@@ -260,7 +268,7 @@ export function run(
 	input: unknown,
 	modules: (name: string) => WebAssembly.Module,
 ): { output: SelectAnswer } {
-	const request = input as SelectInput | DropInput;
+	const request = input as SelectInput | DropInput | StartInput;
 	if (request.op === 'drop') {
 		const state = states.get(request.id);
 		if (state) {
@@ -270,6 +278,7 @@ export function run(
 		return { output: { total: 0 } };
 	}
 	const module = wasm ?? start(modules('splats'));
+	if (request.op === 'start') return { output: { total: 0 } };
 	const state = stateFor(request);
 	return { output: select(module, state, request) };
 }

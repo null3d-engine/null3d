@@ -215,6 +215,8 @@ export const CLOCK_LIMIT_MS = 2 ** 29;
  * so a time older than the new origin can take the origin's place and every verdict stays the same.
  */
 const CLOCK_KEPT_MS = 2 * LONGEST_RAISE_AFTER_MS;
+const MS_PER_SECOND = 1000;
+const MICROSECONDS_PER_SECOND = 1_000_000;
 
 // The figures of one window of frames, by index in `Governor.window`.
 /** The time at the window's end, in whole ms of the governor's clock. */
@@ -407,14 +409,15 @@ export class Governor {
 	 * Sets the range of the render scale, in thousandths, from `low` to `high`, and brings the scale
 	 * into it. The scale starts at the highest. A new range gives the levels new settings, so the
 	 * governor forgets their trials. In the lowest quality tier, the floor stays at the tier's, and
-	 * the range's own floor is what the exit gives back.
+	 * the range's own floor is what the exit gives back. `ownFloor` says that the sketch set the
+	 * floor itself, which then wins over the tier's.
 	 */
-	setRange(low: number, high: number): void {
+	setRange(low: number, high: number, ownFloor = false): void {
 		let floor = low;
 		if (this.lowest) {
 			if (low !== LOWEST_FLOOR) this.lowestLow = low;
 			if (high !== LOWEST_FLOOR) this.lowestHigh = high;
-			floor = Math.min(low, LOWEST_FLOOR);
+			if (!ownFloor) floor = Math.min(low, LOWEST_FLOOR);
 		}
 		if (floor !== this.low || high !== this.high) {
 			this.forgetTrials();
@@ -1163,7 +1166,12 @@ export interface GovernorScene {
 
 /**
  * The governor in the frame loop: it sums the presented and completed frames that the metrics
- * rings receive, and hands each window's figures to the governor.
+ * rings receive, and hands each window's figures to the governor. Its target follows the display's
+ * refresh rate, from the rate that the thread that draws measured before the engine's own load.
+ * A GPU that falls behind slows the frame callbacks, which then read as a slower display, so the
+ * target falls to a slower reading only when the GPU finished each frame within the target's own
+ * period: the GPU had room for the target, so the display or the browser set the slower rate, as a
+ * display that saves power does.
  */
 export class GovernorLoop {
 	/** The frame loop's clock reading at the start of the frame, in ms, which it writes first. */
@@ -1180,6 +1188,8 @@ export class GovernorLoop {
 	 * origin of the governor's clock on the frame loop's clock.
 	 */
 	private readonly times = new Float64Array([-1, -1, 0]);
+	/** The refresh rate that the target follows, in hertz, or 0 before the first reading. */
+	private readonly targetHz = new Float64Array(1);
 
 	/**
 	 * `maxTargetHz` is the highest target: 60 by default, the page's `targetFps` setting, infinity
@@ -1195,6 +1205,26 @@ export class GovernorLoop {
 		this.completed = new RingSums(metrics, Role.Completion);
 		this.refresh = new RefreshRate(metrics);
 		this.maxTargetHz = maxTargetHz;
+	}
+
+	/**
+	 * Starts the target at `hz`, the refresh rate that the thread that draws measured before the
+	 * engine's own load, such as at the end of the sketch's setup. A rate of 0, not measured yet,
+	 * leaves the target to the first reading.
+	 */
+	startTarget(hz: number): void {
+		if (hz > 0) this.targetHz[0] = Math.max(this.targetHz[0] as number, hz);
+	}
+
+	/**
+	 * Takes the refresh rate that the thread that draws measures now into the target: a faster rate
+	 * at once, and a slower one only when the window's GPU delay, `delayMs`, fits in the target's
+	 * period. A GPU that the engine's own load holds back takes longer than that over each frame.
+	 */
+	private followRefresh(delayMs: number): void {
+		const hz = this.refresh.hz;
+		const held = this.targetHz[0] as number;
+		if (hz > held || (hz > 0 && delayMs * held <= MS_PER_SECOND)) this.targetHz[0] = hz;
 	}
 
 	/**
@@ -1245,6 +1275,8 @@ export class GovernorLoop {
 				const shownMs = (shown[SUM_INTERVAL_MS] as number) / shownFrames;
 				const doneMs = doneFrames > 0 ? (done[SUM_INTERVAL_MS] as number) / doneFrames : 0;
 				const delayMs = doneFrames > 0 ? (done[SUM_BUSY_MS] as number) / doneFrames : 0;
+				// A window in which the GPU finished no frame says nothing of its delay.
+				this.followRefresh(doneFrames > 0 ? delayMs : Number.POSITIVE_INFINITY);
 				window[WINDOW_END] = this.clock(now);
 				window[FRAME_US] = Math.round(Math.max(shownMs, doneMs) * 1000);
 				window[GPU_DELAY_US] = Math.round(delayMs * 1000);
@@ -1285,9 +1317,13 @@ export class GovernorLoop {
 		);
 	}
 
-	/** The frame budget, in µs, from the refresh rate that the thread that draws measured. */
+	/**
+	 * The frame budget, in µs, from the refresh rate that the target follows, or the one that the
+	 * thread that draws measures until the target has one.
+	 */
 	private budgetUs(): number {
-		return Math.round(1_000_000 / checkTargetFps(this.refresh.hz, this.maxTargetHz));
+		const hz = (this.targetHz[0] as number) || this.refresh.hz;
+		return Math.round(MICROSECONDS_PER_SECOND / checkTargetFps(hz, this.maxTargetHz));
 	}
 
 	/**

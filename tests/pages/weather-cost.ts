@@ -21,6 +21,7 @@ run('weather-cost', async () => {
 	const failures: string[] = [];
 	engine.onFailure((error) => failures.push(error.code));
 	await engine.firstFrame;
+	await engine.presetChecked;
 	const settled = () =>
 		new Promise<void>((resolve) => {
 			// A message that the sketch sent before this handler waited is handed over as this call

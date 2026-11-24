@@ -40,6 +40,7 @@ run('fog-live', async () => {
 	const failures: string[] = [];
 	engine.onFailure((error) => failures.push(error.code));
 	await engine.firstFrame;
+	await engine.presetChecked;
 	// The blend settles per frame, not per second, so wait for a count of frames. A software
 	// renderer draws only a few frames a second, and a fixed time would capture too few.
 	// Each window counts the frames that finish inside it, so a window shorter than one frame

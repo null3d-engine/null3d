@@ -2,8 +2,10 @@
 // streams from 84 chunk files. The add-on fetches the chunks that the view needs, nearest first,
 // and draws as many splats as the preset's budget allows. A chunk far from the camera draws only
 // its most covering splats, grown so they still cover its ground. A survey drone, made in code,
-// circles the ruins: the splats and its meshes hide each other by depth. The camera holds its first
-// view while the scan streams in, then circles the site.
+// circles the ruins: the splats and its meshes hide each other by depth. A live page draws once the
+// nearest chunks are in, and the camera holds its first view while the rest stream in, then circles
+// the site. `?grown` waits for every chunk that the first view asks for, as a held frame does, so a
+// page that measures live frames samples the whole scan from its first frame on.
 import { defineSketch } from '@null3d/engine';
 import { createSplats } from '@null3d/splats';
 import { interact } from '../lib/interact';
@@ -27,13 +29,14 @@ const CORNERS = [
 	[-1, 1],
 	[1, 1],
 ] as const;
+/** True when the page asks for the whole first view before the first frame. */
+const GROWN = new URL(import.meta.url).searchParams.has('grown');
 
 export default defineSketch(async (ctx) => {
 	const { scene, assets, geometry, materials, post, page, time } = ctx;
 	// A scan's colors are the colors that its photographs saw, so no tone curve changes them.
 	post.set({ toneMapping: 'none' });
 	scene.setBackground('#eceff1');
-	scene.setEnvironment(await assets.builtinEnvironment('room'), { intensity: 0.6 });
 	scene.createDirectionalLight({ direction: [0.4, -1, -0.3], color: '#fff8ee', intensity: 2 });
 
 	const target: [number, number, number] = [0, 1, 0];
@@ -71,13 +74,18 @@ export default defineSketch(async (ctx) => {
 		return rotor;
 	});
 
-	const splats = await createSplats(ctx, {
-		url: sampleUrl('sources/splats/bolton-priory-stream/index.json'),
-	});
+	// The room's light and the scan's index load together, once the drone that needs neither is made.
+	const [room, splats] = await Promise.all([
+		assets.builtinEnvironment('room'),
+		createSplats(ctx, { url: sampleUrl('sources/splats/bolton-priory-stream/index.json') }),
+	]);
+	scene.setEnvironment(room, { intensity: 0.6 });
 	const eye: [number, number, number] = [0, 0, 0];
 	camera.getPosition(eye);
 	splats.update(eye);
-	// The first view waits for every chunk that it asks for, and the loading overlay counts them.
+	// The loading overlay counts the chunks while the first frame waits. A live page waits for the
+	// nearest, and streams the rest in behind its frames. A held frame, a replay and a page that asks
+	// with `?grown` wait for every chunk that the first view asks for.
 	const counting = setInterval(() => {
 		page.post('loading', {
 			text: `${splats.loaded} of ${splats.chunks} parts of the scan loaded`,
@@ -85,7 +93,7 @@ export default defineSketch(async (ctx) => {
 		});
 	}, 100);
 	await splats.ready;
-	await splats.settle();
+	if (ctx.engine.held || GROWN) await splats.settle();
 	clearInterval(counting);
 
 	const view = interact(ctx, camera, { target, minDistance: 3, maxDistance: 80 });

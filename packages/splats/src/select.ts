@@ -16,6 +16,7 @@ import {
 	type SelectAnswer,
 	type SelectInput,
 	STRIDE,
+	type StartInput,
 } from './select-task';
 
 /** What the selection needs of a chunk: its bounds and its count, before its data arrives. */
@@ -33,6 +34,31 @@ export const SELECT_TASK: Task = {
 		},
 	],
 };
+
+/** The input that starts the task's module in a worker. */
+const START: StartInput = { op: 'start' };
+
+/** The task's start while it runs, which the next selection follows. */
+let starting: Promise<void> | undefined;
+
+/**
+ * Starts the selection task before the first selection: the engine's task loader, the selector's
+ * WebAssembly, the job workers and the task's module load while the cloud downloads and its draw
+ * is set up. The next selection follows the start, so it goes to the worker that holds the task
+ * already, and not to a second worker that would load it again.
+ */
+export function startSelectTask(): void {
+	if (starting) return;
+	const run: Promise<void> = runTask(SELECT_TASK, START).then(
+		() => undefined,
+		// A start that fails stays quiet: the selection that follows fails the same way and says why.
+		() => undefined,
+	);
+	starting = run;
+	void run.then(() => {
+		if (starting === run) starting = undefined;
+	});
+}
 
 /** One selector's number each, so a worker keeps each selector's arrays apart. */
 let lastId = 0;
@@ -102,6 +128,7 @@ export class SplatSelector {
 		this.input.eyeX = eye[0] as number;
 		this.input.eyeY = eye[1] as number;
 		this.input.eyeZ = eye[2] as number;
+		if (starting) return starting.then(() => runTask<SelectAnswer>(SELECT_TASK, this.input));
 		return runTask<SelectAnswer>(SELECT_TASK, this.input);
 	}
 

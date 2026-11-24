@@ -177,12 +177,26 @@ async function optionalPlant(
 	return wood && leaves && card ? { wood, leaves, card } : undefined;
 }
 
+/** The two plant model files. */
+const TREES_MODEL = sampleUrl('sources/showcase/island/trees.glb');
+const SHRUBS_MODEL = sampleUrl('sources/showcase/island/shrubs.glb');
+
+/**
+ * The files that the plants load through the scene's assets: both model files and every card's
+ * atlases. A page that waits for the plants downloads them together ahead of their loads.
+ */
+export const PLANT_FILES: readonly string[] = [
+	TREES_MODEL,
+	SHRUBS_MODEL,
+	...Object.values(CARD_ATLASES).flatMap(({ color, surface }) => [color, surface]),
+];
+
 /** Loads both model files and the far cards' atlases at once. */
 export async function loadPlants(ctx: SketchContext): Promise<Plants> {
 	const { assets } = ctx;
 	const [trees, shrubs, treeFigures, shrubFigures] = await Promise.all([
-		assets.loadGltf(sampleUrl('sources/showcase/island/trees.glb')),
-		assets.loadGltf(sampleUrl('sources/showcase/island/shrubs.glb')),
+		assets.loadGltf(TREES_MODEL),
+		assets.loadGltf(SHRUBS_MODEL),
 		cardFigures('trees'),
 		cardFigures('shrubs'),
 	]);

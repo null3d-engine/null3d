@@ -19,7 +19,11 @@ export interface WarmUpResult {
 	playPipelines: number;
 	/** Pipelines built while the sketch added an object and warmed it up. */
 	addedPipelines: number;
-	/** The depth prepass setting while the object warmed up, which the lowest tier turns off (D-382). */
+	/**
+	 * The depth prepass setting while the object warmed up: on for WebGL2 and off for the other
+	 * paths at every preset, and off for WebGL2 in the lowest tier (D-382). The screen texture draws
+	 * the prepass wherever it reads depth, whatever the setting says.
+	 */
 	depthPrepass?: boolean;
 	/** Pipelines built after that. */
 	afterPipelines: number;
@@ -54,13 +58,16 @@ const FIRST_FRAME_PIPELINES: Readonly<Record<string, Readonly<Record<string, num
 };
 /** Pixels the added quad covers at the least, in the page's 320 x 180 capture. */
 const ADDED_PIXELS = 100;
+/** True at High and Ultra. */
+const highUp = (preset: string): boolean => preset === 'high' || preset === 'ultra';
 /**
- * True where the depth prepass draws at this path and preset. WebGL2's presets draw it at every
- * preset. The other paths draw it only where the screen texture reads depth, which the preset table
- * turns on at High and above. Compatibility mode's 8-bit path leaves the light out at every preset.
+ * True where the screen texture reads depth at this path and preset: the bounce light, which the
+ * preset table turns on at High and above, and at WebGL2's Medium. Compatibility mode's 8-bit path
+ * leaves the light out at every preset. The engine draws the depth prepass wherever the screen
+ * texture reads depth, whatever the prepass setting says.
  */
-const prepass = (tier: string, preset: string): boolean =>
-	tier === 'webgl2' || (tier === 'webgpu' && (preset === 'high' || preset === 'ultra'));
+const screenReadsDepth = (tier: string, preset: string): boolean =>
+	tier === 'webgl2' ? preset !== 'low' : tier === 'webgpu' && highUp(preset);
 
 /**
  * What is wrong with a warm-up page's result on a GPU path; empty when nothing is. The first frame
@@ -102,13 +109,16 @@ export function warmUpProblems(result: WarmUpResult, gpu: 'webgpu' | 'webgl2'): 
 	}
 	if (playPreset === null) unknown("the object's warm-up", result.playPreset);
 	else {
-		// The added quad is unlit. WebGL2 pairs an opaque pipeline with the prepass's depth pipeline;
-		// the other paths do that only where the depth prepass draws.
-		// The path's rule decides, unless the engine itself holds the prepass off: a start in the
-		// lowest tier turns it off with its other cuts, and the added object then builds its opaque
-		// pipeline alone.
-		const drawsPrepass = prepass(tier, playPreset) && result.depthPrepass !== false;
-		const perObject = (drawsPrepass ? 2 : 1) + (tier === 'webgpu' && drawsPrepass ? 1 : 0);
+		// The added quad is unlit, and builds its opaque pipeline. Where the depth prepass draws, it
+		// builds the prepass's depth pipeline beside it. The prepass draws while its setting is on,
+		// and wherever the screen texture reads depth whatever the setting says. A page that reports
+		// no setting holds its path's: on for WebGL2, off for the other paths.
+		const setting = result.depthPrepass ?? tier === 'webgl2';
+		const drawsPrepass = setting || screenReadsDepth(tier, playPreset);
+		// GPU occlusion culling, which WebGPU draws from High up, builds the quad a depth pipeline
+		// for the occluders' pass too, with or without the prepass.
+		const occludes = tier === 'webgpu' && highUp(playPreset);
+		const perObject = 1 + (drawsPrepass ? 1 : 0) + (occludes ? 1 : 0);
 		// A preset that steps down during play can change the render scale, which builds the final
 		// pass's 8-bit variant beside its full-precision one: only that case may hold one more.
 		const stepping = result.firstFramePreset !== result.playPreset;

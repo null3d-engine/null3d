@@ -12,8 +12,7 @@
 // show them its own way with the list and startDemo.
 
 import type { QualityPreset } from '@null3d/engine';
-import { COMPARE_GROUP, COMPARISONS } from './compare/comparisons';
-import { runComparison } from './compare-page';
+import { COMPARE_GROUP, COMPARISON_LISTINGS } from './compare/listing';
 import { DEMO_GROUPS, DEMOS, type Demo } from './demos';
 import { COARSE_INPUT, type InputKind, watchInputKind } from './lib/input-kind';
 import { startDemo } from './lib/run';
@@ -27,7 +26,7 @@ const params = new URLSearchParams(location.search);
 const name = params.get('demo');
 const current = DEMOS.find((demo) => demo.name === name);
 const compareName = params.get('compare');
-const comparison = COMPARISONS.find((entry) => entry.name === compareName);
+const listedComparison = COMPARISON_LISTINGS.find((entry) => entry.name === compareName);
 const wanted = params.get('preset');
 const preset = PRESETS.find((entry) => entry === wanted);
 
@@ -128,9 +127,9 @@ function listDemos(): void {
 		const list = element('ul');
 		// The comparisons with three.js have a group of their own, each linked to its null3D page.
 		if (group === COMPARE_GROUP) {
-			for (const entry of COMPARISONS) {
+			for (const entry of COMPARISON_LISTINGS) {
 				const link = element('a', entry.title, `?compare=${entry.name}`);
-				if (entry === comparison) link.setAttribute('aria-current', 'page');
+				if (entry === listedComparison) link.setAttribute('aria-current', 'page');
 				const item = element('li');
 				item.append(link);
 				list.append(item);
@@ -428,6 +427,24 @@ function createSheet(demo: Demo): Sheet {
 }
 
 /**
+ * Runs the listed comparison in the folder `name`. The comparison page's code and the comparisons'
+ * scenes load only here, so a demo's page never downloads them.
+ */
+async function runListedComparison(name: string): Promise<void> {
+	const loaded = await Promise.all([
+		import('./compare/comparisons'),
+		import('./compare-page'),
+	]).catch((error: unknown) => {
+		stage.append(element('p', `The comparison failed to load: ${String(error)}`));
+		return undefined;
+	});
+	if (!loaded) return;
+	const [{ COMPARISONS }, { runComparison }] = loaded;
+	const comparison = COMPARISONS.find((entry) => entry.name === name);
+	if (comparison) await runComparison(stage, comparison);
+}
+
+/**
  * Runs the demo on a canvas that fills the panel, with a compact title chip at its top left that
  * opens the demo's about sheet, and holds its key help below: keys on a mouse, gestures on a finger.
  */
@@ -505,15 +522,6 @@ restoreNavScroll();
 rememberNavScroll();
 handleDrawer();
 
-// A production build caches the page and the engine's files for the next visit, and for offline
-// play; the dev server's pages stay out of the cache, since its modules change on every edit.
-// A bundler declares `import.meta.env` itself, so it is read through a cast here.
-const buildEnv = (import.meta as { env?: { PROD?: boolean } }).env;
-if (buildEnv?.PROD && 'serviceWorker' in navigator) {
-	window.addEventListener('load', () => {
-		void navigator.serviceWorker.register('./sw.js').catch(() => {});
-	});
-}
-if (comparison) void runComparison(stage, comparison);
+if (listedComparison) void runListedComparison(listedComparison.name);
 else if (current) void runDemo(current);
 else welcome(compareName ?? name ?? undefined);

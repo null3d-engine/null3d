@@ -19,7 +19,10 @@ const ROOM = { name: 'room' };
 const BACKDROP = [0.02, 0.025, 0.04] as const;
 
 /** A stage on a scene that keeps the last value of each setter. */
-function staged(overrides: Partial<StageOptions> = {}) {
+function staged(
+	overrides: Partial<StageOptions> = {},
+	maps: { sky?: unknown; room?: unknown } = {},
+) {
 	const last: {
 		background?: unknown;
 		backgroundOptions?: { intensity?: number };
@@ -67,13 +70,19 @@ function staged(overrides: Partial<StageOptions> = {}) {
 		},
 		time: { now: 0 },
 	};
-	const stage = createMoods(context as never, sun as never, SKY as never, ROOM as never, {
-		heading: 0,
-		fogDensity: 0.01,
-		cloudCoverage: 0.3,
-		backdrop: BACKDROP,
-		...overrides,
-	});
+	const stage = createMoods(
+		context as never,
+		sun as never,
+		(maps.sky ?? SKY) as never,
+		(maps.room ?? ROOM) as never,
+		{
+			heading: 0,
+			fogDensity: 0.01,
+			cloudCoverage: 0.3,
+			backdrop: BACKDROP,
+			...overrides,
+		},
+	);
 	stage.set('Night');
 	const frames = (count: number) => {
 		for (let k = 0; k < count; k++) stage.update(1 / 60);
@@ -138,6 +147,57 @@ test('leaving the studio takes the whole look back to the hour', () => {
 	expect(last.background).not.toBe(ROOM);
 	expect(last.environment).toBe(SKY);
 	expect(last.fog?.density).toBeCloseTo(middayDensity, 5);
+});
+
+test('a room that the stage makes itself waits for the studio, and lights it once made', async () => {
+	let made = 0;
+	let finish: (room: unknown) => void = () => {};
+	const makeRoom = () => {
+		made++;
+		return new Promise((resolve) => {
+			finish = resolve;
+		});
+	};
+	const { stage, last, frames } = staged({}, { room: makeRoom });
+	for (const mood of ['Midday', 'Auto', 'Dawn'] as const) {
+		stage.set(mood);
+		frames(3);
+	}
+	expect(made).toBe(0);
+	stage.set('Studio');
+	expect(made).toBe(1);
+	// The studio's own light and fog stand at once; its map lights the scene once it is made.
+	expect(last.sunIntensity).toBe(3);
+	expect(last.environment).not.toBe(ROOM);
+	const ready = stage.ready();
+	finish(ROOM);
+	await ready;
+	expect(last.background).toBe(ROOM);
+	expect(last.environment).toBe(ROOM);
+	// The map is made once, however often the studio comes back.
+	stage.set('Midday');
+	frames(3);
+	stage.set('Studio');
+	expect(made).toBe(1);
+	expect(last.environment).toBe(ROOM);
+});
+
+test('a held frame waits for the sky still being made, which lights the hour before the wait ends', async () => {
+	let finish: (sky: unknown) => void = () => {};
+	const sky = new Promise((resolve) => {
+		finish = resolve;
+	});
+	const { stage, last } = staged({}, { sky });
+	expect(last.environment).toBeUndefined();
+	let settled = false;
+	const ready = stage.ready().then(() => {
+		settled = true;
+	});
+	await Promise.resolve();
+	expect(settled).toBe(false);
+	finish(SKY);
+	await ready;
+	expect(last.environment).toBe(SKY);
 });
 
 test("a scene's lit fog turns off and on without moving the rest of the fog", () => {

@@ -19,16 +19,16 @@ import {
 	streetLamp,
 } from './kit';
 import {
-	FILL_SPOTS,
+	fillSpots,
 	groundHeight,
 	inWater,
 	LOTS,
 	POOLS,
 	ROADS,
 	roadEdge,
-	SHRUBS,
 	SQUARE,
-	TREE_SPOTS,
+	shrubSpots,
+	treeSpots,
 } from './plan';
 import { LOUNGER_OFFSETS, loungerStands } from './props';
 import { STREET } from './routes';
@@ -38,16 +38,23 @@ import {
 	HULL_HALF,
 	HULL_WATER,
 	hullDepth,
-	MOORINGS,
+	mooringSpots,
 	parasolClubs,
 	parkLawns,
 	parkPlans,
-	SQUARE_HARBOUR_PATH,
 	squareFloor,
+	squareHarbourPath,
 	squarePavingHeight,
 	squarePropPlaces,
 } from './town';
 import { CAR_HALF_LENGTH, CAR_HALF_WIDTH, planTraffic } from './traffic';
+
+/** The plan's grown parts and the harbour's boats and path, read once for every test. */
+const TREE_SPOTS = treeSpots();
+const FILL_SPOTS = fillSpots();
+const SHRUBS = shrubSpots();
+const MOORINGS = mooringSpots();
+const SQUARE_HARBOUR_PATH = squareHarbourPath();
 
 /** The plan's parked cars, built once for the two checks that read them. */
 let parked: ReturnType<typeof planTraffic>['parked'] | undefined;

@@ -62,6 +62,7 @@ run('grading-switch', async () => {
 	const failures: string[] = [];
 	engine.onFailure((error) => failures.push(error.code));
 	await engine.firstFrame;
+	await engine.presetChecked;
 	const beforeRaw = await engine.measure(SECONDS);
 	// One change: the window opens first, so the frame that lands the bake is one of its frames.
 	const landing = engine.measure(CHANGE_SECONDS);

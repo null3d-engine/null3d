@@ -1,9 +1,9 @@
 // The on-demand loader's tasks on the job workers: they ask for job workers as they pile up, they
-// go only to the workers that run, and when the engine on the thread stops, tasks that wait fail,
-// the stopped engine's ports lose their handlers, and the next engine's tasks go to its own job
-// workers. While an engine runs, the core can ask for the first job workers. The public task hook
-// shares a buffer with its worker rather than copying it, and two tasks that name a WebAssembly
-// file alike each keep their own module.
+// go only to the workers that run, from the first that the page reports on, and when the engine on
+// the thread stops, tasks that wait fail, the stopped engine's ports lose their handlers, and the
+// next engine's tasks go to its own job workers. While an engine runs, the core can ask for the
+// first job workers. The public task hook shares a buffer with its worker rather than copying it,
+// and two tasks that name a WebAssembly file alike each keep their own module.
 import { afterEach, describe, expect, test } from 'bun:test';
 import { serveTasks, type TaskAnswer, type TaskRequest } from '../workers/tasks';
 import { stopHelperWorkers } from './helper-workers';
@@ -166,6 +166,34 @@ describe('runTask', () => {
 		}
 	});
 
+	test('asks for the first job workers while its WebAssembly file still downloads', async () => {
+		const original = globalThis.fetch;
+		let answer: (response: Response) => void = () => undefined;
+		globalThis.fetch = (() =>
+			new Promise<Response>((resolve) => (answer = resolve))) as unknown as typeof fetch;
+		try {
+			const asked: number[] = [];
+			setJobTasks({
+				ports: Array.from({ length: 2 }, () => jobPort('built')),
+				running: [0, 1],
+				call: () => {},
+				want: jobAsker(2, (count) => asked.push(count)),
+			});
+			const file: WasmFile = {
+				name: 'early',
+				url: new URL('http://localhost/tasks-early-workers.wasm'),
+				what: 'the early module',
+			};
+			const building = runTaskWithError<string>({ name: 'early', wasm: [file] }, 0, [], error);
+			await new Promise((resolve) => setTimeout(resolve, 0));
+			expect(asked).toEqual([2]);
+			answer(new Response(EMPTY_BYTES, { headers: { 'Content-Type': 'application/wasm' } }));
+			expect(await building).toBe('built');
+		} finally {
+			globalThis.fetch = original;
+		}
+	});
+
 	test('waits for the page to say which job workers run before it sends a task', async () => {
 		const calls: number[] = [];
 		const host = {
@@ -182,6 +210,51 @@ describe('runTask', () => {
 		host.running = [0];
 		await new Promise((resolve) => setTimeout(resolve, 20));
 		expect(calls).toEqual([0]);
+	});
+
+	test('runs the first task on the first job worker that the page reports, and the next on the second once both run', async () => {
+		const calls: number[] = [];
+		const host = {
+			ports: Array.from({ length: 2 }, () => jobPort()),
+			running: undefined as readonly number[] | undefined,
+			call: (index: number) => calls.push(index),
+			want: jobAsker(2, () => {}),
+		};
+		setJobTasks(host);
+		void runTaskWithError({ name: 'ktx2' }, 0, [], error).catch(() => {});
+		await new Promise((resolve) => setTimeout(resolve, 20));
+		// The first of the two is ready before the second, and takes the task that waited.
+		host.running = [0];
+		await new Promise((resolve) => setTimeout(resolve, 20));
+		expect(calls).toEqual([0]);
+		// Once both run, the first stays free for the frames, and the second takes the next tasks.
+		host.running = [0, 1];
+		void runTaskWithError({ name: 'ktx2' }, 1, [], error).catch(() => {});
+		void runTaskWithError({ name: 'ktx2' }, 2, [], error).catch(() => {});
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		expect(calls).toEqual([0, 1, 1]);
+	});
+
+	test('gives tasks to a job worker of a later batch once the page reports it, before the rest of its batch', async () => {
+		const asked: number[] = [];
+		const calls: number[] = [];
+		const host = {
+			ports: Array.from({ length: 4 }, () => jobPort()),
+			running: [0, 1] as readonly number[],
+			call: (index: number) => calls.push(index),
+			want: jobAsker(4, (count) => asked.push(count)),
+		};
+		setJobTasks(host);
+		// The second task finds the only worker that takes tasks busy, and asks for more.
+		for (let k = 0; k < 2; k++) runTaskWithError({ name: 'ktx2' }, k, [], error).catch(() => {});
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		expect(asked).toEqual([2, 4]);
+		expect(calls).toEqual([1, 1]);
+		// The third job worker is ready before the fourth: the next task goes to it.
+		host.running = [0, 1, 2];
+		runTaskWithError({ name: 'ktx2' }, 2, [], error).catch(() => {});
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		expect(calls).toEqual([1, 1, 2]);
 	});
 
 	test('lets the core ask for the first job workers while an engine runs', () => {

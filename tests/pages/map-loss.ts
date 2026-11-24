@@ -3,6 +3,8 @@
 // so the pixel keeps the map's magenta. Without it the texture draws with the material's color
 // alone, so the pixel turns white. `?copies=on` and `?copies=off` set the option; without it the
 // engine's default for the device runs. The pixel is read back through the engine each time.
+// `?cache` takes the GPU away as the browser's back/forward cache does: the page sends the engine
+// the `pagehide` and `pageshow` events of a page that the cache keeps and then shows again.
 import { createEngine, type Engine, type EngineError } from '@null3d/engine';
 import { framesDrawn } from './lib/measure';
 import { run } from './lib/result';
@@ -69,7 +71,13 @@ run('map-loss', async () => {
 	const before = await waitForMap(engine);
 	// A second of frames after the map appeared, so the frame that releases its image has run.
 	await engine.measure(1);
-	engine.simulateGpuLoss();
+	/** The frames that the engine drew while the page sat in the cache, which gives the GPU back. */
+	let cachedFrames: number | null = null;
+	if (params.has('cache')) {
+		window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: true }));
+		cachedFrames = (await engine.measure(0.5)).frames;
+		window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true }));
+	} else engine.simulateGpuLoss();
 	const after = await waitForMap(engine);
 	await engine.destroy();
 	return {
@@ -78,6 +86,7 @@ run('map-loss', async () => {
 		copies,
 		before,
 		after,
+		cachedFrames,
 		code: (failure as EngineError | null)?.code ?? null,
 	};
 });

@@ -6,6 +6,7 @@ import { beforeEach, expect, test } from 'bun:test';
 import type { EngineError } from '../errors/engine-error';
 import { setErrorFixes } from '../errors/engine-error';
 import { ERROR_FIXES } from '../errors/fixes';
+import { refusalText } from '../render/loss';
 import { BUILD_WAIT_LIMIT_MS } from '../render/scene-renderer';
 import type { WorkerReply } from '../workers/protocol';
 import { EngineWorker, RETRY_REPLY_MS, WORKER_REPLY_LIMIT_MS } from './engine';
@@ -118,14 +119,24 @@ test('an error reply after the start, with no request waiting, is reported too',
 
 test('a GPU error is reported with its code, and does not end the start', async () => {
 	const { reply, failures } = await started('render');
-	reply({ type: 'gpu-error', role: 'render', outOfMemory: true, message: 'no room' });
-	reply({ type: 'gpu-error', role: 'render', outOfMemory: false, message: 'too large' });
+	reply({ type: 'gpu-error', role: 'render', kind: 'memory', message: 'no room' });
+	reply({ type: 'gpu-error', role: 'render', kind: 'rejected', message: 'too large' });
+	reply({
+		type: 'gpu-error',
+		role: 'render',
+		kind: 'pipeline',
+		message: refusalText('custom material 135', 'CreateGraphicsPipelines failed\n    at Check'),
+	});
 	expect(failures.map(([error, ends]) => [error.code, ends])).toEqual([
 		['E1304', false],
 		['E1305', false],
+		['E1307', false],
 	]);
 	expect(failures[1]?.[0].message).toContain(
 		"the render worker's GPU rejected a command: too large.",
+	);
+	expect(failures[2]?.[0].message).toStartWith(
+		"E1307: the render worker's GPU driver could not build the pipeline of custom material 135, so the objects that draw with it are missing. It failed twice, the second time alone: CreateGraphicsPipelines failed. ",
 	);
 });
 

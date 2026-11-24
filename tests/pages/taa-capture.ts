@@ -40,6 +40,7 @@ run('taa-capture', async () => {
 	const failures: string[] = [];
 	engine.onFailure(({ code }) => failures.push(code));
 	await engine.firstFrame;
+	await engine.presetChecked;
 	// Let the resolve's history fill, so the frame is steady.
 	const wait = Number(params.get('wait') ?? 800);
 	if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));

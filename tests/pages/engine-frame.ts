@@ -76,6 +76,7 @@ try {
 		onProgress: progress,
 	});
 	await engine.firstFrame;
+	await engine.presetChecked;
 	progress('first frame');
 	if (new URLSearchParams(location.search).get('stop') === 'destroy') {
 		await engine.destroy();

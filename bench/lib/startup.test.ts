@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'bun:test';
 import { ENGINE_MODES, type EngineMode } from '../../tests/lib/engine-checks.ts';
-import { loadSteps, parseArgs, stepLoad, stepUrl } from '../startup.ts';
+import {
+	type LoadStep,
+	loadSteps,
+	macChromeArgs,
+	parseArgs,
+	stepLoad,
+	stepUrl,
+} from '../startup.ts';
 import {
 	groupSamples,
 	judgeLoad,
@@ -38,6 +45,7 @@ function result(frameDoneMs: number, overrides: Partial<StartupResult> = {}): St
 				engineStartMs: 300,
 				firstFrameMs: frameDoneMs - 20,
 				firstFrameDoneMs: frameDoneMs,
+				drawingStart: { deviceMs: null, shadersMs: 250, rendererMs: 350 },
 			},
 		},
 		downloads: { requests: 12, bytes: 102_400, files: [] },
@@ -52,6 +60,9 @@ describe('a startup load', () => {
 			scriptMs: 100,
 			probeMs: 150,
 			coreMs: 300,
+			deviceMs: null,
+			shadersMs: 250,
+			rendererMs: 350,
 			readyMs: 400,
 			frameMs: 580,
 			frameDoneMs: 600,
@@ -59,6 +70,12 @@ describe('a startup load', () => {
 			bytes: 102_400,
 		});
 		expect(loadSample(result(600, { downloads: undefined }))).toBeUndefined();
+	});
+
+	it('leaves out the steps of the thread that draws where a page reports none', () => {
+		const load = result(600).stats?.load;
+		const bare = result(600, { stats: load && { load: { ...load, drawingStart: undefined } } });
+		expect(loadSample(bare)).toMatchObject({ deviceMs: null, shadersMs: null, rendererMs: null });
 	});
 
 	it('passes a load in its mode with every time and the downloads', () => {
@@ -127,16 +144,19 @@ describe('the startup table', () => {
 					labels: ['pipelined', 'cold'],
 					samples: [sample(600, 12), sample(900, 13), sample(700, 12)],
 				},
-				{ labels: ['pipelined', 'warm'], samples: [sample(300, 1), sample(400, 2, 'webgpu')] },
+				{
+					labels: ['pipelined', 'warm'],
+					samples: [sample(300, 1), { ...sample(400, 2, 'webgpu'), deviceMs: 200 }],
+				},
 				{ labels: ['single-threaded', 'cold'], samples: [] },
 			],
 		);
 		expect(lines).toEqual([
-			'| Thread mode | Load | GPU | Loads | Script, ms | Probe, ms | Core, ms | Ready, ms | Frame, ms | Frame done, ms | Requests | KB |',
-			'| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |',
-			'| pipelined | cold | webgl2 | 3 | 100 | 150 | 300 | 400 | 680 | 700 | 12 | 100.0 |',
-			'| pipelined | warm | webgl2, webgpu | 2 | 100 | 150 | 300 | 400 | 330 | 350 | 1.5 | 100.0 |',
-			'| single-threaded | cold | - | 0 | - | - | - | - | - | - | - | - |',
+			'| Thread mode | Load | GPU | Loads | Script, ms | Probe, ms | Core, ms | Device, ms | Shaders, ms | Renderer, ms | Ready, ms | Frame, ms | Frame done, ms | Requests | KB |',
+			'| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |',
+			'| pipelined | cold | webgl2 | 3 | 100 | 150 | 300 | - | 250 | 350 | 400 | 680 | 700 | 12 | 100.0 |',
+			'| pipelined | warm | webgl2, webgpu | 2 | 100 | 150 | 300 | 200 | 250 | 350 | 400 | 330 | 350 | 1.5 | 100.0 |',
+			'| single-threaded | cold | - | 0 | - | - | - | - | - | - | - | - | - | - | - |',
 		]);
 		expect(STARTUP_LEGEND[0]).toStartWith('Each time is a median, in milliseconds from navigation');
 	});
@@ -222,5 +242,18 @@ describe('bench:startup', () => {
 		expect(stepUrl('', { ...cold, mode: PIPELINED }, mac, 's')).toBe(
 			'/__null3d/load/cold/s.pipelined-slow-4g-2/tests/pages/engine.html?gpu=webgpu&seconds=0.2&jobs=2',
 		);
+	});
+
+	it("fills the warm loads' caches at their address, in a browser whose V8 writes the compiled core at once", () => {
+		const options = parseArgs(['--loads', 'warm']);
+		const [fill, measured] = loadSteps(options);
+		expect(fill?.run).toBe(0);
+		expect(stepUrl('', fill as LoadStep, options, 's')).toBe(
+			stepUrl('', measured as LoadStep, options, 's'),
+		);
+		const switches = '--js-flags=--wasm-caching-timeout-ms=0';
+		expect(macChromeArgs(true)).toContain(switches);
+		expect(macChromeArgs(false)).not.toContain(switches);
+		expect(macChromeArgs(false)).toEqual(macChromeArgs(true).filter((arg) => arg !== switches));
 	});
 });

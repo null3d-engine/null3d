@@ -30,6 +30,7 @@ run('vegetation-grass', async () => {
 		preset: (params.get('preset') ?? 'high') as QualityPreset,
 	});
 	await engine.firstFrame;
+	await engine.presetChecked;
 	progress('the first frame drew');
 	// Let the pipelines build and the first draws settle before the measurement.
 	await new Promise((resolve) => setTimeout(resolve, WARMUP * 1000));

@@ -14,6 +14,7 @@ import { basename, extname, join } from 'node:path';
 import { promisify } from 'node:util';
 import { brotliCompress, constants, gzip } from 'node:zlib';
 import type { Connect, Plugin } from 'vite';
+import { acceptedEncoding, type Encoding } from '../../packages/vite-plugin/src/compress.ts';
 import {
 	ISOLATION_HEADERS,
 	immutableAssetsMiddleware,
@@ -171,22 +172,6 @@ const CONTENT_TYPES: Readonly<Record<string, string>> = {
 };
 /** Files a host compresses: text, scripts and WebAssembly. */
 const COMPRESSED = new Set(['.html', '.js', '.json', '.wasm', '.css', '.svg']);
-
-export type Encoding = 'br' | 'gzip' | 'identity';
-
-/** The best compression that a request's Accept-Encoding header allows: Brotli, then gzip, then none. */
-export function acceptedEncoding(header: string | undefined): Encoding {
-	const accepted = new Set(
-		(header ?? '').split(',').flatMap((part) => {
-			const [name = '', ...params] = part.trim().toLowerCase().split(';');
-			const weight = params.map((param) => param.trim()).find((param) => param.startsWith('q='));
-			return weight !== undefined && Number(weight.slice(2)) === 0 ? [] : [name.trim()];
-		}),
-	);
-	if (accepted.has('br')) return 'br';
-	if (accepted.has('gzip')) return 'gzip';
-	return 'identity';
-}
 
 /** A file's bodies, each ready to send, and the tag that a browser checks its cached copy with. */
 interface Encoded {

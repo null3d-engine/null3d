@@ -11,7 +11,7 @@
 
 import { EngineError } from '../errors/engine-error';
 import { budgetScale, budgetSteps } from '../quality/budget';
-import type { PresetCheck } from '../quality/check';
+import type { PresetCheck, PresetCheckTiming } from '../quality/check';
 import {
 	antialiasRank,
 	capTextureMemory,
@@ -48,8 +48,16 @@ export interface QualityStart {
 	 * page turns it on for phones and tablets, and a page option can turn it off (D-164).
 	 */
 	keepCopies?: boolean;
-	/** True when the engine checks the preset after its first frame. */
-	check?: boolean;
+	/**
+	 * When the engine checks the preset after its first frame: during play, or before it, as the
+	 * page chose. Without it, the engine checks no preset.
+	 */
+	check?: PresetCheckTiming;
+	/**
+	 * The rounds that an earlier start of the sketch measured before its check ended, as the page
+	 * stored them. The start runs the preset that they lowered to, and its check goes on from them.
+	 */
+	resume?: PresetCheck;
 	/**
 	 * True when the page started in the lowest quality tier, through its start switch. The
 	 * governor then gives the tier's settings back when the frames have room for its window.
@@ -75,11 +83,17 @@ const NO_TEXTURE_MEMORY: TextureMemory = {
 	droppedTextures: 0,
 };
 
-/** What the page learns after each change: the preset, the settings, and the check's result. */
+/**
+ * What the page learns after each change: the preset, the settings, and the check's result.
+ * `checked` marks the one update that ends the preset check, which carries the check's result
+ * when it measured one. Each lowering by the check carries the check's rounds so far, without
+ * `checked`, so the page keeps them should the check never end.
+ */
 export interface QualityUpdate {
 	preset: QualityPreset;
 	settings: QualitySettings;
 	check?: PresetCheck;
+	checked?: true;
 }
 
 /**
@@ -408,6 +422,8 @@ export class SketchQuality implements Quality {
 	private readonly antialiasFixed: boolean;
 	readonly highest: QualityPreset;
 	private readonly textureCapMiB: number;
+	/** How many times the sketch asked for a preset, which ends a preset check that runs. */
+	private requests = 0;
 
 	readonly governor: QualityGovernor;
 	/** The sketch's budgets for its own systems. */
@@ -472,14 +488,21 @@ export class SketchQuality implements Quality {
 		checkSettings('quality.set()', settings, LIVE_SETTINGS);
 		const lowest = settings.minRenderScale ?? this.settings.minRenderScale;
 		const highest = settings.maxRenderScale ?? this.settings.maxRenderScale;
-		if (lowest > highest)
+		// The lowest quality tier caps the render scale. A floor that the sketch sets itself wins
+		// over that cap, which rises to the floor; a cap that the sketch set itself stays its own.
+		const raisesCap =
+			lowest > highest &&
+			settings.maxRenderScale === undefined &&
+			this.governor.lowest &&
+			!this.owned.has('maxRenderScale');
+		if (lowest > highest && !raisesCap)
 			throw new EngineError(
 				'E1213',
 				`quality.set() would give minRenderScale ${lowest}, above maxRenderScale ${highest}. Give both in one call to change them together.`,
 			);
 		for (const [name, value] of Object.entries(settings))
 			if (value !== undefined) this.owned.add(name as QualitySettingName);
-		return this.update(this.preset, settings);
+		return this.update(this.preset, raisesCap ? { ...settings, maxRenderScale: lowest } : settings);
 	}
 
 	/**
@@ -491,9 +514,15 @@ export class SketchQuality implements Quality {
 		return this.update(this.preset, settings);
 	}
 
+	/** How many times the sketch asked for a preset with `setPreset`. */
+	get presetRequests(): number {
+		return this.requests;
+	}
+
 	setPreset(preset: QualityPreset): Promise<void> {
 		const wanted = presetArgument(preset);
 		const next = presetIndex(wanted) > presetIndex(this.highest) ? this.highest : wanted;
+		this.requests++;
 		this.owned.clear();
 		return this.update(next, this.presetValues(next, this.options));
 	}
@@ -506,6 +535,11 @@ export class SketchQuality implements Quality {
 		this.owned.add(name);
 	}
 
+	/** True when the sketch chose the setting itself since the preset it last asked for. */
+	owns(name: QualitySettingName): boolean {
+		return this.owned.has(name);
+	}
+
 	/**
 	 * True when the page's options give the setting, or the sketch chose it itself since the preset
 	 * it last asked for, rather than taking the preset's value.
@@ -515,14 +549,15 @@ export class SketchQuality implements Quality {
 	}
 
 	/**
-	 * The preset check's step to the next lighter preset. The settings that the page's options give,
-	 * and those that the sketch chose itself, keep their values. A device can move to a lighter
+	 * The preset check's step to a lighter preset: `next`, or the next lighter one without it. The
+	 * settings that the page's options give, and those that the sketch chose itself, keep their
+	 * values. A device can move to a lighter
 	 * anti-aliasing mode while it runs, so the lower preset gives that too: the check lowers a
 	 * tablet from Medium to Low, whose FXAA costs half of MSAA's draws. A heavier mode stays as the
-	 * device started with it.
+	 * device started with it. `check` is the check's rounds so far, which the page hears of with
+	 * the lower preset.
 	 */
-	lower(): Promise<void> {
-		const next = lowered(this.preset, 1);
+	lower(check?: PresetCheck, next: QualityPreset = lowered(this.preset, 1)): Promise<void> {
 		const kept: Record<string, unknown> = { ...this.options };
 		const current = this.settings as unknown as Record<string, unknown>;
 		for (const name of this.owned) kept[name] = current[name];
@@ -536,7 +571,7 @@ export class SketchQuality implements Quality {
 			// keeps it too, and the settings never name a mode that the canvas is not drawing.
 			this.options.antialias = wanted;
 		}
-		return this.update(next, this.presetValues(next, kept as Partial<QualitySettings>));
+		return this.update(next, this.presetValues(next, kept as Partial<QualitySettings>), check);
 	}
 
 	/** The settings of `preset`, with `kept`'s values, under the device's texture memory cap. */
@@ -564,9 +599,20 @@ export class SketchQuality implements Quality {
 		this.change = Math.max(this.change, LIVE_CHANGE);
 	}
 
-	/** Tells the page of the preset and the settings, with the check's result when given. */
-	report(check?: PresetCheck): void {
-		this.apply({ preset: this.preset, settings: { ...this.settings }, check }, []);
+	/**
+	 * Tells the page that the preset check has ended, with the preset and the settings, and with
+	 * the check's result when it measured one.
+	 */
+	report(check: PresetCheck | undefined): void {
+		this.apply(
+			{
+				preset: this.preset,
+				settings: { ...this.settings },
+				...(check && { check }),
+				checked: true,
+			},
+			[],
+		);
 	}
 
 	/**
@@ -588,9 +634,14 @@ export class SketchQuality implements Quality {
 
 	/**
 	 * Moves to `preset` with the values in `settings`, and applies the settings that change. A new
-	 * preset, or a new value of a setting that is not live, restarts the preset.
+	 * preset, or a new value of a setting that is not live, restarts the preset. `check` goes to
+	 * the page with the change.
 	 */
-	private update(preset: QualityPreset, settings: Partial<QualitySettings>): Promise<void> {
+	private update(
+		preset: QualityPreset,
+		settings: Partial<QualitySettings>,
+		check?: PresetCheck,
+	): Promise<void> {
 		const current = this.settings as unknown as Record<string, unknown>;
 		const changed: QualitySettingName[] = [];
 		let restart = preset !== this.preset;
@@ -604,7 +655,7 @@ export class SketchQuality implements Quality {
 		this.preset = preset;
 		this.change = restart ? RESTART_CHANGE : Math.max(this.change, LIVE_CHANGE);
 		if (restart) this.restart = true;
-		this.apply({ preset, settings: { ...this.settings } }, changed);
+		this.apply({ preset, settings: { ...this.settings }, ...(check && { check }) }, changed);
 		return restart ? this.settle() : Promise.resolve();
 	}
 }

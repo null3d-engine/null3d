@@ -144,18 +144,17 @@ export default defineSketch(async (ctx) => {
 	page.post('loading', 'Opening the skyway');
 	// The sky, the sun, the fog and the exposure follow the shared stage, which eases between hours
 	// and lights the scene from the sky. The scene gives the stage its lit fog, so the lamps and the
-	// searchlights stay visible through the air in every mood.
-	const [skyLight, room] = await Promise.all([
-		assets.skyEnvironment(),
-		assets.builtinEnvironment('room'),
-	]);
+	// searchlights stay visible through the air in every mood. The sky's light map builds on the GPU
+	// beside the city, and the stage takes it as it arrives; the room lights the studio alone, so the
+	// stage makes it when the studio is picked.
+	const skyLight = assets.skyEnvironment();
 	const sun = scene.createDirectionalLight({
 		direction: [-0.32, -0.62, 0.42],
 		color: '#a8c0ee',
 		intensity: 0.6,
 	});
 	scene.createAmbientLight({ color: '#28324a', intensity: 1.2 });
-	const stage = createMoods(ctx, sun, skyLight, room, {
+	const stage = createMoods(ctx, sun, skyLight, () => assets.builtinEnvironment('room'), {
 		heading: HEADING,
 		fogDensity: FOG_DENSITY,
 		backgroundFog: Number(new URL(import.meta.url).searchParams.get('background-fog')) || 0,
@@ -246,24 +245,25 @@ export default defineSketch(async (ctx) => {
 		TARGET,
 	);
 	// The rain's splashes on the car's roof and body, and the vapour from its engine nozzles, both
-	// through the particles add-on. The hero group is not scaled, so these sizes are meters.
-	const spray = rain
-		? await createSplashes(ctx, {
-				parent: hero.group,
-				position: [0, 2.45, 0],
-				size: [2.4, 0.08, 6.2],
-				rate: 70,
-			})
-		: undefined;
-	const vapour = rain
-		? await createSteam(ctx, {
-				parent: hero.group,
-				position: [0, 1.2, -4.4],
-				size: [1.2, 0.12, 0.25],
-				rate: 14,
-				wind: [0, 0.5, -1.2],
-			})
-		: undefined;
+	// through the particles add-on, made together. The hero group is not scaled, so these sizes are
+	// meters.
+	const [spray, vapour] = rain
+		? await Promise.all([
+				createSplashes(ctx, {
+					parent: hero.group,
+					position: [0, 2.45, 0],
+					size: [2.4, 0.08, 6.2],
+					rate: 70,
+				}),
+				createSteam(ctx, {
+					parent: hero.group,
+					position: [0, 1.2, -4.4],
+					size: [1.2, 0.12, 0.25],
+					rate: 14,
+					wind: [0, 0.5, -1.2],
+				}),
+			])
+		: [undefined, undefined];
 
 	const fit = (): void => {
 		facades.fit(quality.preset);
@@ -414,6 +414,8 @@ export default defineSketch(async (ctx) => {
 	// The camera keeps its distance from where it turns, so the change of its place is its travel.
 	camera.getWorldPosition(was);
 	let smear = 0;
+	// A held frame draws the light that its mood describes.
+	if (ctx.engine.held) await stage.ready();
 	return {
 		onUpdate(dt) {
 			const t = time.now;

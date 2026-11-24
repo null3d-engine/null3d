@@ -15,6 +15,7 @@ import null3d, {
 	NOTICES_FILE,
 	QUERY_EXTENSION_PARAM,
 	queryExtensionMiddleware,
+	sameOriginMiddleware,
 	thirdPartyNotices,
 } from './index';
 
@@ -67,6 +68,20 @@ describe('the HTTPS server', () => {
 			const https = server?.https as { cert: Buffer; ALPNCallback: () => string };
 			expect(String(https.cert)).toBe('CERT');
 			expect(https.ALPNCallback()).toBe('http/1.1');
+		}
+	});
+
+	it('lets the server offer HTTP/2 when the http2 option asks for it', () => {
+		const root = fixture({ 'cert/cert.pem': 'CERT', 'cert/key.pem': 'KEY' });
+		const plugin = enginePlugin({ https: true, http2: true, certDir: 'cert' });
+		const config = (plugin.config as (c: object, e: object) => UserConfig)(
+			{ root },
+			{ mode: 'development', command: 'serve' },
+		);
+		for (const server of [config.server, config.preview]) {
+			const https = server?.https as { cert: Buffer; ALPNCallback?: () => string };
+			expect(String(https.cert)).toBe('CERT');
+			expect(https.ALPNCallback).toBeUndefined();
 		}
 	});
 });
@@ -496,5 +511,35 @@ describe('the query-extension middleware', () => {
 			'/examples/a.wgsl?x=1.5',
 		])
 			expect(rewritten(url)).toBe(url);
+	});
+});
+
+describe('the same-origin middleware', () => {
+	/** The headers that the middleware leaves on an answer that Vite's CORS step marked. */
+	const left = (site: string | undefined, vary: string): Record<string, string> => {
+		const headers = new Map<string, string>([
+			['vary', vary],
+			['access-control-allow-origin', 'https://localhost:5173'],
+		]);
+		const res = {
+			getHeader: (name: string) => headers.get(name.toLowerCase()),
+			setHeader: (name: string, value: string) => headers.set(name.toLowerCase(), value),
+			removeHeader: (name: string) => headers.delete(name.toLowerCase()),
+		};
+		const req = { headers: site === undefined ? {} : { 'sec-fetch-site': site } };
+		sameOriginMiddleware(req as never, res as never, () => {});
+		return Object.fromEntries(headers);
+	};
+
+	it("drops Origin from Vary, and the CORS header, on a same-origin request's answer", () => {
+		expect(left('same-origin', 'Origin')).toEqual({});
+		expect(left('same-origin', 'Origin, Accept-Encoding')).toEqual({ vary: 'Accept-Encoding' });
+	});
+
+	it('leaves the answers to other sites and to requests that do not name their site', () => {
+		const marked = { vary: 'Origin', 'access-control-allow-origin': 'https://localhost:5173' };
+		expect(left('cross-site', 'Origin')).toEqual(marked);
+		expect(left('same-site', 'Origin')).toEqual(marked);
+		expect(left(undefined, 'Origin')).toEqual(marked);
 	});
 });

@@ -16,7 +16,7 @@ export const FIRST_USE_DOWNLOADS: Readonly<Record<string, string>> = {
 	morph:
 		"with the first morphed mesh, or as soon as the sketch reads a glTF file with morph targets. WebGPU morphs in the skinning pass, so there `'morph'` downloads the skinning shaders",
 	bloom: 'when `post.set` turns bloom on',
-	ao: 'when `post.set` turns ambient occlusion on, or when the preset draws the screen-space bounce light that reads its steps',
+	ao: 'when `post.set` turns ambient occlusion on, or with the first opaque material where the preset draws the screen-space bounce light that reads its steps',
 	dof: 'when `post.set` turns depth of field on',
 	exposure:
 		'when `post.set` turns automatic exposure on. The camera keeps its own exposure until the meter is built',
@@ -33,7 +33,7 @@ export const FIRST_USE_DOWNLOADS: Readonly<Record<string, string>> = {
 	probe_grid: 'when the sketch first sets a light probe grid (`scene.setLightProbeGrid`)',
 	transmission: 'with the first material that lets light through (`transmission`)',
 	color_copy:
-		'with the first step that reads the color that the frame before showed: the first material that lets light through, screen-space reflections, or the bounce light that the preset draws from the start of the page',
+		'with the first step that reads the color that the frame before showed: the first material that lets light through, screen-space reflections, or the bounce light that the preset draws, whose file downloads with the first opaque material',
 	translucency:
 		'with the first material that lets light through a thin surface (`diffuseTransmission`)',
 	bump: 'with the first material with a bump map',
@@ -53,11 +53,11 @@ export const FIRST_USE_DOWNLOADS: Readonly<Record<string, string>> = {
 	background: 'with the first texture, environment or cube map background',
 	sky: 'with the first sky background',
 	clouds:
-		"with the first frame that draws the sky's volumetric cloud tier: the preset's `cloudSteps` above 0, or `quality.set({ cloudSteps })`. A page that draws the flat layer downloads none of it. The noise field of its march is made in the browser then",
+		"with the first sky background with clouds while `cloudSteps` is above 0, as High and Ultra set it, or with the first frame that draws the sky's volumetric cloud tier after `quality.set({ cloudSteps })`. A page that draws the flat layer downloads none of it. The noise field of its march is made in the browser when the tier first draws",
 	physical_sky:
 		'with the first physical sky background (`atmosphere`). The view shows the background color until the sky is built',
 	occlusion:
-		'with the first opaque object that may hide others, while GPU occlusion culling runs on WebGPU. Until its shaders are built, the engine draws without it. WebGL2 has no such shaders',
+		'with the first opaque material while GPU occlusion culling runs on WebGPU. Until its shaders are built, the engine draws without it. WebGL2 has no such shaders',
 	coverage: 'with the first masked material that MSAA smooths with alpha to coverage',
 	hash: "with the first material whose alpha mode is `'hash'`",
 	cutout:

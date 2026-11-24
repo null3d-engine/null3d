@@ -213,6 +213,7 @@ run('governor', async (): Promise<GovernorResult> => {
 	engine.onFailure((error) => failures.push(error.code));
 	const log = new StateLog(engine);
 	await engine.firstFrame;
+	await engine.presetChecked;
 	// The grace after the first frame passes, and the refresh rate is measured meanwhile.
 	const { refreshHz } = await engine.measure(3);
 	const fps = params.has('fps') ? Number(params.get('fps')) : undefined;

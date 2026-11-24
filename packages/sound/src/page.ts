@@ -517,6 +517,7 @@ class SoundPage implements PageSound {
 		context.onstatechange = () => this.followContext();
 		void context.resume().catch(() => {});
 		this.setState('starting');
+		const mixerModule = context.audioWorklet.addModule(MIXER_URL);
 		const wasm = fetch(MIXER_WASM_URL)
 			.then((response) => {
 				if (!response.ok) throw new Error(`the mixer's module answered ${response.status}`);
@@ -528,7 +529,10 @@ class SoundPage implements PageSound {
 				if (!WebAssembly.validate(bytes)) throw new Error("the mixer's module is not WebAssembly");
 				return bytes;
 			});
-		return Promise.all([context.audioWorklet.addModule(MIXER_URL), wasm])
+		// The files download and decode beside the mixer's code, because a decode needs only the
+		// context. Each voice takes its file once the mixer runs.
+		for (const sound of this.sounds.values()) void this.load(sound.file);
+		return Promise.all([mixerModule, wasm])
 			.then(([, bytes]) => {
 				if (this.state === 'stopped') return;
 				this.makeMixer(context, bytes);
@@ -585,8 +589,12 @@ class SoundPage implements PageSound {
 		return this.splitters[output] as ChannelSplitterNode;
 	}
 
-	/** Builds the nodes of each of a sound's voices, and starts loading its file. */
+	/**
+	 * Starts loading a sound's file, and builds the nodes of each of its voices once the mixer runs.
+	 * Before `start`, nothing loads.
+	 */
 	private build(sound: SoundSpec): void {
+		void this.load(sound.file);
 		const context = this.context;
 		const master = this.master;
 		if (!context || !master || !this.mixer) return;
@@ -622,7 +630,6 @@ class SoundPage implements PageSound {
 			this.voices[v] = { sound, filter, gain, panner, play: null, waiting: undefined };
 		}
 		if (sound.kind !== 'shot') this.playWhenLoaded(sound);
-		else void this.load(sound.file);
 	}
 
 	/** Loads a loop's or a group's file, and starts its voices' files once it and the audio are ready. */
@@ -773,7 +780,10 @@ class SoundPage implements PageSound {
 					return { buffer, ...soundBounds(channels, buffer.sampleRate) };
 				})
 				.catch((error: unknown) => {
-					console.warn(`null3D sound: ${file} did not load: ${(error as Error).message}`);
+					// A sound that stopped while its file loaded, such as one whose mixer failed, closed
+					// the context that decodes it: that file's failure is no news.
+					if (this.state !== 'stopped')
+						console.warn(`null3D sound: ${file} did not load: ${(error as Error).message}`);
 					return null;
 				});
 			this.files.set(file, loading);

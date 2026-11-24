@@ -51,6 +51,7 @@ run('sky-layer-light', async () => {
 		maxPixelRatio: 1,
 	});
 	await engine.firstFrame;
+	await engine.presetChecked;
 	progress('the first frame');
 	const frames: Capture[] = [];
 	const capture = async (stretch: number, frame: number) => {

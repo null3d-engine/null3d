@@ -143,6 +143,33 @@ describe.skipIf(!built)('the built module against the TypeScript reference', () 
 		{ chunks: 40, perChunk: 25_000, budget: 1_000_000, eye: [0, 0, 0] as const, seed: 7 },
 	];
 
+	// The first call in this worker, so the start is what instantiates the module.
+	test('starts the module on a start, which chooses nothing, and selects with it after', async () => {
+		const module = await WebAssembly.compile(readFileSync(WASM));
+		let asked = 0;
+		const modules = () => {
+			asked++;
+			return module;
+		};
+		expect(run({ op: 'start' }, modules).output).toEqual({ total: 0 });
+		expect(asked).toBe(1);
+		const view = buffer(8, 25_000, 2);
+		view[BUDGET] = 50_000;
+		const expected = runSelection(new Float32Array(view));
+		const input: SelectInput = {
+			id: 40,
+			version: 0,
+			chunks: 8,
+			budget: 50_000,
+			eyeX: 0,
+			eyeY: 0,
+			eyeZ: 0,
+			view,
+		};
+		expect(run(input, modules).output.total).toBe(expected);
+		expect(asked).toBe(1);
+	});
+
 	test('gives the same counts and total for every view', async () => {
 		const module = await WebAssembly.compile(readFileSync(WASM));
 		cases.forEach((testCase, index) => {

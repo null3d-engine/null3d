@@ -220,6 +220,15 @@ impl ComputePasses {
         }
     }
 
+    /// Copies the states that the view's pass holds into its target in this frame, though the pass
+    /// runs no step: the frame made the target anew, so it holds neither state. States that this
+    /// frame's pass and target do not fit start empty when the pass next runs, and copy nothing.
+    pub(crate) fn refill(&mut self, place: usize, pass: &Compute, drawn: (u32, u32)) {
+        if pass.history && !self.states_stale(place, pass, drawn) {
+            self.ran[place] = true;
+        }
+    }
+
     /// True when the view's state textures do not hold what this frame's pass and target need, so
     /// the frame makes them again and both states start empty. A pass of a fixed size keeps them
     /// through a canvas resize.

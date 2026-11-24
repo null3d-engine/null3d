@@ -81,11 +81,17 @@ export default defineSketch((ctx) => {
 	});
 	const eye = [0, 0, 0];
 	let frames = 0;
+	let built = 0;
 	return {
 		onUpdate() {
 			camera.getWorldPosition(eye);
 			terrain.update(eye);
-			if (++frames === 4) page.post('drawn', { frames });
+			frames++;
+			// The ground builds its blocks over the frames after the camera's first selection, and
+			// draws them a frame or two later, so the page reads the frame once a few frames have
+			// drawn the whole selection.
+			if (terrain.building) built = 0;
+			else if (++built === 4) page.post('drawn', { frames });
 		},
 	};
 });
@@ -93,15 +99,22 @@ export default defineSketch((ctx) => {
 
 				// The page's own import, which the import map names.
 				const { createEngine } = await import('@null3d/engine');
+				let groundDrawn;
+				const ground = new Promise((resolve) => {
+					groundDrawn = resolve;
+				});
 				const engine = await createEngine({
 					canvas: document.querySelector('#scene'),
 					sketch: URL.createObjectURL(new Blob([sketch], { type: 'text/javascript' })),
+					onSketchMessage: (name) => {
+						if (name === 'drawn') groundDrawn();
+					},
 				});
 				// The page reads its frame back through the engine, as the engine's tests do, and counts
 				// the pixels that the ground fills: the ground shows its green layers over the blue
-				// background that the scene sets.
-				engine.onSketchMessage(async (name) => {
-					if (name !== 'drawn') return;
+				// background that the scene sets. The sketch plays from before the first frame and
+				// while the preset check measures, so the read waits for both, and for the ground.
+				void Promise.all([ground, engine.firstFrame, engine.presetChecked]).then(async () => {
 					try {
 						const { width, height, pixels } = await engine.captureFrame();
 						let covered = 0;
@@ -131,6 +144,8 @@ export default defineSketch((ctx) => {
 					} catch (error) {
 						window.cdnAddonError = String(error);
 					}
+				}, (error) => {
+					window.cdnAddonError = String(error);
 				});
 			} catch (error) {
 				window.cdnAddonError = String(error);

@@ -164,7 +164,7 @@ Status: proposed by M1-G3, and built; the grace and the window wait for the owne
 
 Headless Chrome 154 through Playwright on the MacBook Pro M5 Max, with the Mac's GPU. The canvas was 320 x 180 at a pixel ratio of 1, so each preset drew the same pixels. Other helpers built and tested on the same Mac.
 
-A light scene held the target. The engine test page's empty scene measured 60 presented and 60 completed frames per second on WebGPU and WebGL2, in 3 of 3 runs each. The call to `createEngine` then took 991 to 1,045 ms with the check, and 144 to 279 ms with `?preset=` fixing the preset. The first frame was done at 164 to 303 ms in both cases. So the check adds about 0.8 s before `createEngine` resolves, and nothing before the first frame. On the iPad, [D-13](D-13-shader-variants.md#device-warm-up-times-t-26)'s warm-up time runs found about 1 s for each preset measured. With [D-17](D-17-stored-preset-check.md), a repeat visit takes the check's stored result and skips this time.
+A light scene held the target. The engine test page's empty scene measured 60 presented and 60 completed frames per second on WebGPU and WebGL2, in 3 of 3 runs each. The call to `createEngine` then took 991 to 1,045 ms with the check, and 144 to 279 ms with `?preset=` fixing the preset. The first frame was done at 164 to 303 ms in both cases. So the check before play adds about 0.8 s before `createEngine` resolves, and nothing before the first frame. During play, the default of [D-386](D-386-preset-check-during-play.md), it adds nothing before either. On the iPad, [D-13](D-13-shader-variants.md#device-warm-up-times-t-26)'s warm-up time runs found about 1 s for each preset measured. With [D-17](D-17-stored-preset-check.md), a repeat visit takes the check's stored result and skips this time.
 
 A heavy scene, 32,768 of the GPU-bound page's spheres, missed the target at every preset:
 
@@ -196,7 +196,7 @@ Not built. The shadow maps draw (#134), but no setting that changes during play 
 ### Consequences
 
 - `quality.setPreset` in the sketch changes every setting. `quality.set` takes the settings fixed while a preset runs too, and changes them the same way. The control block's pipeline hold (`Slot.PipelineHold`) makes two frames wait for their pipelines. One is the first frame that records with the new settings. The other is the frame whose `quality.onChange` handlers hear of the change. A change in a frame's own update holds that frame. The promise resolves once the frame after the change is taken.
-- The check's frames, and the frames of warm-ups in the setup, run none of the sketch's code. The engine numbers them with its own frames, but the sketch's `time.frame` and the pointer's frame count only the frames that run the sketch.
+- The frames of a check before play, and the frames of warm-ups in the setup, run none of the sketch's code. The engine numbers them with its own frames, but the sketch's `time.frame` and the pointer's frame count only the frames that run the sketch. A check during play ([D-386](D-386-preset-check-during-play.md)) measures frames of play, which run it.
 - `FrameSummary.skippedDraws` counts the draws that a building pipeline kept from drawing. The preset change test holds it at 0 on every GPU path and thread mode.
 - The check's code (`sketch/preset-check.ts`) loads after the first frame, as D-14's option B proposes. The size report prints its files apart from the downloads before the first frame.
 

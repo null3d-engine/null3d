@@ -24,6 +24,7 @@ run('leaves-wind-cost', async () => {
 		preset: (params.get('preset') ?? 'high') as QualityPreset,
 	});
 	await engine.firstFrame;
+	await engine.presetChecked;
 	progress('the first frame drew');
 	// Let the pipelines build and the field settle before the measurement.
 	await new Promise((resolve) => setTimeout(resolve, 3000));

@@ -166,7 +166,33 @@ const AREA_VALUES = MEMORY_AREA_COUNT * MEMORY_AREA_VALUES;
 const SETUP_START = MEMORY_AREAS + AREA_VALUES;
 /** Float64 index of the time, in ms, that the sketch's setup function took, or 0 until it ends. */
 const SETUP_MS = SETUP_START + 1;
-const HEADER_WORDS = 2 * (SETUP_MS + 1);
+
+/**
+ * The steps of the start of the thread that draws, in the order that the header keeps their epoch
+ * times, in ms:
+ *
+ * - `request`: the page's message after the probe arrived, and the thread started the downloads of
+ *   its renderers and shader files, and on WebGPU the request for its device.
+ * - `adapter`: its WebGPU adapter arrived.
+ * - `device`: its WebGPU device arrived.
+ * - `shaders`: the shader file of its device arrived.
+ * - `init`: the core and the thread's setup arrived from the page.
+ * - `renderer`: its first renderer was built, so its frame loop could start.
+ */
+export const DRAWING_STEPS = [
+	'request',
+	'adapter',
+	'device',
+	'shaders',
+	'init',
+	'renderer',
+] as const;
+
+export type DrawingStep = (typeof DRAWING_STEPS)[number];
+
+/** Float64 index of the epoch time of the first step of the start of the thread that draws. */
+const DRAWING_START = SETUP_MS + 1;
+const HEADER_WORDS = 2 * (DRAWING_START + DRAWING_STEPS.length);
 const WRITTEN = HEADER_WORDS;
 
 function recordsStart(rings: number): number {
@@ -254,6 +280,32 @@ export function memoryFigures(buffer: ArrayBufferLike): Float64Array {
  */
 export function memoryAreaFigures(buffer: ArrayBufferLike): Float64Array {
 	return new Float64Array(buffer, MEMORY_AREAS * 8, AREA_VALUES);
+}
+
+/**
+ * The epoch times of the steps of the start of the thread that draws, in the order of
+ * `DRAWING_STEPS`. The thread notes its first steps before the page has handed it the metrics
+ * buffer, and writes them there once it has it. Each step keeps its first time, so the renderer that
+ * a GPU loss replaces moves no step.
+ */
+export class DrawingSteps {
+	private readonly times = new Float64Array(DRAWING_STEPS.length);
+	private header: Float64Array | undefined;
+
+	/** Notes the time of `step`, once. */
+	mark(step: DrawingStep): void {
+		const k = DRAWING_STEPS.indexOf(step);
+		if (this.times[k] !== 0) return;
+		const now = performance.timeOrigin + performance.now();
+		this.times[k] = now;
+		if (this.header) this.header[DRAWING_START + k] = now;
+	}
+
+	/** Writes the times noted so far into the header of `buffer`, and each later one as it comes. */
+	publish(buffer: ArrayBufferLike): void {
+		this.header = new Float64Array(buffer, 0, HEADER_WORDS / 2);
+		this.header.set(this.times, DRAWING_START);
+	}
 }
 
 /** The display's refresh rate in hertz, as the thread that draws measured it, or 0 before then. */
@@ -437,6 +489,14 @@ export class FrameRecorder {
 	}
 
 	/**
+	 * True once the GPU has finished the first frame, as the thread that draws records it. It reads
+	 * the time without returning it, so a check in each frame allocates nothing.
+	 */
+	get firstFrameDone(): boolean {
+		return (this.views.times[FIRST_FRAME_DONE] as number) > 0;
+	}
+
+	/**
 	 * Records, once per engine, when the sketch's setup function started, as epoch milliseconds, so
 	 * the page can time a scene that is still growing.
 	 */
@@ -551,6 +611,14 @@ export class MetricsReader {
 	get setupMs(): number | null {
 		const ms = this.views.times[SETUP_MS] as number;
 		return ms > 0 ? ms : null;
+	}
+
+	/**
+	 * Epoch milliseconds at which the thread that draws reached `step` of its start, or 0 before it
+	 * did, or where it takes no such step.
+	 */
+	drawingStep(step: DrawingStep): number {
+		return this.views.times[DRAWING_START + DRAWING_STEPS.indexOf(step)] as number;
 	}
 
 	/**

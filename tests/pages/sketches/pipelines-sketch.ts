@@ -64,8 +64,9 @@ export default defineSketch(async ({ scene, materials, geometry, page, post, qua
 		added.setVisible(false);
 		void scene.warmUp().then(() => {
 			added.setVisible(true);
-			// A start in the lowest tier turns the WebGL2 prepass off, and the count follows the
-			// setting the engine holds rather than the path's rule (D-382).
+			// The lowest tier turns WebGL2's prepass setting off (D-382). The check counts the
+			// prepass from the setting the engine holds, and from where the screen texture reads
+			// depth, which draws the prepass whatever the setting says.
 			page.post('warmed', { depthPrepass: quality.settings.depthPrepass });
 		});
 	});

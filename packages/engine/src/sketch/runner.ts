@@ -49,6 +49,7 @@ import type {
 } from '../page/hold';
 import { type CoreDevice, cellTableWarning } from '../page/limits';
 import { FULL_SCALE, thousandths } from '../quality/budget';
+import type { PresetCheck } from '../quality/check';
 import { Governor, GovernorLoop } from '../quality/governor';
 import {
 	lowestTierCuts,
@@ -58,8 +59,9 @@ import {
 	SKETCH_SETTINGS,
 	tierRestoreSettings,
 } from '../quality/presets';
-import type { Assets, GltfExtensionHandler, ProgressHandler } from '../scene/assets';
+import type { Assets, Downloads, GltfExtensionHandler, ProgressHandler } from '../scene/assets';
 import type { DerivedCache } from '../scene/derived-cache';
+import type { FetchFile } from '../scene/downloads';
 import { FrameCameras } from '../scene/frame-cameras';
 import { GltfExtensions } from '../scene/gltf-extensions';
 import { GradeTable } from '../scene/grade-table';
@@ -110,9 +112,16 @@ import {
 	Phase,
 	RingFrames,
 	Role,
+	refreshRate,
 } from '../shared/metrics';
 import type { Recorder, ReplayProgram, ReplayResult } from '../shared/recording';
-import { plansPending, tasksPending } from '../shared/task-pending';
+import {
+	endPlanHold,
+	holdPlans,
+	plansPending,
+	releasePlans,
+	tasksPending,
+} from '../shared/task-pending';
 import { VIDEO_FRAME, type VideoFrameMessage } from '../shared/videos';
 import { slotChange, slotChangeOrRecheck } from '../shared/wake';
 import type { WgslUpdate } from '../shared/wgsl-updates';
@@ -229,6 +238,98 @@ export interface SketchCore {
 	 * production build.
 	 */
 	hearAddons?(heard: (name: string) => void): () => void;
+	/**
+	 * @internal The downloads of a live sketch's list for this start, which the thread began as the
+	 * sketch's module loaded. The runner begins them at the setup when the thread did not.
+	 */
+	listed?: ListedFiles;
+}
+
+/**
+ * @internal The downloads of a sketch's list for one start. The thread that runs the sketch begins
+ * them as its module loads, or the runner at the setup, whichever comes first, and only once. Like
+ * the class of the downloads, it stays out of the published declarations.
+ */
+export interface ListedFiles {
+	downloads?: Promise<Downloads>;
+}
+
+/**
+ * How many of a sketch's listed files download at once, while no load asks for one. On HTTP/1.1 a
+ * browser opens few connections to one server, and a large file holds one until it has arrived, so
+ * the engine's own start files, such as the shader files that the setup's first frame asks for,
+ * still find free ones. One file at a time would leave the link idle for a round trip between files.
+ */
+const LISTED_AT_ONCE = 2;
+
+/**
+ * How many of a sketch's listed files download at once while loads wait for them: those loads go
+ * ahead of the rest of the list. A setup that asks for many listed files together then still
+ * leaves connections for the engine's own files, which its loads need too, such as the model
+ * loader's code and the warm-up's shader files.
+ */
+const LISTED_MOST = 4;
+
+/**
+ * Fetches a listed file that no load has asked for yet, at low priority, so the engine's own files
+ * go first where the browser orders requests, as it does on HTTP/2.
+ */
+const fetchListed: FetchFile = (address) => fetch(address, { priority: 'low' });
+
+/**
+ * The addresses of a sketch's download list, resolved against the page's address, without repeats.
+ * Throws E1214 for a list that is not an array, and for an entry that is not a file's address.
+ */
+function listedAddresses(list: unknown, base: string): URL[] {
+	if (!Array.isArray(list))
+		throw new EngineError(
+			'E1214',
+			`defineSketch() got ${String(list)} for downloads, which takes an array of addresses.`,
+		);
+	const addresses = new Map<string, URL>();
+	for (const entry of list) {
+		let address: URL | undefined;
+		if (entry instanceof URL || (typeof entry === 'string' && entry.trim() !== '')) {
+			try {
+				address = new URL(entry, base);
+			} catch {}
+		}
+		if (!address)
+			throw new EngineError(
+				'E1214',
+				`defineSketch() got ${typeof entry === 'string' ? JSON.stringify(entry) : String(entry)} in downloads, which is not the address of a file.`,
+			);
+		addresses.set(address.href, address);
+	}
+	return [...addresses.values()];
+}
+
+/**
+ * @internal Begins the downloads of a live sketch's list, unless `files` holds them already: the
+ * first two fetches at once, and the assets loader's code beside them, whose downloads read the
+ * bodies as they arrive and start the rest. A list that is not valid begins nothing, and the setup
+ * reports it.
+ */
+export function startListedFiles(files: ListedFiles, sketch: SketchDefinition, base: string): void {
+	const list = sketch.options.downloads;
+	if (files.downloads || list === undefined) return;
+	let addresses: URL[];
+	try {
+		addresses = listedAddresses(list, base);
+	} catch {
+		return;
+	}
+	if (addresses.length === 0) return;
+	const started = addresses
+		.slice(0, LISTED_AT_ONCE)
+		.map((address) => awaitLater(fetchListed(address)));
+	files.downloads = awaitLater(
+		import('../scene/assets').then(({ Downloads }) => {
+			const downloads = new Downloads(base);
+			downloads.list(addresses, started, LISTED_AT_ONCE, LISTED_MOST, fetchListed);
+			return downloads;
+		}),
+	);
 }
 
 /** How often a wait for a control slot checks it, where the control block is not shared memory. */
@@ -271,22 +372,43 @@ const JOB_PAUSE_SECONDS = 4.5;
  * The assets API, whose loader loads with the first call that reads a file: a sketch that loads no
  * file downloads none of it. Every call waits for the loader first. The two calls that answer with
  * a function of their own answer at once: the extension handlers live beside the runner, so a
- * registration keeps its errors, and the progress handlers join the loader once it arrives.
+ * registration keeps its errors, and the progress handlers join the loader once it arrives. The
+ * loader takes the downloads of the sketch's list when `listed` gives them, and a development build
+ * watches the sketch's loads while `watching` says so.
+ *
+ * With `inOrder`, as while the engine holds its frames, the calls run one at a time in the order
+ * the sketch made them: each starts once the call before it has answered. A load makes its
+ * textures, meshes and materials when its files arrive, and files arrive in an order that changes
+ * from run to run, so loads that ran together would make the scene's content in another order on
+ * each run, and the held frame would draw its objects in another order and with other ids.
  */
 function lazyAssets(
 	textures: Textures,
 	base: string,
 	makers: import('../scene/assets').ModelMakers,
+	listed: () => Promise<Downloads> | undefined,
+	watching: () => boolean,
+	inOrder: boolean,
 ): Assets {
 	const extensions = new GltfExtensions();
-	// The loader's file starts downloading at the first call that reads a file, never at the start:
-	// a page that loads nothing must download none of it.
+	// The loader's file starts downloading at the first call that reads a file, or with the
+	// sketch's list, never at the start: a page that loads nothing must download none of it.
 	let ready: Promise<Assets> | undefined;
+	/** The answer of the call made last, which the next call waits for when the calls run in order. */
+	let answered: Promise<unknown> = Promise.resolve();
 	const load = (): Promise<Assets> =>
 		(ready ??= awaitLater(
-			import('../scene/assets').then(
-				({ Assets }) => new Assets(textures, base, makers, extensions),
-			),
+			import('../scene/assets').then(({ Assets, Downloads }) => {
+				const make = (downloads: Downloads) => {
+					if (DEV) downloads.watch(watching);
+					return new Assets(textures, base, makers, extensions, downloads);
+				};
+				// Without a list the loader is ready within the import's own promise steps, so its
+				// calls keep their place among the setup's other promises, as hold mode, a replay
+				// and a recording need.
+				const early = listed();
+				return early ? early.then(make) : make(new Downloads(base));
+			}),
 		));
 	return new Proxy({} as Assets, {
 		get(_target, name: string | symbol) {
@@ -305,10 +427,16 @@ function lazyAssets(
 					return () => off?.();
 				};
 			}
-			return (...args: unknown[]) =>
-				load().then((assets) =>
-					(assets[name as keyof Assets] as unknown as (...a: unknown[]) => unknown)(...args),
-				);
+			return (...args: unknown[]) => {
+				const call = () =>
+					load().then((assets) =>
+						(assets[name as keyof Assets] as unknown as (...a: unknown[]) => unknown)(...args),
+					);
+				if (!inOrder) return call();
+				const answer = answered.then(call, call);
+				answered = answer;
+				return answer;
+			};
 		},
 	});
 }
@@ -398,6 +526,15 @@ export class SketchRunner {
 	private callbacks: SketchCallbacks = {};
 	/** True once the setup function has returned. */
 	private setUp = false;
+	/** The downloads of the sketch's list, once a live setup began or took them. */
+	private listed: Promise<Downloads> | undefined;
+	/** Resolves the sketch's `engine.firstFrame`, until it has. */
+	private firstFrameReached: (() => void) | undefined;
+	/**
+	 * True while a development build watches the sketch's loads for one that waits for another:
+	 * during the setup function of a live start.
+	 */
+	private watchesLoads = false;
 	/** The frames that warm-ups during the setup published, one after another, as the last one's number. */
 	private setupFrames: Promise<number> = Promise.resolve(0);
 	private readonly clock = new FrameClock();
@@ -556,6 +693,17 @@ export class SketchRunner {
 	 * time, or a replay, which steps through a recording.
 	 */
 	private readonly holdsFrames: boolean;
+	/**
+	 * True while the preset check measures the frames of play. The governor waits until it ends, so
+	 * the check measures each preset at the full render scale.
+	 */
+	private checking = false;
+	/**
+	 * The refresh rate that the thread that draws measured when the sketch's setup returned, before
+	 * the frames of play loaded the GPU, or 0 before it measured one. The preset check's target and
+	 * the governor's start from it.
+	 */
+	private setupRefreshHz = 0;
 	readonly context: SketchContext;
 
 	/**
@@ -685,6 +833,11 @@ export class SketchRunner {
 		// Alpha to coverage fades a mask's edges only on targets with MSAA.
 		this.preloads = new ShaderPreloads(sketch.sendPreload);
 		this.preloads.setUsable('coverage', device.antialias === ANTIALIAS_MSAA);
+		this.preloads.setPassFacts({
+			tier: sketch.capabilities.tier,
+			device,
+			settings: () => this.quality.settings,
+		});
 		const { governor } = this;
 		const bloomSize = () => this.bloomSetting / 2 ** governor.bloomHalvings;
 		this.quality = new SketchQuality(
@@ -820,12 +973,22 @@ export class SketchRunner {
 				viewport: this.viewport,
 				capabilities: sketch.capabilities,
 				held: this.holdsFrames,
+				firstFrame: new Promise<void>((resolve) => {
+					this.firstFrameReached = resolve;
+				}),
 			},
 			scene,
 			materials,
 			geometry,
 			textures,
-			assets: lazyAssets(textures, sketch.pageUrl, { core: this.core, geometry, materials, scene }),
+			assets: lazyAssets(
+				textures,
+				sketch.pageUrl,
+				{ core: this.core, geometry, materials, scene },
+				() => this.listed,
+				() => this.watchesLoads,
+				this.holdsFrames,
+			),
 			input: this.input,
 			post: this.post,
 			render: this.render,
@@ -867,26 +1030,50 @@ export class SketchRunner {
 				? HOLD_SEED
 				: (replay?.seed ?? (record ? RECORDING_SEED : undefined));
 		if (seed !== undefined) this.restoreRandom = seedMathRandom(seed);
+		// The level plans that the setup starts hand over their levels when the hold begins, in the
+		// order they started, so the scene's meshes sit in engine memory in one order on every run.
+		// Last too, so a constructor that fails leaves the plans handing over as they answer.
+		if (holdSeconds !== undefined) holdPlans();
 	}
 
 	/**
 	 * Runs the sketch's setup function, which returns the sketch's callbacks. When the page asks for
-	 * it, the preset check follows. In hold mode, it then steps the sketch to the held time (see
-	 * `hold`). Options out of range fail with E1214 before the setup function runs.
+	 * the preset check before play, the check follows, and the setup resolves after it. When it asks
+	 * for the check during play, the check starts as the setup resolves, and measures the frames
+	 * that the frame loop draws from then on. In hold mode, it then steps the sketch to the held time
+	 * (see `hold`). Options out of range fail with E1214 before the setup function runs. A live
+	 * start's listed files are downloading by then; hold mode, a replay and a recording leave each
+	 * file to its load, so their order stays as without the list.
 	 */
 	async setup(sketch: SketchDefinition): Promise<void> {
+		const { options } = sketch;
 		try {
-			this.fixed = new FixedClock(sketch.options.fixedRate, sketch.options.maxFixedSteps);
+			this.fixed = new FixedClock(options.fixedRate, options.maxFixedSteps);
 			// A sketch whose own thread limits its frames keeps the governor out of the lowest tier:
 			// its smaller render cannot speed the sketch work, so the cut only loses the picture.
-			if (sketch.options.lowestTier === false) this.governor.setLowestTier(false);
+			if (options.lowestTier === false) this.governor.setLowestTier(false);
+			const live = !this.holdsFrames && !this.records;
+			if (options.downloads !== undefined) {
+				const { pageUrl, listed = {} } = this.sketch;
+				listedAddresses(options.downloads, pageUrl);
+				if (live) {
+					startListedFiles(listed, sketch, pageUrl);
+					this.listed = listed.downloads;
+				}
+			}
 			// The setup grows the scene, and a page that stalls here reports the time it spent doing it.
 			this.record.markSetupStart();
 			const growing = performance.now();
+			// The development warning watches the setup function's own loads. A setup that fails ends
+			// the start, so the watch needs no end of its own then.
+			if (DEV) this.watchesLoads = live && options.serialLoadWarning !== false;
 			this.callbacks = (await sketch.setup(this.context)) ?? {};
+			if (DEV) this.watchesLoads = false;
 			this.record.markSetupDone(performance.now() - growing);
-			const { check } = this.sketch.quality;
-			if (check && !this.holdsFrames) await this.checkPreset();
+			this.setupRefreshHz = refreshRate(this.metrics);
+			this.governorLoop?.startTarget(this.setupRefreshHz);
+			const check = this.holdsFrames ? undefined : this.sketch.quality.check;
+			if (check === 'before-play') await this.checkPreset(() => this.drawSetupFrame());
 			// Warm-ups that the setup started without waiting for them publish their frames first, so
 			// the frame loop never records while a setup frame does.
 			await this.setupFrames;
@@ -898,8 +1085,12 @@ export class SketchRunner {
 				this.input.recorder = this.recorder;
 			}
 			this.setUp = true;
+			if (check === 'during-play') void this.checkDuringPlay();
 			if (this.holdSeconds !== undefined) await this.hold(this.holdSeconds);
 			else if (this.replayProgram !== undefined) await this.replay(this.replayProgram);
+			// Hold mode and a replay record no frame after their last, so the sketch's `firstFrame`
+			// work can no longer change the frames that they show.
+			if (this.holdsFrames) this.reachFirstFrame();
 		} catch (error) {
 			// A setup that fails, at any step, leaves no runner to dispose, so the runner stops hearing
 			// add-ons now.
@@ -909,42 +1100,89 @@ export class SketchRunner {
 	}
 
 	/**
-	 * The preset check, after the setup: the first frame draws with every pipeline built, then the
-	 * check measures the scene as the setup built it, and lowers the preset where the device cannot
-	 * hold its frame rate. Its code loads after the first frame, while the scene keeps drawing. A
-	 * check that cannot load leaves the preset as it is.
+	 * The preset check during play: the frame loop draws the scene and runs the sketch, and the
+	 * check measures its frames. The governor waits until the check ends. A preset that the sketch
+	 * asks for itself ends the check, which then reports no result: the sketch chose its preset.
 	 */
-	private async checkPreset(): Promise<void> {
-		if (!(await this.drawSetupFrame())) return;
+	private async checkDuringPlay(): Promise<void> {
+		const { slots } = this.sketch.control;
+		const { quality } = this;
+		const requests = quality.presetRequests;
+		this.checking = true;
+		try {
+			await this.checkPreset(async () => {
+				if (Atomics.load(slots, Slot.Running) === 0) return false;
+				await reached(slots, Slot.FramesTaken, nextFrame(Atomics.load(slots, Slot.FramesTaken)));
+				return Atomics.load(slots, Slot.Running) !== 0 && quality.presetRequests === requests;
+			});
+		} finally {
+			this.checking = false;
+		}
+	}
+
+	/**
+	 * The preset check, after the setup: the first frame draws with every pipeline built, then the
+	 * check measures the scene, and lowers the preset where the device cannot hold its frame rate.
+	 * `drawFrame` resolves once the thread that draws has taken one more frame: a frame that it
+	 * publishes of the scene as the setup built it, before play, or the frame loop's next frame,
+	 * during play. It resolves with false when the check must stop. The check's code loads after the
+	 * first frame, while the scene keeps drawing. A check that cannot load leaves the preset as it
+	 * is. It goes on from the rounds that an earlier start measured before its check ended, when the
+	 * page gives them. While the engine runs, the page hears of each lowering with the rounds so
+	 * far, and that the check ended, with its result when it measured one.
+	 */
+	private async checkPreset(drawFrame: () => Promise<boolean>): Promise<void> {
+		let check: PresetCheck | undefined;
+		try {
+			check = await this.measurePreset(drawFrame);
+		} catch (error) {
+			console.warn(`null3D could not check the quality preset: ${messageOf(error)}`);
+		}
+		if (this.core.stopped || Atomics.load(this.sketch.control.slots, Slot.Running) === 0) return;
+		try {
+			this.quality.report(check);
+		} catch (error) {
+			console.warn(`null3D could not report the quality preset check: ${messageOf(error)}`);
+		}
+	}
+
+	/**
+	 * Runs the preset check with `drawFrame`, as `checkPreset` says, once the thread that draws has
+	 * built the pipelines that the scene needs; undefined when it stopped.
+	 */
+	private async measurePreset(drawFrame: () => Promise<boolean>): Promise<PresetCheck | undefined> {
+		await this.warmUp();
+		if (!(await drawFrame())) return undefined;
 		const loading = import('./preset-check');
 		let loaded = false;
 		const settled = () => {
 			loaded = true;
 		};
 		loading.then(settled, settled);
-		const graceStart = performance.now();
-		while (!loaded) if (!(await this.drawSetupFrame())) return;
-		const { glue } = this.sketch;
+		while (!loaded) if (!(await drawFrame())) return undefined;
+		const { glue, maxTargetFps } = this.sketch;
 		const { quality } = this;
-		try {
-			const check = await (await loading).checkPreset(
-				{
-					metrics: this.metrics,
-					get preset() {
-						return quality.preset;
-					},
-					lower: () => quality.lower(),
-					drawFrame: () => this.drawSetupFrame(),
-					uploading: () => glue.textureStat(TEXTURE_STAT_WAITING, 0) > 0,
-					maxTargetFps: this.sketch.maxTargetFps,
-					resumes: () => Atomics.load(this.sketch.control.slots, Slot.Resumes),
+		const { checkPreset, checkStart } = await loading;
+		return checkPreset(
+			{
+				metrics: this.metrics,
+				get preset() {
+					return quality.preset;
 				},
-				graceStart,
-			);
-			if (check) this.quality.report(check);
-		} catch (error) {
-			console.warn(`null3D could not check the quality preset: ${messageOf(error)}`);
-		}
+				lower: (check, to) => quality.lower(check, to),
+				drawFrame,
+				uploading: () => glue.textureStat(TEXTURE_STAT_WAITING, 0) > 0,
+				maxTargetFps,
+				resumes: () => Atomics.load(this.sketch.control.slots, Slot.Resumes),
+			},
+			checkStart(quality.preset, this.setupRefreshHz, maxTargetFps, this.sketch.quality.resume),
+		);
+	}
+
+	/** Resolves the sketch's `engine.firstFrame`, once. */
+	private reachFirstFrame(): void {
+		this.firstFrameReached?.();
+		this.firstFrameReached = undefined;
 	}
 
 	/** True once the setup function has returned, so the frame loop may step the sketch. */
@@ -1014,7 +1252,8 @@ export class SketchRunner {
 	/**
 	 * Ends the sketch when the engine stops: runs its onDestroy, then makes every later call to the
 	 * engine fail with E1420, so code that outlives the engine never reaches the next engine's core.
-	 * It also gives the thread its own Math.random back, where hold mode seeded it.
+	 * It also gives the thread its own Math.random back, where hold mode seeded it, and ends hold
+	 * mode's hold on the level plans, for a setup that failed before its hold.
 	 */
 	dispose(): void {
 		// Before the check below: a runner whose core stopped first still stops hearing add-ons.
@@ -1031,6 +1270,7 @@ export class SketchRunner {
 		stopHelperWorkers();
 		this.restoreRandom?.();
 		this.restoreRandom = undefined;
+		endPlanHold();
 	}
 
 	/**
@@ -1201,7 +1441,7 @@ export class SketchRunner {
 		const { governor } = this;
 		governor.setOn(settings.governor);
 		governor.setLevelSteps(settings.governorLevels);
-		governor.setRange(low, high);
+		governor.setRange(low, high, this.quality.owns('minRenderScale'));
 		this.followMovers = settings.followMovingCasters;
 		this.cascadeBlend = settings.shadowCascadeBlend;
 		this.lodThreshold = settings.lodThreshold;
@@ -1335,19 +1575,36 @@ export class SketchRunner {
 	 * the settings its own values again.
 	 */
 	private applyTierSettings(): void {
-		const { governor } = this;
+		const { governor, quality } = this;
 		this.tierChanges = governor.tierChanges;
-		const { settings } = this.quality;
+		const { settings } = quality;
+		// A render-scale floor that the sketch set itself wins over the tier's, in the tier and as it
+		// leaves.
+		const ownFloor = quality.owns('minRenderScale');
 		if (governor.lowest) {
 			this.tierRestore ??= tierRestoreSettings(settings);
 			const cuts = lowestTierCuts(this.sketch.capabilities.tier, settings.minRenderScale);
+			if (ownFloor) delete cuts.minRenderScale;
 			const current = settings as unknown as Record<string, unknown>;
 			if (Object.entries(cuts).some(([name, value]) => current[name] !== value))
-				void this.quality.setGoverned(cuts);
+				void quality.setGoverned(cuts);
+			if (ownFloor)
+				governor.setRange(
+					thousandths(settings.minRenderScale),
+					thousandths(settings.maxRenderScale),
+					true,
+				);
 		} else if (this.tierRestore) {
-			const restore = this.tierRestore;
+			const restore = { ...this.tierRestore };
 			this.tierRestore = undefined;
-			void this.quality.setGoverned(restore);
+			if (ownFloor) {
+				delete restore.minRenderScale;
+				restore.maxRenderScale = Math.max(
+					restore.maxRenderScale ?? settings.maxRenderScale,
+					settings.minRenderScale,
+				);
+			}
+			void quality.setGoverned(restore);
 		}
 	}
 
@@ -1470,6 +1727,10 @@ export class SketchRunner {
 	 * `timestamp` is the frame's time in milliseconds.
 	 */
 	step(timestamp: number): number {
+		// A live sketch's `firstFrame` resolves at the first step after the GPU finished the first
+		// frame, which the thread that draws records; the check ends once it has.
+		if (this.firstFrameReached !== undefined && !this.holdsFrames && this.record.firstFrameDone)
+			this.reachFirstFrame();
 		const resumes = Atomics.load(this.sketch.control.slots, Slot.Resumes);
 		this.resumed = this.resumes >= 0 && resumes !== this.resumes;
 		this.resumes = resumes;
@@ -1510,6 +1771,11 @@ export class SketchRunner {
 		this.render.held = true;
 		this.recorded.held = true;
 		try {
+			// The tasks and level plans that the setup started answer whenever the job workers finish
+			// them. The steps start once they all have, and the plans hand over their levels in the
+			// order they started, so the steps and the held frame find the same scene on every run.
+			releasePlans();
+			if (tasksPending() > 0) await this.settleTasks();
 			for (let step = 0; step <= steps; step++) {
 				this.clock.holdStep(step, steps, seconds);
 				const now = this.clock.now;
@@ -1576,6 +1842,7 @@ export class SketchRunner {
 				`hold mode stopped at ${Number(this.clock.now.toFixed(3))} seconds, in frame ${this.context.time.frame}: ${messageOf(error)}${phase}`,
 			);
 		} finally {
+			endPlanHold();
 			this.holding = false;
 			this.time.held = false;
 			this.time.drawn = true;
@@ -1939,7 +2206,7 @@ export class SketchRunner {
 		this.readViewport();
 		// The governor judges the frames so far before the sketch's update, which then sees the
 		// render scale of this frame, and whose change handlers hear of a shadow step.
-		if (play && this.governorLoop) {
+		if (play && this.governorLoop && !this.checking) {
 			this.governorLoop.now[0] = start;
 			this.governorLoop.frame(this.resumed);
 			this.resumed = false;

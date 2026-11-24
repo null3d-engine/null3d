@@ -14,6 +14,7 @@ run('plant-determinism', async () => {
 		maxPixelRatio: 1,
 	});
 	await engine.firstFrame;
+	await engine.presetChecked;
 	progress('engine started');
 	const species = await new Promise<GrownDigest[]>((resolve, reject) => {
 		engine.onSketchMessage((name, data) => {

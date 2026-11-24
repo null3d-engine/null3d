@@ -101,6 +101,7 @@ async function start(
 		},
 	});
 	await engine.firstFrame;
+	await engine.presetChecked;
 	return { engine, canvas, heard, applied };
 }
 

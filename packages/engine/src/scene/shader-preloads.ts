@@ -4,8 +4,36 @@
 // batch is made, when bloom or ambient occlusion turns on. The thread that draws then downloads
 // the file while the sketch builds the objects, so they wait less for their pipelines.
 
+import { FORMAT_CANVAS } from '../generated/gpu';
 import { SHADER_FEATURES, type ShaderFeature } from '../generated/shader-features';
+import type { CoreDevice } from '../page/limits';
+import type { QualitySettings } from '../quality/presets';
 import { GENERATORS_PRELOAD, type PreloadSender } from '../shared/images';
+import type { Tier } from '../shared/tier';
+
+/**
+ * What decides the passes that the device and the preset draw over a scene's opaque objects, and
+ * the sky's cloud tier: the GPU path, the device, and the quality settings as they stand.
+ */
+export interface PassFacts {
+	tier: Tier;
+	device: Pick<CoreDevice, 'gpuOcclusion' | 'directDraws' | 'sceneColor'>;
+	settings: () => Pick<QualitySettings, 'bounceRays' | 'cloudSteps'>;
+}
+
+/**
+ * The features whose shader files the passes need that the device and the preset draw once a
+ * scene has an opaque object: GPU occlusion culling on WebGPU, where the GPU culls the buckets,
+ * and the screen-space bounce light on the HDR path, which reads ambient occlusion's steps and
+ * the copy of the color.
+ */
+export function passFeatures({ tier, device, settings }: PassFacts): ShaderFeature[] {
+	const features: ShaderFeature[] = [];
+	if (tier !== 'webgl2' && device.gpuOcclusion && !device.directDraws) features.push('occlusion');
+	if (settings().bounceRays > 0 && device.sceneColor !== FORMAT_CANVAS)
+		features.push('ao', 'color_copy');
+	return features;
+}
 
 /** Asks the thread that draws for the shader files of the features that the sketch will use. */
 export class ShaderPreloads {
@@ -14,8 +42,32 @@ export class ShaderPreloads {
 	private readonly unusable = new Set<ShaderFeature>();
 	/** The listed features held back while unusable, asked for once they turn usable. */
 	private readonly held = new Set<ShaderFeature>();
+	/** What decides the passes that the scene's objects bring, once the runner gives it. */
+	private passes: PassFacts | undefined;
 
 	constructor(private readonly send: PreloadSender = () => {}) {}
+
+	/** Gives what decides the passes that the device and the preset draw. */
+	setPassFacts(facts: PassFacts): void {
+		this.passes = facts;
+	}
+
+	/**
+	 * Asks for the shader files of the passes that the device and the preset draw over an opaque
+	 * object, as the settings stand: a scene's first opaque material calls it. Without it, each
+	 * file is asked for only when the first frame names its pipelines, after the setup.
+	 */
+	needPasses(): void {
+		if (this.passes) this.needAll(passFeatures(this.passes));
+	}
+
+	/**
+	 * Asks for the cloud tier's shader file for a sky whose clouds cover `coverage` of it, where the
+	 * settings march the tier: the tier then draws over that sky in the first frame.
+	 */
+	needClouds(coverage: number): void {
+		if (coverage > 0 && (this.passes?.settings().cloudSteps ?? 0) > 0) this.need('clouds');
+	}
 
 	/**
 	 * Asks for the shader file of `feature`, once. It allocates nothing for a feature it asked for

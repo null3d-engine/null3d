@@ -34,7 +34,7 @@ import {
 	circleRadius,
 	doorOf,
 	FEWEST_ON_LANE,
-	FILL_SPOTS,
+	fillSpots,
 	groundHeight,
 	HOUSE_ON_ROAD,
 	KEEPS,
@@ -53,9 +53,9 @@ import {
 	STEEPEST_DRIVE,
 	stairTreads,
 	standing,
-	TERRACES,
-	TREE_SPOTS,
 	type TreeSpot,
+	terraceWalls,
+	treeSpots,
 	wayOf,
 } from './plan';
 import {
@@ -78,12 +78,18 @@ import {
 import {
 	HULL_WATER,
 	hullDepth,
-	MOORINGS,
 	MOST_RETAINING,
+	mooringSpots,
 	parasolSpots,
 	retainingRuns,
 	stoneWalls,
 } from './town';
+
+/** The plan's grown parts and the harbour's boats, read once for every test. */
+const TREE_SPOTS = treeSpots();
+const FILL_SPOTS = fillSpots();
+const TERRACES = terraceWalls();
+const MOORINGS = mooringSpots();
 
 /** Two turning grades: the road's own, with 3% for the rounding of its height, and on the ground. */
 const GRADE_SLACK = 1.03;

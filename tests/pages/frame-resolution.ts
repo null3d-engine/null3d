@@ -81,6 +81,7 @@ run('frame-resolution', async () => {
 	const failures: string[] = [];
 	engine.onFailure((error) => failures.push(error.code));
 	await engine.firstFrame;
+	await engine.presetChecked;
 	const scales: number[] = [];
 	const across: number[] = [];
 	const down: number[] = [];

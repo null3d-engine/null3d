@@ -82,6 +82,15 @@ type Gpu = (typeof GPUS)[number];
 
 /** The engine page's measured time after its first frame: short, as a load needs only its start. */
 const PAGE_SECONDS = 0.2;
+/**
+ * The V8 switch of the browser that makes the warm loads. Chrome keeps the engine core's compiled
+ * code only once V8 has gone a while without optimizing another function, and the pinned Chrome's
+ * V8 puts that write off by many minutes. The switch makes V8 write at once. It stands in for a
+ * first visit that runs long enough for Chrome 157 or later to keep the code, so the warm loads
+ * read it as a real repeat visit does. The first warm load and the measured ones share one browser
+ * and its profile, which holds the code, so the switch covers both.
+ */
+const WARM_BROWSER_ARGS: readonly string[] = ['--js-flags=--wasm-caching-timeout-ms=0'];
 /** How long a load may take, as on Slow 4G on a slow phone. */
 const LOAD_TIMEOUT_MS = 180_000;
 /** How often the tool asks a page for its result. Each question wakes the page's thread. */
@@ -210,13 +219,22 @@ interface Driven {
 	close(): Promise<void>;
 }
 
-/** Chrome on this computer, with a fresh profile, so its caches start empty. */
-async function macChrome(): Promise<Driven> {
+/** The switches of Chrome on this computer. The browser of the warm loads, `warm`, also gets V8's. */
+export function macChromeArgs(warm: boolean): string[] {
+	return [
+		'--enable-unsafe-webgpu',
+		`--remote-debugging-port=${DEBUG_PORT}`,
+		...(warm ? WARM_BROWSER_ARGS : []),
+	];
+}
+
+/**
+ * Chrome on this computer, with a fresh profile, so its caches start empty. With `warm`, it is the
+ * browser that makes the warm loads.
+ */
+async function macChrome(warm: boolean): Promise<Driven> {
 	refuseBackgroundPriority();
-	const browser = await launchChromium({
-		...chromeForTesting(),
-		args: ['--enable-unsafe-webgpu', `--remote-debugging-port=${DEBUG_PORT}`],
-	});
+	const browser = await launchChromium({ ...chromeForTesting(), args: macChromeArgs(warm) });
 	try {
 		const devtools = await DevTools.connect(DEBUG_PORT);
 		return {
@@ -304,8 +322,8 @@ async function main(): Promise<void> {
 		let failures = 0;
 		for (const step of loadSteps(options)) {
 			const fresh = !options.android && step.kind === 'cold';
-			if (!fresh && !shared) shared = await macChrome();
-			const driven = fresh ? await macChrome() : (shared as Driven);
+			if (!fresh && !shared) shared = await macChrome(true);
+			const driven = fresh ? await macChrome(false) : (shared as Driven);
 			try {
 				browser ||= (await driven.devtools.send<{ product: string }>('Browser.getVersion')).product;
 				const result = await measure(

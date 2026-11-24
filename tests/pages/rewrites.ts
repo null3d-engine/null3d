@@ -16,6 +16,7 @@ run('rewrites', async () => {
 	if (new URLSearchParams(location.search).has('settled')) sketch.searchParams.set('settled', '');
 	const engine = await createEngine({ canvas, sketch, maxPixelRatio: 1, preset: 'medium' });
 	await engine.firstFrame;
+	await engine.presetChecked;
 	for (;;) {
 		const frame = await new Promise<number>((resolve) => {
 			const off = engine.onSketchMessage((name, data) => {

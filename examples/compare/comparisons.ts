@@ -2,25 +2,20 @@
 // that both engines draw, with no engine imports; sketch.ts, the null3D half; and three.ts, the
 // three.js half, which runs in a worker of its own. Each entry names its sketch and its worker with
 // literal addresses, so a production build ships both, under any address prefix. A page starts a
-// comparison with `startComparison` from examples/lib/compare.ts.
+// comparison with `startComparison` from examples/lib/compare.ts. Each entry's name and title come
+// from listing.ts, which a page lists the comparisons from without loading their scenes.
 
-import type { DemoGroup } from '../demos';
 import type { EffectName } from '../lib/compare-scene';
 import type { DeviceClass, RampPlan } from '../lib/ramp';
 import { BATTLE_HOLD, BATTLE_RAMPS, battleObjects } from './battle/scene';
 import { FACTORY_HOLD, FACTORY_RAMPS, factoryObjects, SPOT_COUNT } from './factory/scene';
+import { COMPARISON_LISTINGS, type ComparisonListing } from './listing';
 import { NIGHT_HOLD, NIGHT_RAMPS, nightObjects } from './night-town/scene';
 
-/** The group that a page lists the comparisons under. */
-export const COMPARE_GROUP: DemoGroup = 'Compare with three.js';
-
 /** A comparison of null3D with three.js on the same scene. */
-export interface Comparison {
-	/** The comparison's folder under compare/: lowercase words joined by dashes. */
-	name: string;
+export interface Comparison extends ComparisonListing {
 	/** The folder of its code under the examples folder, for its "View code" link. */
 	code: string;
-	title: string;
 	/** What the comparison shows. */
 	summary: string;
 	/** What the count counts, for the slider's label. */
@@ -90,11 +85,18 @@ const LENS_EFFECTS: readonly EffectName[] = [...PLAIN_EFFECTS, 'lens'];
  */
 const NIGHT_EFFECTS: readonly EffectName[] = [...PLAIN_EFFECTS, 'lens', 'reflections', 'particles'];
 
+/** The listing of the comparison in the folder `name`, which gives its entry a name and a title. */
+function listed(name: string): ComparisonListing {
+	const listing = COMPARISON_LISTINGS.find((entry) => entry.name === name);
+	if (!listing) throw new Error(`examples/compare/listing.ts lists no comparison named ${name}`);
+	return listing;
+}
+
+/** Every comparison, in the order of its listing. */
 export const COMPARISONS: readonly Comparison[] = [
 	{
-		name: 'battle',
+		...listed('battle'),
 		code: 'compare/battle/',
-		title: 'Battle',
 		summary:
 			'Two armies of animated soldiers and mechs, rifles in hand, with tanks behind each line, meet on a cratered field at dusk under tracers, shell fire and smoke.',
 		countUnit: 'soldiers and mechs',
@@ -163,9 +165,8 @@ export const COMPARISONS: readonly Comparison[] = [
 		effects: [...LENS_EFFECTS, 'decals'],
 	},
 	{
-		name: 'factory',
+		...listed('factory'),
 		code: 'compare/factory/',
-		title: 'Factory',
 		summary:
 			'Rows of robot arms, each a tree of seven parts, pick crates off belts and stack them on pallets, under spot lights in a hazy hall.',
 		countUnit: 'moving parts',
@@ -232,9 +233,8 @@ export const COMPARISONS: readonly Comparison[] = [
 		effects: LENS_EFFECTS,
 	},
 	{
-		name: 'night-town',
+		...listed('night-town'),
 		code: 'compare/night-town/',
-		title: 'Night effects',
 		summary:
 			'A rainy downtown under the moon: lit windows, neon signs over shops, street lamps and cars with their headlights on, mirrored in wet streets. Each block adds 12 lights.',
 		countUnit: 'lights',

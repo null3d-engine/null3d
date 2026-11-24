@@ -45,6 +45,7 @@ run('governor-trap', async (): Promise<TrapResult> => {
 		);
 	});
 	await engine.firstFrame;
+	await engine.presetChecked;
 
 	/** Draws a measurement of the whole scale's frames, and reads their rate and frame time. */
 	const measure = async (): Promise<{ fps: number; frameMs: number; refreshHz: number | null }> => {

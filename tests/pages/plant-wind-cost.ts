@@ -52,6 +52,7 @@ run('plant-wind-cost', async () => {
 		messages[name] = data;
 	});
 	await engine.firstFrame;
+	await engine.presetChecked;
 	// The turn does nothing: one side per load. featureCost warms up, then measures this side alone.
 	const cost = await featureCost(engine, async () => {}, undefined, {
 		sides: [SIDE],

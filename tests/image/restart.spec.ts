@@ -152,13 +152,13 @@ const TEXTURES_FAIL = `if (typeof GPUDevice !== 'undefined') GPUDevice.prototype
 	throw new DOMException('GPUDevice.createTexture: Unable to create texture.', 'InvalidStateError');
 };`;
 
-// When the thread that draws fails while the engine starts, the start fails with that error instead
-// of waiting for frames that never come. The engine has stopped by then, and each thread answered
-// the stop. So after a collection the page reaches only the one memory that it keeps for the next
-// engine: the single-threaded build's core or the threaded build's shared memory. It reaches none of
-// the engine's workers.
+// When the thread that draws fails at the first frame, the page hears that error through the
+// engine's failure handler instead of waiting for frames that never come. The engine draws no more
+// frames by then, and the page destroys it, so each thread answers the stop. After a collection the
+// page reaches only the one memory that it keeps for the next engine: the single-threaded build's
+// core or the threaded build's shared memory. It reaches none of the engine's workers.
 for (const mode of ENGINE_MODES) {
-	test(`a start whose drawing fails rejects, and leaves only the memory for the next engine, ${mode.name}`, async ({
+	test(`a start whose drawing fails reports it, and leaves only the memory for the next engine, ${mode.name}`, async ({
 		page,
 	}) => {
 		await prefixEngineScripts(page, TEXTURES_FAIL);

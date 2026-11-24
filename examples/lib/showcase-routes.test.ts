@@ -51,7 +51,7 @@ const TREE_CLEARANCE = 2;
 describe("the island's close look at its highest tower", () => {
 	const [towerX, towerZ] = islandPlace.SUMMITS[0] as readonly [number, number, number, number];
 	const route = routeTimeline(island.SHOTS);
-	const trees = [...islandPlan.TREE_SPOTS, ...islandPlan.FILL_SPOTS];
+	const trees = [...islandPlan.treeSpots(), ...islandPlan.fillSpots()];
 	const close: number[][] = [];
 	const pose = new Float32Array(6);
 	for (let step = 0; step <= SAMPLES; step++) {

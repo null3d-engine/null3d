@@ -1,6 +1,7 @@
 // null3d bench: runs the benchmark protocol on a project's page. It builds the project for
 // production, as it ships, and opens the page in a headless browser with the engine's bench switch,
-// in fresh runs on each GPU path. Each run lets the page warm up, then measures the engine. The
+// in fresh runs on each GPU path. Each run waits for the engine's first frame and the end of its
+// preset check, lets the page warm up, then measures the engine. The
 // command prints the median of the runs and their spread: CPU time per frame by thread, GPU time
 // and the frame rates. It saves every run's figures in a JSON file.
 import { existsSync } from 'node:fs';
@@ -45,10 +46,12 @@ Options:
                             Each is one of ${TIERS.join(', ')} (the engine's own choice)
   --runs <count>            Fresh runs on each GPU path (${RUNS})
   --seconds <seconds>       How long each run measures (${MEASURE_SECONDS})
-  --warmup <seconds>        How long each run lets the page run before it measures (${WARMUP_SECONDS})
+  --warmup <seconds>        How long each run lets the page play, after its first frame and the
+                            preset check, before it measures (${WARMUP_SECONDS})
   --size <width>x<height>   The browser window in CSS pixels (1280x720)
   --out <file.json>         The JSON file to write (bench.json)
-  --timeout <seconds>       How long the page may take to start the engine (60)
+  --timeout <seconds>       How long the page may take to start the engine, draw its first frame
+                            and end the preset check (60)
 
 It measures in Chrome for Testing on this computer's GPU, and downloads it on first use. When the CI
 variable is set, it measures in Playwright's Chromium on SwiftShader, the software GPU of machines without a GPU.`;
@@ -107,6 +110,9 @@ export function parseBenchArgs(args) {
  *   measured the engine: the GPU path it drew with, how it ran, and its figures.
  * @typedef {{ build: string, latency: string, renderThread: string, jobWorkers: number }} EngineMode
  * @typedef {MeasuredRun | HoldFailure} BenchRun A run's figures, or why it measured nothing.
+ * @typedef {MeasuredEngine & { capabilities: { tier: string }, mode: EngineMode, firstFrame:
+ *   Promise<void>, presetChecked: Promise<void> }} BenchEngine The engine that the bench switch
+ *   publishes, as a run reads it.
  */
 
 /**
@@ -162,9 +168,12 @@ async function within(promise, ms, error) {
 }
 
 /**
- * Loads a page with the bench switch, waits until the engine starts, then lets it warm up and
- * measures it. A page that throws before the engine starts fails at once: a page script that
- * throws, a module that fails to load, or an engine that cannot start.
+ * Loads a page with the bench switch, waits until the engine starts, draws its first frame and ends
+ * its preset check, then lets it warm up and measures it. `createEngine` resolves, and the switch
+ * publishes the engine, before the first frame, and the check can lower the preset during the
+ * first frames of play, so a run that measured from the start would time the start rather than
+ * the preset that plays. A page that throws before the engine starts fails at once: a page script
+ * that throws, a module that fails to load, or an engine that cannot start.
  *
  * @param {Page} page
  * @param {string} url
@@ -179,6 +188,7 @@ export async function measurePage(page, url, timeoutMs, { warmupSeconds, measure
 		thrown ??= error.message;
 	});
 	const seconds = timeoutMs / 1000;
+	const deadline = Date.now() + timeoutMs;
 	const started = await pollPage(page, url, timeoutMs, async (overdue) => {
 		// A page that reloads has nothing to read for a moment.
 		const found = await page
@@ -194,17 +204,23 @@ export async function measurePage(page, url, timeoutMs, { warmupSeconds, measure
 	});
 	if (started !== true) return started;
 	try {
-		const engine =
-			/** @type {JSHandle<MeasuredEngine & { capabilities: { tier: string }, mode: EngineMode }>} */ (
-				await page.evaluateHandle(
-					(name) => /** @type {Record<string, unknown>} */ (globalThis)[name],
-					ENGINE_GLOBAL,
-				)
-			);
-		const { tier, mode } = await engine.evaluate(({ capabilities, mode }) => ({
-			tier: capabilities.tier,
-			mode,
-		}));
+		const engine = /** @type {JSHandle<BenchEngine>} */ (
+			await page.evaluateHandle(
+				(name) => /** @type {Record<string, unknown>} */ (globalThis)[name],
+				ENGINE_GLOBAL,
+			)
+		);
+		const tier = await engine.evaluate(({ capabilities }) => capabilities.tier);
+		const late = await within(
+			engine.evaluate(({ firstFrame, presetChecked }) =>
+				Promise.all([firstFrame, presetChecked]).then(() => null),
+			),
+			Math.max(0, deadline - Date.now()),
+			`the engine on ${tier} did not draw its first frame and end its preset check within ${seconds} s`,
+		);
+		if (late) return late;
+		// The mode names the preset that the check chose, which the run measures.
+		const mode = await engine.evaluate(({ mode }) => mode);
 		const timed = await within(
 			page.evaluate(timedRun, { engine, warmupSeconds, measureSeconds }),
 			(warmupSeconds + measureSeconds) * 1000 + MEASURE_MARGIN_MS,

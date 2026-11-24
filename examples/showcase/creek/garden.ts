@@ -40,16 +40,27 @@ export interface GardenModels {
 	readonly boulders: readonly [Part, Part, Part];
 }
 
+/** The garden's model files, which a scene may download ahead of `loadGarden`. */
+export const GARDEN_FILES = {
+	statue: sampleUrl('sources/showcase/creek-garden/statue/statue.glb'),
+	lantern: sampleUrl('sources/showcase/creek-garden/lantern/lantern.glb'),
+	gate: sampleUrl('sources/showcase/creek-garden/gate/gate.glb'),
+	dragon: sampleUrl('sources/showcase/creek-garden/dragon/dragon.glb'),
+	boulder1: sampleUrl('sources/showcase/creek-garden/boulder-1/boulder-1.glb'),
+	boulder2: sampleUrl('sources/showcase/creek-garden/boulder-2/boulder-2.glb'),
+	boulder3: sampleUrl('sources/showcase/creek-garden/boulder-3/boulder-3.glb'),
+} as const;
+
 /** Loads every model at once. */
 export async function loadGarden({ assets }: SketchContext): Promise<GardenModels> {
 	const [statue, lantern, gate, dragon, first, second, third] = await Promise.all([
-		assets.loadGltf(sampleUrl('sources/showcase/creek-garden/statue/statue.glb')),
-		assets.loadGltf(sampleUrl('sources/showcase/creek-garden/lantern/lantern.glb')),
-		assets.loadGltf(sampleUrl('sources/showcase/creek-garden/gate/gate.glb')),
-		assets.loadGltf(sampleUrl('sources/showcase/creek-garden/dragon/dragon.glb')),
-		assets.loadGltf(sampleUrl('sources/showcase/creek-garden/boulder-1/boulder-1.glb')),
-		assets.loadGltf(sampleUrl('sources/showcase/creek-garden/boulder-2/boulder-2.glb')),
-		assets.loadGltf(sampleUrl('sources/showcase/creek-garden/boulder-3/boulder-3.glb')),
+		assets.loadGltf(GARDEN_FILES.statue),
+		assets.loadGltf(GARDEN_FILES.lantern),
+		assets.loadGltf(GARDEN_FILES.gate),
+		assets.loadGltf(GARDEN_FILES.dragon),
+		assets.loadGltf(GARDEN_FILES.boulder1),
+		assets.loadGltf(GARDEN_FILES.boulder2),
+		assets.loadGltf(GARDEN_FILES.boulder3),
 	]);
 	const statueParts = partsOf(statue);
 	return {

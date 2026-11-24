@@ -41,6 +41,7 @@ run('plant-shadow', async () => {
 		messages[name] = data;
 	});
 	await engine.firstFrame;
+	await engine.presetChecked;
 	progress('the first frame drew');
 	await new Promise((resolve) => setTimeout(resolve, WARMUP * 1000));
 	// A software GPU draws one heavy frame over a second or more, so a fixed window can hold too

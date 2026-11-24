@@ -64,6 +64,35 @@ export function onAddonChecked(heard: (name: string) => void): () => void {
 	return () => hearers.delete(heard);
 }
 
+/** The add-ons that a sketch's module loaded before its runner existed, as `hearAddonsEarly` hears them. */
+export interface EarlyAddons {
+	/**
+	 * Gives `heard` each add-on heard so far, ends this hearing, and hears each later add-on for
+	 * `heard`. Returns a function that stops that.
+	 */
+	hand(heard: (name: string) => void): () => void;
+	/** Ends the hearing, for a runner that never asks for it. */
+	stop(): void;
+}
+
+/**
+ * Hears each add-on that checks its version in this thread from now on, for a sketch runner that
+ * does not exist yet: a thread that loads the sketch's module before its runner starts hands the
+ * runner what the module loaded. Development builds only.
+ */
+export function hearAddonsEarly(): EarlyAddons {
+	const names: string[] = [];
+	const stop = onAddonChecked((name) => names.push(name));
+	return {
+		hand(heard) {
+			stop();
+			for (const name of names) heard(name);
+			return onAddonChecked(heard);
+		},
+		stop,
+	};
+}
+
 /**
  * Checks that an add-on, built for `version` of the engine, runs against this engine's version,
  * and throws E1432 when the two differ. An add-on calls it once, as its module loads, with its own

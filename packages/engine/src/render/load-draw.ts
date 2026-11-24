@@ -3,7 +3,7 @@
 // when it draws.
 
 import { awaitLater } from '../shared/await-later';
-import type { Tier } from '../shared/tier';
+import type { DrawingPreload, EarlyStart } from './renderer';
 
 export type DrawModule = typeof import('./draw');
 
@@ -13,13 +13,18 @@ export function loadDrawModule(): Promise<DrawModule> {
 }
 
 /**
- * Starts the downloads of the device's shaders and of its GPU path's renderers once the renderer
- * has loaded, for a thread that loads the renderer through `draw`. The renderer reports a failure
- * of either when it starts.
+ * Starts what the renderer that `preload` describes needs first, once the renderer's code has
+ * loaded through `draw`: the downloads of its shaders and of its GPU path's renderers, and on
+ * WebGPU the request for its device. The renderer reports a failure of any of them when it starts.
+ * Resolves with the start, which the thread hands to its renderer, or with undefined when the code
+ * did not load.
  */
-export function preloadDeviceFiles(draw: Promise<DrawModule>, tier: Tier, bits: number): void {
-	draw.then(
-		(module) => module.preloadDeviceFiles(tier, bits),
+export function preloadDrawing(
+	draw: Promise<DrawModule>,
+	preload: DrawingPreload,
+): Promise<EarlyStart | undefined> {
+	return draw.then(
+		(module) => module.startEarly(preload),
 		() => undefined,
 	);
 }

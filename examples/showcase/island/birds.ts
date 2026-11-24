@@ -17,9 +17,9 @@ import { type Camera, type MeshArrays, quat, type SketchContext, vec3 } from '@n
 import { random } from '../../lib/procedural';
 import { TOWN, townShare, VILLAGES } from './island';
 import { HOUSE_KINDS } from './kit';
-import { FILL_SPOTS, KEEPS, LOTS, type Lot, ROADS, SQUARE, TREE_SPOTS } from './plan';
+import { fillSpots, KEEPS, LOTS, type Lot, ROADS, SQUARE, treeSpots } from './plan';
 import { LANE } from './routes';
-import { MOORINGS, parkPlans, squareFloor } from './town';
+import { mooringSpots, parkPlans, squareFloor } from './town';
 
 /** The birds that fly unless the page asks for another count. */
 export const BIRD_COUNT = 50;
@@ -174,7 +174,7 @@ const SETTLEMENTS = [...VILLAGES.map(([x, z, , radius]) => ({ x, z, radius })), 
 function treeGrid() {
 	const cell = PERCH_TREE_CLEAR;
 	const grid = new Map<string, [number, number][]>();
-	for (const tree of [...TREE_SPOTS, ...FILL_SPOTS]) {
+	for (const tree of [...treeSpots(), ...fillSpots()]) {
 		const key = `${Math.floor(tree.x / cell)},${Math.floor(tree.z / cell)}`;
 		const list = grid.get(key);
 		if (list) list.push([tree.x, tree.z]);
@@ -302,7 +302,7 @@ export function islandPerches(): Perch[] {
 		const z = 392 + (424 - 392) * t + Math.sin(t * Math.PI) * 20;
 		add({ x, y: 1.9, z, yaw: Math.atan2(168, 32) });
 	}
-	for (const [k, [bx, bz, yaw]] of MOORINGS.entries()) {
+	for (const [k, [bx, bz, yaw]] of mooringSpots().entries()) {
 		if (k % 3 !== 1) continue;
 		add({ x: bx + Math.sin(yaw) * 6, y: 1.5, z: bz + Math.cos(yaw) * 6, yaw: yaw + Math.PI });
 	}

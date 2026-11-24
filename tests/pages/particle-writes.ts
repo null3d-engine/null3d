@@ -24,6 +24,7 @@ run('particle-writes', async () => {
 		maxPixelRatio: 1,
 	});
 	await engine.firstFrame;
+	await engine.presetChecked;
 	const checked = await new Promise<Checked>((resolve, reject) => {
 		const off = engine.onSketchMessage((name, data) => {
 			if (name !== 'checked') return;

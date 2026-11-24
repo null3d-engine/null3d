@@ -618,6 +618,9 @@ export class SceneBackground implements ViewHolder {
 		} else {
 			writeSky(values, (source as SkyBackground).sky);
 		}
+		// A sky with clouds draws the cloud tier over it where the settings march the tier.
+		if (kind === BACKGROUND_KIND_SKY || kind === BACKGROUND_KIND_ATMOSPHERE)
+			this.shaders.needClouds(values[BACKGROUND_VALUE_CLOUD_COVERAGE] as number);
 		const status = this.core.glue.setBackgroundSource(kind, texture);
 		this.core.check(status, CALL, 'a texture', true);
 	}

@@ -283,13 +283,14 @@ An image test also fails in these cases, and its line says why:
 flowchart LR
     bench["bunx @null3d/cli bench"] --> build["A production build<br/>with your Vite config"]
     build --> page["A headless browser opens<br/>your page with ?bench"]
-    page --> warm["Warm-up,<br/>not measured"]
+    page --> first["The first frame<br/>and the preset check"]
+    first --> warm["Warm-up,<br/>not measured"]
     warm --> measure["engine.measure"]
     measure -->|"next run"| page
     measure --> json["bench.json"]
 ```
 
-`bench` measures the engine on your page. It builds your project for production with your Vite config, into a temporary folder, and serves the build. A production build has none of the engine's development checks, so the engine runs as your users get it. Then `bench` opens your page in a headless browser with the `?bench` switch, once for each run. Each run lets the page run for the warm-up, and then measures it with `engine.measure` ([Performance guide](../guides/performance.md#measure)). Your page needs no benchmark code.
+`bench` measures the engine on your page. It builds your project for production with your Vite config, into a temporary folder, and serves the build. A production build has none of the engine's development checks, so the engine runs as your users get it. Then `bench` opens your page in a headless browser with the `?bench` switch, once for each run. Each run waits for the engine's first frame and for the end of its [preset check](../concepts/quality-presets.md#the-preset-check). It then lets the page play for the warm-up, and measures it with `engine.measure` ([Performance guide](../guides/performance.md#measure)). So a run measures the preset that plays, not the start. Your page needs no benchmark code.
 
 ```sh
 bunx @null3d/cli bench --gpu webgpu,webgl2
@@ -301,10 +302,10 @@ bunx @null3d/cli bench --gpu webgpu,webgl2
 | `--gpu <tiers>` | The GPU paths to measure, joined by commas: `webgpu`, `compat` and `webgl2` | The engine picks the path |
 | `--runs <count>` | Fresh runs on each GPU path | 5 |
 | `--seconds <seconds>` | How long each run measures | 30 |
-| `--warmup <seconds>` | How long each run lets the page run before it measures | 5 |
+| `--warmup <seconds>` | How long each run lets the page play, after its first frame and the preset check, before it measures | 5 |
 | `--size <width>x<height>` | The browser window's size in CSS pixels | `1280x720` |
 | `--out <file.json>` | The JSON file to write | `bench.json` |
-| `--timeout <seconds>` | How long the page may take to start the engine | 60 |
+| `--timeout <seconds>` | How long the page may take to start the engine, draw its first frame and end the preset check | 60 |
 
 With more than one GPU path, `bench` takes one run on each path in turn. A computer that slows down during the command then slows every path alike. The runs take several minutes, so `bench` prints a line after each run.
 
@@ -340,7 +341,7 @@ When a run fails, `bench` says why after the figures of its path, and exits with
 | `environment`, `browser` | Where the runs drew, as for `shot`, and the browser's version |
 | `warmupSeconds`, `measureSeconds` | The warm-up and the measured time of each run |
 | `paths` | One entry for each GPU path: `gpu`, the tier that `--gpu` forced or `null`; `tier`, the path that the engine drew with; `summary`, the medians and the spread of the runs; and `runs` |
-| `runs` | Each run's figures from `engine.measure` in `stats`, with its GPU path and the engine's mode, or `ok: false` and the `error` that stopped it |
+| `runs` | Each run's figures from `engine.measure` in `stats`, with its GPU path and the engine's mode, or `ok: false` and the `error` that stopped it. The mode names the preset that played, after the preset check |
 | `error` | What stopped `bench` before its runs, such as a production build that failed |
 | `errors`, `warnings` | What the pages and the server logged, each entry once |
 
@@ -378,7 +379,7 @@ The shader and size gates build the add-on with the Vite and the null3D plugin t
 | `--skip-browser` | Runs no gate that opens a browser | The page gates run |
 | `--skip-cost` | Leaves out the cost gate alone, for a machine whose load would show in the figures. The page and allocation gates still run | The cost gate runs |
 
-Each page gate draws as `bench` does: with Chrome on the computer's GPU, or with Playwright's Chromium on SwiftShader when the CI variable is set. The cost gate measures the production build on each quality preset. It prints the GPU time per frame where the device times it, and the CPU time otherwise.
+Each page gate draws as `bench` does: with Chrome on the computer's GPU, or with Playwright's Chromium on SwiftShader when the CI variable is set. The cost gate measures the production build on each quality preset. Like `bench`, it waits for the first frame and the end of the preset check before it measures. It prints the GPU time per frame where the device times it, and the CPU time otherwise.
 
 The allocation gate samples the heaps of the page's sketch and render workers. It names each function by the source file that the build's map gives it. It prints the bytes per frame that the add-on's own code allocated on each preset, and the page's own figure beside it. A source file counts as the add-on's own when the file is in its folder, or in its copy under `node_modules`. The gate fails when it cannot measure the page, such as on a page that runs no engine worker. It also fails when the page ran none of the add-on's own code, because then it measured other code. It never fails on a figure. The gate holds at most 250,000 sampled objects for each worker in each sample, and samples a page that allocates faster less finely. On the software GPU, the page's animation frames outrun the engine's drawn frames, so the figure there is lower than on a real GPU.
 

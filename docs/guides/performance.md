@@ -14,6 +14,8 @@ null3D keeps its own work per frame small, so your sketch code usually decides h
 
 Measure in every rendering mode and preset, over the whole camera path, with repeats: [Testing your sketch](testing.md#check-every-rendering-mode) says how.
 
+This guide covers the frames. [A fast start](start-time.md) covers the wait before the first frame: the host, the downloads and the setup.
+
 ## Where frame time goes
 
 ```mermaid
@@ -326,7 +328,7 @@ For a quick look while the scene runs, add `?stats` to the page's address, or ca
 | `pipelines` | GPU pipelines built, which can stall the frame they happen in |
 | `skippedDraws` | Draws skipped because their pipeline was still building, so their objects were missing from those frames |
 | `memory` | The engine's WebAssembly memory and the JavaScript heap |
-| `load` | The start's times in milliseconds: the GPU probe, the core's download and compile, `createEngine`, and the first frame's submit and finish. It also gives the pipelines that the first frame built, and how long they took |
+| `load` | The start's times in milliseconds: the GPU probe, the core's download and compile, `createEngine`, and the first frame's submit and finish. `load.drawingStart` gives when the thread that draws had its GPU device, its shader file and its renderer. It also gives the pipelines that the first frame built, and how long they took ([A fast start](start-time.md#measure-a-start)) |
 | `downloadBytes` | The size of the engine core's WebAssembly file as the page downloaded it |
 | `gpuLosses` | Times the browser took the GPU away and the engine carried on with a new device |
 | `lostRecords` | Frames that the figures miss, because the page read their records too late. It is 0 in a clean run |
@@ -359,6 +361,7 @@ The engine checks a WebGL2 fence at its next frame callback, so there `gpuLatenc
 - Measure a production build, as your users get it. Development builds check each call's arguments. In each frame they also check every static object, and a share of the rows of static batches. In the S2 benchmark on a MacBook Pro, the check of static objects cost about 0.06 ms per frame on WebGPU. It cost 0.03 ms on WebGL2. These checks grow with the scene, so a large scene pays more.
 - Know which build a page runs. `vite build` with the null3D plugin makes a production build, and so does the CDN build's production entry, `lib/index.js`. These run as development builds: the Vite dev server, `bunx @null3d/cli shot` and `test`, and the CDN build's development entry, `lib-dev/index.js`. So does engine code built without the null3D plugin, or with no bundler at all ([Try null3D from a CDN](../getting-started/cdn.md#production-and-development-entries)).
 - To compare null3D with three.js, time a production build of each engine, on the same page size and the same computer.
+- Start a measurement of steady play once `engine.presetChecked` has resolved. On a first visit the preset check runs in the first frames of play. It can lower the preset inside your window ([The preset check](../concepts/quality-presets.md#the-preset-check)). `bunx @null3d/cli bench` waits for it.
 - Let the sketch run for several seconds before you measure, so that the browser has optimized your per-frame code.
 - Keep the page visible, the screen unlocked and the display awake. Safari stops running a page while the Mac is locked.
 - Compare runs at the same display refresh rate. `refreshHz` records it with each measurement. Runs at 120 and at 144 frames per second differed by about 10% for both engines.
