@@ -3416,11 +3416,19 @@ async function startEngine(
 			if (switches.bench) (globalThis as Record<string, unknown>)[BENCH_GLOBAL] = engine;
 			if (DEV && inspectCall !== undefined) {
 				// The page publishes the bridge so the MCP server and a developer's console can call
-				// it. The switch opens the panel, whose code loads on first use.
+				// it. The switch opens the panel, whose code loads on first use. A stopped engine
+				// takes the bridge away, so the page keeps none of its memory.
 				(globalThis as Record<string, unknown>)[INSPECTOR_GLOBAL] = {
 					inspect: inspectCall,
 					engine,
 				};
+				engine.onStop(() => {
+					const current = (globalThis as Record<string, unknown>)[INSPECTOR_GLOBAL] as
+						| { engine?: unknown }
+						| undefined;
+					if (current?.engine === engine)
+						delete (globalThis as Record<string, unknown>)[INSPECTOR_GLOBAL];
+				});
 				if (switches.inspect)
 					void (async () => {
 						// The panel's file loads from its source address. A development build runs the source,

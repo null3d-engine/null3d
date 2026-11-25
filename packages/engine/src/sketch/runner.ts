@@ -1285,6 +1285,10 @@ export class SketchRunner {
 	 * mode's hold on the level plans, for a setup that failed before its hold.
 	 */
 	dispose(): void {
+		// Before the check below: a runner whose core stopped first still lets go of the channel,
+		// which holds the scene and its memory.
+		this.inspect = undefined;
+		this.channel = undefined;
 		// Before the check below: a runner whose core stopped first still stops hearing add-ons.
 		if (DEV) this.stopAddonNotes?.();
 		if (this.core.stopped) return;
