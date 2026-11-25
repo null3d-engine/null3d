@@ -48,7 +48,7 @@ describe('main', () => {
 	it('fails on a command it does not have, and names its commands', async () => {
 		expect(await main(['scaffold'])).toBe(1);
 		expect(error.mock.lastCall?.[0]).toBe(
-			'null3d has no "scaffold" command. Its commands: assets, bench, check-addon, create, shot, test, upgrade. Run bunx @null3d/cli --help for more.',
+			'null3d has no "scaffold" command. Its commands: assets, bench, check-addon, create, mcp, shot, test, upgrade. Run bunx @null3d/cli --help for more.',
 		);
 		expect(await main(['toString'])).toBe(1);
 	});

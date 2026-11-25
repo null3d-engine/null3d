@@ -32,7 +32,7 @@ A limit is a present fact: "Terrain has no collision." It gives the workaround w
 
 - The 8 placeholder pages are written, and the docs check refuses a page whose status is `planned`.
 - The notes under page titles keep the release and the sentence on the experimental API. The sentences on what a roadmap step adds are gone, because those features are built and the sentences read as future work.
-- Tools that do not exist, such as an MCP server or a `doctor` command, get no mention. They are not limits of a built feature.
+- Tools that do not exist, such as a `doctor` command, get no mention. They are not limits of a built feature.
 - The skills tell an agent to use only the calls that the installed engine's docs and type declarations show, and to tell the user about a limit that affects the task. That rule replaces the rule against planned APIs.
 - The mapping's `post-1.0` status joins `unsupported`.
 - The README loses the experimental badge and the line about one developer. Each docs page keeps its one-line notice that the API can change, as the owner chose.

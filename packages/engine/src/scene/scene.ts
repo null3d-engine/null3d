@@ -4261,6 +4261,23 @@ export class Scene implements ViewHolder {
 	}
 
 	/**
+	 * @internal Every live object, in the order of their slots. The inspector lists the scene with
+	 * it; a frame never calls it.
+	 */
+	listObjects(): Object3D[] {
+		const objects: Object3D[] = [];
+		for (const object of this.objectSlots)
+			if (object !== undefined && object.destroyedFrame === -1) objects.push(object);
+		return objects;
+	}
+
+	/** @internal The live object in `slot`, or undefined. */
+	objectAt(slot: number): Object3D | undefined {
+		const object = this.objectSlots[slot];
+		return object !== undefined && object.destroyedFrame === -1 ? object : undefined;
+	}
+
+	/**
 	 * @internal Counts the rows of batches as they are created and destroyed, and warns once when
 	 * the scene passes the limit that every device of the engine's GPU path draws.
 	 */

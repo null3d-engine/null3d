@@ -41,7 +41,7 @@ null3D is a 3D engine for web pages. It is built for two things: speed, and scen
 
 - **Faster than three.js.** null3D beats three.js in five of its six benchmark scenes. A scene graph of 5,096 objects costs null3D 0.35 ms of CPU time per frame, and three.js 3.18 ms. null3D draws 500 animated characters with shadows at 120 fps, and three.js draws them at 22 fps. [Performance](#performance) has every figure, with the scene that null3D loses.
 - **Wide device compatibility.** One sketch runs on current computers, tablets and phones. The engine draws with WebGPU, and with WebGL2 where WebGPU is missing, from the same code. It fits its work to each device, so a scene made on a laptop also runs on a budget phone. [Where it runs](#where-it-runs) lists the browsers and the tested devices.
-- **Made for coding agents.** Two agent skills come with the engine. Every error has a code and a page that says how to fix it. The command line tool draws frames and runs image tests, so an agent can check its own work. See [For AI agents](#for-ai-agents).
+- **Made for coding agents.** Two agent skills come with the engine. Every error has a code and a page that says how to fix it. The command line tool draws frames, runs image tests and connects an agent to the live scene, so an agent can check its own work. See [For AI agents](#for-ai-agents).
 
 The engine's core is Rust compiled to WebAssembly. It runs on worker threads, so the page's main thread stays free for the page. You write scenes in TypeScript.
 
@@ -100,7 +100,7 @@ export default defineSketch(({ scene, geometry, materials }) => {
 - **Interaction.** Keyboard, pointer, touch and gamepad [input](https://github.com/null3d-engine/null3d/blob/generated/docs/api/input.md), [picking](https://github.com/null3d-engine/null3d/blob/generated/docs/api/raycast.md), camera controls, and HTML labels that follow objects.
 - **Custom shaders.** You write [WGSL](https://github.com/null3d-engine/null3d/blob/generated/docs/guides/custom-shaders.md) once, and the build translates it for WebGL2. A surface function changes a material's look and keeps the engine's lighting.
 - **Quality that fits the device.** Four [quality presets](https://github.com/null3d-engine/null3d/blob/generated/docs/concepts/quality-presets.md) and dynamic resolution fit the work to the device. When frames take too long, the engine lowers its settings.
-- **Tools.** The [command line tool](https://github.com/null3d-engine/null3d/blob/generated/docs/cli/null3d.md) makes projects, draws frames, runs image tests and measures your page. Each error has a code, and a [page that says how to fix it](https://github.com/null3d-engine/null3d/blob/generated/docs/errors/index.md).
+- **Tools.** The [command line tool](https://github.com/null3d-engine/null3d/blob/generated/docs/cli/null3d.md) makes projects, draws frames, runs image tests, and measures your page. It also serves a live scene to an agent over the Model Context Protocol. Each error has a code, and a [page that says how to fix it](https://github.com/null3d-engine/null3d/blob/generated/docs/errors/index.md).
 
 This material dissolves along a glowing edge. Its surface function adds the effect, and the engine still lights and shadows it:
 
@@ -240,6 +240,7 @@ The full [three.js to null3D mapping](https://github.com/null3d-engine/null3d/bl
 
 - Two agent skills come with the engine. [null3d-develop](skills/null3d-develop/SKILL.md) builds and speeds up null3D projects. [null3d-port-threejs](skills/null3d-port-threejs/SKILL.md) ports three.js and React Three Fiber apps.
 - `bunx @null3d/cli create` writes an `AGENTS.md` into each new project, and a hook that Claude Code and Codex both run.
+- `bunx @null3d/cli mcp` serves the running scene to an agent over the Model Context Protocol. The agent lists and changes objects, captures a frame, and reads the figures, errors and render graph. `?inspect` opens the same tools as a panel. [Debugging](https://github.com/null3d-engine/null3d/blob/generated/docs/guides/debugging.md) shows both.
 - Every docs page has an ID, such as `concepts/architecture`, so an agent finds the page for an API by name. The pages ship inside the engine package, so they match the installed engine.
 
 Install the skills in Claude Code as a plugin:

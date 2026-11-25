@@ -18,6 +18,7 @@
 // loads after the first frame. The first frame after a change of preset, and the first frame whose
 // handlers hear of it, wait for their pipelines on the thread that draws.
 
+import { DebugChannel } from '../debug/channel';
 import { DebugDraw } from '../debug/draw';
 import { type DebugHost, SketchDebug } from '../debug/sketch-debug';
 import type { StatsRequest } from '../debug/stats-options';
@@ -672,6 +673,16 @@ export class SketchRunner {
 	private heldScale = FULL_SCALE;
 	/** The sketch's debug drawing, in development builds only, which is also its `ctx.debug`. */
 	private readonly debugDraw: DebugDraw | undefined;
+	/**
+	 * The development build's inspection channel, which the in-page inspector and the MCP server
+	 * call. A release build holds none of it.
+	 */
+	private channel: DebugChannel | undefined;
+	/**
+	 * Runs an inspection call, in a development build only: the page's `engine.inspect`, and the
+	 * sketch worker's answer to the debug channel. The property is absent in a release build.
+	 */
+	declare inspect?: (call: string, args?: unknown) => Promise<unknown>;
 	/** The sketch's labels, which each frame projects. */
 	private readonly ui: Ui;
 	/** True once the sketch thread has warned that the grid cells ran out. */
@@ -966,6 +977,24 @@ export class SketchRunner {
 		// starts it when it registers.
 		if (debugView !== undefined) this.debugDraw?.requestView(debugView);
 		const debug = this.debugDraw ?? new SketchDebug(host);
+		if (DEV) {
+			// The channel reads the scene, the render passes and the quality settings that the
+			// inspector changes, and outlines the object that it selects.
+			const channel = new DebugChannel({
+				scene,
+				render: this.render,
+				quality: this.quality,
+				debug,
+				debugDraw: this.debugDraw,
+				info: () => ({
+					tier: sketch.capabilities.tier,
+					preset: this.quality.preset,
+					renderScale: this.renderScale() / FULL_SCALE,
+				}),
+			});
+			this.channel = channel;
+			this.inspect = (call, args) => channel.inspect(call, args);
+		}
 		const holdsFrames = this.holdsFrames;
 		this.context = {
 			time: this.time,
@@ -1256,6 +1285,10 @@ export class SketchRunner {
 	 * mode's hold on the level plans, for a setup that failed before its hold.
 	 */
 	dispose(): void {
+		// Before the check below: a runner whose core stopped first still lets go of the channel,
+		// which holds the scene and its memory.
+		this.inspect = undefined;
+		this.channel = undefined;
 		// Before the check below: a runner whose core stopped first still stops hearing add-ons.
 		if (DEV) this.stopAddonNotes?.();
 		if (this.core.stopped) return;
@@ -1327,6 +1360,7 @@ export class SketchRunner {
 		if (this.frameOpen) this.updateFailed = true;
 		if (!this.reported.has(message)) {
 			this.reported.add(message);
+			this.channel?.recordError(message);
 			console.error(error);
 			this.sketch.reportSketchError?.(message);
 		}

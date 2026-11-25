@@ -342,6 +342,11 @@ export interface Switches {
 	/** True when ?bench asks the engine to publish itself on the page for a benchmark tool. */
 	bench: boolean;
 	/**
+	 * True when ?inspect opens the development build's in-page inspector, which lists the scene,
+	 * selects an object and edits its transform, material and visibility.
+	 */
+	inspect: boolean;
+	/**
 	 * The debug view that ?view= asks for, by the name that `debug.view` takes: one of the engine's
 	 * own views, or a view that an add-on's feature registers. Undefined without the switch.
 	 */
@@ -494,6 +499,7 @@ export function parseSwitches(search: string): Switches {
 		record: params.has('record'),
 		still: params.get('still-camera') !== 'off',
 		bench: params.has('bench'),
+		inspect: params.has('inspect'),
 		view: params.get('view') || undefined,
 		stats: statsSwitch(params.get('stats')),
 		permutations: params.get('permutations') === 'record' ? 'record' : undefined,

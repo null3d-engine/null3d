@@ -50,6 +50,7 @@ describe('parseSwitches', () => {
 			record: false,
 			still: true,
 			bench: false,
+			inspect: false,
 			view: undefined,
 			stats: undefined,
 			permutations: undefined,
@@ -170,6 +171,12 @@ describe('parseSwitches', () => {
 	it('reads ?bench with or without a value', () => {
 		expect(parseSwitches('?bench').bench).toBe(true);
 		expect(parseSwitches('?gpu=webgl2&bench=1').bench).toBe(true);
+	});
+
+	it('reads ?inspect with or without a value', () => {
+		expect(parseSwitches('?inspect').inspect).toBe(true);
+		expect(parseSwitches('?gpu=webgl2&inspect=1').inspect).toBe(true);
+		expect(parseSwitches('?gpu=webgl2').inspect).toBe(false);
 	});
 
 	it('shows the stats overlay with a bare ?stats or ?stats=on, and hides it with ?stats=off', () => {

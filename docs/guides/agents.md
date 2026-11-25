@@ -3,7 +3,7 @@ id: guides/agents
 title: Working with AI agents
 status: experimental
 since: "0.1"
-summary: "Installing the null3D skills in Claude Code, claude.ai and other agent tools; docs by ID; the test loop."
+summary: "Installing the null3D skills in Claude Code, claude.ai and other agent tools; docs by ID; the test loop; the MCP server and the in-page inspector."
 ---
 
 # Working with AI agents
@@ -59,3 +59,19 @@ An agent checks its work with the `null3d` command, which prints short lines of 
 4. When an image test fails, open the image and its diff. Fix the code, or keep the new image with `bunx @null3d/cli test --update-references` when the change was on purpose.
 
 `bunx @null3d/cli shot` draws one frame of a page, to look at a change that has no test yet.
+
+## The MCP server
+
+`bunx @null3d/cli mcp` starts a Model Context Protocol server for the project in the current folder. It runs over stdio, and an agent uses it to look inside the running scene and change it live. The server needs a development build, because a production build leaves the inspection channel out.
+
+By default the server starts the project's own Vite dev server and a headless Chrome, as `shot` does. This works on a cloud agent with no window. With `--connect <endpoint>` it attaches to a Chrome that the developer already runs with a remote debugging port. It then drives the tab that shows the page, so the agent sees exactly what the developer sees. [Debugging](debugging.md#the-mcp-server) lists the options and the tools.
+
+Register the server in Claude Code with:
+
+```sh
+claude mcp add null3d -- bunx @null3d/cli mcp
+```
+
+The tools list and read objects, and change a transform or a material. They capture a frame, and read the frame figures, the errors and the render graph. They also switch the quality preset or the GPU path. Live changes are for exploring: the agent writes the final values into the sketch and its tests, and checks them with `bunx @null3d/cli test`.
+
+The page also shows a panel of its own with `?inspect`, which lists the scene, selects an object and edits it. [The in-page inspector](debugging.md#the-in-page-inspector) describes it.

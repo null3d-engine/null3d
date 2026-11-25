@@ -13,9 +13,10 @@ Before you call a scene done, check frame rate, memory and looks on `?gpu=webgpu
 3. Behavior tests
 4. Testing on real devices
 5. Debugging tools
-6. Error codes
-7. Troubleshooting table
-8. Before you ship
+6. The in-page inspector and the MCP server
+7. Error codes
+8. Troubleshooting table
+9. Before you ship
 
 ## 1. Commands
 
@@ -164,10 +165,44 @@ Engine docs: `api/debug`, `guides/debugging`.
 | `debug.cullingSpheres(true)` | The bounding sphere that culling tests for each object whose mesh has levels, for the first 128 objects, until `false`. Use it beside `debug.view('levels')`. `debug.cullingSpheresDrawn()` gives the count that the last frame drew: 0 while the switch is off, so a test can tell the switch drew them rather than nothing | Development only |
 | `debug.skeleton` | The bones of a skinned mesh | Development only |
 | `?record` on the page, then `?replay=<file>` or `shot --replay <file>` | A bug report from a phone. `?record` records each frame's step and the input that the sketch read, and shows a save button; the file replays here to the same frames. A sketch that reads the quality preset can differ, because the replay picks this computer's preset (`guides/testing`) | Every build |
+| `?inspect` on the page | The in-page inspector: a panel at the left edge lists the scene as a tree, selects and outlines an object, and edits its transform, visibility and material values. It shows the frame figures at its foot. The page also publishes `window.__null3dInspector`, and `engine.inspect` runs the same calls from your code | Development only |
 
 In a production build, the debug drawing calls and `debug.view` do nothing, but the code that computes their arguments still runs. Wrap work that only feeds them in `if (import.meta.env.DEV)`. A debug view's first frame builds its pipelines, so objects can be missing for a few frames after a change.
 
-## 6. Error codes
+## 6. The in-page inspector and the MCP server
+
+`?inspect` opens the inspector panel, and `bunx @null3d/cli mcp` starts a Model Context Protocol server over stdio. Both need a development build: a production build leaves the inspection channel out.
+
+The page publishes `window.__null3dInspector`, and `engine.inspect(call, args)` runs the same calls from your own code. An object is named by its name, `#<slot>` or `#camera`:
+
+| Call | Use |
+| --- | --- |
+| `objects` | Every live object: slot, handle, name, kind, static or dynamic, layers, parent |
+| `object` | One object's transform, flags and material values |
+| `setObject` | Change a position, rotation, scale, visibility, the static or dynamic flag, or layers |
+| `setMaterial` | Change a mesh's material values |
+| `stats` | The figures that `debug.frameStats` returns |
+| `errors` | The errors that the sketch and the engine's frame calls reported |
+| `graph` | The compiled render graph as DOT text |
+| `setQuality` | Switch the preset or change quality settings |
+| `highlight` | Outline an object, or clear the outline |
+| `info` | The GPU path, the preset and the render scale |
+
+The MCP server starts the project's dev server and a headless browser by default. With `--connect http://127.0.0.1:9222` it drives the tab of a Chrome that already runs with a debugging port. Register it with `claude mcp add null3d -- bunx @null3d/cli mcp`. Its tool names are stable within a version:
+
+| Tool | Use |
+| --- | --- |
+| `list_objects` | List the scene's objects, with a filter |
+| `get_object` / `set_transform` / `set_material` | Read and adjust objects live |
+| `capture` | A PNG of the current frame |
+| `stats` | Frame phases, uploads, memory, tier, preset |
+| `errors` | Recent engine errors and console output |
+| `render_graph` | The compiled render graph as DOT text |
+| `set_quality` / `set_gpu` | Switch the preset or the GPU path (a path change reloads the page) |
+
+Live changes through the inspector or the MCP server are for exploring; put the final values into code and tests.
+
+## 7. Error codes
 
 Every engine error is an `EngineError` with a code, the object's name, what failed, and the fix:
 
@@ -177,7 +212,7 @@ E1203: setPosition() got NaN for x on "Player" (slot 12). Check the value comput
 
 Each code has a docs page, such as `errors/E1203`, with the full explanation. Release builds remove most checks, so reproduce problems in a development build. Use the dev server, or the CDN build's `lib-dev/index.js` for a page with no bundler.
 
-## 7. Troubleshooting table
+## 8. Troubleshooting table
 
 | Symptom | Likely cause | Fix | Docs |
 | --- | --- | --- | --- |
@@ -227,7 +262,7 @@ Each code has a docs page, such as `errors/E1203`, with the full explanation. Re
 | E1432 at the start of a sketch that imports an add-on | The add-on and the engine are at different versions, and each add-on pins the engine version it was built for | `bunx @null3d/cli upgrade`, then `bun install`, so every null3D package takes one version | `errors/E1432`, `cli/null3d` |
 | E1433 at the start of a sketch that imports an add-on from another developer | The add-on declares a plugin interface range that this engine's interface is outside | Install the add-on release that matches the engine's plugin interface, or run the engine version that the add-on declares | `errors/E1433`, `api/engine` |
 
-## 8. Before you ship
+## 9. Before you ship
 
 Work through this list before a release, on the production build (`bunx vite build`, then `bunx vite preview`), not the dev server.
 

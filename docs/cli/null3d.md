@@ -3,7 +3,7 @@ id: cli/null3d
 title: "The `null3d` command"
 status: experimental
 since: "0.1"
-summary: "create, test, bench, check-addon, shot, upgrade, assets."
+summary: "create, test, bench, check-addon, shot, upgrade, assets, mcp."
 ---
 
 # The `null3d` command
@@ -185,6 +185,53 @@ Dump at 3 s: "ship" position is [0,1,0].
 Every image is a hold from time 0 that performs the script up to its step. So an image shows the state at its step, and no step after it. A dump after the last shot still runs, and its line prints. `--time` cannot be given with `--script`.
 
 The engine reads the script only in hold mode. A page that you run with Vite never performs one, and its input stays the user's.
+
+## mcp
+
+`mcp` starts a Model Context Protocol server for the project in the current folder, over stdio. An agent lists and changes the live scene's objects, captures a frame, and reads the frame figures, the errors and the render graph. It can also switch the quality preset or the GPU path. The page needs a development build: a production build leaves the inspection channel out.
+
+```mermaid
+flowchart LR
+    agent["A coding agent"] --> mcp["bunx @null3d/cli mcp"]
+    mcp --> server["Your project's own<br/>Vite dev server"]
+    mcp --> browser["A headless browser,<br/>or your open Chrome"]
+    browser --> page["Your page"]
+    page --> bridge["window.__null3dInspector"]
+    bridge --> worker["The sketch worker<br/>reads and changes the scene"]
+```
+
+By default the command starts the project's own Vite dev server and a headless Chrome, as `shot` does. With `--connect` it attaches to a Chrome that already runs with a debugging port. It then drives the tab that already shows the page, so the agent sees exactly what you see.
+
+```sh
+claude mcp add null3d -- bunx @null3d/cli mcp
+claude mcp add null3d-session -- bunx @null3d/cli mcp --connect http://127.0.0.1:9222
+```
+
+For the second form, start Chrome with `--remote-debugging-port=9222` and open the page with `?inspect`.
+
+| Option | Effect | Without it |
+| --- | --- | --- |
+| `--page <path>` | The page to open, from the server's root | `/` |
+| `--gpu <tier>` | Opens the server's own page on `webgpu`, `compat` or `webgl2` | The engine picks the path |
+| `--size <width>x<height>` | The headless browser's window in CSS pixels | `1280x720` |
+| `--timeout <seconds>` | How long the page may take to publish the inspector | 60 |
+| `--url <address>` | Uses a dev server that already runs, instead of starting one. The server still starts its own browser | The command starts the dev server |
+| `--connect <address>` | Attaches to Chrome's debugging endpoint and drives the tab that shows the page | The command starts its own browser |
+
+| Tool | What it does |
+| --- | --- |
+| `list_objects` | Names, slots, handles, kinds, static or dynamic, layers and parents |
+| `get_object` | Reads one object's transform, flags and material |
+| `set_transform` | Changes a transform, visibility, the static or dynamic flag, or layers |
+| `set_material` | Changes a mesh's material values |
+| `capture` | Returns a PNG of the current frame |
+| `stats` | Frame figures: frame rates, CPU and GPU time, draw calls, triangles, objects, uploads, memory, the path and the preset |
+| `errors` | The engine errors, and the console's errors and warnings |
+| `render_graph` | The compiled render graph as DOT text |
+| `set_quality` | Switches the preset, or changes quality settings |
+| `set_gpu` | Switches the GPU path and reloads the page |
+
+Live changes are for exploring. Write the final values into the sketch and its tests. [Debugging](../guides/debugging.md#the-mcp-server) shows the calls and the in-page inspector behind them.
 
 ## test
 

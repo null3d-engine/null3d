@@ -16,8 +16,7 @@ Each line gives the feature, the pages that cover it, and the workaround, where 
 - Direct array writes to a single object. docs/concepts/static-dynamic.md. Move a single object with its setters.
 - Shader built-ins: light values. docs/shaders/builtins.md. No workaround.
 - Shaders other than surface functions and full shaders. docs/shaders/wgsl-rules.md. No workaround.
-- Command line tool: `docs`, `port`, `skills`, `mcp` and `doctor` commands; behavior tests in `test`. docs/cli/null3d.md. No workaround.
-- In-page inspector and MCP server. docs/guides/debugging.md, docs/guides/agents.md.
+- Command line tool: `docs`, `port`, `skills` and `doctor` commands; behavior tests in `test`. docs/cli/null3d.md. No workaround.
 - Feature draws in a scene pass or a reflection pass. docs/api/feature-draws.md. Naming one throws E1223.
 - Add-on effects after the tone curve, or in a scene or reflection pass; effect reads of normals, motion vectors, history and the shadow atlas. docs/api/feature-effects.md, docs/api/features.md. Other frame points throw E1223.
 - Transparent instance draws for add-ons. docs/api/feature-instances.md.
@@ -35,7 +34,6 @@ Each line gives the feature, the pages that cover it, and the workaround, where 
 
 - CLI `docs show` / `docs search`; null3d-develop/SKILL.md, references/testing-and-debugging.md, null3d-port-threejs/SKILL.md; read `node_modules/@null3d/engine/docs/<id>.md`
 - CLI `doctor` and `doctor --device`; null3d-develop/references/testing-and-debugging.md, evals/evals.json; check `crossOriginIsolated`, `engine.capabilities.tier`, `engine.mode.preset` by hand
-- CLI `mcp` (MCP server, tools null3d_list_objects, null3d_get_object, null3d_set_transform, null3d_set_material, null3d_capture, null3d_stats, null3d_errors, null3d_render_graph, null3d_set_quality, null3d_set_gpu); null3d-develop/SKILL.md, references/testing-and-debugging.md (old section 6); none
 - CLI `port compare`; null3d-port-threejs/references/verification.md; `bunx @null3d/cli test` with the three.js images as references
 - Physics add-on (and @null3d/rapier); null3d-develop/SKILL.md add-on table, evals/evals.json (eval 9); Rapier or cannon-es in the sketch worker
 - MSDF text add-on (troika-three-text, drei `<Text>`); null3d-develop/SKILL.md, null3d-port-threejs/references/architecture-and-loop.md, react-three-fiber.md; HTML labels (ui.trackLabel), a text texture, or a text mesh baked into glTF
