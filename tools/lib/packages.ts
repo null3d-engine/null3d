@@ -555,7 +555,7 @@ async function compile(
 	// A release writes the shader set's record into the engine's `lib/` before the pack runs. Any
 	// package that needs the engine compiles it again, and the pack order is not the order of the
 	// records, so the record is kept across every rebuild of `lib/`.
-	const artifact = join(lib, SHADER_ARTIFACT);
+	const artifact = join(dir, SHADER_ARTIFACT);
 	const keptArtifact = existsSync(artifact) ? readFileSync(artifact) : null;
 	rmSync(lib, { recursive: true, force: true });
 	const tsc = join(root, 'node_modules/typescript/bin/tsc');
