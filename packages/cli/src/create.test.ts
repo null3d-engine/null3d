@@ -110,7 +110,7 @@ describe('createProject', () => {
 
 		expect(agents).toContain('null3D 0.2.0');
 		expect(agents).toContain('null3d-develop');
-		expect(agents).toContain('status is `planned`');
+		expect(agents).toContain('Use only the calls that the page shows');
 		expect(agents).not.toContain('{{');
 	});
 

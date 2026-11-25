@@ -1,10 +1,10 @@
 # null3D
 
-The command-line tool for [null3D](https://github.com/null3d-engine/null3d), a browser 3D engine for games and apps with many moving objects.
+The command-line tool for [null3D](https://github.com/null3d-engine/null3d), a high-performance browser 3D engine for agents.
 
 You do not need this tool to use the engine. Install `@null3d/engine` from npm, add `@null3d/vite-plugin` to your Vite config, and run Vite. This tool adds jobs that a bundler does not do, such as headless tests, screenshots and benchmarks.
 
-null3D is in early development. This version has seven commands:
+The tool has seven commands:
 
 - `create` writes a new project from a template, with an `AGENTS.md` for AI agents and one hook that Claude Code and Codex both run.
 - `shot` draws one frame of your project's page in a headless browser and saves it as a PNG file.

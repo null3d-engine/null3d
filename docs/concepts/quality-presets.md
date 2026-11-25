@@ -8,7 +8,7 @@ summary: "Low to Ultra; pixel-ratio caps; the preset check; switching presets; t
 
 # Quality presets, dynamic resolution and frame budgets
 
-> Roadmap step 0.1, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. The engine chooses a preset and checks it in the first frames of play, or before play when the page asks. It applies the preset's pixel ratio cap, render scale range, shadow, texture and anti-aliasing settings, depth prepass, occlusion culling and memory maximum. During play, the frame-budget governor moves a sketch's budgets and the render scale in turn, a budget's step first, then the live shadow settings. A sketch can switch presets with `quality.setPreset`. The settings that the [table of settings](quality-preset-tables.md#settings-of-each-preset) marks as planned are not built yet. Coding agents must not use them.
+> Roadmap step 0.1, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. The engine chooses a preset and checks it in the first frames of play, or before play when the page asks. It applies the preset's pixel ratio cap, render scale range, shadow, texture and anti-aliasing settings, depth prepass, occlusion culling and memory maximum. During play, the frame-budget governor moves a sketch's budgets and the render scale in turn, a budget's step first, then the live shadow settings. A sketch can switch presets with `quality.setPreset`. The presets do not cap the count of point and spot lights. The camera lists up to 1,024 of them on every preset, and up to 128 in each cluster.
 
 ```mermaid
 flowchart TD
@@ -160,7 +160,7 @@ A change of preset can change pipelines and render targets, and building them ta
 
 ## The settings of each preset
 
-Each value is a starting point, which measurements on phones, tablets and desktops tune from release to release. A setting that changes "during play" takes a new value at any time. One that changes "at the start" is fixed while the engine runs. The preset that the engine starts with, or the page's option, gives its value, and `quality.setPreset` keeps it. The memory maximum is fixed before the engine loads. "Planned" settings belong to features that are not built yet.
+Each value is a starting point, which measurements on phones, tablets and desktops tune from release to release. A setting that changes "during play" takes a new value at any time. One that changes "at the start" is fixed while the engine runs. The preset that the engine starts with, or the page's option, gives its value, and `quality.setPreset` keeps it. The memory maximum is fixed before the engine loads.
 
 The [settings of each preset](quality-preset-tables.md#settings-of-each-preset) give each setting's value on each preset, when it changes, and whether it is built.
 

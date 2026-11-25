@@ -1,5 +1,5 @@
-// The documentation inventory and every file generated from a single source: placeholder pages for
-// planned pages, the API reference on the api/ pages, the page list in docs/index.md, the error
+// The documentation inventory and every file generated from a single source: the API reference
+// on the api/ pages, the page list in docs/index.md, the error
 // pages, the tables of the quality presets page, the shader library's page, the three.js mapping
 // page with the porting skill's copies of the mapping, and the tables of the record of tested
 // devices. Git keeps none of this output (tools/lib/generated.ts). Generation is computed in memory
@@ -43,7 +43,7 @@ import {
 import { parseFrontMatter, renderFrontMatter } from './frontmatter';
 import { checkLinkTree, linkedFiles } from './links';
 import { LIBRARY_PAGE_ID, libraryPage, readLibrary } from './shader-library';
-import { releaseOf, STEPS_NOTE, shipsSentence } from './steps';
+import { STEPS_NOTE, shipsSentence } from './steps';
 import { RECORD_TABLES_PAGE, readRecord, recordFiles, recordTablesPage } from './tested-devices';
 
 export interface PageEntry {
@@ -68,14 +68,14 @@ export const AREAS: readonly (readonly [id: string, heading: string])[] = [
 	['cookbook', 'Cookbook'],
 ];
 
-export const STATUSES = ['planned', 'experimental', 'stable', 'generated'] as const;
+export const STATUSES = ['experimental', 'stable', 'generated'] as const;
 
 const SINCE_FORMAT = /^(\d+\.\d+|after \d+\.\d+)$/;
 
 /** A roadmap step named as a release, such as "null3D 0.2", which no release is called. */
 const STEP_AS_RELEASE = /\bnull3D (0\.[23])(?!\.?\d)/;
 
-/** Every page the docs will have. A page that does not exist yet is generated as a placeholder. */
+/** Every page of the docs. The inventory lists only written pages, and the check reports one that is missing. */
 // biome-ignore format: one page per line keeps the inventory readable as a table
 export const PAGES: readonly PageEntry[] = [
 	{ id: 'index', title: 'null3D documentation', since: '0.1', summary: 'What null3D is; how the docs are organized; status labels.' },
@@ -120,7 +120,7 @@ export const PAGES: readonly PageEntry[] = [
 	{ id: 'api/animation', title: 'Animation', since: '0.2', summary: 'The animator; play, crossFade, layers, events; morph weights.' },
 	{ id: 'api/raycast', title: 'Raycasting and spatial queries', since: '0.2', summary: 'raycast, raycastAny, raycastAll, raycastBatch, overlap queries, pointer events on objects.' },
 	{ id: 'api/input', title: 'Input', since: '0.1', summary: 'Pointer, keyboard, touch and gamepad; action maps.' },
-	{ id: 'api/controls', title: 'Controls (@null3d/controls)', since: '0.1', summary: 'Orbit and map controls (0.1); fly and first-person controls, with pointer lock (0.2); drag, rotate and scale gizmos.' },
+	{ id: 'api/controls', title: 'Controls (@null3d/controls)', since: '0.1', summary: 'Orbit and map controls; fly and first-person controls, with pointer lock; drag, rotate and scale gizmos.' },
 	{ id: 'api/post', title: 'Post-processing API', since: '0.1', summary: 'post.set for tone mapping and exposure; the effects of 0.2; custom effects with post.addEffect and custom tone curves.' },
 	{ id: 'api/render', title: 'Render graph API', since: '0.2', summary: 'render.addPass for scene passes that draw into textures; switching and removing passes; render.dumpGraph.' },
 	{ id: 'api/features', title: 'Add-on feature descriptions', since: '0.3', summary: 'One description for an add-on feature: frame point, reads and writes, callbacks, outputs with neutral defaults, lighting slots, order band and view mask.' },
@@ -168,9 +168,9 @@ export const PAGES: readonly PageEntry[] = [
 	{ id: 'guides/baked-light-data', title: 'Baked light data', since: '0.3', summary: 'One JSON format for probe grids and light maps baked outside the engine: the members, the base64 payloads, the loading calls, the faults that the loader names, and the engine\'s own writer.' },
 	{ id: 'guides/testing', title: 'Testing your sketch', since: '0.1', summary: 'Hold mode; image tests; reading results; frames that stay the same on every run.' },
 	{ id: 'guides/add-ons', title: 'Building an add-on', since: '0.3', summary: 'One package with one entry; the namespace and the plugin interface range; public imports; shaders on both paths; first-use sizes; a page; the check.' },
-	{ id: 'guides/debugging', title: 'Debugging', since: '0.1', summary: 'Error codes; the inspector; the MCP server; the render-graph dump; common failures.' },
+	{ id: 'guides/debugging', title: 'Debugging', since: '0.1', summary: 'Error codes; the render-graph dump; common failures.' },
 	{ id: 'guides/deploying', title: 'Deploying', since: '0.3', summary: 'Headers on common hosts; asset caching; size budgets.' },
-	{ id: 'guides/agents', title: 'Working with AI agents', since: '0.1', summary: 'Installing the null3D skills in Claude Code, claude.ai and other agent tools; docs by ID; the test loop; the MCP server and AGENTS.md in templates (0.3).' },
+	{ id: 'guides/agents', title: 'Working with AI agents', since: '0.1', summary: 'Installing the null3D skills in Claude Code, claude.ai and other agent tools; docs by ID; the test loop.' },
 
 	{ id: 'shaders/wgsl-rules', title: 'WGSL rules for portable shaders', since: '0.1', summary: 'The three shared language features; optional features; flat interpolation; limits budget; rules the build cannot check.' },
 	{ id: 'shaders/surface-functions', title: 'Surface functions', since: '0.1', summary: 'The surface record; vertex-offset functions; per-instance attributes.' },
@@ -183,15 +183,13 @@ export const PAGES: readonly PageEntry[] = [
 	{ id: 'porting/threejs-postprocessing', title: 'Porting post-processing', since: '0.2', summary: 'EffectComposer passes and pmndrs effects to post.set settings; ShaderPass to post.addEffect; three.js tone mappings to custom tone curves.' },
 	{ id: 'porting/threejs-loop-and-threads', title: 'The render loop, threads and the DOM', since: '0.3', summary: 'What moves to the sketch worker; what stays on the page; messages.' },
 	{ id: 'porting/react-three-fiber', title: 'Porting React Three Fiber', since: '0.3', summary: 'Canvas, useFrame, drei helpers; keeping React for the page UI.' },
-	{ id: 'porting/threejs-unsupported', title: 'Unsupported three.js features', since: '0.3', summary: 'Features after 1.0 or out of scope, with workarounds.' },
+	{ id: 'porting/threejs-unsupported', title: 'Unsupported three.js features', since: '0.3', summary: 'three.js features with no null3D equivalent, with workarounds.' },
 	{ id: 'porting/verification', title: 'Verifying a port', since: '0.3', summary: 'Parity images per camera view; performance comparison; the WebGL2 path; phones.' },
 
-	{ id: 'cli/null3d', title: 'The `null3d` command', since: '0.1', summary: 'create, test, bench, shot, assets, docs, port, skills, mcp, doctor.' },
+	{ id: 'cli/null3d', title: 'The `null3d` command', since: '0.1', summary: 'create, test, bench, check-addon, shot, upgrade, assets.' },
 	{ id: 'cookbook/index', title: 'Cookbook', since: '0.2', summary: 'Short recipes; each is also a tested example.' },
 ];
 
-/** Marks a page as generated from the inventory, so the generator may rewrite it. */
-export const PLACEHOLDER_MARKER = '<!-- null3d:placeholder -->';
 /** The generated page that lists every docs page. */
 export const PAGE_LIST_ID = 'pages';
 /** The folder of the generated reference pages of written API pages. */
@@ -230,13 +228,14 @@ export function presetCeilingTable(): string {
 
 /** Every quality setting with its value on each preset, from the preset table. */
 export function presetSettingsTable(): string {
-	const rows = settingRows().map((row) => [
-		`${row.label} (\`${row.name}\`)`,
-		...row.values.map(tableCell),
-		CHANGE_DOCS[row.changes],
-		row.built ? 'built' : 'planned',
-	]);
-	return markdownTable(['Setting', ...QUALITY_PRESETS.map(presetTitle), 'Changes', 'Status'], rows);
+	const rows = settingRows()
+		.filter((row) => row.built)
+		.map((row) => [
+			`${row.label} (\`${row.name}\`)`,
+			...row.values.map(tableCell),
+			CHANGE_DOCS[row.changes],
+		]);
+	return markdownTable(['Setting', ...QUALITY_PRESETS.map(presetTitle), 'Changes'], rows);
 }
 
 /** The preset check's rules, from its constants. */
@@ -320,15 +319,10 @@ export function referenceLink(id: string): string {
 	return `(reference/${id.slice('api/'.length)}.md)`;
 }
 
-/** The note on a planned page's reference: it lists APIs that no release has. */
-export const PLANNED_REFERENCE_NOTE =
-	'These APIs are planned: no release has them yet, so coding agents must not use them.';
-
 /**
- * The generated reference page of a written API page: its exports, from their doc comments. The
- * reference of a planned page says that no release has its APIs.
+ * The generated reference page of a written API page: its exports, from their doc comments.
  */
-export function referencePage(page: PageEntry, reference: string, planned = false): string {
+export function referencePage(page: PageEntry, reference: string): string {
 	return `${renderFrontMatter([
 		['id', referencePageId(page.id)],
 		['title', `${page.title}: API reference`],
@@ -338,36 +332,10 @@ export function referencePage(page: PageEntry, reference: string, planned = fals
 	])}
 # ${page.title}: API reference
 
-> [${page.title}](../${page.id.slice('api/'.length)}.md) explains these exports. The engine's doc comments make this page.${planned ? ` ${PLANNED_REFERENCE_NOTE}` : ''}
+> [${page.title}](../${page.id.slice('api/'.length)}.md) explains these exports. The engine's doc comments make this page.
 
 ${reference}
 `;
-}
-
-/**
- * A planned page. With a reference, the page lists the exports the engine has so far under an
- * "API reference" heading.
- */
-export function placeholderPage(page: PageEntry, reference = ''): string {
-	const when = releaseOf(page.since);
-	const note = reference
-		? `Planned for ${when}. No release has these APIs yet, so coding agents must not use them. The reference below lists the APIs the engine has now. The rest of the page is not written yet.`
-		: `Planned for ${when}. This page is a placeholder. No release has this feature yet, so the APIs it names do not exist. Coding agents must not use them.`;
-	return `${renderFrontMatter([
-		['id', page.id],
-		['title', page.title],
-		['status', 'planned'],
-		['since', page.since],
-		['summary', page.summary],
-	])}
-${PLACEHOLDER_MARKER}
-
-# ${page.title}
-
-> ${note}
-
-This page will cover: ${page.summary}
-${reference ? `\n## API reference\n\n${reference}\n` : ''}`;
 }
 
 /**
@@ -604,18 +572,11 @@ export function generateDocs(root: string, api: ApiReference = readApi(root)): M
 	for (const page of PAGES) {
 		if (page.id === 'index' || page.id === LIBRARY_PAGE_ID) continue;
 		const path = pagePath(page.id);
-		const current = readIfExists(root, path);
 		const symbols = byPage.get(page.id);
-		if (current === null || current.includes(PLACEHOLDER_MARKER))
-			out.set(path, placeholderPage(page, symbols ? renderReference(symbols) : ''));
-		else if (symbols)
+		if (symbols && readIfExists(root, path) !== null)
 			out.set(
 				pagePath(referencePageId(page.id)),
-				referencePage(
-					page,
-					renderReference(symbols, '##'),
-					parseFrontMatter(current)?.data.status === 'planned',
-				),
+				referencePage(page, renderReference(symbols, '##')),
 			);
 	}
 
@@ -675,7 +636,11 @@ export function frontMatterProblems(path: string, text: string, inventory: Set<s
 		if (typeof data[key] !== 'string' || (data[key] as string).trim() === '')
 			problems.push(`${path}: front matter ${key} is missing`);
 	}
-	if (!STATUSES.includes(data.status as (typeof STATUSES)[number])) {
+	if (data.status === 'planned') {
+		problems.push(
+			`${path}: status "planned" is not allowed, because the docs name no feature that the engine lacks. Write the page, or take it out of the inventory and list it in .dev/gaps.md`,
+		);
+	} else if (!STATUSES.includes(data.status as (typeof STATUSES)[number])) {
 		problems.push(`${path}: status "${String(data.status)}" must be one of ${STATUSES.join(', ')}`);
 	}
 	if (typeof data.since !== 'string' || !SINCE_FORMAT.test(data.since)) {

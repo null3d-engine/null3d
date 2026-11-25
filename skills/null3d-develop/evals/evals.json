@@ -12,7 +12,7 @@
         "Loads the sneaker with assets.loadGltf and places it with scene.instantiate, with no placeholder mesh",
         "Orbit controls come from @null3d/controls and limit maxPolarAngle to below half of pi",
         "The floor mesh receives shadows and the directional light casts them; a floor that shows only the shadow uses materials.shadowCatcher({ color, opacity }) on a mesh that receives shadows, presented as built",
-        "Lighting uses a directional light with a soft fill: an environment such as assets.builtinEnvironment('room'), an ambient light or a hemisphere light; none of them is presented as not built",
+        "Lighting uses a directional light with a soft fill: an environment such as assets.builtinEnvironment('room'), an ambient light or a hemisphere light",
         "The code awaits scene.warmUp() or preloads assets before showing the model",
         "No DOM access appears in sketch.ts and onUpdate allocates nothing",
         "Recommends small textures and meshes for phones, and marks bunx @null3d/cli assets optimize as 0.2 if it names it"
@@ -54,7 +54,7 @@
       "expected_output": "The answer shows units on a pickable layer; selection with obj.on('click') or a reused ray and hit object; the outline through post.set and setOutlined; labels with ui.trackLabel in the sketch and engine.labels.bind on the page; and health messages only on change.",
       "files": [],
       "expectations": [
-        "Presents obj.on, scene.raycast, post.set({ outline }) and ui.trackLabel as built, not as planned or missing",
+        "Presents obj.on, scene.raycast, post.set({ outline }) and ui.trackLabel as engine features",
         "Selection uses obj.on('click') or camera.screenToRay with scene.raycast using ray and hit objects created once",
         "A layer mask limits picking to units",
         "The outline uses post.set({ outline }) and setOutlined(true) on the selected unit only",
@@ -71,7 +71,7 @@
         "Names the Cross-Origin-Opener-Policy same-origin and Cross-Origin-Embedder-Policy require-corp headers",
         "Mentions CORS or Cross-Origin-Resource-Policy headers for assets from other origins",
         "Mentions that Safari does not support COEP credentialless",
-        "Suggests checking crossOriginIsolated and the errors in the browser console; bunx @null3d/cli doctor, if named, is marked as not built yet",
+        "Suggests checking crossOriginIsolated and the errors in the browser console",
         "Points to getting-started/hosting",
         "Mentions the single-threaded fallback when headers cannot be set"
       ]
@@ -117,15 +117,14 @@
     {
       "id": 9,
       "prompt": "Add physics to my null3d game: about 300 crates should fall, stack and collide with a ground plane. I want a null3d physics API, so show me the call.",
-      "expected_output": "The answer says that null3D has no physics API in this version and that the physics foundation add-on is not built yet. It does not invent scene.createPhysics or @null3d/physics. It runs Rapier (@dimforge/rapier3d-compat) in the sketch worker, uses one dynamic instance batch for the crates, and copies each body's translation into batch.positions without allocating. It says that the physics state is copied into the scene each frame, and that the add-on replaces the workaround when it ships.",
+      "expected_output": "The answer says that null3D has no physics API. It does not invent scene.createPhysics or @null3d/physics. It runs Rapier (@dimforge/rapier3d-compat) in the sketch worker, uses one dynamic instance batch for the crates, and copies each body's translation into batch.positions without allocating. It says that the physics state is copied into the scene each frame.",
       "files": [],
       "expectations": [
-        "States that null3D has no physics API in this version, or that the physics add-on is not built yet",
+        "States that null3D has no physics API, and that the physics runs in a library in the sketch worker, as guides/physics shows",
         "Does not invent a null3D physics call or package, such as scene.createPhysics or @null3d/physics",
         "Runs @dimforge/rapier3d-compat or cannon-es in the sketch worker",
         "Uses one dynamic instance batch for the crates and writes batch.positions from the body translations",
-        "Writes batch.positions directly with no array or object literal in the loop, and names the library's own per-call objects as the remaining allocation",
-        "Names the workaround as temporary until the physics add-on ships"
+        "Writes batch.positions directly with no array or object literal in the loop, and names the library's own per-call objects as the remaining allocation"
       ]
     },
     {

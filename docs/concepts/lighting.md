@@ -8,7 +8,7 @@ summary: "Light types, units and exposure; clustered lighting; fog; environment 
 
 # Lighting and environment
 
-> Roadmap step 0.1, first released in null3D 0.1.0. Step 0.2 adds environment maps, backgrounds, fog, volumetric fog, light units, hemisphere lights' light, and rectangle and tube lights. It also adds the light probe grid, the sky's light and time of day. The API is experimental, so it can still change between versions. Surfaces show up to four directional lights. The quality presets cap area lights, but not yet the other light limits. Coding agents must not rely on these parts.
+> Roadmap step 0.1, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. Surfaces show up to four directional lights. The quality presets cap area lights, and they do not cap point and spot lights.
 
 ```mermaid
 flowchart LR
@@ -139,7 +139,7 @@ The engine shades each surface in the pass that draws it. A deferred renderer wo
 - Forward shading works with MSAA directly, where deferred shading needs extra passes.
 - Transparent surfaces use the same lighting code as opaque ones.
 
-Both GPU paths light a scene the same way. WebGPU reads the lists from storage buffers, and WebGL2 from small data textures. In this version the camera lists up to 1,024 lights in a frame, the ones nearest to it. Each cluster lists up to 128. Of those, the quality preset's `areaLights` caps the rectangle and tube lights, which cost more per pixel. [Performance guide](../guides/performance.md#point-and-spot-lights) gives the cost of lights.
+Both GPU paths light a scene the same way. WebGPU reads the lists from storage buffers, and WebGL2 from small data textures. The camera lists up to 1,024 lights in a frame, the ones nearest to it. Each cluster lists up to 128. Of those, the quality preset's `areaLights` caps the rectangle and tube lights, which cost more per pixel. [Performance guide](../guides/performance.md#point-and-spot-lights) gives the cost of lights.
 
 ## Lights as objects
 
@@ -571,7 +571,7 @@ The helper gives values and leaves them to the sketch. A scene keeps its own lig
 
 ## Lights in scene passes
 
-A [scene pass](../api/render.md) draws the scene from another camera into a texture. In this version it lights its objects with the sun, the ambient and hemisphere lights, the environment and the fog. It draws the sun's shadows where the camera's cascades reach, and the point, spot and area lights that its camera sees. It draws the scene's background behind them, the sky included, unless the pass has a `clearColor`, which its texture then clears to.
+A [scene pass](../api/render.md) draws the scene from another camera into a texture. It lights its objects with the sun, the ambient and hemisphere lights, the environment and the fog. It draws the sun's shadows where the camera's cascades reach, and the point, spot and area lights that its camera sees. It draws the scene's background behind them, the sky included, unless the pass has a `clearColor`, which its texture then clears to.
 
 ## Related pages
 

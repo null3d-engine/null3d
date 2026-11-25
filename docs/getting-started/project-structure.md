@@ -8,7 +8,7 @@ summary: "Starting from the `empty` template with `bunx @null3d/cli create`; pag
 
 # Project structure
 
-> Roadmap step 0.3, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. The `empty` template is the only template today.
+> Roadmap step 0.3, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. The `empty` template is the only template.
 
 ```mermaid
 flowchart LR
@@ -64,6 +64,6 @@ Claude Code runs the hook through `.claude/settings.json`, and Codex runs it thr
 
 The hook refuses three commands, so they do not run. They are a command that waits with `sleep`, one that stops a process by name, and one that follows a log. The message gives the fix.
 
-The hook flags three source rules and lets the edit go on. It flags an object, array or string made in `onUpdate`. It flags a DOM name in the sketch module. It flags an import of a name that the installed engine does not export. A planned API does not exist, so its name is absent from the installed declarations. The message names the file, the line and the fix.
+The hook flags three source rules and lets the edit go on. It flags an object, array or string made in `onUpdate`. It flags a DOM name in the sketch module. It flags an import of a name that the installed engine does not export. The message names the file, the line and the fix.
 
 The hook takes every rule from `@null3d/cli/agent-rules`. That module holds each rule and its message once, so a project and any other null3D tool agree. The hook reads the module from the installed packages, and `bun install` writes them. Before that install, the hook cannot check a call. It tells the agent to install the packages, and the call goes on.

@@ -8,7 +8,7 @@ summary: "standard, unlit, shader, shadowCatcher; every option."
 
 # Materials
 
-> Roadmap step 0.1, first released in null3D 0.1.0. Step 0.2 adds typed uniforms, custom material textures, `destroy`, the specular and index of refraction values, transmission, light through thin surfaces and under the surface, decals, the weighted blending, the clear coat and sheen layers, the shadow catcher, bump maps, displacement maps, parallax and wireframes. The API is experimental, so it can still change between versions. `materials.shader` takes no standard texture maps. Coding agents must not use the parts that are not built.
+> Roadmap step 0.1, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. `materials.shader` takes no standard texture maps. It takes up to 6 textures of its own.
 
 A material sets how the surfaces of the objects that use it look. `materials.standard` makes a lit material, and `materials.unlit` makes one that ignores lights. Create materials in the setup, and share each one between the objects that look alike.
 
@@ -813,7 +813,7 @@ const sheet = materials.shader({
 - The copy is made while a material that declares the input draws, whatever the quality preset says. It costs one full-screen pass and one texture of four bytes for each pixel.
 - On WebGL2 the copy holds the depth that the device stores. Where the device draws `reversed-gl` depth, `sceneDistance` is less precise. The engine draws `reversed` depth where the browser has `EXT_clip_control`.
 - A material that reads the scene's depth takes up to seven textures of its own: its maps' group gives up one slot, so that the copy of the depth fits the fragment stage beside the maps under WebGPU's limit of 16 sampled textures. A material that declares eight textures beside the depth is refused, and development builds throw E1217 and name how many to drop.
-- The declaration and the WGSL must agree. Development builds throw E1217 for a declaration that the WGSL never uses, and for WGSL that reads the depth without the declaration. They throw it for a scene input that custom materials do not read yet too.
+- The declaration and the WGSL must agree. Development builds throw E1217 for a declaration that the WGSL never uses, and for WGSL that reads the depth without the declaration. They throw it too for a scene input that custom materials do not read.
 
 [Surface functions](../shaders/surface-functions.md#the-scenes-depth) shows the helpers among the WGSL.
 

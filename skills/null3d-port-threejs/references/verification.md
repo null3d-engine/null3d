@@ -63,13 +63,7 @@ With `WebGLRenderer`, reading the canvas in the same task as the render works wi
 
 ## 3. Compare the null3D port
 
-```sh
-bunx @null3d/cli port compare --baseline baseline/ --views views.json --gpu webgpu,webgl2   # (0.3, not built yet)
-```
-
-The command runs the sketch in hold mode and poses the active camera at each view. It captures each image through the engine's readback, and compares it with the baseline using three.js's own image comparison script. It writes `compare/<view>.<tier>.actual.png`, `.diff.png` and a summary in the terminal.
-
-Until `port compare` is built, `bunx @null3d/cli test` compares the port with the baseline (engine docs `cli/null3d`). Make each view an image test, with the three.js image as its reference:
+`bunx @null3d/cli test` compares the port with the baseline (engine docs `cli/null3d`). Make each view an image test, with the three.js image as its reference:
 
 1. Let the sketch pose its camera from a view name in its module's address. In the setup, read `new URL(import.meta.url).searchParams.get('view')`, and set the camera from that view's `position`, `target` and `fov` (`guides/testing`).
 2. List one test per view in `null3d.json`, with the view's time and the baseline's size:
@@ -118,7 +112,7 @@ null3D checks its own parity with three.js r186 on scenes of each feature, on co
 
 ## 5. Compare performance
 
-Measure both apps on the same device, browser, window size and pixel ratio, with the refresh rate fixed at 60 Hz. Time a production build of each app: `bunx vite build`, then `bunx vite preview`. `bunx @null3d/cli bench` builds one for the null3D app. Never time null3D on the dev server, from (0.2) the CDN build's `lib-dev/index.js`, or from engine code built without the null3D plugin. Those run the development checks in every frame, so the port looks slower than it ships. For a null3D page with no bundler, time the CDN build's `lib/index.js` (engine docs `getting-started/cdn`).
+Measure both apps on the same device, browser, window size and pixel ratio, with the refresh rate fixed at 60 Hz. Time a production build of each app: `bunx vite build`, then `bunx vite preview`. `bunx @null3d/cli bench` builds one for the null3D app. Never time null3D on the dev server, from the CDN build's `lib-dev/index.js`, or from engine code built without the null3D plugin. Those run the development checks in every frame, so the port looks slower than it ships. For a null3D page with no bundler, time the CDN build's `lib/index.js` (engine docs `getting-started/cdn`).
 
 1. Warm up for at least 5 seconds; this excludes shader compilation. `bunx @null3d/cli bench` warms up for 5 seconds by default.
 2. Run 5 times for 30 seconds each. Report the median and the spread.
@@ -164,7 +158,6 @@ Tested on: <device, OS, browser and version, GPU tier> for each device.
 - Ported: <scenes and features>
 - Parity: <n> of <m> views pass on WebGPU, <n> of <m> on WebGL2
 - Performance on <device>: frame time p50 <a> ms to <b> ms, p99 <c> ms to <d> ms; main-thread time <e> ms to <f> ms
-- Latest roadmap step needed: <step>. Mapped features not built yet (their mapping notes start "Not built yet"): <features, or none>
 
 ## Parity per view
 | View | WebGPU | WebGL2 | Differing pixels | Notes |
@@ -179,7 +172,7 @@ Tested on: <device, OS, browser and version, GPU tier> for each device.
 | --- | --- | --- | --- |
 
 ## Features not ported
-| Feature | Status (post-1.0 or unsupported) | Workaround used | Follow-up |
+| Feature | Status (unsupported) | Workaround used | Follow-up |
 | --- | --- | --- | --- |
 
 ## Behavior changes

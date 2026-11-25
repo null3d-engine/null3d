@@ -3,12 +3,12 @@ id: api/controls
 title: "Controls (@null3d/controls)"
 status: experimental
 since: "0.1"
-summary: "Orbit and map controls (0.1); fly and first-person controls, with pointer lock (0.2); drag, rotate and scale gizmos."
+summary: "Orbit and map controls; fly and first-person controls, with pointer lock; drag, rotate and scale gizmos."
 ---
 
 # Controls (@null3d/controls)
 
-> Roadmap step 0.1, first released in null3D 0.1.0. Step 0.2 adds the fly and first-person controls, and gizmos that move, turn and scale an object. The API is experimental, so it can still change between versions. Orbit controls cannot yet zoom toward the pointer (`zoomToCursor`) or move with keys (`keys`, `keyPanSpeed` and `keyRotateSpeed`). They cannot yet limit how far the target goes from a point (`cursor`, `minTargetRadius` and `maxTargetRadius`), and the methods `saveState` and `reset` are not built yet. The gizmos do not limit a position with `minX` to `maxZ` yet. Coding agents must not use these parts.
+> Roadmap step 0.1, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. Orbit controls do not zoom toward the pointer (`zoomToCursor`) or move with keys (`keys`, `keyPanSpeed` and `keyRotateSpeed`). They do not limit how far the target goes from a point (`cursor`, `minTargetRadius` and `maxTargetRadius`), and they have no `saveState` or `reset`. The gizmos do not limit a position with `minX` to `maxZ`.
 
 ```mermaid
 flowchart LR

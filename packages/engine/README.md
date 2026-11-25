@@ -1,10 +1,11 @@
 # null3D
 
-The engine package of [null3D](https://github.com/null3d-engine/null3d), a browser 3D engine for games and apps with many moving objects.
+The engine package of [null3D](https://github.com/null3d-engine/null3d), a high-performance browser 3D engine for agents.
 
-The engine's core is Rust compiled to WebAssembly. It runs on worker threads, so the page's main thread stays free for the page. It draws with WebGPU, and with WebGL2 where WebGPU is missing, from the same code. You write your scenes in TypeScript.
+- **Faster than three.js.** null3D beats three.js in five of its six benchmark scenes. The [performance table](https://github.com/null3d-engine/null3d#performance) has the figures.
+- **Wide device compatibility.** One scene runs on current computers, tablets and phones. The engine draws with WebGPU, and with WebGL2 where WebGPU is missing, from the same code.
 
-null3D is experimental: the API can still change between versions until 1.0.
+The engine's core is Rust compiled to WebAssembly. It runs on worker threads, so the page's main thread stays free for the page. You write your scenes in TypeScript.
 
 ## Start a project
 

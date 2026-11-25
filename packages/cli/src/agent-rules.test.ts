@@ -58,7 +58,7 @@ describe('the rule list', () => {
 			'no-sleep',
 			'no-kill-by-name',
 			'no-log-follow',
-			'no-planned-api',
+			'no-unknown-api',
 			'no-allocation-in-onupdate',
 			'no-dom-in-sketch',
 		]);
@@ -249,7 +249,7 @@ describe('no-log-follow', () => {
 	});
 });
 
-describe('no-planned-api', () => {
+describe('no-unknown-api', () => {
 	/** A folder that holds an installed engine with one exported name. */
 	function engineRoot() {
 		const root = tempRoot();
@@ -268,10 +268,10 @@ describe('no-planned-api', () => {
 
 	it('flags an import that the installed engine does not export', () => {
 		const declarations = engineRoot();
-		const planned =
+		const unknown =
 			"import { createEngine, createWorld } from '@null3d/engine';\nawait createEngine();\n";
-		expect(sourceRule('src/page.ts', planned, declarations)).toBe('no-planned-api');
-		expect(refusedSource('src/page.ts', planned, { declarations })?.message).toContain(
+		expect(sourceRule('src/page.ts', unknown, declarations)).toBe('no-unknown-api');
+		expect(refusedSource('src/page.ts', unknown, { declarations })?.message).toContain(
 			'createWorld',
 		);
 	});

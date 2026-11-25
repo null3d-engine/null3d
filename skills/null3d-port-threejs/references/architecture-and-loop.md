@@ -24,13 +24,13 @@ three.js apps usually run everything on the main thread: DOM, input, scene updat
 | DOM input listeners for the 3D view | `sketch.ts` reads `ctx.input` | The page shim forwards input through shared memory |
 | Camera controls | `sketch.ts` | `@null3d/controls` |
 | HTML UI, menus, HUD, lil-gui panels, stats panels | `page.ts` | Messages to and from the sketch |
-| Labels (CSS2DRenderer, CSS3DRenderer) | Both | `ui.trackLabel` in the sketch, `engine.labels.bind` on the page (0.2); `transform: 'world'` or `'billboard'` makes the element a plane of the scene |
-| Audio (Web Audio, three.js Audio) | Both | `createSound` from `@null3d/sound` in the sketch makes and moves the sounds; `connectSound` from `@null3d/sound/page` plays them on the page, started by a click, a tap or a key (0.3). Music and the page's own UI sounds stay in `page.ts` with Web Audio |
-| Video elements | `page.ts` | `engine.registerVideo` on the page and `textures.fromVideo` in the sketch (0.3): the page sends one image per frame that the video presents. Keep a frame within the upload budget (null3d-develop recipe 14) |
+| Labels (CSS2DRenderer, CSS3DRenderer) | Both | `ui.trackLabel` in the sketch, `engine.labels.bind` on the page; `transform: 'world'` or `'billboard'` makes the element a plane of the scene |
+| Audio (Web Audio, three.js Audio) | Both | `createSound` from `@null3d/sound` in the sketch makes and moves the sounds; `connectSound` from `@null3d/sound/page` plays them on the page, started by a click, a tap or a key. Music and the page's own UI sounds stay in `page.ts` with Web Audio |
+| Video elements | `page.ts` | `engine.registerVideo` on the page and `textures.fromVideo` in the sketch: the page sends one image per frame that the video presents. Keep a frame within the upload budget (null3d-develop recipe 14) |
 | `localStorage`, cookies, URL parameters | `page.ts` | Send what the sketch needs at start; IndexedDB also works in the sketch |
 | `fetch` of JSON, binary data, models | `sketch.ts` | Workers have `fetch`; relative URLs resolve against the page |
 | A cache of generated geometry in IndexedDB | `sketch.ts` | Keep it, with arrays only, never engine objects; key it by the build (null3d-develop `references/performance.md`, section 12) |
-| `GLTFLoader` with `KTX2Loader` (0.2) | `sketch.ts` | `assets.loadGltf(url)` parses in a worker and needs no decoder paths; `scene.instantiate(prefab)` for each copy |
+| `GLTFLoader` with `KTX2Loader` | `sketch.ts` | `assets.loadGltf(url)` parses in a worker and needs no decoder paths; `scene.instantiate(prefab)` for each copy |
 | Physics libraries | `sketch.ts` | WebAssembly physics runs in workers |
 | Analytics, ads, routing | `page.ts` | Unchanged |
 
@@ -68,7 +68,7 @@ for (let index = 0; index < ELEMENTS.length; index++) {
 - An element can hold an iframe or any other markup. Give it `pointer-events: auto` for the clicks that `CSS3DRenderer` gives its elements.
 - An orthographic camera carries the planes too. Give `scene.createOrthographicCamera` the height, or the four edges, that the example's camera uses.
 
-All seven three.js CSS3D examples have a port under `tests/pages/`: `css3d_periodictable`, `css3d_molecules`, `css3d_sprites`, `css3d_sandbox`, `css3d_orthographic`, `css3d_mixed` and `css3d_youtube`. Each page draws its scene with null3D and with three.js's `CSS3DRenderer`, and its test compares the element pictures of the two stages. The mixed port's test also compares the two drawn frames. Where an example adds an invisible plane that writes depth and no color, give its material `colorWrite: false` (0.3). Read a port before porting a CSS3D scene of your own.
+All seven three.js CSS3D examples have a port under `tests/pages/`: `css3d_periodictable`, `css3d_molecules`, `css3d_sprites`, `css3d_sandbox`, `css3d_orthographic`, `css3d_mixed` and `css3d_youtube`. Each page draws its scene with null3D and with three.js's `CSS3DRenderer`, and its test compares the element pictures of the two stages. The mixed port's test also compares the two drawn frames. Where an example adds an invisible plane that writes depth and no color, give its material `colorWrite: false`. Read a port before porting a CSS3D scene of your own.
 
 ## 2. Messages between page and sketch
 
@@ -93,7 +93,7 @@ engine.postToSketch('settings', { volume: 0.8, quality: 'medium' });
 Rules:
 
 - Send events and changes, not per-frame state. Some three.js apps update the DOM every frame from scene data, such as a speedometer. Send such a value only when it changes by a visible amount.
-- Positions for HTML elements use `ui.trackLabel` (0.2), which needs no messages at all.
+- Positions for HTML elements use `ui.trackLabel`, which needs no messages at all.
 - Give message types names and a TypeScript union type shared by both sides, so typos fail at compile time.
 - Large one-off data (a level file) goes straight to the sketch with `fetch`, not through the page.
 
@@ -169,7 +169,7 @@ function updateEnemies(dt: number) {
 }
 ```
 
-Enemies that need different meshes become one batch per mesh. An enemy loaded from a glTF file with several meshes takes `scene.createInstances(prefab, N, { dynamic: true })` (0.2): one batch whose rows move every mesh of the model. Per-enemy state (health, target, timers) goes into typed arrays indexed by row. When an enemy dies, swap-remove its row with the last live row and lower the active count (null3d-develop `references/recipes.md`, recipe 5).
+Enemies that need different meshes become one batch per mesh. An enemy loaded from a glTF file with several meshes takes `scene.createInstances(prefab, N, { dynamic: true })`: one batch whose rows move every mesh of the model. Per-enemy state (health, target, timers) goes into typed arrays indexed by row. When an enemy dies, swap-remove its row with the last live row and lower the active count (null3d-develop `references/recipes.md`, recipe 5).
 
 ## 5. Input and camera controls
 
@@ -183,10 +183,10 @@ Enemies that need different meshes become one batch per mesh. An enemy loaded fr
 | `controls.listenToKeyEvents(window)` | Read the keys with `input.isDown`, and call `controls.pan(dx, dy)` or `controls.rotateLeft(angle)` |
 | The controls' own `preventDefault` on wheel events | On the page: `canvas.addEventListener('wheel', (e) => e.preventDefault(), { passive: false })`, so the wheel and a pinch zoom the camera, not the page |
 | `controls.addEventListener('change', render)` for on-demand rendering | Not needed: the engine renders continuously and skips unchanged work. `update(dt)` returns true when the camera moved |
-| `FlyControls`, `FirstPersonControls` | `createFlyControls` or `createFirstPersonControls` with the same option names and defaults (0.2); `controls.update(dt)` every frame |
-| `PointerLockControls` | `createFirstPersonControls(ctx, camera, { movementSpeed: 0, pointerSpeed })` (0.2). The page calls `engine.requestPointerLock()` in a click handler in place of `controls.lock()`; the sketch reads `input.pointer.locked` in place of `isLocked` and the lock events, and keeps `controls.moveForward(d)` and `controls.moveRight(d)`. On an engine with `input: false`, `engine.requestPointerLock()` fails with E1426, and the game's own input code locks the canvas |
+| `FlyControls`, `FirstPersonControls` | `createFlyControls` or `createFirstPersonControls` with the same option names and defaults; `controls.update(dt)` every frame |
+| `PointerLockControls` | `createFirstPersonControls(ctx, camera, { movementSpeed: 0, pointerSpeed })`. The page calls `engine.requestPointerLock()` in a click handler in place of `controls.lock()`; the sketch reads `input.pointer.locked` in place of `isLocked` and the lock events, and keeps `controls.moveForward(d)` and `controls.moveRight(d)`. On an engine with `input: false`, `engine.requestPointerLock()` fails with E1426, and the game's own input code locks the canvas |
 | Clicks on UI buttons over the canvas | Handled on the page; send the action to the sketch |
-| Input that a game records for a server to replay, with its own listeners on the page | Keep the game's recorder. Pass `input: false` to `createEngine` (0.3), so the engine adds no listener and `ctx.input` stays at rest. Picking, controls and physics that decide a result move into the game's simulation (`guides/deterministic-simulation`). When the aim decides a result, the camera is the simulation's too: the page locks the pointer and records the movement each tick as whole counts, the simulation turns them into a yaw and a pitch, and the sketch draws that pose |
+| Input that a game records for a server to replay, with its own listeners on the page | Keep the game's recorder. Pass `input: false` to `createEngine`, so the engine adds no listener and `ctx.input` stays at rest. Picking, controls and physics that decide a result move into the game's simulation (`guides/deterministic-simulation`). When the aim decides a result, the camera is the simulation's too: the page locks the pointer and records the movement each tick as whole counts, the simulation turns them into a yaw and a pitch, and the sketch draws that pose |
 
 Pointer events that land on HTML UI elements above the canvas do not reach the engine, which matches what users expect.
 
@@ -195,12 +195,12 @@ Pointer events that land on HTML UI elements above the canvas do not reach the e
 | Library | What to do |
 | --- | --- |
 | lil-gui, dat.gui, Tweakpane | Keep on the page; send values to the sketch |
-| stats.js | `debug.stats(true)` in the sketch, or (0.2) `createEngine({ stats: true })` on the page, shows an overlay; `debug.frameStats()` gives its figures. In 0.2 it sits at the canvas's top right, takes a `{ collapsed }` option, and adds GPU time, triangles and objects drawn and memory; `engine.measure()` on the page gives percentiles |
+| stats.js | `debug.stats(true)` in the sketch, or `createEngine({ stats: true })` on the page, shows an overlay; `debug.frameStats()` gives its figures. In 0.2 it sits at the canvas's top right, takes a `{ collapsed }` option, and adds GPU time, triangles and objects drawn and memory; `engine.measure()` on the page gives percentiles |
 | GSAP, tween.js | For a scene value, `scene.animateProperty(target, path, { times, values })`; a value that a tween drives from code still lerps in `onUpdate`. DOM tweens stay on the page |
 | cannon-es, Rapier, Ammo | Run in the sketch worker; copy transforms into dynamic objects or batches after each step |
-| three-mesh-bvh | Delete; raycasting uses built-in acceleration structures (0.2) |
-| troika-three-text | The MSDF text add-on (0.3, not built yet). Until then, use HTML labels, pre-rendered text textures, or text meshes baked into glTF |
-| postprocessing (pmndrs) | Map effects to `post.set`: tone mapping, and the effects (0.2) (`references/post-processing.md`) |
+| three-mesh-bvh | Delete; raycasting uses built-in acceleration structures |
+| troika-three-text | null3D draws no text of its own. Use HTML labels, pre-rendered text textures, or text meshes baked into glTF |
+| postprocessing (pmndrs) | Map effects to `post.set`: tone mapping, and the effects (`references/post-processing.md`) |
 | three-stdlib, three/addons utilities | Check each import in the mapping table; many become built-in features |
 
 ## 7. The two-step route for large apps

@@ -8,7 +8,7 @@ summary: "Creating objects; models and copies; find; multiple views of one scene
 
 # Scene
 
-> Roadmap step 0.1, first released in null3D 0.1.0. Step 0.2 adds the environment, the sky and environment backgrounds, the sky's environment, the light probe grid, `timeOfDay` and volumetric fog. The API is experimental, so it can still change between versions.
+> Roadmap step 0.1, first released in null3D 0.1.0. The API is experimental, so it can still change between versions.
 
 The scene holds everything the engine draws: the objects, the camera that the canvas shows, the lights and the background. A sketch gets it as `scene` in its setup function, and creates everything through it.
 
@@ -542,7 +542,7 @@ A third argument is an object that the call fills, in place of making one: `time
 
 ## Lights
 
-Each light is an object, so a scene can hold many, and each call creates another. Without lights, standard materials draw black. [Lights](lights.md) covers each kind, and which of them light surfaces in this version.
+Each light is an object, so a scene can hold many, and each call creates another. Without lights, standard materials draw black. [Lights](lights.md) covers each kind, and which of them light surfaces.
 
 ## Decals
 

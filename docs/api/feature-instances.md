@@ -86,7 +86,7 @@ export default defineSketch(async ({ scene }) => {
 | Field | What an instance draw takes |
 | --- | --- |
 | `kind` | `'draw'`. Any other kind throws E1223. |
-| `frame` | `'opaque'`. A transparent instance draw is not placed yet. |
+| `frame` | `'opaque'`. The adapter places no transparent instance draw. |
 | `views` | `['main']`. The adapter refuses another view. |
 | `band`, `order` | Read, but the opaque pass orders its own draws. |
 

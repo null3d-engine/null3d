@@ -3,12 +3,12 @@ id: guides/debugging
 title: Debugging
 status: experimental
 since: "0.1"
-summary: "Error codes; the inspector; the MCP server; the render-graph dump; common failures."
+summary: "Error codes; the render-graph dump; common failures."
 ---
 
 # Debugging
 
-> Roadmap step 0.1, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. The in-page inspector and the MCP server come in step 0.3 and are not built yet, so coding agents must not use them.
+> Roadmap step 0.1, first released in null3D 0.1.0. The API is experimental, so it can still change between versions.
 
 ```mermaid
 flowchart TD

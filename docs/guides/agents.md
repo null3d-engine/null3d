@@ -3,7 +3,7 @@ id: guides/agents
 title: Working with AI agents
 status: experimental
 since: "0.1"
-summary: "Installing the null3D skills in Claude Code, claude.ai and other agent tools; docs by ID; the test loop; the MCP server and AGENTS.md in templates (0.3)."
+summary: "Installing the null3D skills in Claude Code, claude.ai and other agent tools; docs by ID; the test loop."
 ---
 
 # Working with AI agents
@@ -47,7 +47,7 @@ To install by hand, copy each skill's folder from `.claude/skills/` in the relea
 
 ## Docs by ID
 
-Every docs page has an ID, such as `concepts/architecture`: its path under `docs/` without `.md`. The skills name pages by ID, and each page's status says whether its API exists yet. Agents never use an API whose page is `planned`, or a part that the note on an experimental page says is not built yet.
+Every docs page has an ID, such as `concepts/architecture`: its path under `docs/` without `.md`. The skills name pages by ID.
 
 ## The test loop
 
@@ -59,8 +59,3 @@ An agent checks its work with the `null3d` command, which prints short lines of 
 4. When an image test fails, open the image and its diff. Fix the code, or keep the new image with `bunx @null3d/cli test --update-references` when the change was on purpose.
 
 `bunx @null3d/cli shot` draws one frame of a page, to look at a change that has no test yet.
-
-## Coming later
-
-- 0.3: `bunx @null3d/cli mcp`, a Model Context Protocol server connected to the running dev session. Agents list and adjust objects, capture frames, and read frame statistics and errors through it.
-- 0.3: project templates from `bunx @null3d/cli create`, each with an `AGENTS.md` for agents without skills.

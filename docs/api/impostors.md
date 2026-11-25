@@ -8,7 +8,7 @@ summary: "createImpostors: far objects as camera-facing cards that blend the thr
 
 # Impostors
 
-> Roadmap step 0.2, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. Not built yet: an `assets impostor` command that writes the atlases from a file. Coding agents must not use it yet.
+> Roadmap step 0.2, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. The asset tool has no command that writes the atlases from a file: the add-on bakes them in the sketch.
 
 The demo "Impostors" in `examples/impostors` draws a pine forest three ways by distance. Level-of-detail meshes stand near, one merged mesh stands per grid cell in the middle, and cards baked from the pine stand far out. Press L there to draw the far band as meshes instead, and compare. The near meshes and the cards share the hand-over band.
 

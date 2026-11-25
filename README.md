@@ -5,11 +5,11 @@
 <h1 align="center">null3D</h1>
 
 <p align="center">
-  <strong>A browser 3D engine for games and apps with many moving objects.</strong>
+  <strong>A high-performance browser 3D engine for agents. Faster than three.js.</strong>
 </p>
 
 <p align="center">
-  Its core is Rust compiled to WebAssembly, and it runs on worker threads. You write scenes in TypeScript, and it draws them with WebGPU or WebGL2.
+  Rust and WebAssembly on worker threads. One TypeScript scene runs on current computers, tablets and phones, with WebGPU or WebGL2.
 </p>
 
 <div align="center">
@@ -17,7 +17,6 @@
 [![CI](https://github.com/null3d-engine/null3d/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/null3d-engine/null3d/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/@null3d/engine.svg?label=npm)](https://www.npmjs.com/package/@null3d/engine)
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](#community-and-license)
-[![Status: experimental](https://img.shields.io/badge/status-experimental-orange.svg)](#status-and-limits)
 
 </div>
 
@@ -25,6 +24,7 @@
   <a href="#quickstart">Quickstart</a>
   · <a href="#features">Features</a>
   · <a href="#performance">Performance</a>
+  · <a href="#where-it-runs">Where it runs</a>
   · <a href="#how-it-works">How it works</a>
   · <a href="https://github.com/null3d-engine/null3d/blob/generated/docs/index.md">Docs</a>
 </p>
@@ -37,9 +37,13 @@
 
 ## What is null3D?
 
-null3D is a 3D engine for web pages. It is built for scenes where CPU time is the limit, such as many moving objects, deep scene graphs and animated crowds. In its scene-graph benchmark, a tree of 5,096 objects costs null3D 0.35 ms of CPU time per frame. three.js takes 3.18 ms for the same scene.
+null3D is a 3D engine for web pages. It is built for two things: speed, and scenes that work on every current device.
 
-The engine's core is Rust compiled to WebAssembly. It runs on worker threads, so the page's main thread stays free for the page. It draws with WebGPU, and with WebGL2 where WebGPU is missing, from the same code. That matters on phones, because many of them still have no WebGPU.
+- **Faster than three.js.** null3D beats three.js in five of its six benchmark scenes. A scene graph of 5,096 objects costs null3D 0.35 ms of CPU time per frame, and three.js 3.18 ms. null3D draws 500 animated characters with shadows at 120 fps, and three.js draws them at 22 fps. [Performance](#performance) has every figure, with the scene that null3D loses.
+- **Wide device compatibility.** One sketch runs on current computers, tablets and phones. The engine draws with WebGPU, and with WebGL2 where WebGPU is missing, from the same code. It fits its work to each device, so a scene made on a laptop also runs on a budget phone. [Where it runs](#where-it-runs) lists the browsers and the tested devices.
+- **Made for coding agents.** Two agent skills come with the engine. Every error has a code and a page that says how to fix it. The command line tool draws frames and runs image tests, so an agent can check its own work. See [For AI agents](#for-ai-agents).
+
+The engine's core is Rust compiled to WebAssembly. It runs on worker threads, so the page's main thread stays free for the page. You write scenes in TypeScript.
 
 ## Quickstart
 
@@ -174,20 +178,9 @@ for (let i = 0; i < rocks.count; i++) p[i * 3 + 1] += 0.5 * dt;
 
 On WebGPU, the GPU then culls the objects and counts the draws itself. The core's WebAssembly file stays under 640 KB after Brotli compression, and the build fails a larger one.
 
-## How it works
-
-```mermaid
-flowchart LR
-    page["Main thread<br/>the page"] -- "input, through<br/>shared memory" --> sketch["Sketch worker<br/>your code + Rust core"]
-    sketch <-- "parallel loops" --> jobs["Job workers<br/>transforms, culling,<br/>animation"]
-    sketch -- "frame snapshot" --> render["Render worker<br/>WebGPU or WebGL2"]
-```
-
-1. **Your sketch code runs in a worker.** It reads and writes scene data in shared arrays, with no copies and no messages. See [Architecture: threads and the frame](https://github.com/null3d-engine/null3d/blob/generated/docs/concepts/architecture.md).
-2. **The Rust core works in parallel.** Job workers update transforms, sample animation and cull objects over flat arrays. They use SIMD instructions, which work on several numbers at once. Then they record binary draw lists ([Handles and objects](https://github.com/null3d-engine/null3d/blob/generated/docs/concepts/handles.md)).
-3. **One worker owns the GPU.** The render worker replays the draw lists and runs no sketch code. So a garbage-collection pause in your code does not hold up the GPU's work ([GPU tiers and backends](https://github.com/null3d-engine/null3d/blob/generated/docs/concepts/backends.md)).
-
 ## Where it runs
+
+A null3D scene runs in every current browser on computers, tablets and phones. You write no code for a browser or a GPU. Four [quality presets](https://github.com/null3d-engine/null3d/blob/generated/docs/concepts/quality-presets.md) and dynamic resolution fit the work to each device.
 
 null3D picks its GPU path at startup from feature tests. It never picks the path by browser or GPU names, because some browsers hide them.
 
@@ -202,16 +195,31 @@ null3D picks its GPU path at startup from feature tests. It never picks the path
 | Android phones without WebGPU, such as those with Samsung Xclipse GPUs | WebGL2 |
 | Firefox on Android and Linux | WebGL2 |
 
+The engine's test pages run on real devices, not only on emulators. The phones are iPhones from the iPhone 13 to the iPhone 18 Pro, and Pixels from the Pixel 6 to the Pixel 11. They are also Galaxy S24 and S25 phones, and budget phones such as the Galaxy M32 and the Redmi Note 13. The tablets are iPads and Galaxy Tabs, and the computers are Macs and Windows PCs. The browsers are Chrome, Safari, Firefox, Edge, Brave and Samsung Internet.
+
 Older browsers down to Safari 18, Chrome and Edge 91, and Firefox 89 also get WebGL2. Before those, `createEngine` fails with a clear error ([E1306](https://github.com/null3d-engine/null3d/blob/generated/docs/errors/E1306.md) for Safari, [E1303](https://github.com/null3d-engine/null3d/blob/generated/docs/errors/E1303.md) for the others). Desktop apps can ship the game in [Electron](https://github.com/null3d-engine/null3d/blob/generated/docs/getting-started/hosting.md#desktop-apps-with-electron).
 
-## Status and limits
+## How it works
 
-- **Experimental.** The API can still change between versions until 1.0. Each release lists its changes on the [releases page](https://github.com/null3d-engine/null3d/releases).
-- **One developer leads the project.** Questions and bug reports go to [GitHub Issues](https://github.com/null3d-engine/null3d/issues).
-- **Worker threads need two HTTP headers.** Without them, null3D runs on one thread. [Hosting and cross-origin isolation](https://github.com/null3d-engine/null3d/blob/generated/docs/getting-started/hosting.md) shows the headers for common hosts.
-- **WebGPU needs a secure page.** Serve the page over HTTPS, or from localhost. Over plain HTTP, the engine draws with WebGL2.
-- **No physics engine.** Add a physics library to your sketch, as [Using a physics library](https://github.com/null3d-engine/null3d/blob/generated/docs/guides/physics.md) shows.
-- **Vite only.** A null3D project builds with Vite and the null3D plugin. Other bundlers are not supported or tested.
+```mermaid
+flowchart LR
+    page["Main thread<br/>the page"] -- "input, through<br/>shared memory" --> sketch["Sketch worker<br/>your code + Rust core"]
+    sketch <-- "parallel loops" --> jobs["Job workers<br/>transforms, culling,<br/>animation"]
+    sketch -- "frame snapshot" --> render["Render worker<br/>WebGPU or WebGL2"]
+```
+
+1. **Your sketch code runs in a worker.** It reads and writes scene data in shared arrays, with no copies and no messages. See [Architecture: threads and the frame](https://github.com/null3d-engine/null3d/blob/generated/docs/concepts/architecture.md).
+2. **The Rust core works in parallel.** Job workers update transforms, sample animation and cull objects over flat arrays. They use SIMD instructions, which work on several numbers at once. Then they record binary draw lists ([Handles and objects](https://github.com/null3d-engine/null3d/blob/generated/docs/concepts/handles.md)).
+3. **One worker owns the GPU.** The render worker replays the draw lists and runs no sketch code. So a garbage-collection pause in your code does not hold up the GPU's work ([GPU tiers and backends](https://github.com/null3d-engine/null3d/blob/generated/docs/concepts/backends.md)).
+
+## What a project needs
+
+- **Two HTTP headers for worker threads.** With them, null3D runs on several threads. [Hosting and cross-origin isolation](https://github.com/null3d-engine/null3d/blob/generated/docs/getting-started/hosting.md) shows the headers for common hosts.
+- **A secure page for WebGPU.** Serve the page over HTTPS, or from localhost. Over plain HTTP, the engine draws with WebGL2.
+- **Vite.** A null3D project builds with Vite and the null3D plugin.
+- **Your choice of physics library.** A physics library runs in your sketch, as [Using a physics library](https://github.com/null3d-engine/null3d/blob/generated/docs/guides/physics.md) shows.
+
+Each release lists its changes on the [releases page](https://github.com/null3d-engine/null3d/releases). Questions and bug reports go to [GitHub Issues](https://github.com/null3d-engine/null3d/issues).
 
 ## Porting from three.js
 
@@ -232,7 +240,7 @@ The full [three.js to null3D mapping](https://github.com/null3d-engine/null3d/bl
 
 - Two agent skills come with the engine. [null3d-develop](skills/null3d-develop/SKILL.md) builds and speeds up null3D projects. [null3d-port-threejs](skills/null3d-port-threejs/SKILL.md) ports three.js and React Three Fiber apps.
 - `bunx @null3d/cli create` writes an `AGENTS.md` into each new project, and a hook that Claude Code and Codex both run.
-- Every docs page has an ID, such as `concepts/architecture`, and a status. Agents never use an API whose page is `planned`.
+- Every docs page has an ID, such as `concepts/architecture`, so an agent finds the page for an API by name. The pages ship inside the engine package, so they match the installed engine.
 
 Install the skills in Claude Code as a plugin:
 

@@ -18,7 +18,7 @@ React app (page)                                 sketch.ts (sketch worker)
 ----------------                                 -------------------------
 <Configurator> UI, forms, menus    --messages--> scene setup and onUpdate
 <FourView sketch={sketchUrl} />                  the former <Canvas> contents
-labels bound with engine.labels (0.2)            ui.trackLabel for former <Html> elements (0.2)
+labels bound with engine.labels            ui.trackLabel for former <Html> elements
 ```
 
 The React tree above the former `<Canvas>` barely changes. The subtree inside `<Canvas>` becomes `sketch.ts`.
@@ -94,7 +94,7 @@ export function FourView({ sketch, onMessage, onReady }: Props) {
 
 - Create `sketch` once at module level (`const sketchUrl = new URL('./sketch.ts', import.meta.url)`), so re-renders do not restart the engine.
 - React's StrictMode mounts effects twice in development. The second mount finds the kept engine and attaches it, so development starts one engine, as production does.
-- (0.2) A plain component that renders `<canvas ref>`, creates the engine in its effect and calls `destroy()` in the cleanup also works under StrictMode: the second start waits for the first engine to stop, and draws on the same canvas. It starts the engine twice in development. Docs: `api/engine`.
+- A plain component that renders `<canvas ref>`, creates the engine in its effect and calls `destroy()` in the cleanup also works under StrictMode: the second start waits for the first engine to stop, and draws on the same canvas. It starts the engine twice in development. Docs: `api/engine`.
 - Each mount adds its own message handler and removes it on unmount, so an old component never hears the sketch.
 - A kept engine holds its memory and GPU buffers. For a view the app shows once, destroy the engine on unmount instead of keeping it.
 
@@ -114,7 +114,7 @@ Sketch to React, on events:
 ```ts
 // sketch.ts
 page.onMessage((type, data) => { if (type === 'config') bodyMaterial.set({ color: data.color }); });
-shoe.on('click', () => page.post('part-selected', { name: 'sole' }));   // (0.2)
+shoe.on('click', () => page.post('part-selected', { name: 'sole' }));   //
 ```
 
 ```tsx
@@ -131,31 +131,31 @@ Never mirror per-frame scene state into React state: it re-renders React every f
 | `<Canvas dpr={[1, 2]}>` | `createEngine({ maxPixelRatio: 2 })`, or leave it out and the quality preset sets the cap |
 | `<Canvas shadows>` | `castShadows` on lights and meshes, `receiveShadows` on receivers; directional, spot and point lights cast them; point lights on High and Ultra |
 | `<Canvas gl={{ antialias, alpha }}>` | `createEngine({ antialias: 'msaa' })` or the preset's mode, `createEngine({ transparent: true })` |
-| `<Canvas frameloop="demand">` | No on-demand mode in 1.0: pause with `engine.setPaused(true)` while nothing changes |
+| `<Canvas frameloop="demand">` | null3D has no on-demand mode. Pause with `engine.setPaused(true)` while nothing changes |
 | `<mesh>` with `<boxGeometry>` and `<meshStandardMaterial>` | `scene.createMesh({ mesh: geometry.box(...), material: materials.standard(...) })` |
 | `<group>` | `scene.createGroup()` and `setParent` |
-| `<primitive object={gltf.scene} />` | `scene.instantiate(prefab)` (0.2) |
+| `<primitive object={gltf.scene} />` | `scene.instantiate(prefab)` |
 | `useFrame((state, delta) => ...)` | `onUpdate(dt)` |
 | `useThree()` (camera, size, viewport) | The context: `scene`, `ctx.engine.viewport` |
-| `useLoader(GLTFLoader, url)`, drei `useGLTF(url)` | `await assets.loadGltf(url)` (0.2) |
+| `useLoader(GLTFLoader, url)`, drei `useGLTF(url)` | `await assets.loadGltf(url)` |
 | `useGLTF.preload(url)`, `<Preload all />` | `assets.preload([...])` and `scene.warmUp()` |
 | `<Suspense fallback>`, drei `<Loader>`, `useProgress` | `assets.onProgress` plus a `'loading'` message; the page shows the loader |
-| drei `useAnimations(animations, ref)` | `obj.animator()` (0.2) |
+| drei `useAnimations(animations, ref)` | `obj.animator()` |
 | drei `<OrbitControls makeDefault />` | `createOrbitControls(ctx, camera, options)` |
-| drei `<Environment preset="studio" />` | Download the preset's HDR file, make it a map with `bunx @null3d/cli assets env studio.hdr studio.ktx2`, then `scene.setEnvironment(await assets.loadEnvironment('/studio.ktx2'))` (0.2). For neutral light with no file of your own: `scene.setEnvironment(await assets.builtinEnvironment('room'))` (0.2), three.js's `RoomEnvironment` |
-| drei `<Environment files="x.hdr" background />` | `assets.loadEnvironment('/x.hdr')`, or the map of `bunx @null3d/cli assets env x.hdr x.ktx2`, then `setEnvironment` and `setBackground` (0.2) |
-| drei `<ContactShadows />` | `materials.shadowCatcher` on a ground plane (0.2), which shows the directional light's own shadow; the blurred, distance-faded contact shadows of drei's addon are not built in |
-| drei `<Html>` | `ui.trackLabel` in the sketch, `engine.labels.bind` on the page, with the HTML rendered by React (0.2) |
-| drei `<Text>`, `<Text3D>` | `<Text>`: the MSDF text add-on (0.3, not built yet). `<Text3D>`: not in 1.0. Until then, use HTML labels, a text texture, or a text mesh baked into glTF |
+| drei `<Environment preset="studio" />` | Download the preset's HDR file, make it a map with `bunx @null3d/cli assets env studio.hdr studio.ktx2`, then `scene.setEnvironment(await assets.loadEnvironment('/studio.ktx2'))`. For neutral light with no file of your own: `scene.setEnvironment(await assets.builtinEnvironment('room'))`, three.js's `RoomEnvironment` |
+| drei `<Environment files="x.hdr" background />` | `assets.loadEnvironment('/x.hdr')`, or the map of `bunx @null3d/cli assets env x.hdr x.ktx2`, then `setEnvironment` and `setBackground` |
+| drei `<ContactShadows />` | `materials.shadowCatcher` on a ground plane, which shows the directional light's own shadow. null3D has no blurred, distance-faded contact shadows |
+| drei `<Html>` | `ui.trackLabel` in the sketch, `engine.labels.bind` on the page, with the HTML rendered by React |
+| drei `<Text>`, `<Text3D>` | null3D draws no text of its own. Use HTML labels, a text texture, or a text mesh baked into glTF |
 | drei `<Instances>`, `<Instance>`, `<Merged>` | `scene.createInstances` |
-| drei `<Sky>` | `scene.setBackground({ sky: { sunPosition, turbidity, rayleigh, ... } })` (0.2), with the same props; drop `distance`. For its light, as drei `<Environment>` with a `<Sky>` child: `scene.setEnvironment(await assets.skyEnvironment())` (0.2) |
-| drei `<Stars>` | `scene.createPoints` (0.2) |
+| drei `<Sky>` | `scene.setBackground({ sky: { sunPosition, turbidity, rayleigh, ... } })`, with the same props; drop `distance`. For its light, as drei `<Environment>` with a `<Sky>` child: `scene.setEnvironment(await assets.skyEnvironment())` |
+| drei `<Stars>` | `scene.createPoints` |
 | drei `<Float>` | A sine offset in `onUpdate` |
-| drei `<Center>`, `<Bounds>` | `prefab.bounds` (0.2) and a camera fit computed at setup |
+| drei `<Center>`, `<Bounds>` | `prefab.bounds` and a camera fit computed at setup |
 | drei `<PerformanceMonitor>`, `<AdaptiveDpr>`, `<AdaptiveEvents>`; `<Canvas performance>` | Remove them: the engine's frame-budget governor does this work (section 5) |
-| drei `<Stats>` | `debug.stats(true)` in the sketch, or (0.2) `createEngine({ stats: true })` on the page; `engine.measure()` on the page for percentiles |
-| Mesh events: `onClick`, `onPointerDown`, `onPointerUp`, `onPointerMove`, `onPointerOver` or `onPointerEnter`, `onPointerOut` or `onPointerLeave` | `obj.on('click' | 'pointerdown' | 'pointerup' | 'pointermove' | 'pointerenter' | 'pointerleave', fn)` (0.2), then `page.post` if React needs to know. Only the closest object and its parents get an event, where r3f also passes it to the objects behind |
-| `@react-three/postprocessing` `<EffectComposer>` with `<Bloom>` and others | `post.set`: tone mapping, and `autoExposure`, bloom, `ao`, `dof`, `outline`, `lut` and `vignette` (0.2); the other effects are (0.2, not built yet) (`references/post-processing.md`). `<Outline selection={...}>` becomes `setOutlined(true)` on each selected mesh, and its props map as `OutlineEffect`'s do |
+| drei `<Stats>` | `debug.stats(true)` in the sketch, or `createEngine({ stats: true })` on the page; `engine.measure()` on the page for percentiles |
+| Mesh events: `onClick`, `onPointerDown`, `onPointerUp`, `onPointerMove`, `onPointerOver` or `onPointerEnter`, `onPointerOut` or `onPointerLeave` | `obj.on('click' | 'pointerdown' | 'pointerup' | 'pointermove' | 'pointerenter' | 'pointerleave', fn)`, then `page.post` if React needs to know. Only the closest object and its parents get an event, where r3f also passes it to the objects behind |
+| `@react-three/postprocessing` `<EffectComposer>` with `<Bloom>` and others | `post.set`: tone mapping, and `autoExposure`, bloom, `ao`, `dof`, `outline`, `lut` and `vignette`; `references/post-processing.md` maps the other effects. `<Outline selection={...}>` becomes `setOutlined(true)` on each selected mesh, and its props map as `OutlineEffect`'s do |
 | `@react-three/rapier` | Rapier inside the sketch worker (null3d-develop recipe 11) |
 | Components that change props every frame through React state | `onUpdate` logic; React sends intent, not frames |
 
@@ -193,6 +193,6 @@ To measure the scene's own cost while you port it, turn the governor off with `q
 2. Write `sketch.ts` that creates the same objects at setup. Props that React changes become `page.onMessage` handlers.
 3. Move `useFrame` bodies into `onUpdate`, turning refs into handles or batch rows.
 4. Replace `<Canvas>` with `<FourView>`.
-5. Route events: mesh events become `obj.on(...)` (0.2) in the sketch plus `page.post` to React.
-6. Replace `<Html>` elements with tracked labels (0.2), rendered by React on the page.
+5. Route events: mesh events become `obj.on(...)` in the sketch plus `page.post` to React.
+6. Replace `<Html>` elements with tracked labels, rendered by React on the page.
 7. Compare parity images per camera view, then measure performance (`references/verification.md`).

@@ -8,7 +8,7 @@ summary: "Generators of common shapes; extra shapes in @null3d/geometry; meshes 
 
 # Geometry
 
-> Roadmap step 0.1, first released in null3D 0.1.0. Step 0.2 adds integer attributes, joints and weights, morph targets, the `@null3d/geometry` package, vertex updates and the levels of detail that meshes made in code plan. The API is experimental, so it can still change between versions. Not built yet: a call that skins a mesh you build. So joints and weights do not move its vertices yet. Coding agents must not use it.
+> Roadmap step 0.1, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. No call skins a mesh that you build, so its joints and weights do not move its vertices.
 
 ```mermaid
 flowchart LR
@@ -115,7 +115,7 @@ The arrays follow these rules:
 
 - `positions` is required. Give `normals`, or set `computeNormals: true`.
 - `indices` takes a `Uint16Array`, a `Uint32Array` or an array of numbers, with three indices per triangle. Without indices, each three vertices in a row make one triangle.
-- `joints` and `weights` come together. A mesh keeps them for [skinning](animation.md#skinned-meshes). No call skins a mesh that you build yet, so it draws in the pose that its positions give.
+- `joints` and `weights` come together. A mesh keeps them for [skinning](animation.md#skinned-meshes). A mesh that you build draws in the pose that its positions give.
 - `targets` takes floats only, and a mesh takes it or `morphTargets`, never both: the two share one vertex record.
 - A triangle's front face has its vertices in counter-clockwise order.
 - Each array's length must fit the vertex count, and its type must be one that its attribute takes. Each index must name a vertex, and each value must be a finite number. Otherwise the call throws [E1206](../errors/E1206.md).

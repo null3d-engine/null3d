@@ -70,7 +70,7 @@ No preset switches views off or lowers their count. On a phone, keep a picture i
 
 A view draws no object whose material shows a render pass's texture, since a pass cannot read a target that another pass draws into. Keep such objects in the camera's view, or show the pass's texture on a screen in the world instead.
 
-`camera.screenToRay` and `camera.worldToScreen` map the whole canvas, with the shape of the canvas. They do not read a view's rectangle, so a ray through a point of a view's image does not follow that view's camera. They take no view, and picking inside a view's rectangle is not supported yet.
+`camera.screenToRay` and `camera.worldToScreen` map the whole canvas, with the shape of the canvas. They do not read a view's rectangle, so a ray through a point of a view's image does not follow that view's camera. They take no view, so picking inside a view's rectangle does not work.
 
 A scene and its passes share 32 views, the camera's included. Reflection probes take six while they capture. `scene.createView` throws E1501 when no view is free, and the same error names the limit when a frame draws too many.
 

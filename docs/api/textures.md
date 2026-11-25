@@ -8,7 +8,7 @@ summary: "loadTexture options; KTX2 files; fromData; fromImageBitmap; fromCanvas
 
 # Textures
 
-> Roadmap step 0.1, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. Step 0.2 adds `textures.fromPass` and `textures.fromCanvas`, and step 0.3 adds `textures.fromVideo`. Materials cannot sample a cube map yet, so coding agents must not try. A cube map can be a background: [Assets](assets.md) loads one with `assets.loadCubemap`.
+> Roadmap step 0.1, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. Materials do not sample cube maps. A cube map can be a background: [Assets](assets.md) loads one with `assets.loadCubemap`.
 
 ```mermaid
 flowchart LR
@@ -190,7 +190,7 @@ Data of the wrong length or type for the size and format throws E1208. Data text
 
 ## Textures of render passes
 
-`textures.fromPass(pass)` returns the texture that a scene pass of `render.addPass` draws into (0.2). Materials and sprites take it as a map.
+`textures.fromPass(pass)` returns the texture that a scene pass of `render.addPass` draws into. Materials and sprites take it as a map.
 
 ```ts
 const map = render.addPass({ kind: 'scene', camera: mapCamera, writes: 'minimap', size: [256, 256] });
