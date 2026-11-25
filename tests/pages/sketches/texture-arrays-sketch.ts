@@ -6,10 +6,13 @@
 // the frames that upload the new objects' tables are done. Until every image is on the GPU, it
 // sends `frame` each frame with the frame's number since the start, the textures it made, the
 // textures that wait for uploads and the bytes that the frame before uploaded, so a run that stalls
-// shows where. Once every image is on the GPU, it sends the page `loaded` with its settings, the
-// frames it took, the most bytes that any frame uploaded, the GPU memory of the textures, and the
-// bytes of one texture. The scene keeps the whole canvas, so a slow GPU's frames do not lower the
-// render scale of the image that the test compares.
+// shows where. Once every image is on the GPU and every pipeline that the scene needs is built,
+// it sends the page `loaded` with its settings, the frames it took, the most bytes that any frame
+// uploaded, the GPU memory of the textures, and the bytes of one texture. The page then measures
+// steady play, which builds no pipeline. On CI's software GPU, WebGPU pipelines build for seconds
+// after the images land, and the browser stalls the frames while the last of them build: the page
+// drawing on the main thread got 2 to 4 frame callbacks in 2 to 4 s (CI run 45615589974). The scene keeps the whole canvas,
+// so a slow GPU's frames do not lower the render scale of the image that the test compares.
 import { defineSketch, type MeshArrays, type Texture } from '@null3d/engine';
 
 /** The bytes that one frame may upload: half of one image. */
@@ -90,7 +93,7 @@ export default defineSketch(async (ctx) => {
 			page.post('frame', [frames, made.length, uploads.waiting, uploads.lastFrameBytes]);
 			if (made.length === COUNT && uploads.waiting === 0) {
 				loaded = true;
-				page.post('loaded', {
+				const stats = {
 					budget: UPLOAD_BUDGET,
 					count: COUNT,
 					size: SIZE,
@@ -98,7 +101,8 @@ export default defineSketch(async (ctx) => {
 					largestFrameBytes: uploads.largestFrameBytes,
 					memoryBytes: textures.memoryBytes,
 					textureBytes: (made[0] as Texture).bytes,
-				});
+				};
+				void scene.warmUp().then(() => page.post('loaded', stats));
 			}
 		},
 	};
