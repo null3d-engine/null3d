@@ -1550,8 +1550,8 @@ describe('materials.shader', () => {
 		expect(unused.message).toStartWith(
 			"E1217: materials.shader() got the scene input 'sceneDepth', but its WGSL never calls sceneDepth or sceneDistance.",
 		);
-		// A material that reads the depth keeps seven of the maps' eight slots, so the copy fits
-		// the fragment stage beside them.
+		// A material that reads the depth takes at most the 6 textures that the shader compiler gives
+		// every custom material.
 		const two = [
 			{ name: 'foam', offset: 0 },
 			{ name: 'mirror', offset: 1 },
@@ -1561,16 +1561,16 @@ describe('materials.shader', () => {
 			sceneInputs: ['sceneDepth'],
 			textures: { foam: layered(1), mirror: layered(2) },
 		});
-		const eight = Array.from({ length: 8 }, (_, slot) => ({ name: `map${slot}`, offset: slot }));
+		const seven = Array.from({ length: 7 }, (_, slot) => ({ name: `map${slot}`, offset: slot }));
 		const textured = thrown(() =>
 			materials.shader({
-				wgsl: { ...compiledMaterial([], eight), sceneDepth: true },
+				wgsl: { ...compiledMaterial([], seven), sceneDepth: true },
 				sceneInputs: ['sceneDepth'],
-				textures: Object.fromEntries(eight.map(({ name }) => [name, layered(1)])),
+				textures: Object.fromEntries(seven.map(({ name }) => [name, layered(1)])),
 			}),
 		);
 		expect(textured.message).toStartWith(
-			"E1217: materials.shader() got WGSL that reads the scene's depth and declares 8 textures.",
+			"E1217: materials.shader() got WGSL that reads the scene's depth and declares 7 textures.",
 		);
 		expect(textured.message).toContain('Drop 1 of the textures');
 	});

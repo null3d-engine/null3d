@@ -4261,8 +4261,9 @@ export class Scene implements ViewHolder {
 	}
 
 	/**
-	 * @internal Every live object, in the order of their slots. The inspector lists the scene with
-	 * it; a frame never calls it.
+	 * Every object of the scene that is not destroyed, in the order of their slots, as a new array.
+	 * The in-page inspector lists the scene with it. It walks the whole scene and allocates, so call
+	 * it from tools and setup code, never in every frame.
 	 */
 	listObjects(): Object3D[] {
 		const objects: Object3D[] = [];
@@ -5151,7 +5152,8 @@ export class Scene implements ViewHolder {
 	 * A draw that has a custom material and a vertex count but no mesh data: its shader makes every
 	 * vertex of every copy from `@builtin(vertex_index)` and `@builtin(instance_index)`, so a draw
 	 * of 50,000 rain streaks uploads nothing in a frame. The draw's object gives its place, its
-	 * layers and the sphere that culls it, and the material's values move its shapes.
+	 * layers and the sphere that culls it. The engine writes no uniforms for its WGSL, so
+	 * `frame.time` moves its shapes.
 	 *
 	 * The draw blends, so it draws in the transparent pass. The options take every option of
 	 * `materials.shader` but the maps: a draw's WGSL declares no texture. The draw's culling sphere
@@ -5776,8 +5778,9 @@ export class Scene implements ViewHolder {
 	 * Fog over every object, by each object's straight-line distance from the camera along a curve:
 	 * exponential by default, exponential squared or linear. The fog can thin with height and glow
 	 * toward the main directional light. With `volumetric`, the sun and the point and spot lights
-	 * light the fog through their shadows. Null removes the fog. The background takes no fog, and a
-	 * material created with `fog: false` keeps its color. Throws E1108 for an unknown curve or a
+	 * light the fog through their shadows. Null removes the fog. The background takes the share of
+	 * the fog that `background` gives, none by default, and a material created with `fog: false`
+	 * keeps its color. Throws E1108 for an unknown curve or a
 	 * value out of its range, and E1203 for a value that is not finite. The call allocates nothing,
 	 * so a sketch can change the fog in every frame.
 	 */

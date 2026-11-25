@@ -55,8 +55,8 @@ export interface SplitToningSettings {
 }
 
 /**
- * The grading controls that `post.set` takes: white balance, then lift, gamma and gain on each
- * channel, then saturation, then split toning. A job worker bakes them into a table of 32 texels a
+ * The grading controls that `post.set` takes: white balance, then saturation, then lift, gamma
+ * and gain on each channel, then split toning. A job worker bakes them into a table of 32 texels a
  * side, which the final pass reads on every GPU path. A setting that a call leaves out keeps its
  * value; `false` turns the grading off.
  *

@@ -258,8 +258,8 @@ export interface EngineOptions {
 	 * shaded once, for its nearest surface. It saves GPU time in scenes where objects hide many
 	 * others and shading costs much, and costs a second pass over the objects' vertices. Without
 	 * it, the quality preset decides: every preset draws the prepass on WebGL2, and none on WebGPU.
-	 * The prepass stays fixed while the engine runs, and the `?prepass=on` or `?prepass=off`
-	 * switch wins over this option. Another value fails with E1213.
+	 * A sketch can change it during play with `quality.set`, and the `?prepass=on` or
+	 * `?prepass=off` switch wins over this option. Another value fails with E1213.
 	 */
 	depthPrepass?: boolean;
 	/**
@@ -793,8 +793,9 @@ export interface Engine {
 	 * Runs an inspection call against the live scene, for the in-page inspector and the MCP server:
 	 * `objects`, `object`, `setObject`, `setMaterial`, `stats`, `errors`, `graph`, `setQuality`,
 	 * `highlight` and `info`, with the arguments that [Debugging](../../guides/debugging.md#the-in-page-inspector)
-	 * lists. The call runs between frames, in the sketch worker, and its value is JSON-safe. The
-	 * method exists only in a development build, which is the build that carries the channel; a
+	 * lists. The call runs between frames, in the thread that runs the sketch, and its value is
+	 * JSON-safe. The page answers `capture` itself, with `{ png, bytes }`: the PNG image of the next
+	 * frame as base64 text, and its size in bytes. The method exists only in a development build, which is the build that carries the channel; a
 	 * release build leaves it out, so code that uses it must check for it first.
 	 */
 	inspect?(call: string, args?: unknown): Promise<unknown>;
