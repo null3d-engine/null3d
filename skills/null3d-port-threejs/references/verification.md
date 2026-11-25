@@ -90,6 +90,8 @@ bunx @null3d/cli shot --page '/?view=hero-closeup' --time 1.5 --size 800x450 --g
 
 Match the original's settings: the same tone mapping and a pixel ratio of 1. `post.set({ toneMapping: 'none' })` matches an original with `NoToneMapping`. `createEngine({ antialias: 'none' })` matches an original without anti-aliasing.
 
+A port of an app or a game also needs its browser tests. They start the real page, wait for a hook, drive the page and check its state. The null3d-develop skill's `references/e2e-testing.md` gives the setup.
+
 ## 4. Tolerances
 
 | Scene content | Suggested tolerance | Why |

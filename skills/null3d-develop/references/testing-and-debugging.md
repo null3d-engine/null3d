@@ -90,6 +90,7 @@ Test logic in three ways:
 - Drive the sketch with a timed script: `bunx @null3d/cli shot --script` and a `test` entry that gives `script` put keys, pointer events and property writes at exact sketch times, and each `shot` step draws that state (`cli/null3d`, "Timed scripts"). This is the way to draw a state that input causes.
 - Keep game rules in plain modules that take numbers and arrays and import nothing from the engine, and test them with `bun test`. The sketch calls them from `onUpdate` or `onFixedUpdate`.
 - Put a scene into a state for an image test through the sketch module's address, such as `sketch.ts?score=90`, and check the held frame. A hold without a script gives the sketch no input.
+- Test a whole app or game in a browser suite that starts the real page, waits for a hook and asserts its state: `references/e2e-testing.md`.
 
 Before you believe a picture that judges a change, prove the page read the change:
 

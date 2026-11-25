@@ -85,7 +85,7 @@ export default defineSketch(({ scene, geometry, materials }) => {
 3. Make the change in small steps. Scene logic and the scene's sounds go in `sketch.ts`; DOM, HTML UI and the audio's start go in `page.ts`.
 4. Look at the result. `bunx vite` serves the project, and the null3D Vite plugin adds the right headers. `bunx @null3d/cli shot --out shot.png` renders one frame headless. Open the image: code that compiles can still draw nothing. Read `references/testing-and-debugging.md` before trusting a picture.
 5. Check the cost of a production build with `bunx @null3d/cli bench`, or `await engine.measure(5)` on it. Compare the frame phases with the preset's budget (`references/performance.md`).
-6. Add or update a test. Anything visual gets a hold-mode image test in `null3d.json` (`references/testing-and-debugging.md`). Run `bunx @null3d/cli test`, and open each failed image.
+6. Add or update a test. Anything visual gets a hold-mode image test in `null3d.json` (`references/testing-and-debugging.md`). Run `bunx @null3d/cli test`, and open each failed image. An app or a game also gets a browser suite that drives the real page (`references/e2e-testing.md`).
 7. If the change touches rendering, check the WebGL2 path: add `?gpu=webgl2` to the dev URL, or run `bunx @null3d/cli test --gpu webgl2`.
 8. Summarize what changed, how you verified it (images, numbers), and the limits: the engine limits that you worked around, and the devices not tested.
 
@@ -240,7 +240,7 @@ rings.set({ roughness: 0.2 }); // the standard values, which defaultSurface read
 
 ## 8. When something goes wrong
 
-Most faults come from a page that is not cross-origin isolated, an object changed without a setter, the wrong texture color space, allocations in per-frame code, or a pipeline built during play. `references/testing-and-debugging.md` section 7 pairs every symptom with its cause and fix. Section 7 lists the error codes, and section 9 is the release checklist. An `EngineError` names its fix, then the docs page `errors/<code>`.
+Most faults come from a page that is not cross-origin isolated, an object changed without a setter, the wrong texture color space, allocations in per-frame code, or a pipeline built during play. `references/testing-and-debugging.md` section 7 pairs every symptom with its cause and fix. Section 6 lists the error codes, and section 8 is the release checklist. An `EngineError` names its fix, then the docs page `errors/<code>`. A browser test that passes on one machine and fails on another has a usual cause. It waits with a fixed sleep, compares screenshots, reads an unseeded random number, or meets another checkout's server (`references/e2e-testing.md`, section 7).
 
 ## 9. References in this skill
 
@@ -251,6 +251,7 @@ Read these when needed:
 - `references/performance.md`: budgets, measuring, symptom-to-fix tables, phone rules, slow first loads, staged loading, caching across visits and a review order.
 - `references/shaders.md`: the surface-function contract, built-in values, uniforms and textures, portable WGSL rules, custom post effects and custom passes.
 - `references/testing-and-debugging.md`: `bunx @null3d/cli test`, image tests, testing on devices, error codes and a troubleshooting table.
+- `references/e2e-testing.md`: a browser suite for a whole app or game. Playwright and its pinned Chromium, the real page, readiness, a test hook, state hashes, determinism and CI.
 - `references/content-pages.md`: product and marketing pages with a 3D scene: scroll-driven cameras, caching and crashes.
 
 ## 10. Before you finish
@@ -260,6 +261,7 @@ Read these when needed:
 - DOM, HTML UI and the audio's start are in `page.ts`.
 - You looked at a rendered image from `bunx @null3d/cli shot` or the dev server, not only at build output.
 - `bunx @null3d/cli test` passes, including a new or updated image test for visual changes.
+- An app's browser suite passes on the dev server and on the production build. It waits for a hook, never a fixed sleep, and it asserts state, not screenshots (`references/e2e-testing.md`).
 - For rendering changes, the WebGL2 path renders too.
 - Performance was checked against the preset budget for the target devices.
 - Before a release, also work through "Before you ship" in `references/testing-and-debugging.md`.
