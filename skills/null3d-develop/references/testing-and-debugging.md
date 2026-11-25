@@ -212,7 +212,7 @@ E1203: setPosition() got NaN for x on "Player" (slot 12). Check the value comput
 
 Each code has a docs page, such as `errors/E1203`, with the full explanation. Release builds remove most checks, so reproduce problems in a development build. Use the dev server, or the CDN build's `lib-dev/index.js` for a page with no bundler.
 
-## 7. Troubleshooting table
+## 8. Troubleshooting table
 
 | Symptom | Likely cause | Fix | Docs |
 | --- | --- | --- | --- |
@@ -262,7 +262,7 @@ Each code has a docs page, such as `errors/E1203`, with the full explanation. Re
 | E1432 at the start of a sketch that imports an add-on | The add-on and the engine are at different versions, and each add-on pins the engine version it was built for | `bunx @null3d/cli upgrade`, then `bun install`, so every null3D package takes one version | `errors/E1432`, `cli/null3d` |
 | E1433 at the start of a sketch that imports an add-on from another developer | The add-on declares a plugin interface range that this engine's interface is outside | Install the add-on release that matches the engine's plugin interface, or run the engine version that the add-on declares | `errors/E1433`, `api/engine` |
 
-## 8. Before you ship
+## 9. Before you ship
 
 Work through this list before a release, on the production build (`bunx vite build`, then `bunx vite preview`), not the dev server.
 
