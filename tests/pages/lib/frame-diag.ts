@@ -137,3 +137,51 @@ export function frameReport(from: number): string {
 		`counters (time:published/taken/presented/built) ${counterRows}`,
 	].join('; ');
 }
+
+/**
+ * Every wait for a frame of at least `least` ms over the whole run, once the thread that draws took
+ * its first frame, each with what the page met in it, and when the pipeline builds started and
+ * ended.
+ */
+export function longWaits(least: number): string {
+	const takes: number[] = [];
+	let taken = 0;
+	for (const [time, , frame] of counters) {
+		if (frame !== taken && frame > 0) takes.push(time);
+		taken = frame;
+	}
+	const found: string[] = [];
+	for (let k = 1; k < takes.length; k++) {
+		const start = takes[k - 1] as number;
+		const end = takes[k] as number;
+		if (end - start < least) continue;
+		const inGap = (time: number) => time > start && time < end;
+		const frame = counters.find(([time]) => time >= start)?.[2] ?? -1;
+		const longestCallbackGap = callbacks.reduce(
+			(longest, time, j) =>
+				j > 0 && inGap(time) ? Math.max(longest, time - (callbacks[j - 1] as number)) : longest,
+			0,
+		);
+		const open = waits.filter(
+			([asked, settled]) => asked <= start && (settled < 0 || settled > start),
+		);
+		found.push(
+			`${ms(end - start)} ms after frame ${frame} (${ms(start)} to ${ms(end)}): ` +
+				`${callbacks.filter(inGap).length} callbacks (longest gap ${ms(longestCallbackGap)}), ` +
+				`${submits.filter(inGap).length} submits, ${waits.filter(([, settled]) => inGap(settled)).length} completions, ` +
+				`${open.length} queue waits open at its start, ` +
+				`${builds.filter(([, done]) => inGap(done)).length} builds ended in it, ` +
+				`${builds.filter(([begun, done]) => begun <= start && (done < 0 || done >= end)).length} builds over all of it`,
+		);
+	}
+	const first = Math.min(...builds.map(([begun]) => begun));
+	const last = Math.max(-1, ...builds.map(([, done]) => done));
+	const ends = builds
+		.map(([, done]) => done)
+		.filter((done) => done >= 0)
+		.sort((a, b) => a - b);
+	return (
+		`builds ${builds.length} from ${ms(first)} to ${ms(last)}, ends ${ends.map(ms).join(',')}; ` +
+		`first take ${ms(takes[0] ?? -1)}; waits of ${least} ms or more: ${found.length > 0 ? found.join(' | ') : 'none'}`
+	);
+}

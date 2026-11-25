@@ -10,7 +10,7 @@
 import { createEngine } from '@null3d/engine';
 import { watchEngine } from './lib/engine-watch';
 // TEMPORARY DIAGNOSTIC: what the thread that draws met once the textures loaded.
-import { frameReport } from './lib/frame-diag';
+import { frameReport, longWaits } from './lib/frame-diag';
 import { progress, run, toBase64 } from './lib/result';
 
 /** What the sketch sends once every image is on the GPU. */
@@ -72,7 +72,7 @@ run('texture-arrays', async () => {
 	// uniforms and tables, and on a device that draws directly, each visible object's instance.
 	const steadyFrom = performance.now();
 	const steady = await engine.measure(MEASURE_SECONDS);
-	const diag = frameReport(steadyFrom);
+	const diag = `${frameReport(steadyFrom)}; loaded at ${Math.round(steadyFrom)}; over the run: ${longWaits(300)}`;
 	(window as unknown as { __textureArraysDiag?: string }).__textureArraysDiag = diag;
 	if (steady.uploadBytes.count === 0) {
 		progress(`diag: ${diag}`);
