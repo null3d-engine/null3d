@@ -9,6 +9,8 @@
 // sketch and the engine's frame counters in its trail, so a run that stalls shows where it stopped.
 import { createEngine } from '@null3d/engine';
 import { watchEngine } from './lib/engine-watch';
+// TEMPORARY DIAGNOSTIC: what the thread that draws met once the textures loaded.
+import { frameReport } from './lib/frame-diag';
 import { progress, run, toBase64 } from './lib/result';
 
 /** What the sketch sends once every image is on the GPU. */
@@ -68,8 +70,14 @@ run('texture-arrays', async () => {
 	progress('measured');
 	// With every image on the GPU, a frame uploads only the scene's own per-frame data: its
 	// uniforms and tables, and on a device that draws directly, each visible object's instance.
+	const steadyFrom = performance.now();
 	const steady = await engine.measure(MEASURE_SECONDS);
-	if (steady.uploadBytes.count === 0) throw new Error('no frame drew once the textures loaded');
+	const diag = frameReport(steadyFrom);
+	(window as unknown as { __textureArraysDiag?: string }).__textureArraysDiag = diag;
+	if (steady.uploadBytes.count === 0) {
+		progress(`diag: ${diag}`);
+		throw new Error('no frame drew once the textures loaded');
+	}
 	progress(`measured the loaded scene: ${steady.uploadBytes.max} bytes a frame at most`);
 	const capture = await engine.captureFrame();
 	progress('frame captured');
@@ -86,6 +94,7 @@ run('texture-arrays', async () => {
 	const imageBytes = stats.count * stats.size * stats.size * 4;
 	const otherUploads = steady.uploadBytes.max + LANDED_ROW_BYTES;
 	return {
+		diag,
 		tier: engine.capabilities.tier,
 		mode: engine.mode,
 		directDraws,
