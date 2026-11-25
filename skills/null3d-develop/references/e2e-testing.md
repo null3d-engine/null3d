@@ -115,14 +115,16 @@ Object.defineProperty(window, '__app', {
 });
 ```
 
-The spec opens the page with `?gpu=webgl2`. The CI build reads that switch only with the plugin's `urlSwitches` on, so the config turns it on for the suite's build alone:
+The spec opens the page with `?gpu=webgl2`. The CI build reads that switch only with the plugin's `urlSwitches` on, so the config turns it on for the suite's build alone. The other builds leave the option out, because an explicit `false` turns the switches off on the dev server too. Then `bunx @null3d/cli test`, `shot` and `bench` cannot set them:
 
 ```ts
 // vite.config.ts
 import { defineConfig } from 'vite';
 import null3d from '@null3d/vite-plugin';
 
-export default defineConfig({ plugins: [null3d({ urlSwitches: process.env.NULL3D_E2E === '1' })] });
+export default defineConfig({
+  plugins: [null3d(process.env.NULL3D_E2E === '1' ? { urlSwitches: true } : {})],
+});
 ```
 
 `playwright.config.ts` starts the app on its own port: the production build in CI, the dev server elsewhere.

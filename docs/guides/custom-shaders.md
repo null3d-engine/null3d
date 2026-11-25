@@ -138,7 +138,7 @@ The plugin puts the compiled shader where the literal was. Your code therefore r
 
 The plugin compiles these kinds of WGSL:
 
-- WGSL without entry points that declares `fn surface`, `fn vertexOffset`, `fn lobe` or `fn unlit` is a custom material's WGSL. The plugin builds it into the standard material's shader, once for each of that shader's variants.
+- WGSL without entry points that declares `fn surface`, `fn vertexOffset`, `fn lobe`, `fn coverage` or `fn unlit` is a custom material's WGSL. The plugin builds it into the standard material's shader, once for each of that shader's variants.
 - WGSL without entry points that declares `fn effect` or `fn toneCurve` is a [custom effect or tone curve](custom-passes.md#custom-effects). The plugin builds it into every variant of its template.
 - WGSL without entry points that declares `fn skyLayer` is a [sky layer](../api/scene.md#sky-layers). The plugin builds it into the engine's sky-layer template.
 - WGSL whose `@vertex` entry point takes an `InstanceIn` is a [full shader](#full-shaders) of a custom material. The plugin builds it for WebGPU, and for WebGL2 with and without multi-draw.

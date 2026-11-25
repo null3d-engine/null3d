@@ -44,7 +44,7 @@ This page goes through each three.js material, then the texture settings, then f
 | `blending` | `blending: 'normal'`, `'additive'` or `'multiply'`, with `alphaMode: 'blend'` | Subtractive and custom blending have no equivalent. |
 | `vertexColors`, `flatShading`, `wireframe`, `fog` | The same names | Fixed when you create the material. `wireframeLinewidth` has no effect. |
 | `toneMapped: false` | `toneMapped: false` | The material keeps its color as the display shows it. |
-| `clippingPlanes` | A surface function with `alphaMode: 'mask'` | The recipe below cuts a mesh at a plane. Its shadow is cut at the plane too, as three.js does with `clipShadows: true`. |
+| `clippingPlanes` | A surface function with `alphaMode: 'mask'` | The recipe below cuts a mesh at a plane. Its shadow is cut at the plane too, as three.js does with `clipShadows: true`. three.js's default is `clipShadows: false`: for it, also declare `fn coverage(input: SurfaceInput) -> f32` and return `1.0`, so the whole shadow stays. |
 | `dithering`, `precision`, `shadowSide` | Nothing | The final pass always dithers. |
 
 The engine blends in linear color, as three.js's `WebGPURenderer` does. `WebGLRenderer` blends after tone mapping, so see-through surfaces look a little lighter in null3D.
@@ -83,7 +83,7 @@ Both become `materials.standard` with `metalness: 0`. The standard material keep
 
 ## MeshToonMaterial and MeshMatcapMaterial
 
-Both become custom materials, as the recipes below show. A surface function cannot read the scene's lights, so the toon recipe takes the light's direction as a uniform. For a toon look that follows every light and its shadows, step the light in a lobe function instead. The engine calls `fn lobe(input: LobeInput) -> vec3f` for the main directional light and for each point and spot light. It gets the light's direction and its shadowed irradiance, and its color adds to that light's specular ([Surface functions](../shaders/surface-functions.md#a-materials-own-lobe)). The matcap recipe looks up a texture by the normal in view space. It is an unlit function, so it ignores the scene's lights, as three.js's matcap does.
+Both become custom materials, as the recipes below show. A surface function cannot read the scene's lights, so the toon recipe takes the light's direction as a uniform. For a toon look that follows every light and its shadows, step the light in a lobe function instead. The engine calls `fn lobe(input: LobeInput) -> vec3f` for the main directional light and for each point and spot light. It gets the light's direction and its shadowed irradiance, and its color adds to that light's specular ([Surface functions](../shaders/surface-functions.md#a-materials-own-lobe)). The base lighting stays beside it, so set `s.baseColor` to black and `s.roughness` to 1, as the toon recipe does. The engine calls no lobe for the fill directional lights and the area lights, so the bands do not follow them. The matcap recipe looks up a texture by the normal in view space. It is an unlit function, so it ignores the scene's lights, as three.js's matcap does.
 
 ## Other materials
 

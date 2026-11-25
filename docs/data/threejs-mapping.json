@@ -361,8 +361,8 @@
       "three": "object.traverse / getObjectByName / children",
       "status": "changed",
       "since": "0.1",
-      "target": "scene.find(name) for getObjectByName; your own arrays of objects instead of traverse and children",
-      "notes": "scene.find returns the first object created with the name, from an index. No call walks an object's children, so keep the objects you need in arrays at setup time.",
+      "target": "scene.find(name) for getObjectByName; scene.listObjects() at setup, or your own arrays of objects, instead of traverse and children",
+      "notes": "scene.find returns the first object created with the name, from an index. scene.listObjects() returns every object of the scene as a new array, and getParent() returns an object's parent. scene.listObjects walks the whole scene and allocates, so call it at setup, never in every frame. No call returns an object's children, so keep the objects you need in arrays at setup time.",
       "docs": "api/objects",
       "detect": "\\.traverse(Visible|Ancestors)?\\s*\\(|getObjectBy(Name|Id|Property)\\s*\\("
     },
@@ -967,7 +967,7 @@
       "status": "manual",
       "since": "0.1",
       "target": "materials.shader({ wgsl, uniforms }) with a toon surface function",
-      "notes": "A surface function cannot read the scene's lights. Pass the light direction as a uniform, step the light into bands, and return the result as emissive. A lobe function, fn lobe(input: LobeInput) -> vec3f, does read each light. The engine calls it for the main directional light and for each point and spot light, with the light's direction and its shadowed irradiance. It adds the color that the lobe returns to that light's specular, so bands made there follow every such light and its shadows.",
+      "notes": "A surface function cannot read the scene's lights. Pass the light direction as a uniform, step the light into bands, and return the result as emissive. A lobe function, fn lobe(input: LobeInput) -> vec3f, does read each light. The engine calls it for the main directional light and for each point and spot light, with the light's direction and its shadowed irradiance. It adds the lobe's color to that light's specular, beside the base lighting. So bands made there follow every such light and its shadows. Set the surface's baseColor to black and its roughness to 1, as the uniform recipe does, so the base lighting adds little beside the bands. The engine calls no lobe for the fill directional lights and the area lights, so the bands do not follow them.",
       "docs": "shaders/surface-functions",
       "detect": "\\bMeshToonMaterial\\b"
     },
@@ -977,7 +977,7 @@
       "three": "MeshNormalMaterial / MeshDepthMaterial / MeshDistanceMaterial / MeshMatcapMaterial",
       "status": "changed",
       "since": "0.1",
-      "target": "debug.view('normals' | 'depth') for debugging; matcap is a surface-function recipe",
+      "target": "debug.view('normals' | 'depth') for debugging; matcap is a recipe with an unlit function, fn unlit",
       "notes": "debug.view shades the whole scene, in development builds only. Its normals are in world space, where MeshNormalMaterial's are in view space. Its depth is white at the near plane, on a logarithmic scale for a perspective camera.",
       "docs": "api/debug",
       "detect": "\\bMesh(Normal|Depth|Distance|Matcap)Material\\b"
@@ -988,8 +988,8 @@
       "three": "ShaderMaterial / RawShaderMaterial (GLSL)",
       "status": "manual",
       "since": "0.1",
-      "target": "materials.shader({ wgsl, uniforms, textures }) with a WGSL surface function, or a full WGSL shader",
-      "notes": "Rewrite in WGSL, in one literal tagged /* wgsl */. Prefer a surface function, so lighting, shadows, fog and instancing keep working. The built-ins that ShaderMaterial adds have WGSL names of their own (see the ShaderMaterial built-ins entry). Declare the uniforms once, as struct Uniforms. Updates such as material.uniforms.uSpeed.value = 2 become material.set({ speed: 2 }), and the type check rejects a name that struct Uniforms lacks. A sampler2D uniform becomes var name: texture_2d<f32>; in the WGSL and an entry of the textures option, sampled with textureSample(name, nameSampler, uv). Textures are fixed when the material is created. Full shaders take no textures.",
+      "target": "materials.shader({ wgsl, uniforms, textures }) with a WGSL surface function, an unlit function (fn unlit), or a full WGSL shader",
+      "notes": "Rewrite in WGSL, in one literal tagged /* wgsl */. Prefer a surface function, so lighting, shadows, fog and instancing keep working. A shader that ignores the lights becomes an unlit function, fn unlit, which keeps the uniforms, the textures and the fog. The built-ins that ShaderMaterial adds have WGSL names of their own (see the ShaderMaterial built-ins entry). Declare the uniforms once, as struct Uniforms. Updates such as material.uniforms.uSpeed.value = 2 become material.set({ speed: 2 }), and the type check rejects a name that struct Uniforms lacks. A sampler2D uniform becomes var name: texture_2d<f32>; in the WGSL and an entry of the textures option, sampled with textureSample(name, nameSampler, uv). Textures are fixed when the material is created. Full shaders take no textures.",
       "docs": "shaders/surface-functions",
       "detect": "\\b(Raw)?ShaderMaterial\\b"
     },
@@ -1198,7 +1198,7 @@
       "status": "manual",
       "since": "0.1",
       "target": "A surface function with alphaMode 'mask' that sets alpha to 0 beyond the plane, using input.worldPosition",
-      "notes": "Pass the plane as a vec4f uniform. The shadow is cut at the plane too, as three.js does with clipShadows: true. A masked material's shadow caster runs the alpha that its surface function sets.",
+      "notes": "Pass the plane as a vec4f uniform. The shadow is cut at the plane too, as three.js does with clipShadows: true. A masked material's shadow caster runs the alpha that its surface function sets. three.js's default is clipShadows: false, which keeps the whole shadow. For that, also declare fn coverage(input: SurfaceInput) -> f32 and return 1.0: the shadow caster then tests the coverage in place of the alpha.",
       "docs": "shaders/surface-functions",
       "detect": "clippingPlanes|localClippingEnabled|clipIntersection"
     },

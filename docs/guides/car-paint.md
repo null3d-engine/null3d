@@ -117,5 +117,5 @@ plain metallic paint.
 - [Surface functions](../shaders/surface-functions.md): the surface record that the paint returns.
 - [A material's own lobe](../shaders/surface-functions.md#a-materials-own-lobe): the hook that the
   glints use.
-- [The Showroom demo](https://github.com/null3d-engine/null3d/tree/main/examples/coat-and-sheen): a
+- [The Showroom to street demo](https://github.com/null3d-engine/null3d/tree/main/examples/showroom): a
   car that uses the paint.

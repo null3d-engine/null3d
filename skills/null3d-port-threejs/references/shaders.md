@@ -111,7 +111,7 @@ These exist now: the surface input's `relativePosition`, `worldPosition`, `norma
 
 A `RawShaderMaterial` adds nothing automatically, so all its matrices and attributes are explicit; the same steps apply.
 
-A shader whose look the engine's lighting cannot give, such as a hologram, becomes a full shader. It has one `@vertex` entry point that takes an `InstanceIn`, and one `@fragment` entry point. It finds its instance with `find_instance` from `null3d::mesh`, places vertices with `clip_position`, and writes its linear color through `finish` (null3d-develop `references/shaders.md`, section 5). Uniforms and standard values do not reach a full shader, so port its uniforms as constants, or keep the look in a surface function.
+A shader that ignores the lights, such as a hologram, becomes an unlit function, `fn unlit` (section 1). It reads the uniforms, the textures and the built-in values such as `frame.time`, as a surface function does. Only a shader that needs a vertex stage of its own, which `vertexOffset` cannot give, becomes a full shader. It has one `@vertex` entry point that takes an `InstanceIn`, and one `@fragment` entry point. It finds its instance with `find_instance` from `null3d::mesh`, places vertices with `clip_position`, and writes its linear color through `finish` (null3d-develop `references/shaders.md`, section 5). Uniforms and standard values do not reach a full shader, so port its uniforms as constants.
 
 ## 6. onBeforeCompile patterns
 
@@ -149,7 +149,8 @@ Keep the original's standard options (color, roughness, metalness, emissive) on 
 | `Fn(() => { ... })`, `If`, `Loop`, `.toVar()` | `fn`, `if`, `for`, `var` |
 | `material.colorNode`, `opacityNode`, `roughnessNode`, `metalnessNode`, `normalNode`, `emissiveNode`, `aoNode` | `s.baseColor`, `s.alpha`, `s.roughness`, `s.metalness`, `s.normal`, `s.emissive`, `s.occlusion` |
 | `material.positionNode` | `vertexOffset` returning `newPosition - input.position` |
-| `material.fragmentNode`, `outputNode`, `mrtNode` | Full shader; a post-processing `outputNode` becomes a post effect (`post.addEffect`); `mrtNode` has no equivalent |
+| `material.fragmentNode` | Unlit function, `fn unlit`, which returns the color with no lighting |
+| `material.outputNode`, `mrtNode` | Full shader; a post-processing `outputNode` becomes a post effect (`post.addEffect`); `mrtNode` has no equivalent |
 
 On an `InstancedMesh`, three.js r186 applies the instance matrix before `positionNode` runs, so `positionLocal` there already holds the instanced vertex. In null3D, `input.position` is always the mesh's own vertex, and the engine applies the instance transform after `vertexOffset`. A displacement that three.js scaled by that `positionLocal` changes size after the port. Write it from `input.position` and the instance's own data, and check the project's three.js version before you port a `positionNode`.
 

@@ -25,11 +25,11 @@ Some null3D packages ship code from other projects, as the original file or as a
 | `@null3d/grass` | None, its own code | None | `lib/index.js` | None |
 | `@null3d/impostors` | None, its own code | None | `lib/index.js` | None |
 | `@null3d/particles` | None, its own code | None | `lib/index.js` | None |
-| `@null3d/sound` | None, its own code | None | `lib/index.js`, `lib/page.js` | None |
-| `@null3d/splats` | None, its own code, which reads Niantic's published SPZ format | None | `lib/index.js` | None |
-| `@null3d/terrain` | None, its own code | None | `lib/index.js` | None |
+| `@null3d/sound` | The Rust core library and libm 0.2.16 in its mixer, beside its own code | MIT | `dist/sound.wasm` | `THIRD-PARTY-NOTICES.txt` |
+| `@null3d/splats` | The Rust core library and libm 0.2.16 in its selection, beside its own code, which reads Niantic's published SPZ format | MIT | `dist/splats.wasm` | `THIRD-PARTY-NOTICES.txt` |
+| `@null3d/terrain` | The Rust core library and libm 0.2.16 in its builder, beside its own code | MIT | `dist/terrain.wasm` | `THIRD-PARTY-NOTICES.txt` |
 | `@null3d/water` | None, its own code | None | `lib/index.js` | None |
-| `@null3d/wind` | None, its own code | None | `lib/index.js` | None |
+| `@null3d/wind` | The Rust standard library in its field module, beside its own code | MIT | `dist/wind.wasm` | `THIRD-PARTY-NOTICES.txt` |
 
 The null3D packages themselves are offered under the MIT License or the Apache License 2.0. A production build writes the notices of every package that a page ships into `null3d-third-party-notices.txt`.
 
@@ -51,7 +51,7 @@ The null3D packages themselves are offered under the MIT License or the Apache L
 | TinyEXR and OpenEXR, whose code the EXR decoders follow | BSD 3-Clause | `panorama-worker.js` |
 | Linearly transformed cosines, the area light tables | BSD 3-Clause | `vendor/ltc` |
 | SMAA, the subpixel morphological anti-aliasing that smooths the moment transparency layer's edges | MIT | the renderer's moment layer tables and shaders |
-| The Rust crates of the core: the standard library, wasm-bindgen, bumpalo, cfg-if, once_cell and dlmalloc | MIT or Apache License 2.0 | `dist/wasm` |
+| The Rust crates of the core: the standard library, wasm-bindgen, cfg-if, once_cell and dlmalloc | MIT or Apache License 2.0 | `dist/wasm` |
 
 The full texts are in the engine's `THIRD-PARTY-NOTICES.txt`.
 

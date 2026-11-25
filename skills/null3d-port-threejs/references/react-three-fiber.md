@@ -186,7 +186,7 @@ quality.setBudget({
   name: 'sparks',
   ms: 1,                                       // the sparks' time per frame at full quality
   min: 0.5,                                    // never fewer than half
-  onScale: (scale) => {                        // called at once, then after each governor step
+  onScale: (scale) => {                        // called at once, then whenever the governor moves the scale
     sparkScale = scale;
     sparks.setActiveCount(sparkCount());
   },

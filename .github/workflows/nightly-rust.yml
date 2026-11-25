@@ -16,11 +16,15 @@ env:
 
 jobs:
   newest-nightly:
-    # The tests run as CI's rust-tests jobs run them: the test that builds every shader in a job of
-    # its own beside every other test, and every failure reported.
+    # Two parts, with every failure reported: every other test in one job, and the test that builds
+    # every shader in a job of its own. CI splits both: its rust-tests jobs share the other tests in
+    # six parts and run only that test's determinism check, and its shader-compiler job builds
+    # every shader in shards. Here the whole shader build, with every check, runs in one job.
     name: newest-nightly (${{ matrix.part }})
     runs-on: ubuntu-latest
-    # Every CI job should take at most 15 minutes. These stop where CI's rust-tests parts stop.
+    # Every CI job should take at most 15 minutes. The other tests stop where each of CI's
+    # rust-tests parts stops, at 35 minutes. The whole shader build has no shards here, so it has
+    # 135 minutes.
     timeout-minutes: ${{ matrix.limit }}
     strategy:
       fail-fast: false

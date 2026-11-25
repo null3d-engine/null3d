@@ -247,7 +247,7 @@ function pipelinesOf(
 	if (entries.length === 0) {
 		return problem(
 			0,
-			`the WGSL has no entry point and no function of a custom material, effect or sky layer. For a custom material, declare \`fn surface(input: SurfaceInput) -> Surface\`, \`fn vertexOffset(input: VertexInput) -> vec3f\`, \`fn lobe(input: LobeInput) -> vec3f\`, \`fn coverage(input: SurfaceInput) -> f32\`, or some of them. For an effect, declare \`fn effect(input: EffectInput) -> vec4f\`, for a tone curve \`fn toneCurve(color: vec3f) -> vec3f\`, and for a sky layer \`fn skyLayer(input: SkyLayerInput) -> SkyLayer\`. For a shader of your own, give it a \`@vertex\` and a \`@fragment\` entry point, or a \`@compute\` one. ${hint}`,
+			`the WGSL has no entry point and no function of a custom material, effect or sky layer. For a custom material, declare \`fn surface(input: SurfaceInput) -> Surface\`, \`fn vertexOffset(input: VertexInput) -> vec3f\`, \`fn lobe(input: LobeInput) -> vec3f\`, \`fn coverage(input: SurfaceInput) -> f32\`, or some of them. For a surface that shows its own color with no light, declare \`fn unlit(input: SurfaceInput) -> vec4f\` in place of \`surface\`. For an effect, declare \`fn effect(input: EffectInput) -> vec4f\`, for a tone curve \`fn toneCurve(color: vec3f) -> vec3f\`, and for a sky layer \`fn skyLayer(input: SkyLayerInput) -> SkyLayer\`. For a shader of your own, give it a \`@vertex\` and a \`@fragment\` entry point, or a \`@compute\` one. ${hint}`,
 		);
 	}
 	if (secondVertex) {

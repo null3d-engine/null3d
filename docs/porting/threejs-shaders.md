@@ -155,7 +155,8 @@ Keep the original material's standard values on the new material. `materials.sha
 | `Fn`, `If`, `Loop`, `.toVar()` | `fn`, `if`, `for`, `var` |
 | `colorNode`, `opacityNode`, `roughnessNode`, `metalnessNode`, `normalNode`, `emissiveNode`, `aoNode` | `s.baseColor`, `s.alpha`, `s.roughness`, `s.metalness`, `s.normal`, `s.emissive`, `s.occlusion` |
 | `positionNode` | `vertexOffset`, which returns `newPosition - input.position` |
-| `fragmentNode`, `outputNode` | A full shader, or a post effect for a post-processing `outputNode` |
+| `fragmentNode` | An unlit function, `fn unlit`, which returns the color with no lighting |
+| `outputNode` | A full shader, or a post effect for a post-processing `outputNode` |
 | `mrtNode` | No equivalent |
 
 On an `InstancedMesh`, three.js applies the instance matrix before `positionNode` runs, so `positionLocal` there holds the instanced vertex. In null3D, `input.position` is always the mesh's own vertex, and the engine applies the row's transform after `vertexOffset`. Write such a displacement from `input.position` and the row's own data.

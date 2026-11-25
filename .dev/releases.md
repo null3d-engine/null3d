@@ -193,7 +193,7 @@ If item 1 or item 3 fails, feature work stops. Fix the cause, then run the gate 
 
 Item 6's release step makes no release. It prints the version that a `minor` release would take, 0.1.0, and it passes only while no docs page with `since: "0.1"` is still `planned`.
 
-Step `images-swiftshader` reads the gate commit's CI browser jobs, the shard jobs and the city job, which draw the manifest on Linux SwiftShader. It does not draw the SwiftShader pictures again on the Mac, whose text rasterisation and speed differ from CI's machines ([D-238](decisions/D-238-gate-pictures-from-ci.md)). It fails when the commit has no CI run from a push or a run started by hand. It fails too when any of those jobs did not pass. Start a full CI run by hand on a branch before the gate. The step's log holds the run's jobs.
+Step `images-swiftshader` reads the gate commit's CI browser jobs, the shard jobs, the heavy-test jobs and the city job, which draw the manifest on Linux SwiftShader. It does not draw the SwiftShader pictures again on the Mac, whose text rasterisation and speed differ from CI's machines ([D-238](decisions/D-238-gate-pictures-from-ci.md)). It fails when the commit has no CI run from a push or a run started by hand. It fails too when any of those jobs did not pass. Start a full CI run by hand on a branch before the gate. The step's log holds the run's jobs.
 
 The iPad's S4 run is judged at its Low preset, by the owner's decision (#215).
 

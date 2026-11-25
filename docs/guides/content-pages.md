@@ -64,7 +64,7 @@ Decide how long a visitor waits for the scene, and count it from the moment the 
 - Keep the waiting state short. Largest Contentful Paint, the time until the largest content appears, should come within 2.5 seconds. Measure your own cold load on a slow connection before you pick a deadline.
 - Never hide the page's text while the scene loads. Where a rule must hide content, put it inside `@media (scripting: enabled)`, so a page without JavaScript still shows everything.
 - Show no loading indicator for the first half second or so. A fast load then never flashes one.
-- Never let a progress value move back. Keep the largest value shown so far.
+- Within a phase, never let a progress value move back. Keep the largest value shown so far in that phase. When a new phase starts, name it beside its number ([Loading screens](loading-screens.md#show-progress-on-the-page)).
 - Reveal the canvas only when `engine.firstFrame` resolves. Before that, it shows nothing. It rejects when drawing stops before the first frame, and the page then keeps its poster.
 - Chromium browsers report `navigator.connection.saveData`. When it is true, go straight to the late state.
 

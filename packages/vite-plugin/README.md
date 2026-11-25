@@ -64,7 +64,9 @@ null3d({ https: true, certDir: 'certs', assets: { lod: true, maxTextureSize: 102
 - `assets` takes the asset tool's options for `?optimized` models, such as `lod`, `simplify` and
   `maxTextureSize`.
 - `urlSwitches` lets the page's address set the engine's test switches, such as `?gpu=`, in a
-  production build too. It is off by default, so a link cannot change how a shipped game runs.
+  production build too. Leave it out for a shipped game. Development builds then read the
+  switches and production builds do not, so a link cannot change how the game runs. An explicit
+  `false` turns them off in every build, the dev server's and the `null3d` command's included.
 
 ## Costs and limits
 

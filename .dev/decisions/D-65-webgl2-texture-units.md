@@ -1,6 +1,6 @@
 # D-65: WebGL2 texture units: the standard material keeps 4 free
 
-Status: decided by the owner. Built with M2-J7: [D-89](D-89-webgl2-texture-units.md) packs the maps, and the stage reads 12 of its 16 units. Task: M2-N1.
+Status: decided by the owner. Built with M2-J7: [D-89](D-89-webgl2-texture-units.md) packs the maps, and the stage reads 12 of its 16 units. The unit test now keeps 3 units free in each stage. A stage that samples the opaque color's copy ([D-122](D-122-transmission.md), [D-134](D-134-screen-space-reflections.md)) or the probes' maps ([D-149](D-149-reflection-probes.md)) keeps one fewer for each. Task: M2-N1.
 
 Summary: With one unit per map, the standard material's busiest WebGL2 fragment build reads all 16 guaranteed texture units once M2-E2 and M2-J5 add theirs. M2-J7 packs its maps, so the stage uses at most 12 and keeps 4 free.
 

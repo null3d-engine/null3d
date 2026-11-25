@@ -57,6 +57,7 @@ The folder must not exist, or it must be empty. A folder with files stays as it 
 | `vite.config.ts` | Vite with the null3D plugin, which sends the headers that the workers need. |
 | `tsconfig.json` | The TypeScript settings that `bunx @null3d/cli test` checks the project with. |
 | `package.json` | The project's name, scripts and packages. Every `@null3d/*` package takes one version. |
+| `.gitignore` | The folders that git skips: `node_modules/`, `dist/`, `test-results/` and `.vite/`. |
 | `AGENTS.md` | The rules for an AI agent that works in the project. |
 | `.agent/agent-hook.mjs` | The hook that checks the rules before each command and each edit. |
 | `.claude/settings.json` | The Claude Code settings that run the hook. |

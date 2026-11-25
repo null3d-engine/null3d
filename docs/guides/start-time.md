@@ -66,9 +66,9 @@ Over HTTP/1.1:
 | Small demo, cold | 4.6 s | 2.9 s | 4.2 and 3.5 |
 | Skyway, cold | 5.7 s | 3.5 s | 7.0 and 5.7 |
 | Island, cold | 8.9 s | 7.6 s | 11.5 and 7.9 |
-| Garden, cold | 25.7 s | 4.3 s | 3.9 and 4.2 |
+| Creek, cold | 25.7 s | 4.3 s | 3.9 and 4.2 |
 | Island, reload | 4.7 s | 2.2 s | 3.9 and 4.1 |
-| Garden, reload | 2.6 s | 1.3 s | 9.6 and 4.2 |
+| Creek, reload | 2.6 s | 1.3 s | 9.6 and 4.2 |
 
 Over HTTP/2:
 
@@ -77,15 +77,15 @@ Over HTTP/2:
 | Small demo, cold | 4.5 s | 2.7 s | 13.7 and 10.7 |
 | Skyway, cold | 5.3 s | 2.8 s | 3.5 and 3.3 |
 | Island, cold | 10.2 s | 7.0 s | 4.4 and 3.1 |
-| Garden, cold | 27.7 s | 3.3 s | 9.4 and 4.3 |
+| Creek, cold | 27.7 s | 3.3 s | 9.4 and 4.3 |
 | Island, reload | 3.9 s | 2.4 s | 3.8 and 5.1 |
-| Garden, reload | 2.3 s | 0.9 s | 3.3 and 2.7 |
+| Creek, reload | 2.3 s | 0.9 s | 3.3 and 2.7 |
 
 ### On real phones
 
 The same demos also ran on real phones, over a tunnel of about 105 ms for each round trip and 1 to 60 Mbit/s. Before the changes, a first visit drew its first frame in these times:
 
-| Device | Small demo | Skyway | Island | Garden |
+| Device | Small demo | Skyway | Island | Creek |
 | --- | --- | --- | --- | --- |
 | Galaxy S25, Chrome | 4.7 s | 7.8 s | 13.4 s | 25.1 s |
 | Pixel 9, Chrome | 6.5 s | 10.3 s | 18.8 s | 38.8 s |
@@ -96,7 +96,7 @@ Safari on the iPhone 17 kept the files and its compiled shaders between visits. 
 
 With the changes, on the same devices, a first visit in a fresh session drew its first frame in these times. The tunnel ran at about 100 ms for each round trip and 4 to 9 Mbit/s:
 
-| Device | Small demo | Skyway | Island | Garden |
+| Device | Small demo | Skyway | Island | Creek |
 | --- | --- | --- | --- | --- |
 | Galaxy S25, Chrome | 3.5 to 7.3 s | 5.7 s | 8.1 s | 5.7 s |
 | Pixel 9, Chrome | 4.0 s | 6.5 s | 13.4 s | 8.7 s |
@@ -251,7 +251,7 @@ On a slow tablet the check can take many seconds, as each lighter preset builds 
 
 Building the first frame's pipelines is the largest processor cost of a start on a phone. Each pipeline is one compile on the device's GPU driver. The demos built these pipelines for their first frame, on a first visit:
 
-| Device | Small demo | Skyway | Island | Garden |
+| Device | Small demo | Skyway | Island | Creek |
 | --- | --- | --- | --- | --- |
 | Galaxy S25 | 0.4 s | 1.8 s | 4.1 s | 5.4 s |
 | Pixel 9 | 0.9 s | 3.1 s | 6.0 s | 6.7 s |
@@ -276,7 +276,7 @@ These figures run from the setup's end to the first frame:
 | Island, Galaxy S25, first visit | 5.79 s | 3.77 s |
 | Island, Galaxy S25, repeat visit | 3.81 s | 1.56 s |
 | Skyway, Galaxy S25, repeat visit | 2.29 s | about 1.5 s |
-| Garden, Galaxy S25, repeat visit | 4.78 s | about 3.0 s |
+| Creek, Galaxy S25, repeat visit | 4.78 s | about 3.0 s |
 | Island, Galaxy Tab A9 Plus, repeat visit | 23.6 s | 8.8 to 11.2 s |
 
 ## Cache for offline play after the first frame

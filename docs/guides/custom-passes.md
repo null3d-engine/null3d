@@ -71,6 +71,7 @@ The effect can also call these functions:
 | --- | --- |
 | `effectColor(uv: vec2f) -> vec4f` | The image's color at `uv`, read with a linear filter. Places outside the image read its edge. |
 | `effectPixel(pixel: vec2i) -> vec4f` | The color of one pixel, counted from the top left. A pixel outside the image reads the nearest one inside. |
+| `effectBloom(uv: vec2f) -> vec3f` | The glow at `uv` of the bloom chain's level that the effect's `bloomLevel` names, as linear HDR color. A level that the chain does not draw reads black ([Custom effects](../api/post.md#custom-effects)). |
 | `effectDepth(uv: vec2f) -> f32` | The scene's depth at `uv`: 1 at the camera's near plane, 0 at its far plane, and 0 where nothing drew. |
 | `effectViewPosition(uv: vec2f) -> vec3f` | The position of the surface at `uv` in view space. Its z is negative in front of the camera. |
 | `effectDistance(uv: vec2f) -> f32` | How far in front of the camera the surface at `uv` lies, in world units. |

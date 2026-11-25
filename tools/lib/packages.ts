@@ -143,7 +143,7 @@ export const PACKAGES: Readonly<Record<string, PackageBuild>> = {
 		compile: true,
 		shaders: false,
 		docs: false,
-		required: ['dist/terrain.wasm'],
+		required: ['dist/terrain.wasm', 'THIRD-PARTY-NOTICES.txt'],
 		repositoryOnly: ['reference-builder.ts', 'quadtree.ts', 'chunk-vertices.ts'],
 	},
 	// Its tone curves and outline passes compile from .wgsl files into modules of their own.
@@ -159,7 +159,7 @@ export const PACKAGES: Readonly<Record<string, PackageBuild>> = {
 		compile: true,
 		shaders: false,
 		docs: false,
-		required: ['dist/splats.wasm'],
+		required: ['dist/splats.wasm', 'THIRD-PARTY-NOTICES.txt'],
 	},
 	// Its blade material and its blade-list pass compile from .wgsl files into modules of their own.
 	grass: {
@@ -181,7 +181,7 @@ export const PACKAGES: Readonly<Record<string, PackageBuild>> = {
 		compile: true,
 		shaders: false,
 		docs: false,
-		required: ['shaders/field.wgsl'],
+		required: ['shaders/field.wgsl', 'THIRD-PARTY-NOTICES.txt'],
 		wasm: ['dist/wind.wasm'],
 	},
 	// Its mixer goes beside its page entry: the worklet module that the page loads into the audio
@@ -190,7 +190,7 @@ export const PACKAGES: Readonly<Record<string, PackageBuild>> = {
 		compile: true,
 		shaders: false,
 		docs: false,
-		required: ['lib/page.js', 'lib/mixer-worklet.js', 'dist/sound.wasm'],
+		required: ['lib/page.js', 'lib/mixer-worklet.js', 'dist/sound.wasm', 'THIRD-PARTY-NOTICES.txt'],
 	},
 	cli: {
 		compile: false,

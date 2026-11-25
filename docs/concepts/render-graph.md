@@ -43,6 +43,7 @@ In the diagram, boxes are passes and cylinders are data. An arrow into a pass sh
 | Light clustering | Compute, on WebGPU only | The point and spot lights of the camera's view and of each scene pass that sees one, and the depth range that the light depth pass measured | The list of lights of each cluster of each view, and the fitted slice bounds in its header |
 | Light depth | Compute, on WebGPU only, while the camera sees a local light | The camera view's scene depth | The nearest and farthest depth that the next frame's light clustering fits its slices to |
 | Culling | Compute, one pass per view (the camera's, and each shadow cascade's and tile's), on WebGPU only | The world matrix and bounds of every object and instance | The view's visible instances and draw counts |
+| Skinning | Compute, on WebGPU only, while the scene has meshes that the vertex shaders do not skin, such as morphed meshes | The meshes' vertices, joints and morph weights | A buffer of skinned vertices, which the shadow and scene passes draw |
 | Shadow | Scene, one pass per shadow cascade and per tile of the shadow atlas, in the frames in which it draws | The visible casters of its view | Its layer of the shadow map or of the shadow atlas |
 | Depth prepass | Scene, one pass per view, with the `depthPrepass` setting | The view's visible instances | The scene depth |
 | Opaque | Scene, one pass per view | The view's visible instances (on WebGPU), the lights of each cluster, and the shadow map and atlas | The scene color and depth |
@@ -50,6 +51,7 @@ In the diagram, boxes are passes and cylinders are data. An arrow into a pass sh
 | Depth pyramid | Compute, one pass per camera view, on WebGPU with the `gpuOcclusion` setting | The occluders' depth | The view's depth pyramid |
 | Late culling | Compute, one pass per camera view, on WebGPU with the `gpuOcclusion` setting | The world matrix and bounds of every object, and the depth pyramid | The view's visible instances and draw counts |
 | Debug lines | Scene, in development builds, in frames with debug drawing | The frame's lines | The scene color and depth |
+| Transmission copy | Fullscreen, one pass for the camera, while a surface lets light through, or screen-space reflections or the bounce light are on | The scene color and depth as the opaque pass leaves them | A copy of the opaque color, with blurred levels |
 | Transparent | Scene, one pass per view, on while some object blends | The view's blended objects, sorted back to front on the job workers | The scene color and depth |
 | Depth copy | Fullscreen, one pass for the camera, while a custom material reads the scene's depth or a soft particle fades near it | The opaque scene depth | A copy of it, one texel for each pixel |
 | Motion culling | Compute, on WebGPU only, while a pass reads the motion vectors | The world matrix of every opaque object and instance in this frame and the last | The instances that moved, with both matrices |
@@ -60,10 +62,10 @@ In the diagram, boxes are passes and cylinders are data. An arrow into a pass sh
 | Copy | Fullscreen, one per scene pass, on WebGPU only | The scene pass's image | Its texture, with the rows turned around |
 | A sketch's full-screen pass | Fullscreen, one per `render.addPass({ kind: 'fullscreen' })` | Its input image, the scene depth if its WGSL reads it, and the textures of other passes that it reads | Its texture, which the graph keeps between frames |
 | A sketch's compute pass | Compute, one per `render.addPass({ kind: 'compute' })` | The textures of other passes that it reads | Its texture, a storage texture that the pass writes and that the graph keeps between frames |
-| Resolve | Resolve, on the 8-bit path with MSAA, while the render scale cannot drop below 1 | The scene color | The canvas |
-| Final pass | Fullscreen, on the HDR path, with FXAA or no anti-aliasing, and while the render scale can drop below 1 | The scene color | The canvas |
+| Resolve | Resolve, on the 8-bit path with MSAA, while the render scale cannot drop below 1 and no effect needs the final pass | The scene color | The canvas |
+| Final pass | Fullscreen, on the HDR path, with FXAA or no anti-aliasing, while the render scale can drop below 1, and while an effect needs it | The scene color | The canvas |
 
-The table lists the core passes. Each effect adds passes of its own while it is on. These are ambient occlusion, screen-space reflections, the bounce light, decals, TAA and the transparency layers. So are subsurface scattering, volumetric fog, custom effects, depth of field, bloom, automatic exposure, outlines and the still accumulation. The pick pass runs when a page asks what is under a pixel. [The post-processing chain](post-processing.md) describes most of them, and `render.dumpGraph()` lists every pass of a frame.
+The table lists the core passes. Each effect adds passes of its own while it is on. These are ambient occlusion, screen-space reflections, the bounce light, decals and the transparency layers. So are subsurface scattering, volumetric fog, custom effects, depth of field, bloom, automatic exposure, outlines and the still accumulation. The pick pass runs when a page asks what is under a pixel. [The post-processing chain](post-processing.md) describes most of them, and `render.dumpGraph()` lists every pass of a frame.
 
 On WebGL2 the job workers cull the objects and list the lights of each cluster before the frame draws. So the graph has no compute passes there. A shadow pass draws its casters' depth from the light. The opaque pass reads that depth, so every shadow pass runs before it. [Shadows](shadows.md) says when each cascade and each tile draws.
 
@@ -75,7 +77,7 @@ A view is the scene seen from one camera, culled on its own. On WebGPU each view
 
 A full-screen pass that a sketch adds is a view without a camera. It draws one triangle over its texture, and its shader writes the rows bottom first on both paths, so it needs no copy. A pass that reads only other passes' textures runs before the passes that read its own. A pass that reads the scene color, the outline mask or the scene depth runs after the camera's passes, so the camera's passes do not read its texture in the same frame: a material that shows it shows the frame before. A custom effect that reads it runs after it. A compute pass that a sketch adds is a view without a camera too. Its shader writes its texture as a storage texture. A material, an effect or another pass samples that texture in the same frame, because the graph orders the pass before them. A custom material's vertex offset that reads it also draws it in the material's shadow, motion and pick passes, so the graph orders the pass before those too.
 
-Where the scene draws HDR color, the final pass reads it and draws the canvas. It applies the exposure and the tone mapping, and encodes the color for the display. In the FXAA anti-aliasing mode it also smooths the edges. Some devices cannot draw float targets in the anti-aliasing mode. There the scene shaders tone map their own output into an 8-bit target. With MSAA the resolve pass then runs instead of the final pass. It draws nothing: the scene's render pass resolves its multisampled color straight into the canvas. The frame then needs no extra pass, copy or texture. With FXAA or none, the final pass reads the 8-bit target and keeps its colors. [Color management](color-management.md) covers both paths.
+Where the scene draws HDR color, the final pass reads it and draws the canvas. It applies the exposure and the tone mapping, and encodes the color for the display. In the FXAA anti-aliasing mode it also smooths the edges. Some devices cannot draw float targets in the anti-aliasing mode. There the scene shaders tone map their own output into an 8-bit target. With MSAA the resolve pass then runs instead of the final pass, while no effect needs the final pass ([Color management](color-management.md#the-8-bit-path) lists them). It draws nothing: the scene's render pass resolves its multisampled color straight into the canvas. The frame then needs no extra pass, copy or texture. With FXAA or none, the final pass reads the 8-bit target and keeps its colors. [Color management](color-management.md) covers both paths.
 
 ## Scene inputs
 
@@ -86,9 +88,9 @@ A custom material or an add-on feature can read scene resources that the frame m
 | `'sceneColor'` | The scene's color before the tone curve | The camera's opaque and transparent passes |
 | `'sceneDepth'` | The scene's depth | The camera's opaque pass |
 | `'normals'` | The surface normals | No pass makes them |
-| `'motionVectors'` | How far each pixel's surface moved since the last frame | The motion pass, while a reader wants it |
+| `'motionVectors'` | How far each pixel's surface moved since the last frame | The motion pass, while the motion debug view shows it |
 
-A feature declares the inputs in its `reads` ([Add-on feature descriptions](../api/features.md#scene-resources)). The render graph then runs it after the passes that write them. A custom material declares `sceneInputs: ['sceneDepth']` and reads the depth with `sceneDepth` or `sceneDistance` ([Materials](../api/materials.md#the-scene-behind-a-surface)).
+A feature declares the inputs in its `reads` ([Add-on feature descriptions](../api/features.md#scene-resources)). The render graph then runs it after the passes that write them. A full-screen effect reads only `'sceneColor'` and `'sceneDepth'`, and a custom material reads only `'sceneDepth'`. No pass makes `'normals'`, and the adapters refuse `'motionVectors'`. A custom material declares `sceneInputs: ['sceneDepth']` and reads the depth with `sceneDepth` or `sceneDistance` ([Materials](../api/materials.md#the-scene-behind-a-surface)).
 
 A blended material that reads the depth binds a copy of it, one texel for each pixel. The frame makes the copy after the opaque pass and before the transparent pass, so the material never samples the depth target that its own pass writes. While the copy does not exist, a draw binds one texel at the far plane and reads 0:
 

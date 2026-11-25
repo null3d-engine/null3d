@@ -377,6 +377,7 @@ Both commits held the screen's rate, so the fix's extra shadow reads fit in the 
 
 The archive also keeps runs that compare no engine with three.js. Their records hold the figures that the guides and decision records cite.
 
+- Job worker runs (`-jobs`): each null3D page's figures at each job worker count.
 - Comparisons of two builds (`-compare`): each page's medians in both builds, the change, the verdict, and each run.
 - Sweeps (`-sweep`): one run of each page at each object count. [D-06](decisions/D-06-success-targets.md#faster-than-threejs-in-every-kind-of-scene) gives their tables.
 - Scale searches (`-scale`): the counts that each three.js renderer held, step by step.
@@ -386,7 +387,7 @@ The archive also keeps runs that compare no engine with three.js. Their records 
 
 ## Add a run
 
-After every benchmark, comparison, sweep, scale, governor, soak, startup or gate run, archive it and add its rows here:
+After every benchmark, job worker, comparison, sweep, scale, governor, soak, startup or gate run, archive it and add its rows here:
 
 1. Run `bun run bench:archive <run folder or run name>`. It writes `bench/results/<run>.json` and prints the run's rows, by table.
 2. Paste the rows into the tables above, in date order. Add a note where a figure needs one, such as heat or a known fault.

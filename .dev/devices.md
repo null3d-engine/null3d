@@ -449,8 +449,11 @@ The `physical-sky` plan measures what the physical sky costs, for [D-143](decisi
 - Each page sets `?target-fps=1`, so the quality governor holds the whole render scale and each
   preset's own cost shows. Without it, the governor lowers the scale under a heavy scene and the
   figures mix the preset with the scale it chose.
-- Creek at Low on WebGPU stalls an Apple device's page after its first frame. Those pages are left
-  out of runs on the iPhone and the iPad ([Driver bug reports](driver-bugs.md)).
+- Creek at Low on WebGPU stalls an Apple device's page after its first frame. The plan itself
+  leaves no page out. To leave that page out on the iPhone and the iPad, pass the other items to
+  the runner's `--only`, after `--`. This command lists them:
+  `bun -e "import { vegetationPlan } from './tests/lib/plans'; console.log(vegetationPlan().map((i) => i.id).filter((id) => id !== 'vegetation-creek-low-webgpu').join(','))"`.
+  Then run `bun run devices:cloud --only bsiphone17-safari,bsipadpro13-safari --plan vegetation -- --only <ids>`.
 - Run the vegetation plan on the cloud iPhone, the iPad, an S24-class phone and a low-end Android tablet:
   `bun run devices:cloud --only bsiphone17-safari,bsipadpro13-safari,bsgalaxys24-chrome,bsgalaxytaba9plus-chrome --plan vegetation`.
 - The `splats` plan also runs each GPU path at a quarter of the cloud's splat count, at the same
@@ -650,11 +653,15 @@ Each line comes from the comment above the plan's function in `tests/lib/plans.t
 - `reflection-motion`: the ocean's pages time the water's reflection while the camera moves, against the same page held still. At Low the reflection draws every second frame at rest and every frame in motion, so the pair prices that draw.
 - `ao-calls` and `ao-calls-sync`: the `ao` plan's pages with the call profile of the thread that draws (`gltiming`), and with `gl-timing=sync` as well, for a run that diagnoses the cost.
 - `fills-cost`: one more directional light on each GPU path. The page times one fewer fill light and the next one in turns, at counts of 2 to 4. [D-270](decisions/D-270-multiple-directional-lights.md) records the figures.
+- `cluster-cost`: a tree of cluster patches. The cluster-cost page's heightfield is timed at three camera distances on one GPU path. The figures show the saving that coarse patches make and the cost of the pass that picks them. [D-213](decisions/D-213-cluster-levels.md) records the results.
+- `lod-cost`: what the levels of a dense forest save. The lod-cost page draws 40,000 pines of four levels each, at Low and High. It times every tree at its base mesh and at its own level in turns. The page also reports each side's memory. [D-137](decisions/D-137-lod-groups.md) records the results.
+- `two-step`: the sharpening's sketch with `?two-step=report`, a page that logs the two-step pass's answers, the browser and the WebGL2 path's compile state. One page holds the image test's frame, and one plays live. A run names the browsers to compare. It times nothing.
 - `history-cost`: a compute pass's history. The compute-state page runs a 256 by 256 pass of 40 steps a frame for three seconds, then three seconds with the pass off.
 - `showroom-shadow`: the Showroom at Low four times, twice with Low's two cascades at 1024 and twice with Medium's three at 2048. The pair separates the shadow map's sampling from the rest of Low's frame.
 - `wind-reader-cost`: one more texture read for each vertex of a flag and a water surface. Each reader draws with the wind field's read and without it, on every GPU path.
+- `wind-stress`: a field of cards that reads the wind, at each preset on core WebGPU. The load is off, then on until the frame-budget governor steps, then off again. The page reports the governor's steps, the wind's settings, whether the cards still move, and the instance limit that its load had to fit. Nothing judges the figures.
 - `vegetation-grass`: the grass on one hill at each preset that a GPU path draws, with and without the view cull and the far share. The page reports the GPU time, its passes where the device times them, the CPU time and the draw calls.
-- `webgpu-stall`: one page for the bisect of the Creek stall on Apple WebGPU, Creek at Low on core WebGPU. Its switches name what to measure and which shared effects to turn off.
+- `webgpu-stall`: the pages for the bisect of the Creek stall on Apple WebGPU. Creek runs at Low, Medium and High on core WebGPU, and at Low in compatibility mode. Each page sets `target-fps=1`, `seconds=5` and `grown`. A page's time limit is 240 s, so a page that stalls ends its session sooner than a vegetation page does at 900 s.
 - `compare-bench`: the comparisons with three.js, one engine for each page at a fixed count. Every page runs twice, so the session's first, cold page does not decide a pair.
 - `compare-effects`: the Battle scene with its effects off one at a time, to name the pass that costs the most on the device.
 

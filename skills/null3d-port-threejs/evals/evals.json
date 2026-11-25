@@ -15,7 +15,7 @@
         "InstancedMesh with setMatrixAt and a dummy Object3D becomes scene.createInstances with direct writes to positions",
         "The per-frame new THREE.Vector3 allocation is removed",
         "ACESFilmicToneMapping becomes toneMapping 'aces' in post.set, and UnrealBloomPass becomes post.set with bloom, marked as 0.2",
-        "The water ShaderMaterial becomes a WGSL surface function, not GLSL",
+        "The water ShaderMaterial becomes WGSL, an unlit function (fn unlit) or a surface function, not GLSL",
         "Raycasting uses camera.screenToRay with scene.raycast, or object click events, marked as 0.2",
         "CSS2DRenderer becomes ui.trackLabel with engine.labels.bind, marked as 0.2",
         "The DRACOLoader setup is deleted, since assets.loadGltf reads Draco files, and the model is converted with bunx @null3d/cli assets optimize, marked as 0.2",
@@ -40,11 +40,11 @@
     {
       "id": 3,
       "prompt": "Convert this three.js ShaderMaterial to null3d: evals/files/wave-shader.js",
-      "expected_output": "A materials.shader with one WGSL literal that holds a vertexOffset for the wave and a surface function for the color and fresnel, uniforms declared as struct Uniforms and given in the uniforms option, time from frame.time, and notes on color output and bounds.",
+      "expected_output": "A materials.shader with one WGSL literal that holds a vertexOffset for the wave and an unlit function (fn unlit), or a surface function, for the color and fresnel, uniforms declared as struct Uniforms and given in the uniforms option, time from frame.time, and notes on color output and bounds.",
       "files": ["evals/files/wave-shader.js"],
       "expectations": [
         "The vertex displacement becomes a vertexOffset function returning only the offset",
-        "The fragment logic becomes a surface function using input.normal and input.viewDirection",
+        "The fragment logic becomes an unlit function (fn unlit), or a surface function, using input.normal and input.viewDirection",
         "uTime is replaced by frame.time, and uColor and uAmplitude become entries in uniforms",
         "The height used for coloring is recomputed or derived in the surface stage, since custom varyings do not exist",
         "Notes that the original wrote colors without color-space conversion, and handles the difference",

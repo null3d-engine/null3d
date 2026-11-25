@@ -315,7 +315,7 @@ A phone cost is a published figure unless it says "estimate".
 | --- | --- | --- | --- |
 | A bake on WebGPU compute: a progressive path tracer | No complete version in the three.js world | Seconds to a minute; desktop first | Core, beside the ray-cast bake of [D-146](decisions/D-146-light-probe-grid.md), with the reflection probes' capture |
 | Smoke lit from six baked directions; ribbons | Cheap on phones | Very small (estimate) | The particles add-on, with no ruling yet. Collision with the depth buffer is out, because the add-on has no simulation pass ([D-131](decisions/D-131-particles.md)) |
-| Per-pixel linked lists on desktops | Exact order where layers overlap, past what moment transparency gives | Not measured | No ruling yet |
+| Per-pixel linked lists on desktops | Exact order where layers overlap, past what moment transparency gives | Not measured | [D-150](decisions/D-150-weighted-blended-transparency.md) rejected them as the method for every path, because compatibility mode and WebGL2 lack fragment storage and atomics. A desktop tier has no ruling yet |
 
 After 1.0 come OpenPBR, once glTF and MaterialX carry it, and distance-field shadows, behind a hook that lets an add-on own the shadow term. Hair comes as a content pack, and WebXR as its own milestone ([D-179](decisions/D-179-technique-rulings.md) rulings 20 and 28).
 

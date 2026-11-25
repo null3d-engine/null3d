@@ -35,12 +35,12 @@ Do not draw a three.js canvas over the null3D canvas to keep one effect. Two GPU
 
 | three.js | In null3D | Workaround |
 | --- | --- | --- |
-| `MeshToonMaterial` | Surface functions cannot read the scene's lights | Pass the light's direction as a uniform, step the light into bands, and return it as emissive. Or step each light in a lobe function, which reads the light's direction and its shadowed irradiance ([Porting materials and textures](threejs-materials.md)) |
+| `MeshToonMaterial` | Surface functions cannot read the scene's lights | Pass the light's direction as a uniform, step the light into bands, and return it as emissive. Or step each light in a lobe function, which reads the light's direction and its shadowed irradiance. The lobe adds to the base lighting, so set the base color to black and the roughness to 1. The engine calls no lobe for fill directional lights and area lights ([Porting materials and textures](threejs-materials.md)) |
 | Standard maps on a `ShaderMaterial` | A custom material takes no standard maps, such as `map` or `normalMap` | Declare up to 6 textures in the WGSL, and pass them with the `textures` option ([Porting shaders](threejs-shaders.md)) |
 | `onBeforeCompile` shader chunks | The engine has no shader chunks to patch | A surface function or a vertex offset function |
 | `material.alphaMap` | No separate alpha map | Copy the map's green channel into the base color map's alpha |
 | `PointsMaterial.alphaMap` | No alpha map on points | Put the alpha in the points' `map` |
-| Clipping planes | No clipping planes | A surface function with `alphaMode: 'mask'`. Its shadow is cut at the plane too |
+| Clipping planes | No clipping planes | A surface function with `alphaMode: 'mask'`. Its shadow is cut at the plane too. For three.js's default, `clipShadows: false`, also declare `fn coverage` and return `1.0`, so the whole shadow stays |
 
 ## Objects and scenes
 

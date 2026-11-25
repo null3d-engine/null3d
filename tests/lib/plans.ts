@@ -2373,9 +2373,10 @@ export function islandPhonesPlan(): PlanItem<Check>[] {
 }
 
 /**
- * One page for the bisect of the Creek stall on Apple WebGPU: Creek at Low on core WebGPU, with the
- * page's own switches naming what to measure and which shared effects to turn off. The time limit is
- * short, so a page that stalls ends its session instead of holding it for the full limit.
+ * The pages for the bisect of the Creek stall on Apple WebGPU: Creek at Low, Medium and High on core
+ * WebGPU, and at Low in compatibility mode. Each holds the whole render scale, measures 5 s and waits
+ * for the finished garden. The time limit is short, so a page that stalls ends its session instead of
+ * holding it for a vegetation page's full limit.
  */
 export function webgpuStallPlan(): PlanItem<Check>[] {
 	return [
@@ -2799,8 +2800,8 @@ export function showroomFpsPlan(): PlanItem<Check>[] {
 
 /**
  * What the levels of a dense forest save: the lod-cost page's 40,000 pines, four levels each, timed
- * with every tree at its base mesh and with each at its own level in turns, at the lowest and the
- * highest preset. The two presets carry different thresholds and shadow settings, so the saving
+ * with every tree at its base mesh and with each at its own level in turns, at the Low and the
+ * High preset. The two presets carry different thresholds and shadow settings, so the saving
  * shows at both ends of the quality range. The page reports each side's memory too, so the copy
  * lists that the level buckets take show beside the frame time. The capabilities page comes first,
  * so a device without WebGPU skips those pages. D-137 records the results.
