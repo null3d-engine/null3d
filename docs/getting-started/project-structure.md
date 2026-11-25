@@ -3,12 +3,12 @@ id: getting-started/project-structure
 title: Project structure
 status: experimental
 since: "0.3"
-summary: "Starting from the `empty` template with `bunx @null3d/cli create`; page.ts, sketch.ts, AGENTS.md and the agent hook; what runs where."
+summary: "Starting from the `empty`, `product` or `game` template with `bunx @null3d/cli create`; page.ts, sketch.ts, AGENTS.md and the agent hook; what runs where."
 ---
 
 # Project structure
 
-> Roadmap step 0.3, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. The `empty` template is the only template.
+> Roadmap step 0.3, first released in null3D 0.1.0. The API is experimental, so it can still change between versions.
 
 ```mermaid
 flowchart LR
@@ -20,12 +20,20 @@ flowchart LR
     sketch -- "scene data" --> draw["Render worker<br/>draws the canvas"]
 ```
 
-`bunx @null3d/cli create` writes a new project from a template. Start with the `empty` template, then add the scene that your app needs.
+`bunx @null3d/cli create` writes a new project from a template. Start with the template closest to your app, then change its scene.
+
+| Template | What its scene shows |
+| --- | --- |
+| `empty` | A cube that turns, with one light. It is the smallest project, for a scene of your own. |
+| `product` | A product viewer: shapes from `@null3d/geometry` with glazed, metal, wood and cloth materials on a turntable. A soft room light, shadows on a shadow catcher, the Neutral tone curve, and orbit controls with damping and limits. |
+| `game` | A small game: a player that keys, a gamepad or a dragged finger moves, gems to pick up, rocks in instance batches, a follow camera and a score on the page. |
+
+Each template holds the same project files, which the next sections list. The `product` template also pins `@null3d/controls` and `@null3d/geometry`.
 
 ## Make a project
 
 ```sh
-bunx @null3d/cli create my-game
+bunx @null3d/cli create my-game --template game
 cd my-game
 bun install
 bunx vite
@@ -35,7 +43,7 @@ bunx vite
 
 | Option | Effect | Without it |
 | --- | --- | --- |
-| `--template <name>` | The template to copy | `empty` |
+| `--template <name>` | The template to copy: `empty`, `product` or `game` | `empty` |
 
 The folder must not exist, or it must be empty. A folder with files stays as it is, and the command stops.
 

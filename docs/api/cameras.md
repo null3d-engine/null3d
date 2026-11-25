@@ -140,6 +140,8 @@ Objects keep their current positions. A ray finds a moving object where it is no
 
 `worldToScreen` always uses the camera of the frame that last ran. In `onLateUpdate`, that is the frame being drawn, so a point placed there lines up with the image.
 
+A view from `scene.createView` draws its camera into a rectangle of the canvas, with the rectangle's shape. `view.screenToRay(x, y, ray)` and `view.worldToScreen(point, out)` map a point of that image. They take CSS pixels from the canvas's top-left corner too. `scene.viewAt(x, y)` gives the view under a point. [Multiple views](../guides/multiple-views.md#picking-in-a-view) shows them.
+
 ## Several cameras
 
 A scene can have several cameras, and `setActiveCamera` switches between them. The canvas shows the scene from one camera at a time. Until you pick one, and after the engine removes the active camera, the canvas shows only the background.

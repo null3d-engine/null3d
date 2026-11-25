@@ -8,7 +8,7 @@ summary: "createImpostors: far objects as camera-facing cards that blend the thr
 
 # Impostors
 
-> Roadmap step 0.2, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. The asset tool has no command that writes the atlases from a file: the add-on bakes them in the sketch.
+> Roadmap step 0.2, first released in null3D 0.1.0. The API is experimental, so it can still change between versions.
 
 The demo "Impostors" in `examples/impostors` draws a pine forest three ways by distance. Level-of-detail meshes stand near, one merged mesh stands per grid cell in the middle, and cards baked from the pine stand far out. Press L there to draw the far band as meshes instead, and compare. The near meshes and the cards share the hand-over band.
 
@@ -45,10 +45,14 @@ export default defineSketch(async ({ scene, materials, geometry, assets }) => {
   const camera = scene.createPerspectiveCamera({ position: [0, 8, 30], target: [0, 3, 0] });
   scene.setActiveCamera(camera);
 
-  // The atlases hold the object's views. `bakeImpostorAtlas` makes them, or a tool writes them.
+  // The atlases hold the object's views. `bakeImpostorAtlas` makes them in the sketch, or
+  // `bunx @null3d/cli assets impostor` writes them ahead of time.
   const atlas = octahedralAtlas(8);
-  const color = await assets.loadTexture('forest-tree-impostor.png');
-  const surface = await assets.loadTexture('forest-tree-impostor-surface.png');
+  const color = await assets.loadTexture('forest-tree-impostor-color.png', { mipmaps: false });
+  const surface = await assets.loadTexture('forest-tree-impostor-surface.png', {
+    colorSpace: 'linear',
+    mipmaps: false,
+  });
   const positions = new Float32Array(20_000 * 3);
   const turns = new Float32Array(20_000);
   for (let i = 0; i < 20_000; i++) {
@@ -101,6 +105,28 @@ const surface = textures.fromData({ ...bake.surface, colorSpace: 'linear', mipma
 ```
 
 The bake is arithmetic over the arrays. It gives the same pixels on every device, and it needs no GPU pass, so a scene's fog and lights never color the picture. It returns the card's `size`: the width that holds the object's widest horizontal reach, and its full height. A card at scale 1 stands on the object's lowest point. Each picture also holds the object from above, so it is taller than that height by the bake's `room`, which `createImpostors` takes as `room`. A picture that you paint yourself fills its card, and takes the default of 1.
+
+## Load a baked atlas
+
+A bake in the sketch costs time at each start. `bunx @null3d/cli assets impostor` runs the same bake ahead of time, on a glTF model. It writes a JSON file and the two atlases as PNG images ([the `null3d` command](../cli/null3d.md#assets)). `loadImpostorAtlas(assets, url)` loads the three files. It returns the two textures, the grid, and the card's `size`, `room` and `depth`. These are the fields that `createImpostors` takes from a bake:
+
+```sh
+bunx @null3d/cli assets impostor models/pine.glb --out public/trees
+```
+
+```ts
+import { createImpostors, loadImpostorAtlas } from '@null3d/impostors';
+
+const pine = await loadImpostorAtlas(assets, 'trees/pine-impostor.json');
+const trees = createImpostors(
+  { scene, materials, geometry },
+  { ...pine, positions, turn: turns, alphaMode: 'mask' },
+);
+```
+
+The images load from the JSON file's folder, with no mipmaps. The color atlas loads in sRGB, and the surface atlas loads linear. The files hold the same texels as a bake in the sketch, for the same model, grid and texels. The loader throws when the JSON file is not an impostor atlas file. It also throws for a version of the format that the package does not read. Bake the model again with the command of the same version.
+
+The command reads the model's base color factors and textures, alpha modes and cutoffs, and double-sided flags. A part that needs more, such as a leaf atlas's cells, bakes in the sketch with `bakeImpostorAtlas`.
 
 The bake stores each point's normal in the object's own frame. At draw time the card turns that normal by the copy's turn and lights it, so a turned copy lights as its turned mesh does. The bake reads the mesh's own normals, and makes them where the part gives none.
 

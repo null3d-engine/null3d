@@ -28,12 +28,13 @@ The command needs Node 20.19 or later, or Node 22.12 or later, as Vite 8 does.
 
 ```sh
 bunx @null3d/cli create my-game
-bunx @null3d/cli create my-game --template empty
+bunx @null3d/cli create my-viewer --template product
+bunx @null3d/cli create my-game --template game
 ```
 
 | Option | Effect | Without it |
 | --- | --- | --- |
-| `--template <name>` | The template to copy | `empty` |
+| `--template <name>` | The template to copy: `empty`, a turning cube; `product`, a product viewer; or `game`, a small game | `empty` |
 
 The folder must not exist, or it must be empty. The command never overwrites an existing `.claude/settings.json` or `.codex/hooks.json`, because those files can hold your own hooks. The command writes its own version into the project's package pins, and it installs nothing. Run `bun install` in the new folder, then `bunx vite`. [Project structure](../getting-started/project-structure.md) lists the files and explains the agent hook.
 
@@ -465,6 +466,22 @@ bunx @null3d/cli assets normal-from-bump textures/stone_bump.png textures/stone_
 | `--max-texture-size <pixels>` | The largest side of a `.ktx2` texture: a power of two up to 2048 | 2048 |
 
 Both exit with 1 when an image cannot be read. [The asset pipeline](../guides/assets-pipeline.md#pack-occlusion-roughness-and-metalness) says what each makes.
+
+`assets impostor` bakes a model's impostor atlases ahead of time, for the cards of [`@null3d/impostors`](../api/impostors.md). It draws every mesh of the model's scene from each cell of an octahedral grid. It uses the add-on's own bake, so the atlases match a bake in the sketch texel for texel.
+
+```sh
+bunx @null3d/cli assets impostor models/pine.glb --out public/trees --views 25 --texels 64
+```
+
+| Option | Effect | Without it |
+| --- | --- | --- |
+| `--out <folder>` | The folder for the three files | The model's folder |
+| `--views <count>` | The fewest views in the grid: the command takes the squarest grid that holds them | 25, a five by five grid |
+| `--texels <count>` | The texels on each side of a cell | 64 |
+
+It writes three files, named after the model. `pine-impostor.json` describes the bake: its grid, the card's size, its room and its depth. The image `pine-impostor-color.png` holds the color atlas in sRGB. The image `pine-impostor-surface.png` holds the normals, the depth and the coverage. Each image is upright: its top left cell is the grid's first cell. In the sketch, the add-on's `loadImpostorAtlas` loads the three files ([Impostors](../api/impostors.md#load-a-baked-atlas)).
+
+The bake reads each material's base color factor and texture, its alpha mode and cutoff, and whether it draws both sides. A base color texture must be a PNG or JPEG image. So bake the source model, not a model that `assets optimize` wrote with KTX2 textures. The command draws triangle lists alone, and leaves out points and lines. An atlas holds at most 4,096 texels on a side. It exits with 1 when the model cannot be read or baked.
 
 ## upgrade
 

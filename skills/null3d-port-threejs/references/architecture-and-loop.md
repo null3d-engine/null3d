@@ -180,7 +180,7 @@ Enemies that need different meshes become one batch per mesh. An enemy loaded fr
 | `addEventListener('touchstart', ...)` and a list of touches | `input.touches`, and `touch-action: none` on the canvas |
 | Gamepad API polling | `input.isDown('GamepadA')`, `input.value('GamepadLeftStickRight')`, or an action map |
 | `OrbitControls(camera, renderer.domElement)`, `MapControls` | `createOrbitControls(ctx, camera, options)`, `createMapControls`; same option names and defaults; `controls.update(dt)` every frame |
-| `controls.listenToKeyEvents(window)` | Read the keys with `input.isDown`, and call `controls.pan(dx, dy)` or `controls.rotateLeft(angle)` |
+| `controls.listenToKeyEvents(window)` | `controls.listenToKeyEvents()`, with no element: the controls read the keys from the sketch's input |
 | The controls' own `preventDefault` on wheel events | On the page: `canvas.addEventListener('wheel', (e) => e.preventDefault(), { passive: false })`, so the wheel and a pinch zoom the camera, not the page |
 | `controls.addEventListener('change', render)` for on-demand rendering | Not needed: the engine renders continuously and skips unchanged work. `update(dt)` returns true when the camera moved |
 | `FlyControls`, `FirstPersonControls` | `createFlyControls` or `createFirstPersonControls` with the same option names and defaults; `controls.update(dt)` every frame |

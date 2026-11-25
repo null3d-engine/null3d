@@ -67,6 +67,23 @@ export interface TouchActions {
 }
 
 /**
+ * The keys that pan the camera, and turn it while Shift, Control or Meta is down. Each is a
+ * `KeyboardEvent.code` name, such as `ArrowLeft`.
+ *
+ * @category api/controls
+ */
+export interface OrbitKeys {
+	/** The key that pans or turns to the left. */
+	LEFT: string;
+	/** The key that pans or turns up. */
+	UP: string;
+	/** The key that pans or turns to the right. */
+	RIGHT: string;
+	/** The key that pans or turns down. */
+	BOTTOM: string;
+}
+
+/**
  * Options for `createOrbitControls` and `createMapControls`. The controls keep each option as a
  * property of the same name, which a sketch can change at any time.
  *
@@ -102,6 +119,30 @@ export interface OrbitControlsOptions {
 	enablePan?: boolean;
 	/** How fast drags pan the camera. The default is 1. */
 	panSpeed?: number;
+	/**
+	 * True makes the wheel and a pinch zoom toward the point under the pointer, or between the
+	 * fingers, where false zooms toward the target. The target moves with the zoom. The default is
+	 * false.
+	 */
+	zoomToCursor?: boolean;
+	/**
+	 * The keys that pan the camera, and turn it while Shift, Control or Meta is down. They act only
+	 * after `listenToKeyEvents()`. The default is the four arrow keys.
+	 */
+	keys?: Partial<OrbitKeys>;
+	/** How far each key step pans, in CSS pixels of a drag. The default is 7. */
+	keyPanSpeed?: number;
+	/** How fast each key step turns the camera. The default is 1. */
+	keyRotateSpeed?: number;
+	/**
+	 * The center of the sphere that the target stays in, with `minTargetRadius` and
+	 * `maxTargetRadius`. The default is (0, 0, 0).
+	 */
+	cursor?: Vec3Like;
+	/** The closest the target comes to `cursor`. The default is 0. */
+	minTargetRadius?: number;
+	/** The farthest the target goes from `cursor`. The default is Infinity. */
+	maxTargetRadius?: number;
 	/**
 	 * True pans in the plane of the screen. False pans over the ground: the plane at right angles to
 	 * +Y. The default is true for orbit controls and false for map controls.
@@ -190,12 +231,30 @@ const SWAP_KEYS = [
 	'MetaRight',
 ];
 const UP: Vec3Like = [0, 1, 0];
+/**
+ * A zoom toward the pointer keeps the target in front of the camera when the camera looks more
+ * than 20 degrees below or above the horizon, as in three.js. Closer to level, the camera turns
+ * back toward the target instead, so the target does not fly off toward the horizon.
+ */
+const TILT_LIMIT = Math.cos((70 * Math.PI) / 180);
+/**
+ * A held key repeats its step as the browser's key repeat does for three.js's controls: after this
+ * many seconds, this many times a second. The sketch's input reports a key's press once.
+ */
+const KEY_REPEAT_DELAY = 0.5;
+const KEY_REPEAT_RATE = 30;
+/** The keys in the order of the controls' table of how long each is held. */
+const KEY_UP = 0;
+const KEY_BOTTOM = 1;
+const KEY_LEFT = 2;
+const KEY_RIGHT = 3;
 
 /**
  * Places in the controls' array of numbers that change every frame: the turns due around +Y and
  * away from +Y, the factor that the next update scales the distance by, the camera's angles after
  * the last update, the distance between two fingers in the previous frame, a map drag's ground
- * height, and an orthographic camera's view height when the controls started, which is zoom 1.
+ * height, an orthographic camera's view height when the controls started, which is zoom 1, and
+ * the frame's step.
  */
 const THETA_DELTA = 0;
 const PHI_DELTA = 1;
@@ -205,7 +264,19 @@ const PHI = 4;
 const SPREAD = 5;
 const GROUND = 6;
 const BASE_HEIGHT = 7;
-const VALUES = 8;
+/** The frame's step in seconds, for the repeats of held keys. */
+const STEP_TIME = 8;
+const VALUES = 9;
+
+/**
+ * How many repeats a held key has made after it was down this many seconds: none in the delay,
+ * then one at its end and more at the repeat rate.
+ */
+function repeatsBy(seconds: number): number {
+	return seconds < KEY_REPEAT_DELAY
+		? 0
+		: Math.floor((seconds - KEY_REPEAT_DELAY) * KEY_REPEAT_RATE) + 1;
+}
 
 /** The distance between two fingers, in CSS pixels. */
 function fingerDistance(a: InputTouch, b: InputTouch): number {
@@ -248,6 +319,29 @@ export class OrbitControls {
 	enablePan: boolean;
 	/** How fast drags pan the camera. */
 	panSpeed: number;
+	/** True makes the wheel and a pinch zoom toward the point under the pointer. */
+	zoomToCursor: boolean;
+	/** The keys that pan the camera, and turn it while Shift, Control or Meta is down. */
+	readonly keys: OrbitKeys;
+	/** How far each key step pans, in CSS pixels of a drag. */
+	keyPanSpeed: number;
+	/** How fast each key step turns the camera. */
+	keyRotateSpeed: number;
+	/**
+	 * The center of the sphere that the target stays in. Change it in place, such as with
+	 * `vec3.set(controls.cursor, x, y, z)`.
+	 */
+	readonly cursor: [number, number, number] = [0, 0, 0];
+	/** The closest the target comes to `cursor`. */
+	minTargetRadius: number;
+	/** The farthest the target goes from `cursor`. */
+	maxTargetRadius: number;
+	/** The target that `reset` restores: the target at the start, or at the last `saveState`. */
+	readonly target0: [number, number, number] = [0, 0, 0];
+	/** The camera position that `reset` restores. */
+	readonly position0: [number, number, number] = [0, 0, 0];
+	/** The orthographic camera's zoom that `reset` restores: 1 is the view height at the start. */
+	zoom0 = 1;
 	/** True pans in the plane of the screen; false pans over the ground. */
 	screenSpacePanning: boolean;
 	/** The closest the camera comes to the target. */
@@ -300,6 +394,12 @@ export class OrbitControls {
 	private readonly right = new Float64Array(3);
 	private readonly up = new Float64Array(3);
 	private readonly back = new Float64Array(3);
+	/** The direction from the camera through the point that a zoom moves toward. */
+	private readonly dollyDirection = new Float64Array(3);
+	/** The canvas point that a zoom moves toward, in normalized device coordinates. */
+	private readonly zoomPoint = new Float64Array(2);
+	/** How long each key has been down, in seconds, in the order KEY_UP to KEY_RIGHT. */
+	private readonly keyHeld = new Float64Array(4);
 	/** The point on the ground that a map drag keeps under the pointer. */
 	private readonly grabbed = new Float64Array(3);
 	/** Where a ray from the camera through the pointer meets the ground. */
@@ -329,6 +429,10 @@ export class OrbitControls {
 	private secondFinger = -1;
 	/** True while a map drag holds a point on the ground under the pointer. */
 	private grabbing = false;
+	/** True when the frame's zoom moves toward a point of the canvas. */
+	private cursorZoom = false;
+	/** True after `listenToKeyEvents`, while the keys move the camera. */
+	private listening = false;
 
 	constructor(
 		context: SketchContext,
@@ -352,6 +456,19 @@ export class OrbitControls {
 		this.zoomSpeed = options.zoomSpeed ?? 1;
 		this.enablePan = options.enablePan ?? true;
 		this.panSpeed = options.panSpeed ?? 1;
+		this.zoomToCursor = options.zoomToCursor ?? false;
+		const keys = options.keys ?? {};
+		this.keys = {
+			LEFT: keys.LEFT ?? 'ArrowLeft',
+			UP: keys.UP ?? 'ArrowUp',
+			RIGHT: keys.RIGHT ?? 'ArrowRight',
+			BOTTOM: keys.BOTTOM ?? 'ArrowDown',
+		};
+		this.keyPanSpeed = options.keyPanSpeed ?? 7;
+		this.keyRotateSpeed = options.keyRotateSpeed ?? 1;
+		if (options.cursor) vec3.copy(this.cursor, options.cursor);
+		this.minTargetRadius = options.minTargetRadius ?? 0;
+		this.maxTargetRadius = options.maxTargetRadius ?? Number.POSITIVE_INFINITY;
 		this.screenSpacePanning = options.screenSpacePanning ?? !grabsGround;
 		this.minDistance = options.minDistance ?? 0;
 		this.maxDistance = options.maxDistance ?? Number.POSITIVE_INFINITY;
@@ -380,9 +497,12 @@ export class OrbitControls {
 		this.fingers = touches.length;
 		this.firstFinger = touches[0]?.id ?? -1;
 		this.secondFinger = touches[1]?.id ?? -1;
+		// The state that `reset` restores, as three.js's controls keep it when they start.
+		this.readCamera();
+		vec3.copy(this.target0, this.target);
+		vec3.copy(this.position0, this.position);
 		// As three.js's controls do when they start: turn the camera toward the target, within the
 		// limits.
-		this.readCamera();
 		this.move(0);
 	}
 
@@ -392,9 +512,50 @@ export class OrbitControls {
 	 * when the camera or the target moved.
 	 */
 	update(dt: number): boolean {
+		this.values[STEP_TIME] = dt > 0 ? dt : 0;
 		this.readCamera();
 		this.readInput();
 		return this.move(dt);
+	}
+
+	/**
+	 * Turns on the keys: the arrow keys, or those in `keys`, pan the camera, and turn it while Shift,
+	 * Control or Meta is down. three.js's controls take a DOM element here. The sketch's input
+	 * already holds the keys, so this takes none.
+	 */
+	listenToKeyEvents(): void {
+		this.listening = true;
+		this.keyHeld.fill(0);
+	}
+
+	/** Turns the keys off again. */
+	stopListenToKeyEvents(): void {
+		this.listening = false;
+	}
+
+	/** Keeps the target, the camera's position and an orthographic camera's zoom, for `reset`. */
+	saveState(): void {
+		this.readCamera();
+		vec3.copy(this.target0, this.target);
+		vec3.copy(this.position0, this.position);
+		this.zoom0 = this.camera.isOrthographic
+			? (this.values[BASE_HEIGHT] as number) / this.camera.height
+			: 1;
+	}
+
+	/**
+	 * Puts the target, the camera and an orthographic camera's zoom back as `saveState` kept them, or
+	 * as they were when the controls started. Then it updates once, as three.js's `reset` does, and
+	 * ends the user's gesture.
+	 */
+	reset(): void {
+		vec3.copy(this.target, this.target0);
+		vec3.copy(this.position, this.position0);
+		const { camera } = this;
+		if (camera.isOrthographic && this.zoom0 > 0)
+			camera.setOrthoHeight((this.values[BASE_HEIGHT] as number) / this.zoom0);
+		this.move(1 / DAMPING_RATE);
+		this.gesture = NONE;
 	}
 
 	/** The distance from the camera to the target. */
@@ -509,6 +670,7 @@ export class OrbitControls {
 			this.gesture = NONE;
 			return;
 		}
+		if (this.listening) this.readKeys();
 		// A frame where the fingers change cannot tell which movement came before the change, so it
 		// starts the new gesture and leaves out the movement, a frame's worth at most.
 		if (count >= 2) {
@@ -549,9 +711,83 @@ export class OrbitControls {
 		// The wheel, where a pinch on a trackpad counts ten times, dollies as a drag down would.
 		const scroll = pointer.wheel + (PINCH_BOOST - 1) * pointer.pinch;
 		if (scroll !== 0 && this.enableZoom) {
+			if (this.zoomToCursor) this.aimZoom(pointer.x, pointer.y);
 			this.drag[1] = scroll;
 			this.dollyByDrag();
 		}
+	}
+
+	/**
+	 * Steps the camera for each key that went down, and for each repeat of a held key. A key pans,
+	 * or turns the camera while Shift, Control or Meta is down, as three.js's keys do.
+	 */
+	private readKeys(): void {
+		const { input, keys, keyHeld } = this;
+		const step = this.values[STEP_TIME] as number;
+		for (let k = KEY_UP; k <= KEY_RIGHT; k++) {
+			const code =
+				k === KEY_UP
+					? keys.UP
+					: k === KEY_BOTTOM
+						? keys.BOTTOM
+						: k === KEY_LEFT
+							? keys.LEFT
+							: keys.RIGHT;
+			let steps = 0;
+			if (input.wasPressed(code)) {
+				steps = 1;
+				keyHeld[k] = 0;
+			} else if (input.isDown(code)) {
+				const before = keyHeld[k] as number;
+				const after = before + step;
+				keyHeld[k] = after;
+				steps = repeatsBy(after) - repeatsBy(before);
+			} else continue;
+			for (let n = 0; n < steps; n++) this.keyStep(k);
+		}
+	}
+
+	/** One step of a key, as one `keydown` event moves three.js's controls. */
+	private keyStep(key: number): void {
+		const height = this.viewport.height;
+		if (this.swapKeyDown()) {
+			if (!this.enableRotate || !(height > 0)) return;
+			const turn = (TWO_PI * this.keyRotateSpeed) / height;
+			if (key === KEY_UP) this.rotateUp(turn);
+			else if (key === KEY_BOTTOM) this.rotateUp(-turn);
+			else if (key === KEY_LEFT) this.rotateLeft(turn);
+			else this.rotateLeft(-turn);
+			return;
+		}
+		if (!this.enablePan) return;
+		const speed = this.keyPanSpeed;
+		if (key === KEY_UP) this.pan(0, speed);
+		else if (key === KEY_BOTTOM) this.pan(0, -speed);
+		else if (key === KEY_LEFT) this.pan(speed, 0);
+		else this.pan(-speed, 0);
+	}
+
+	/**
+	 * Aims the frame's zoom at a point of the canvas, in CSS pixels: the direction from the camera
+	 * through it, from the camera's pose before the frame moves it.
+	 */
+	private aimZoom(x: number, y: number): void {
+		const { width, height } = this.viewport;
+		if (!(width > 0 && height > 0)) return;
+		const { zoomPoint, dollyDirection, right, up, back, camera } = this;
+		const nx = (x / width) * 2 - 1;
+		const ny = 1 - (y / height) * 2;
+		zoomPoint[0] = nx;
+		zoomPoint[1] = ny;
+		this.cursorZoom = true;
+		if (camera.isOrthographic) return;
+		const tan = Math.tan((camera.fov * Math.PI) / 360);
+		const across = nx * tan * (width / height);
+		const upward = ny * tan;
+		for (let k = 0; k < 3; k++)
+			dollyDirection[k] =
+				(right[k] as number) * across + (up[k] as number) * upward - (back[k] as number);
+		vec3.normalize(dollyDirection, dollyDirection);
 	}
 
 	/** The mouse buttons pressed since the previous frame, as `PointerEvent.buttons` bits. */
@@ -678,8 +914,10 @@ export class OrbitControls {
 		values[SPREAD] = spread;
 		if (this.gesture !== DOLLY_PAN && this.gesture !== DOLLY_ROTATE) return;
 		// Fingers that spread dolly in, and fingers that close dolly out.
-		if (this.enableZoom && before > 0 && spread > 0)
+		if (this.enableZoom && before > 0 && spread > 0) {
 			values[SCALE] = (values[SCALE] as number) / (spread / before) ** this.zoomSpeed;
+			if (this.zoomToCursor) this.aimZoom((first.x + second.x) * 0.5, (first.y + second.y) * 0.5);
+		}
 		const { drag } = this;
 		const across = (first.dx + second.dx) * 0.5;
 		const down = (first.dy + second.dy) * 0.5;
@@ -874,20 +1112,15 @@ export class OrbitControls {
 		phi = Math.max(POLE_MARGIN, Math.min(Math.PI - POLE_MARGIN, phi));
 		for (let k = 0; k < 3; k++)
 			target[k] = (target[k] as number) + (panOffset[k] as number) * share;
+		this.keepTargetNearCursor();
 		const { camera } = this;
 		const scale = values[SCALE] as number;
-		let zoomed = false;
-		if (camera.isOrthographic) {
-			// three.js keeps an orthographic camera's distance, and divides its zoom by the scale.
+		const cursorZoom = this.zoomToCursor && this.cursorZoom;
+		// three.js keeps an orthographic camera's distance and changes its zoom, and a zoom toward a
+		// point moves the camera after it is placed.
+		if (camera.isOrthographic || cursorZoom)
 			radius = Math.max(this.minDistance, Math.min(this.maxDistance, radius));
-			const base = values[BASE_HEIGHT] as number;
-			const zoom = base / camera.height;
-			const next = Math.max(this.minZoom, Math.min(this.maxZoom, zoom / scale));
-			if (next !== zoom && next > 0 && Number.isFinite(next)) {
-				camera.setOrthoHeight(base / next);
-				zoomed = true;
-			}
-		} else radius = Math.max(this.minDistance, Math.min(this.maxDistance, radius * scale));
+		else radius = Math.max(this.minDistance, Math.min(this.maxDistance, radius * scale));
 		const across = Math.sin(phi) * radius;
 		position[0] = target[0] + across * Math.sin(theta);
 		position[1] = target[1] + Math.cos(phi) * radius;
@@ -899,7 +1132,11 @@ export class OrbitControls {
 		values[THETA_DELTA] = (values[THETA_DELTA] as number) * keep;
 		values[PHI_DELTA] = (values[PHI_DELTA] as number) * keep;
 		for (let k = 0; k < 3; k++) panOffset[k] = (panOffset[k] as number) * keep;
+		let zoomed = false;
+		if (cursorZoom) zoomed = this.zoomTowardPoint(radius, scale);
+		else if (camera.isOrthographic) zoomed = this.zoomOrthographic(camera, scale);
 		values[SCALE] = 1;
+		this.cursorZoom = false;
 		const { lastPosition, lastTarget } = this;
 		let movedBy = 0;
 		let targetMovedBy = 0;
@@ -913,6 +1150,85 @@ export class OrbitControls {
 		vec3.copy(lastPosition, position);
 		vec3.copy(lastTarget, target);
 		return true;
+	}
+
+	/** Keeps the target within `minTargetRadius` and `maxTargetRadius` of `cursor`, as three.js does. */
+	private keepTargetNearCursor(): void {
+		const { target, cursor } = this;
+		const dx = target[0] - cursor[0];
+		const dy = target[1] - cursor[1];
+		const dz = target[2] - cursor[2];
+		// three.js's clampLength: an offset of no length stays at the cursor.
+		const length = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1;
+		const clamped = Math.max(this.minTargetRadius, Math.min(this.maxTargetRadius, length));
+		target[0] = cursor[0] + (dx / length) * clamped;
+		target[1] = cursor[1] + (dy / length) * clamped;
+		target[2] = cursor[2] + (dz / length) * clamped;
+	}
+
+	/**
+	 * Divides an orthographic camera's zoom by the scale, within the limits. True when the zoom
+	 * changed.
+	 */
+	private zoomOrthographic(camera: OrthographicCamera, scale: number): boolean {
+		const base = this.values[BASE_HEIGHT] as number;
+		const zoom = base / camera.height;
+		const next = Math.max(this.minZoom, Math.min(this.maxZoom, zoom / scale));
+		if (!(next !== zoom && next > 0 && Number.isFinite(next))) return false;
+		camera.setOrthoHeight(base / next);
+		return true;
+	}
+
+	/** Half the orthographic camera's view width, in world units. */
+	private halfViewWidth(camera: OrthographicCamera): number {
+		const fixedWidth = camera.width;
+		if (fixedWidth !== undefined) return fixedWidth / 2;
+		const { width, height } = this.viewport;
+		return height > 0 ? (camera.height * width) / height / 2 : 0;
+	}
+
+	/**
+	 * Zooms toward the frame's point of the canvas, as three.js's `zoomToCursor` does. A perspective
+	 * camera moves along the ray through the point. An orthographic camera zooms and moves so that
+	 * the point stays under the pointer. The target then moves to stay in front of the camera. True
+	 * when the zoom changed.
+	 */
+	private zoomTowardPoint(radius: number, scale: number): boolean {
+		const { camera, position, target, back, right, up, zoomPoint, dollyDirection } = this;
+		let zoomed: boolean;
+		let distance: number;
+		if (camera.isOrthographic) {
+			const halfHeight = camera.height / 2;
+			const halfWidth = this.halfViewWidth(camera);
+			zoomed = this.zoomOrthographic(camera, scale);
+			// The point under the pointer before the zoom, less the point there after it.
+			const across = (zoomPoint[0] as number) * (halfWidth - this.halfViewWidth(camera));
+			const upward = (zoomPoint[1] as number) * (halfHeight - camera.height / 2);
+			for (let k = 0; k < 3; k++)
+				position[k] =
+					(position[k] as number) + (right[k] as number) * across + (up[k] as number) * upward;
+			distance = radius;
+		} else {
+			distance = Math.max(this.minDistance, Math.min(this.maxDistance, radius * scale));
+			const moved = radius - distance;
+			for (let k = 0; k < 3; k++)
+				position[k] = (position[k] as number) + (dollyDirection[k] as number) * moved;
+			zoomed = moved !== 0;
+		}
+		// The camera has not turned, so it still looks along -back.
+		if (this.screenSpacePanning) {
+			for (let k = 0; k < 3; k++)
+				target[k] = (position[k] as number) - (back[k] as number) * distance;
+		} else if (Math.abs(back[1] as number) >= TILT_LIMIT) {
+			// The target moves to where the camera's view meets the level plane through it.
+			const along = (target[1] - (position[1] as number)) / -(back[1] as number);
+			if (along >= 0)
+				for (let k = 0; k < 3; k++)
+					target[k] = (position[k] as number) - (back[k] as number) * along;
+		}
+		// Near level, the target stays, and the camera turns back toward it.
+		this.place();
+		return zoomed;
 	}
 
 	/**

@@ -187,7 +187,7 @@ The page forwards keyboard, pointer, touch and gamepad input to the sketch throu
 | `OrbitControls` and `MapControls` | `createOrbitControls(ctx, camera, options)` and `createMapControls`, with `controls.update(dt)` each frame |
 | `FlyControls` and `FirstPersonControls` | `createFlyControls` and `createFirstPersonControls`, with the same option names |
 | `PointerLockControls` | `createFirstPersonControls` with `movementSpeed: 0`, and `engine.requestPointerLock()` in a click handler on the page |
-| `controls.listenToKeyEvents(window)` | Read the keys with `input.isDown`, then call `controls.pan` or `controls.rotateLeft` |
+| `controls.listenToKeyEvents(window)` | `controls.listenToKeyEvents()`, with no element: the controls read the keys from the sketch's input |
 | Clicks on UI buttons over the canvas | Handle them on the page, and send the action to the sketch |
 
 Pointer events on HTML elements above the canvas do not reach the engine. To stop the wheel from scrolling the page over the canvas, the page adds a wheel listener that calls `preventDefault`:

@@ -33,6 +33,19 @@ Each recipe states the goal, gives the code, explains why it is written that way
 
 ## 1. Start a new project
 
+`bunx @null3d/cli create` writes a whole project, with the agent rules and hook. Pick the template closest to the request (`getting-started/project-structure`):
+
+- `empty`: a scene of your own.
+- `product`: a product viewer.
+- `game`: a game that keys, a gamepad and touch control.
+
+```sh
+bunx @null3d/cli create my-project --template product
+cd my-project && bun install
+```
+
+To add null3D to an existing Vite project instead, install the packages yourself:
+
 ```sh
 mkdir my-project && cd my-project
 bun add @null3d/engine

@@ -60,8 +60,6 @@ Do not draw a three.js canvas over the null3D canvas to keep one effect. Two GPU
 | three.js | In null3D | Workaround |
 | --- | --- | --- |
 | `TrackballControls` and `ArcballControls` | No trackball or arcball controls | `createOrbitControls`, or your own rotation from `ctx.input` |
-| `OrbitControls` options `zoomToCursor`, `keys`, `keyPanSpeed`, `keyRotateSpeed`, `cursor`, `minTargetRadius` and `maxTargetRadius` | The orbit controls do not take them | For keys, read `input.isDown` and call `controls.pan` or `controls.rotateLeft` |
-| `OrbitControls.saveState` and `reset` | The orbit controls keep no saved state | Keep the camera's position and target yourself, and set them again |
 | `TransformControls` limits `minX` to `maxZ` | The gizmos take no position limits | Clamp the object's position in `onUpdate` |
 | `TransformControls` handles `showXY`, `showYZ` and `showXZ` | `showX`, `showY` and `showZ` hide the plane handles too | No separate plane switches |
 | Controls events: `change`, `start` and `end` | The controls send no events | `update(dt)` returns true when the camera moved |

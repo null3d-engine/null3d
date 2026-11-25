@@ -103,7 +103,7 @@ in-world screen turns a click into a pixel of its image.
 
 ## Rays from the pointer
 
-For clicks and hover on objects, `object.on('click', handler)` casts the ray itself. [Pointer events on objects](input.md#pointer-events-on-objects) describes it. For a ray of your own, such as one that tests only some layers, `camera.screenToRay(x, y, ray)` writes the ray through a point on the canvas. Pass `input.pointer.x` and `input.pointer.y`, and the ray comes from the frame that was on screen at the pointer's event.
+For clicks and hover on objects, `object.on('click', handler)` casts the ray itself. [Pointer events on objects](input.md#pointer-events-on-objects) describes it. For a ray of your own, such as one that tests only some layers, `camera.screenToRay(x, y, ray)` writes the ray through a point on the canvas. Pass `input.pointer.x` and `input.pointer.y`, and the ray comes from the frame that was on screen at the pointer's event. Over a view from `scene.createView`, cast the ray with `view.screenToRay` instead, and `scene.viewAt(x, y)` finds that view ([Multiple views](../guides/multiple-views.md#picking-in-a-view)).
 
 ```ts
 const ray = { origin: vec3.create(), direction: vec3.create() };   // made once

@@ -8,7 +8,7 @@ summary: "Orbit and map controls; fly and first-person controls, with pointer lo
 
 # Controls (@null3d/controls)
 
-> Roadmap step 0.1, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. Orbit controls do not zoom toward the pointer (`zoomToCursor`) or move with keys (`keys`, `keyPanSpeed` and `keyRotateSpeed`). They do not limit how far the target goes from a point (`cursor`, `minTargetRadius` and `maxTargetRadius`), and they have no `saveState` or `reset`. The gizmos do not limit a position with `minX` to `maxZ`.
+> Roadmap step 0.1, first released in null3D 0.1.0. The API is experimental, so it can still change between versions.
 
 ```mermaid
 flowchart LR
@@ -64,6 +64,7 @@ Pass the whole sketch context, `ctx`, as the first argument. The controls read i
 - Rotate turns the camera around the target, about the +Y axis. A drag as long as the canvas is high turns it once around.
 - Dolly moves the camera toward the target or away from it. Each 100 pixels of wheel scroll change the distance by about 5%. A pinch on a trackpad dollies ten times as far as its scroll.
 - An orthographic camera zooms instead: it keeps its distance, and the view's height changes by the same factor.
+- With `zoomToCursor: true`, the wheel and a pinch zoom toward the point under the pointer, or between the fingers. The camera moves along the ray through that point, and the target moves with it. Over the ground, a camera within 20 degrees of level keeps its target and turns back toward it. A middle drag still dollies toward the target.
 - Pan moves the camera and the target together. Orbit controls pan in the plane of the screen. A map drag pans over the ground, and keeps the ground point under the pointer.
 - The wheel does nothing during a drag. Scroll after the release dollies, even when the release and the scroll both come between two frames.
 - `mouseButtons` and `touches` change what each button and each count of fingers do, such as `mouseButtons: { LEFT: 'pan', RIGHT: 'rotate' }` and `touches: { ONE: 'pan', TWO: 'dolly-rotate' }`. Their fields are `LEFT`, `MIDDLE` and `RIGHT`, and `ONE` and `TWO`. Null gives a button no action.
@@ -90,10 +91,13 @@ Each option is also a property of the controls, with the same name. A sketch can
 | `minPolarAngle`, `maxPolarAngle` | Limit how high and how low the camera goes, as angles from +Y |
 | `minAzimuthAngle`, `maxAzimuthAngle` | Limit how far the camera goes around the target |
 | `screenSpacePanning` | Pan in the plane of the screen, or over the ground |
+| `zoomToCursor` | Zoom toward the point under the pointer, not toward the target |
+| `cursor`, `minTargetRadius`, `maxTargetRadius` | Keep the target within a sphere around `cursor`, and out of a smaller one |
+| `keys`, `keyPanSpeed`, `keyRotateSpeed` | Change the keys and their speeds, once `listenToKeyEvents()` turns the keys on |
 | `autoRotate`, `autoRotateSpeed` | Turn the camera slowly while the user does not drag |
 | `mouseButtons`, `touches` | Change what each button and each count of fingers do |
 
-`controls.target` is an array `[x, y, z]`. Change it in place, for example with `vec3.set(controls.target, 0, 1, 0)` from the [math helpers](math.md). The next `update` turns the camera toward it.
+`controls.target` and `controls.cursor` are arrays `[x, y, z]`. Change it in place, for example with `vec3.set(controls.target, 0, 1, 0)` from the [math helpers](math.md). The next `update` turns the camera toward it.
 
 ## Each frame
 
@@ -118,6 +122,19 @@ return {
   },
 };
 ```
+
+### Keys
+
+The keys are off until the sketch calls `controls.listenToKeyEvents()`, as in three.js. three.js's call takes a DOM element. The sketch already reads the keys, so this call takes none. `stopListenToKeyEvents()` turns them off again.
+
+- The arrow keys pan the camera by `keyPanSpeed` pixels of a drag at each step, 7 by default.
+- With Shift, Control or Meta down, the arrow keys turn the camera instead. `keyRotateSpeed` scales each turn.
+- `keys` changes the keys, such as `keys: { LEFT: 'KeyA', UP: 'KeyW', RIGHT: 'KeyD', BOTTOM: 'KeyS' }`. Each is a [key code name](input.md).
+- A press takes one step, as one `keydown` event does in three.js. A held key repeats after half a second, then 30 times a second. The browser's own key repeat sets that rate for three.js, so it can differ from system to system.
+
+### Save and reset
+
+`controls.saveState()` keeps the target, the camera's position and an orthographic camera's zoom. `controls.reset()` puts them back. Without a saved state, it puts back the state from when the controls started. As in three.js, `reset` then updates once and ends the user's drag.
 
 ## Fly controls
 
@@ -252,6 +269,8 @@ A press on a handle begins a drag, and the pointer then moves, turns or scales t
 - `gizmo.axis` names the handle under the pointer, or the one that a drag holds: `'X'`, `'Y'`, `'Z'`, `'XY'`, `'YZ'`, `'XZ'`, `'XYZ'` or `'E'`. `gizmo.object` is the object that `attach` picked.
 - `mode` picks the handles, and `space` picks between the world's axes and the object's own. A scale drag always follows the object's own axes.
 - `showX`, `showY` and `showZ` hide the handles of an axis, and the planes that it lies in.
+- `showXY`, `showYZ` and `showXZ` hide one plane handle each. As in three.js, a flag hides each handle whose name holds its pair, so `showXY: false` and `showYZ: false` also hide the center cube.
+- `minX`, `maxX`, `minY`, `maxY`, `minZ` and `maxZ` limit a move. The drag clamps the object's position relative to its parent, after any snap, as three.js does. The defaults set no limit.
 - `translationSnap`, `rotationSnap` and `scaleSnap` round a move in meters, a turn in radians and a scale to steps. Null, the default, gives a free drag.
 - `size` scales the handles on the screen. They keep the same share of the screen as the camera moves.
 - A turn follows the pointer around the ring, so the handle stays under it. An object turns by the angle that the pointer sweeps around the axis.
