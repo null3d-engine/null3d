@@ -4,6 +4,7 @@ import { pageResult } from '../lib/page-result.ts';
 import {
 	instanceFloors,
 	type OverlayBoxes,
+	type OverlayView,
 	type StatsResult,
 	statsProblems,
 	tenths,
@@ -62,6 +63,10 @@ function call<T>(page: Page, name: string, ...args: unknown[]): Promise<T> {
 
 /** The boxes of the canvas, the overlay's element and its header button, in the page. */
 const boxes = (page: Page) => call<OverlayBoxes>(page, 'overlayBoxes');
+
+/** The figures that the overlay shows now, by their names, read again in the page. */
+const shownFigures = async (page: Page) =>
+	(await call<OverlayView | null>(page, 'readOverlay'))?.figures ?? {};
 
 /** Checks that the overlay sits on the canvas's top-right corner. */
 function expectTopRight(at: OverlayBoxes): void {
@@ -265,7 +270,11 @@ test("the stats overlay shows the display's rate above a lower target, with a fa
 	// A target of 30 fps sits below the rate of any display that the tests run on.
 	const result = await openStats(page, 'gpu=webgl2&target-fps=30');
 	expect(statsProblems(result)).toEqual([]);
-	const figures = result.overlay?.figures ?? {};
+	// The page's result can come before the engine measures the display's refresh rate, and until
+	// then the overlay shows the target alone, with no sign and no display mark. The checks wait for
+	// the display's rate, then read the figures again.
+	await expect.poll(async () => (await shownFigures(page)).display).toMatch(/^\d+ Hz$/);
+	const figures = await shownFigures(page);
 	expect(figures.target).toBe('≥30 fps · 33.3 ms');
 	const hz = Number(figures.display?.match(/^(\d+) Hz$/)?.[1]);
 	expect(hz).toBeGreaterThan(30);
