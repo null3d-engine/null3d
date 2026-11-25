@@ -467,7 +467,9 @@ fn surface(input: SurfaceInput) -> Surface {
 			'fn coverage(input: SurfaceInput) -> f32 {\n    return step(0.5, input.uv.x);\n}\n';
 		const built = material(await compileWgsl('src/card.wgsl', card, HINT));
 		expect(built.functions).toEqual(['coverage']);
-		expect(built.variants.webgpu?.wgsl?.source).toContain('fn coverage(');
+		// The shadow caster's builds run the function; the shading builds never call it, so the
+		// compiler leaves it out of them.
+		expect(JSON.stringify(built.variants)).toContain('fn coverage(');
 	});
 
 	it('builds a mesh shader of its own as a full shader of a custom material', async () => {
