@@ -3,12 +3,12 @@ id: getting-started/project-structure
 title: Project structure
 status: experimental
 since: "0.3"
-summary: "Starting from the `empty` template with `bunx @null3d/cli create`; page.ts, sketch.ts, AGENTS.md and the agent hook; what runs where."
+summary: "Starting from the `empty`, `product` or `game` template with `bunx @null3d/cli create`; page.ts, sketch.ts, AGENTS.md and the agent hook; what runs where."
 ---
 
 # Project structure
 
-> Roadmap step 0.3, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. The `empty` template is the only template today.
+> Roadmap step 0.3, first released in null3D 0.1.0. The API is experimental, so it can still change between versions.
 
 ```mermaid
 flowchart LR
@@ -20,12 +20,20 @@ flowchart LR
     sketch -- "scene data" --> draw["Render worker<br/>draws the canvas"]
 ```
 
-`bunx @null3d/cli create` writes a new project from a template. Start with the `empty` template, then add the scene that your app needs.
+`bunx @null3d/cli create` writes a new project from a template. Start with the template closest to your app, then change its scene.
+
+| Template | What its scene shows |
+| --- | --- |
+| `empty` | A cube that turns, with one light. It is the smallest project, for a scene of your own. |
+| `product` | A product viewer: shapes from `@null3d/geometry` with glazed, metal, wood and cloth materials on a turntable. A soft room light, shadows on a shadow catcher, the Neutral tone curve, and orbit controls with damping and limits. |
+| `game` | A small game: a player that keys, a gamepad or a dragged finger moves, gems to pick up, rocks in instance batches, a follow camera and a score on the page. |
+
+Each template holds the same project files, which the next sections list. The `product` template also pins `@null3d/controls` and `@null3d/geometry`.
 
 ## Make a project
 
 ```sh
-bunx @null3d/cli create my-game
+bunx @null3d/cli create my-game --template game
 cd my-game
 bun install
 bunx vite
@@ -35,7 +43,7 @@ bunx vite
 
 | Option | Effect | Without it |
 | --- | --- | --- |
-| `--template <name>` | The template to copy | `empty` |
+| `--template <name>` | The template to copy: `empty`, `product` or `game` | `empty` |
 
 The folder must not exist, or it must be empty. A folder with files stays as it is, and the command stops.
 
@@ -64,6 +72,6 @@ Claude Code runs the hook through `.claude/settings.json`, and Codex runs it thr
 
 The hook refuses three commands, so they do not run. They are a command that waits with `sleep`, one that stops a process by name, and one that follows a log. The message gives the fix.
 
-The hook flags three source rules and lets the edit go on. It flags an object, array or string made in `onUpdate`. It flags a DOM name in the sketch module. It flags an import of a name that the installed engine does not export. A planned API does not exist, so its name is absent from the installed declarations. The message names the file, the line and the fix.
+The hook flags three source rules and lets the edit go on. It flags an object, array or string made in `onUpdate`. It flags a DOM name in the sketch module. It flags an import of a name that the installed engine does not export. The message names the file, the line and the fix.
 
 The hook takes every rule from `@null3d/cli/agent-rules`. That module holds each rule and its message once, so a project and any other null3D tool agree. The hook reads the module from the installed packages, and `bun install` writes them. Before that install, the hook cannot check a call. It tells the agent to install the packages, and the call goes on.

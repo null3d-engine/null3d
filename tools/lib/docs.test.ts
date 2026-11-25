@@ -8,7 +8,6 @@ import {
 	generateDocs,
 	PAGES,
 	pageList,
-	placeholderPage,
 	referenceLinkProblems,
 	referenceProblems,
 } from './docs';
@@ -51,23 +50,23 @@ const writtenObjects = (body: string) =>
 
 describe('front matter', () => {
 	it('quotes values YAML would misread, and leaves plain words bare', () => {
-		expect(yamlString('planned')).toBe('planned');
+		expect(yamlString('stable')).toBe('stable');
 		expect(yamlString('after 1.0')).toBe('after 1.0');
 		expect(yamlString('0.1')).toBe('"0.1"');
 		expect(yamlString('Page API: createEngine')).toBe('"Page API: createEngine"');
 		expect(yamlString('yes')).toBe('"yes"');
 	});
 
-	it('round-trips every inventory page through a placeholder', () => {
+	it('round-trips every inventory page through its front matter', () => {
 		for (const page of PAGES) {
-			const data = parseFrontMatter(placeholderPage(page))?.data;
-			expect(data).toEqual({
+			const fields = {
 				id: page.id,
 				title: page.title,
-				status: 'planned',
+				status: 'experimental',
 				since: page.since,
 				summary: page.summary,
-			});
+			};
+			expect(parseFrontMatter(renderFrontMatter(Object.entries(fields)))?.data).toEqual(fields);
 		}
 	});
 
@@ -76,15 +75,27 @@ describe('front matter', () => {
 	});
 });
 
+/** The written handles page with a status, and the note that the check asks under its title. */
+function writtenHandles(status: string): string {
+	const page = PAGES.find((p) => p.id === 'concepts/handles')!;
+	return `${renderFrontMatter([
+		['id', page.id],
+		['title', page.title],
+		['status', status],
+		['since', page.since],
+		['summary', page.summary],
+	])}
+# ${page.title}
+
+> Roadmap step ${page.since}, first released in null3D 0.1.0. The API is experimental, so it can still change between versions.
+`;
+}
+
 describe('frontMatterProblems', () => {
 	const inventory = new Set(['concepts/handles']);
 	it('accepts a valid page', () => {
 		expect(
-			frontMatterProblems(
-				'docs/concepts/handles.md',
-				placeholderPage(PAGES.find((p) => p.id === 'concepts/handles')!),
-				inventory,
-			),
+			frontMatterProblems('docs/concepts/handles.md', writtenHandles('experimental'), inventory),
 		).toEqual([]);
 	});
 
@@ -98,6 +109,11 @@ describe('frontMatterProblems', () => {
 		]);
 		const problems = frontMatterProblems('docs/concepts/other.md', text, inventory);
 		expect(problems.join('\n')).toContain('status "done"');
+		expect(
+			frontMatterProblems('docs/concepts/handles.md', writtenHandles('planned'), inventory).join(
+				'\n',
+			),
+		).toContain('status "planned" is not allowed');
 		expect(problems.join('\n')).toContain('since "soon"');
 		expect(problems.join('\n')).toContain('not in the inventory');
 		expect(frontMatterProblems('docs/concepts/x.md', text, inventory).join('\n')).toContain(
@@ -135,14 +151,14 @@ describe('pageList', () => {
 			{
 				id: 'concepts/handles',
 				title: 'Handles',
-				status: 'planned',
+				status: 'experimental',
 				since: '0.1',
 				summary: 'a | b',
 			},
 			{
 				id: 'concepts/architecture',
 				title: 'Architecture',
-				status: 'planned',
+				status: 'experimental',
 				since: '0.1',
 				summary: 'x',
 			},
@@ -156,11 +172,11 @@ describe('pageList', () => {
 });
 
 describe('generateDocs', () => {
-	it('rewrites placeholders, keeps written pages, and lists every page', () => {
+	it('keeps written pages, writes no page that is missing, and lists every page', () => {
 		const written = `${renderFrontMatter([
 			['id', 'concepts/handles'],
 			['title', 'Handles'],
-			['status', 'planned'],
+			['status', 'experimental'],
 			['since', '0.1'],
 			['summary', 'Written.'],
 		])}\n# Handles\n`;
@@ -168,12 +184,11 @@ describe('generateDocs', () => {
 			'docs/index.md': INDEX,
 			'docs/data/threejs-mapping.json': MAPPING,
 			'docs/concepts/handles.md': written,
-			'docs/concepts/architecture.md': '<!-- null3d:placeholder -->\nold text',
 		});
 		const out = generateDocs(root, NO_API);
 		expect(out.has('docs/concepts/handles.md')).toBe(false);
 		expect(out.has('docs/index.md')).toBe(false);
-		expect(out.get('docs/concepts/architecture.md')).toContain('This page will cover:');
+		expect(out.has('docs/concepts/architecture.md')).toBe(false);
 		const pages = out.get('docs/pages.md') ?? '';
 		expect(pages).toContain('status: generated');
 		expect(pages).toContain('[Handles](concepts/handles.md)');
@@ -182,17 +197,15 @@ describe('generateDocs', () => {
 		expect(out.get('docs/porting/threejs-mapping.md')).toContain('status: generated');
 	});
 
-	it("puts each export on its page's reference: a placeholder gains a section, a written page gets a reference page", () => {
+	it("puts each export on its page's reference page, and writes none for a page that is missing", () => {
 		const root = fixture({
 			'docs/index.md': INDEX,
 			'docs/data/threejs-mapping.json': MAPPING,
-			'docs/api/scene.md': '<!-- null3d:placeholder -->\nold text',
 			'docs/api/objects.md': writtenObjects('[The API reference](reference/objects.md).'),
 		});
 		const out = generateDocs(root, { symbols: [SET_THING, THING], problems: [] });
-		const scene = out.get('docs/api/scene.md') ?? '';
-		expect(scene).toContain('No release has these APIs yet');
-		expect(scene).toContain('## API reference\n\n### `setThing`');
+		expect(out.has('docs/api/scene.md')).toBe(false);
+		expect(out.has('docs/api/reference/scene.md')).toBe(false);
 		expect(out.has('docs/api/objects.md')).toBe(false);
 		const reference = out.get('docs/api/reference/objects.md') ?? '';
 		expect(reference).toContain('id: api/reference/objects');
@@ -200,7 +213,6 @@ describe('generateDocs', () => {
 		expect(reference).toContain('# Objects and transforms: API reference');
 		expect(reference).toContain('## `Thing`');
 		expect(reference).toContain('[Objects and transforms](../objects.md)');
-		expect(out.get('docs/api/lights.md')).toContain('No release has this feature yet');
 		expect(out.get('docs/pages.md')).not.toContain('api/reference/');
 	});
 });
@@ -235,13 +247,13 @@ describe('the quality preset tables', () => {
 		expect(page).toContain('A memory reading under 4 GB lowers the starting preset by one.');
 		expect(page).toContain("| WebGPU's compatibility mode | Medium |");
 		expect(page).toContain(
-			'| Pixel ratio cap (`maxPixelRatio`) | 1.5 | 2 | 2 | none | during play | built |',
+			'| Pixel ratio cap (`maxPixelRatio`) | 1.5 | 2 | 2 | none | during play |',
 		);
 		expect(page).toContain(
-			'| Anti-aliasing (`antialias`) | FXAA | MSAA 4x | MSAA 4x | MSAA 4x | at the start | built |',
+			'| Anti-aliasing (`antialias`) | FXAA | MSAA 4x | MSAA 4x | MSAA 4x | at the start |',
 		);
 		expect(page).toContain(
-			'| Far cascade updates (`farCascadeInterval`) | every 4th frame | every 3rd frame | every 2nd frame | every 2nd frame | during play | built |',
+			'| Far cascade updates (`farCascadeInterval`) | every 4th frame | every 3rd frame | every 2nd frame | every 2nd frame | during play |',
 		);
 		expect(page).toContain(
 			"| Target frame rate | The display's refresh rate, at most 60 frames per second unless `targetFps` asks for more |",

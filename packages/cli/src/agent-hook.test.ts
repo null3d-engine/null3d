@@ -167,7 +167,7 @@ describe('the source rules', () => {
 		expect(flagged(result)).toContain('onUpdate');
 	});
 
-	it('flags a planned API that the installed engine does not export', () => {
+	it('flags an API that the installed engine does not export', () => {
 		const root = project();
 		const engine = join(root, 'node_modules', '@null3d', 'engine');
 		mkdirSync(join(engine, 'lib'), { recursive: true });

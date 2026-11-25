@@ -54,6 +54,47 @@ Each half draws with the aspect ratio of its rectangle, so objects keep their pr
 - `view.live`, `view.camera` and `view.rect` read the view.
 - The view takes its camera's layers, and follows them when they change, as a scene pass does.
 
+## Picking in a view
+
+`camera.screenToRay` and `camera.worldToScreen` map the whole canvas, with the canvas's shape. A view's image has its own camera and shape, so a view has the same two calls:
+
+- `view.screenToRay(x, y, ray)` writes the ray from the view's camera through a point of the view's image.
+- `view.worldToScreen(point, out)` writes where a point in the world lies in the view's image: `x`, `y` and the depth.
+- `scene.viewAt(x, y)` gives the view under a point, or `undefined` where only the camera's view shows. Where views overlap, it gives the one on top.
+- `view.contains(x, y)` says whether a point lies in the view's rectangle.
+
+All of them count CSS pixels from the canvas's top-left corner, as `input.pointer` does. So pass the pointer's position as it is, with no offset for the rectangle. The lens takes the shape of the view's rectangle, as the view draws it.
+
+This sketch picks through whichever image is under the pointer:
+
+```ts
+import { defineSketch, type RaycastHit, vec3 } from '@null3d/engine';
+
+export default defineSketch(({ scene, input }) => {
+  const camera = scene.createPerspectiveCamera({ fov: 60, position: [0, 2, 6], target: [0, 0, 0] });
+  scene.setActiveCamera(camera);
+  const top = scene.createPerspectiveCamera({ fov: 40, position: [0, 12, 0.01], target: [0, 0, 0] });
+  scene.createView({ camera: top, rect: [0.69, 0.02, 0.29, 0.32] });
+
+  // Made once, and filled again by each call.
+  const ray = { origin: vec3.create(), direction: vec3.create() };
+  const hit: RaycastHit = { object: null, instance: -1, point: vec3.create(), normal: vec3.create(), distance: 0, triangle: -1 };
+  const options = {};
+  return {
+    onUpdate() {
+      if (!input.wasPressed('Mouse0')) return;
+      const { x, y } = input.pointer;
+      const view = scene.viewAt(x, y);
+      if (view) view.screenToRay(x, y, ray);
+      else camera.screenToRay(x, y, ray);
+      if (scene.raycast(ray.origin, ray.direction, options, hit)) console.log('picked', hit.point);
+    },
+  };
+});
+```
+
+A view's calls use the view's camera of the frame that last ran, with its lens as it is now. `camera.screenToRay` at a pointer event uses the camera of the frame that was on screen at that event, and a view's call does not. A click during a fast turn of the view's camera can pick up to a frame of its motion away.
+
 ## Cost
 
 Each view culls the scene once more and draws it once more, at its rectangle's pixels. A picture in picture at a tenth of the canvas costs about a tenth of a scene draw. The camera's view always draws first, so a split screen of two halves costs the camera's draw and two view draws.
@@ -69,8 +110,6 @@ No preset switches views off or lowers their count. On a phone, keep a picture i
 ## What a view leaves out
 
 A view draws no object whose material shows a render pass's texture, since a pass cannot read a target that another pass draws into. Keep such objects in the camera's view, or show the pass's texture on a screen in the world instead.
-
-`camera.screenToRay` and `camera.worldToScreen` map the whole canvas, with the shape of the canvas. They do not read a view's rectangle, so a ray through a point of a view's image does not follow that view's camera. They take no view, and picking inside a view's rectangle is not supported yet.
 
 A scene and its passes share 32 views, the camera's included. Reflection probes take six while they capture. `scene.createView` throws E1501 when no view is free, and the same error names the limit when a frame draws too many.
 

@@ -410,6 +410,59 @@ export class SceneView {
 	}
 
 	/**
+	 * Writes the ray from the view's camera through a point of the view's image into `out`: `x` and
+	 * `y` are CSS pixels from the canvas's top-left corner, as `camera.screenToRay` takes them, and
+	 * as `input.pointer` gives them. The lens takes the shape of the view's rectangle, as the view
+	 * draws it, so a click on the view's image picks what the view shows. A perspective ray starts
+	 * at the camera, and an orthographic ray on the near plane. The direction has length 1.
+	 *
+	 * It uses the camera of the frame that last ran, with its lens as it is now. A point outside
+	 * the rectangle gives the ray that the view's lens would give there. `scene.viewAt` finds the
+	 * view under a point. Development builds throw E1101 for a view that was removed, and E1203 for
+	 * a number that is not finite.
+	 */
+	screenToRay(x: number, y: number, out: Ray): void {
+		const call = 'screenToRay';
+		if (DEV) {
+			checkViewLive(call, this);
+			checkNumber(call, 'x', x, this.cameraValue);
+			checkNumber(call, 'y', y, this.cameraValue);
+		}
+		this.scene.frameCameras.viewRay(this.cameraValue, this.rectValue, x, y, out, call);
+	}
+
+	/**
+	 * Writes where a point in the world lies in the view's image into `out`: x and y in CSS pixels
+	 * from the canvas's top-left corner, then the point's depth, its distance in front of the
+	 * view's camera along the view. A depth below 0 puts the point behind the camera, where x and
+	 * y have no meaning. The lens takes the shape of the view's rectangle. A point outside the
+	 * view's sight lands outside the rectangle. Development builds throw E1101 for a view that was
+	 * removed, and E1203 for a number that is not finite.
+	 */
+	worldToScreen(point: Vec3Like, out: Vec3Like): void {
+		const call = 'worldToScreen';
+		if (DEV) {
+			checkViewLive(call, this);
+			checkVector(
+				call,
+				this.cameraValue,
+				point[0] as number,
+				point[1] as number,
+				point[2] as number,
+			);
+		}
+		this.scene.frameCameras.viewToScreen(this.cameraValue, this.rectValue, point, out, call);
+	}
+
+	/**
+	 * True when the point (`x`, `y`) in CSS pixels from the canvas's top-left corner lies in the
+	 * view's rectangle, its left and top edges included.
+	 */
+	contains(x: number, y: number): boolean {
+		return this.scene.viewHolds(this.rectValue, x, y);
+	}
+
+	/**
 	 * Removes the view from the next frame on. The camera's view draws the canvas alone again.
 	 * Development builds throw E1101 for a view that was removed.
 	 */
@@ -418,6 +471,7 @@ export class SceneView {
 		if (DEV) checkViewLive(call, this);
 		this.scene.core.check(this.scene.core.glue.removeSceneView(this.place), call, undefined, true);
 		this.scene.setPassCamera(this.place, undefined, undefined);
+		this.scene.forgetView(this);
 		this.place = 0;
 	}
 }
@@ -3626,6 +3680,8 @@ export class Scene implements ViewHolder {
 	 * undefined to follow the camera's.
 	 */
 	private readonly passCameras: ({ camera: Camera; layers: number | undefined } | undefined)[] = [];
+	/** The views of the canvas that `createView` made and that still live, for `viewAt`. */
+	private readonly canvasViews: SceneView[] = [];
 	/** @internal Scratch arrays, so rotations and reads allocate nothing. */
 	readonly scratch = new Float32Array(4);
 	/** @internal */
@@ -5385,7 +5441,35 @@ export class Scene implements ViewHolder {
 		const place = this.core.check(this.core.glue.addSceneView(), call);
 		const view = new SceneView(this, place, camera, rect);
 		this.setPassCamera(place, camera, undefined);
+		this.canvasViews.push(view);
 		return view;
+	}
+
+	/**
+	 * The view whose image covers the point (`x`, `y`) in CSS pixels from the canvas's top-left
+	 * corner, or undefined where only the camera's view shows. Where views overlap, it gives the one
+	 * on top, which the engine draws last. Pass the view to `view.screenToRay` to pick in it, and
+	 * use `camera.screenToRay` when it gives undefined. It allocates nothing.
+	 */
+	viewAt(x: number, y: number): SceneView | undefined {
+		const views = this.canvasViews;
+		let found: SceneView | undefined;
+		for (let index = 0; index < views.length; index++) {
+			const view = views[index] as SceneView;
+			if ((found === undefined || view.place > found.place) && view.contains(x, y)) found = view;
+		}
+		return found;
+	}
+
+	/** @internal True when the point in CSS pixels lies in `rect`, as fractions of the canvas. */
+	viewHolds(rect: readonly number[], x: number, y: number): boolean {
+		return this.frameCameras.holds(rect, x, y);
+	}
+
+	/** @internal Takes a view that `view.destroy` removed off the list that `viewAt` reads. */
+	forgetView(view: SceneView): void {
+		const index = this.canvasViews.indexOf(view);
+		if (index >= 0) this.canvasViews.splice(index, 1);
 	}
 
 	/**

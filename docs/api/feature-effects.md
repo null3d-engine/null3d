@@ -83,7 +83,7 @@ export default defineSketch(async ({ post, quality, engine, page }) => {
 | Field | What a full-screen effect takes |
 | --- | --- |
 | `kind` | `'fullscreen'`. Any other kind throws E1223. |
-| `frame` | `'resolve'`. No public pass draws an add-on's effect after the tone curve yet, so another frame point throws E1223. |
+| `frame` | `'resolve'`. No public pass draws an add-on's effect after the tone curve, so another frame point throws E1223. |
 | `band` | `'before'`, `'normal'` or `'after'`. It places the pass among the sketch's other effects, whose orders the band's ranges keep in that order. |
 | `order` | The place inside the band. A lower number runs first. |
 | `reads` | `'sceneColor'`, and `'sceneDepth'` when the WGSL reads the depth. Another resource throws E1223. |
@@ -111,8 +111,8 @@ Add the feature to its `FeatureHost` before you place it. The host's quality cal
 
 ## Limits
 
-- The pass records at the resolve point and in the main view alone. An add-on's effect after the tone curve, or in a scene or reflection pass, needs a hook that the engine does not have yet.
-- The pass reads the scene's color and depth alone. Normals, motion vectors, history and the shadow atlas need a binding that the effect chain does not add yet.
+- The pass records at the resolve point and in the main view alone. An add-on's effect cannot run after the tone curve, or in a scene or reflection pass.
+- The pass reads the scene's color and depth alone. It cannot read the normals, the motion vectors, the history or the shadow atlas.
 - The pass publishes no texture and provides no lighting slot. A feature that publishes an output is a compute pass, and a lighting slot belongs to the pass that shades the surfaces.
 - The chain runs in one place in the frame, so the band orders the pass among the sketch's other effects. The engine's own bloom and depth of field keep their own places around it.
 

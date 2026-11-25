@@ -356,7 +356,7 @@ The add-on declares its work to the engine as one feature. The preset gives its 
 
 Low keeps no grid: every reader works the air out from the steady field. A page that gives `grid` keeps it, whatever the preset says. At Low, that page still gets a field, at the add-on's own step and pressure count. WebGL2 takes its own step row, 66 ms at Medium and above, because a step costs far more there.
 
-The grid is one flat slice at the crown's height. The layered and volume grids that the wind cost study measured are not built yet, so High and Ultra use the flat 128 and 256 grids.
+The grid is one flat slice at the crown's height, with no layered or volume grid. High and Ultra use the flat 128 and 256 grids.
 
 The field's own budget is 0.5, 1.2, 4.9 and 6.25 ms a frame from Low to Ultra. That budget is its own, and it is smaller than the room that D-241 leaves beside the plants' own budget in each preset's frame. A frame that spends both grows by the field's share, and the governor is what holds it. The governor lowers the field's share by a quarter at each of its steps, down to a quarter of the budget. The field still moves at the lowest step: the step interval reaches at most 133 ms, and the pressure count stays above zero. The overlay row reads the field's cost in a frame, which grows when a slow display owes the field more than one cycle in that frame. The stats overlay shows one line for the add-on. This example is the Medium row, with an example GPU time: `wind  gpu 0.62 ms  windStepMs 33 · windPressureSteps 16 · windSpringTrees 8 · windGrid 64 · budget 1.2 of 1.2 ms · memory 0.1 MiB`.
 

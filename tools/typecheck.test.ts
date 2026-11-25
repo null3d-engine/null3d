@@ -11,6 +11,8 @@ const NOT_CHECKED: Record<string, string> = {
 	'tsconfig.web.base.json': 'the settings that the web projects extend, with no files of its own',
 	'packages/vite-plugin/tsconfig.json': "the root project's files hold the plugin's source",
 	'packages/cli/templates/empty/tsconfig.json': "a new project's config, checked in that project",
+	'packages/cli/templates/game/tsconfig.json': "a new project's config, checked in that project",
+	'packages/cli/templates/product/tsconfig.json': "a new project's config, checked in that project",
 	'tests/fixtures/fresh-project/tsconfig.json':
 		'the fresh-project test checks it in its own project',
 };

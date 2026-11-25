@@ -33,6 +33,11 @@
 			"types": "./lib/bake.d.ts",
 			"default": "./lib/bake.js"
 		},
+		"./atlas-file": {
+			"null3d-source": "./src/atlas-file.ts",
+			"types": "./lib/atlas-file.d.ts",
+			"default": "./lib/atlas-file.js"
+		},
 		"./package.json": "./package.json"
 	},
 	"files": [

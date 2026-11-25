@@ -141,20 +141,13 @@ for (const file of files) {
 	});
 }
 
-const order = ['manual', 'unsupported', 'post-1.0', 'changed', 'direct'];
+const order = ['manual', 'unsupported', 'changed', 'direct'];
 const byStatus = Object.fromEntries(order.map((s) => [s, []]));
 for (const f of found.values()) byStatus[f.entry.status].push(f);
 for (const s of order) byStatus[s].sort((a, b) => b.count - a.count);
 
-const sinceOrder = ['0.1', '0.2', '0.3', '1.0'];
-const needed =
-	[...found.values()]
-		.map((f) => f.entry.since)
-		.filter(Boolean)
-		.sort((a, b) => sinceOrder.indexOf(b) - sinceOrder.indexOf(a))[0] || '0.1';
-
 // Rough effort: distinct features weighted by status, plus GLSL volume. A planning aid only.
-const weight = { direct: 1, changed: 2, manual: 5, 'post-1.0': 3, unsupported: 3 };
+const weight = { direct: 1, changed: 2, manual: 5, unsupported: 3 };
 const points =
 	[...found.values()].reduce((s, f) => s + weight[f.entry.status], 0) + Math.ceil(glslLines / 20);
 const effort = points < 25 ? 'small' : points < 70 ? 'medium' : 'large';
@@ -209,7 +202,6 @@ md.push(`- Files scanned: ${files.length} (${totalLines} lines in files that men
 md.push(`- three.js version in package.json: ${threeVersion ?? 'not found'}`);
 md.push(`- Distinct three.js features found: ${found.size}`);
 md.push(`- By status: ${order.map((s) => `${s} ${byStatus[s].length}`).join(', ')}`);
-md.push(`- Lowest null3D version that covers every supported feature found: ${needed}`);
 md.push(
 	`- Rough porting effort: ${effort} (${points} points; a planning aid, not an estimate of hours)\n`,
 );
@@ -229,20 +221,19 @@ if (warnings.length) {
 }
 const titles = {
 	manual: 'Rewrite by hand',
-	unsupported: 'Out of scope: use the workaround',
-	'post-1.0': 'Not in null3D 1.0: use the workaround',
+	unsupported: 'Use the workaround',
 	changed: 'Supported with a different API or pattern',
 	direct: 'Direct equivalents',
 };
 for (const s of order) {
 	if (!byStatus[s].length) continue;
 	md.push(`## ${titles[s]} (${byStatus[s].length})\n`);
-	md.push('| three.js | Uses | Where (first matches) | null3D | Since | Notes | Docs |');
-	md.push('| --- | --- | --- | --- | --- | --- | --- |');
+	md.push('| three.js | Uses | Where (first matches) | null3D | Notes | Docs |');
+	md.push('| --- | --- | --- | --- | --- | --- |');
 	for (const f of byStatus[s]) {
 		const e = f.entry;
 		md.push(
-			`| ${esc(e.three)} | ${f.count} in ${f.files.size} file(s) | ${f.refs.map((r) => `\`${r}\``).join('<br>')} | ${esc(e.target)} | ${e.since ?? '-'} | ${esc(e.notes)} | \`${e.docs}\` |`,
+			`| ${esc(e.three)} | ${f.count} in ${f.files.size} file(s) | ${f.refs.map((r) => `\`${r}\``).join('<br>')} | ${esc(e.target)} | ${esc(e.notes)} | \`${e.docs}\` |`,
 		);
 	}
 	md.push('');
@@ -265,7 +256,6 @@ if (jsonOut) {
 		totalLines,
 		threeVersion,
 		glslLines,
-		neededEngineVersion: needed,
 		effort,
 		points,
 		warnings,
@@ -274,7 +264,6 @@ if (jsonOut) {
 			id: f.entry.id,
 			three: f.entry.three,
 			status: f.entry.status,
-			since: f.entry.since,
 			count: f.count,
 			files: [...f.files],
 			refs: f.refs,
@@ -285,5 +274,5 @@ if (jsonOut) {
 	writeFileSync(jsonOut, `${JSON.stringify(out, null, 2)}\n`);
 }
 console.log(
-	`Scanned ${files.length} files: ${found.size} three.js features (${order.map((s) => `${s} ${byStatus[s].length}`).join(', ')}). Effort: ${effort}. Needs null3D ${needed}. Wrote ${mdOut}${jsonOut ? ` and ${jsonOut}` : ''}.`,
+	`Scanned ${files.length} files: ${found.size} three.js features (${order.map((s) => `${s} ${byStatus[s].length}`).join(', ')}). Effort: ${effort}. Wrote ${mdOut}${jsonOut ? ` and ${jsonOut}` : ''}.`,
 );

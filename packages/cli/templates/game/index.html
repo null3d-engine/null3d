@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>{{name}}</title>
+		<style>
+			html,
+			body {
+				margin: 0;
+				height: 100%;
+			}
+			canvas {
+				display: block;
+				width: 100%;
+				height: 100%;
+				/* The game reads touches, so the browser must not scroll or zoom the page. */
+				touch-action: none;
+			}
+			#score {
+				position: fixed;
+				top: 12px;
+				left: 16px;
+				font: 600 20px/1.2 system-ui, sans-serif;
+				color: #fff;
+				text-shadow: 0 1px 3px #0008;
+				pointer-events: none;
+			}
+		</style>
+	</head>
+	<body>
+		<canvas></canvas>
+		<div id="score">Gems: 0</div>
+		<script type="module" src="/src/page.ts"></script>
+	</body>
+</html>

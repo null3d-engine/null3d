@@ -121,7 +121,7 @@ A feature without an `order` takes the first place of its band, which is 0 for `
 | --- | --- |
 | `'sceneColor'` | The scene's color, before the tone curve. |
 | `'sceneDepth'` | The scene's depth. |
-| `'normals'` | The scene's surface normals. No pass makes them yet. |
+| `'normals'` | The scene's surface normals. No pass makes them, so a feature that reads them gets the neutral value. |
 | `'motionVectors'` | How far each pixel's surface moved since the last frame. |
 | `'history'` | The image of an earlier frame, which a temporal effect keeps. |
 | `'shadowAtlas'` | The sun's cascades and the point and spot lights' shadow tiles. |
@@ -142,13 +142,11 @@ An output is a texture that a feature publishes to materials, effects and passes
 
 A reader shows the neutral value while the feature is absent, switched off or not ready. A missing feature then breaks nothing downstream. Output names are unique across the engine's features.
 
-Nothing binds a registered output to a texture yet. The compute pass publishes the texture that its description names, and a material reads it through `textures.fromPass`. The declared neutral default is checked and kept, and it becomes a bound texture when an adapter reads a registered output.
+No adapter binds a registered output to a texture. The compute pass publishes the texture that its description names, and a material reads it through `textures.fromPass`. The declared neutral default is checked and kept.
 
 ## Lighting slots
 
-A feature can provide one or more lighting slots: `'shadow'`, `'ambient'`, `'sky'`, `'ao'`, `'reflection'` or `'fog'`. One feature provides each slot. A second provider throws, because the scene would then have two answers for one kind of light.
-
-Nothing reads a slot's provider yet. The rule keeps one owner ready for the hook that first consumes a slot.
+A feature can provide one or more lighting slots: `'shadow'`, `'ambient'`, `'sky'`, `'ao'`, `'reflection'` or `'fog'`. One feature provides each slot. A second provider throws, because the scene would then have two answers for one kind of light. No part of the engine reads a slot's provider: the rule keeps one owner for each slot.
 
 ## Views
 
@@ -272,13 +270,13 @@ A feature's `memory` callback runs when the engine reads the figures, which happ
 - `reset` names why the feature must drop its history. The reasons are a new render size, a camera cut to another place, and an exposure change that makes stored values stale.
 - `destroy` frees the feature's own objects. The registry does not call it. The full-screen adapter's handle calls it when you destroy the handle, and otherwise stop the feature before you remove it.
 
-Not every callback has a caller yet, and the page says which do:
+This table says who calls each callback:
 
-| Callback | Who calls it today |
+| Callback | Who calls it |
 | --- | --- |
 | `quality` | `FeatureHost`, when the preset or its settings change |
-| `ready` | The full-screen adapter, when it places a feature and on each quality change, and `effect.refresh()` when the add-on calls it. The draw, instance, compute and sky-layer adapters do not ask it yet. |
-| `resize`, `reset` | Nothing yet. An add-on that keeps targets or history keeps its own size and reset state. |
+| `ready` | The full-screen adapter, when it places a feature and on each quality change, and `effect.refresh()` when the add-on calls it. The draw, instance, compute and sky-layer adapters do not ask it. |
+| `resize`, `reset` | Nothing in the engine. An add-on that keeps targets or history keeps its own size and reset state. |
 | `destroy` | The full-screen adapter's handle, when the add-on destroys it. Otherwise the owner of the feature calls it. |
 
 ## Adapters
@@ -291,13 +289,13 @@ Adapters turn a checked description into work in the frame. Five exist:
 - **Compute passes:** [`render.addPass({ kind: 'compute', description, ... })`](render.md#compute-passes) runs the add-on's compute shader over a storage texture, which materials, effects and passes sample in the same frame. The adapter places the main view alone, binds no scene resource, and publishes the description's one output. A WebGL2 page runs the pass's fragment form, or the call throws.
 - **Sky layers:** [`scene.setSkyLayer(description, options)`](scene.md#sky-layers) draws the add-on's WGSL over the background, at the `'background'` point as a `'draw'`, with the `'sky'` slot and the three views. The engine places it itself, because the background draws it before the opaque objects. Its function reads the core sky's values (D-242).
 
-The other hooks still need their own payload, and they arrive with the add-on that uses them first:
+The descriptions serve these five adapters alone. Some kinds of add-on have no hook:
 
-| Hook | What the description does not yet give it |
+| Kind of add-on | What the engine does |
 | --- | --- |
-| Material lobes, baked-data formats and glTF extension handlers | They are not frame features, so each needs its own hook. |
-| An effect after the tone curve, a pass in another view, and the normals, motion, history or shadow reads | The adapters refuse them until a hook needs each one. |
-| Scene inputs | A depth input behind a material needs its own declaration. |
+| Material lobes, baked-data formats and glTF extension handlers | They are not frame features, and no hook takes them. |
+| An effect after the tone curve, a pass in another view, and reads of the normals, motion, history or shadows | The adapters refuse them with E1223. |
+| A scene input behind a material | A custom material declares its depth input itself ([Materials](materials.md#the-scene-behind-a-surface)). |
 
 ## Checks
 

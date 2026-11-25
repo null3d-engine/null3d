@@ -32,7 +32,7 @@ flowchart LR
 
 null3D draws each frame as a series of passes. A pass is one job for the GPU, such as culling the objects that a camera cannot see, or drawing the scene from the camera. Each pass declares what it reads and what it writes. The render graph reads these declarations before a frame draws. It puts the passes in order and plans the textures they draw into.
 
-The engine declares its own passes. From step 0.2, a sketch adds scene passes of its own with `render.addPass`, and `render.dumpGraph()` prints the graph ([Render graph API](../api/render.md)).
+The engine declares its own passes. A sketch adds scene passes of its own with `render.addPass`, and `render.dumpGraph()` prints the graph ([Render graph API](../api/render.md)).
 
 In the diagram, boxes are passes and cylinders are data. An arrow into a pass shows what it reads, and an arrow out of a pass shows what it writes. The opaque and transparent passes share one render pass on the GPU. The scene color reaches the canvas through the final pass on devices that draw HDR color. So it does in the FXAA and no anti-aliasing modes. On the other devices with MSAA, the resolve pass takes its place, along the dotted arrows. It shares the opaque and transparent passes' render pass.
 
@@ -83,7 +83,7 @@ A custom material or an add-on feature can read scene resources that the frame m
 | --- | --- | --- |
 | `'sceneColor'` | The scene's color before the tone curve | The camera's opaque and transparent passes |
 | `'sceneDepth'` | The scene's depth | The camera's opaque pass |
-| `'normals'` | The surface normals that a depth prepass writes | No pass makes them yet |
+| `'normals'` | The surface normals | No pass makes them |
 | `'motionVectors'` | How far each pixel's surface moved since the last frame | The motion pass, while a reader wants it |
 
 A feature declares the inputs in its `reads` ([Add-on feature descriptions](../api/features.md#scene-resources)). The render graph then runs it after the passes that write them. A custom material declares `sceneInputs: ['sceneDepth']` and reads the depth with `sceneDepth` or `sceneDistance` ([Materials](../api/materials.md#the-scene-behind-a-surface)).
@@ -120,7 +120,7 @@ Because passes are declarations, the engine can:
 - let neighboring passes share one render pass, and let temporary targets share memory
 - switch passes on and off with no new code
 - skip passes whose output nothing uses
-- print the whole graph as text for people and agents to read (0.2)
+- print the whole graph as text for people and agents to read
 
 ## How the graph orders passes
 
@@ -174,7 +174,7 @@ The passes that a sketch adds get the same checks. The core checks them when `re
 
 ## The text dump
 
-`render.dumpGraph()` returns the compiled graph as Graphviz DOT text (0.2). Paste the text into any Graphviz viewer to see it as a picture.
+`render.dumpGraph()` returns the compiled graph as Graphviz DOT text. Paste the text into any Graphviz viewer to see it as a picture.
 
 - Each render or compute pass that the GPU runs is a box around the passes it runs.
 - The number before each pass is its place in the order.
@@ -213,5 +213,5 @@ digraph "render graph" {
 - [Render layers](render-layers.md): the layer masks that decide what a pass draws.
 - [Quality presets, dynamic resolution and frame budgets](quality-presets.md): the settings that switch passes and scale the render size.
 - [Shadows](shadows.md): the shadow cascades.
-- [Render graph API](../api/render.md): adding passes and printing the graph (0.2).
+- [Render graph API](../api/render.md): adding passes and printing the graph.
 - [The security camera demo](https://github.com/null3d-engine/null3d/tree/main/examples/security-camera): a scene pass that draws a second camera's view for a monitor.

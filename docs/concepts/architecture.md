@@ -8,7 +8,7 @@ summary: "Main thread, sketch worker, render worker, job workers; where the sket
 
 # Architecture: threads and the frame
 
-> Roadmap step 0.1, first released in null3D 0.1.0. Step 0.2 adds the passes and helper workers of models, effects and scene passes. The API is experimental, so it can still change between versions.
+> Roadmap step 0.1, first released in null3D 0.1.0. The API is experimental, so it can still change between versions.
 
 ```mermaid
 flowchart LR

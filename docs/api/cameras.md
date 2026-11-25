@@ -8,7 +8,7 @@ summary: "Perspective and orthographic cameras; a perspective camera's focal len
 
 # Cameras
 
-> Roadmap step 0.1, first released in null3D 0.1.0. Step 0.2 adds `screenToRay`, `worldToScreen` and `setFocalLength`. The API is experimental, so it can still change between versions.
+> Roadmap step 0.1, first released in null3D 0.1.0. The API is experimental, so it can still change between versions.
 
 A camera is the object that the engine draws the scene from. There are two kinds: `scene.createPerspectiveCamera` makes a perspective camera, and `scene.createOrthographicCamera` makes an orthographic one. `scene.setActiveCamera` picks the camera that the canvas shows.
 
@@ -139,6 +139,8 @@ So the engine keeps the cameras of the last four views that it drew. Frames in a
 Objects keep their current positions. A ray finds a moving object where it is now. That can be up to a frame of its motion away from where the user saw it.
 
 `worldToScreen` always uses the camera of the frame that last ran. In `onLateUpdate`, that is the frame being drawn, so a point placed there lines up with the image.
+
+A view from `scene.createView` draws its camera into a rectangle of the canvas, with the rectangle's shape. `view.screenToRay(x, y, ray)` and `view.worldToScreen(point, out)` map a point of that image. They take CSS pixels from the canvas's top-left corner too. `scene.viewAt(x, y)` gives the view under a point. [Multiple views](../guides/multiple-views.md#picking-in-a-view) shows them.
 
 ## Several cameras
 

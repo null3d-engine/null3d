@@ -8,7 +8,7 @@ summary: "Frustum culling on the GPU on WebGPU, or on the job workers there when
 
 # Culling
 
-> Roadmap step 0.1, first released in null3D 0.1.0. Step 0.2 adds occlusion culling. The API is experimental, so it can still change between versions.
+> Roadmap step 0.1, first released in null3D 0.1.0. The API is experimental, so it can still change between versions.
 
 ```mermaid
 flowchart LR

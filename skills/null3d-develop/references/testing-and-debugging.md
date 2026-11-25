@@ -13,16 +13,15 @@ Before you call a scene done, check frame rate, memory and looks on `?gpu=webgpu
 3. Behavior tests
 4. Testing on real devices
 5. Debugging tools
-6. The MCP server for agents (0.3, not built yet)
-7. Error codes
-8. Troubleshooting table
-9. Before you ship
+6. Error codes
+7. Troubleshooting table
+8. Before you ship
 
 ## 1. Commands
 
 | Command | What it does |
 | --- | --- |
-| `bunx vite` | Dev server; the null3D Vite plugin adds the cross-origin isolation headers and compiles WGSL. Editing only WGSL updates the running page without a reload (0.2) |
+| `bunx vite` | Dev server; the null3D Vite plugin adds the cross-origin isolation headers and compiles WGSL. Editing only WGSL updates the running page without a reload |
 | `bunx @null3d/cli shot --out shot.png [--time 2.0] [--size 1280x720] [--gpu webgl2] [--page /other.html]` | Draws one held frame of the page headless and saves it, plus `shot.json` with the frame's time, number and GPU tier and the page's errors and warnings. When no frame is drawn, it says why and exits with 1 |
 | `bunx @null3d/cli shot --script drive.script --out tour.png` | Drives the page through the timed script's states, and draws each `shot` step: `tour-start.png`, `tour-<state>.png`, and a JSON file beside each. Key, pointer and property steps land at their sketch times. A failing step fails the command |
 | `bunx @null3d/cli shot --replay bug.n3dr --out bug.png` | Replays a recording, which a page makes with `?record`, and draws its last frame. The recording holds each frame's step and the input that the sketch read, from the session's first frame, so the frames are the ones the session drew. `--time` and `--script` cannot be given with it |
@@ -33,10 +32,8 @@ Before you call a scene done, check frame rate, memory and looks on `?gpu=webgpu
 | `bunx @null3d/cli bench --runs 3 --seconds 10 --warmup 5 --size 390x844` | Measures with fewer or shorter runs, or in another window size in CSS pixels. Compare only runs made with the same options on the same computer |
 | `bunx @null3d/cli check-addon [folder] [--page /demo.html] [--skip-browser]` | Runs the engine's gates on one add-on package: its public imports, its plugin interface range, a build of its shaders for both GPU paths, the size of its first-use files (a file over budget warns, and does not fail), and, with a page, its start from another origin under the strict policy, its cost per quality preset, and the bytes per frame that its own code allocates. Prints one line per gate and exits with 1 when one fails |
 | `bunx @null3d/cli upgrade [--to 0.2.0] [--dry-run]` | Moves every `@null3d` package in `package.json` to one version: the installed engine's, or the one `--to` names. Writes the manifest only, and edits no code; run `bun install` after it |
-| `bunx @null3d/cli doctor` (0.3, not built yet) | Checks versions, headers, asset CORS, and the capabilities of the local browser |
-| `bunx @null3d/cli docs show <id>` / `bunx @null3d/cli docs search "<words>"` (0.3, not built yet) | Prints docs for the installed engine version |
 
-The `shot`, `test` and `bench` commands are built, and `test` runs image tests only. Until `docs show` comes, read the docs in `node_modules/@null3d/engine/docs/` (SKILL.md section 1).
+The `test` command runs image tests only. Read the docs in `node_modules/@null3d/engine/docs/` (SKILL.md section 1).
 
 Every command prints short text results (pass or fail, reasons, file paths), so you can read them directly. Open the image files it names when a visual check fails.
 
@@ -93,6 +90,7 @@ Test logic in three ways:
 - Drive the sketch with a timed script: `bunx @null3d/cli shot --script` and a `test` entry that gives `script` put keys, pointer events and property writes at exact sketch times, and each `shot` step draws that state (`cli/null3d`, "Timed scripts"). This is the way to draw a state that input causes.
 - Keep game rules in plain modules that take numbers and arrays and import nothing from the engine, and test them with `bun test`. The sketch calls them from `onUpdate` or `onFixedUpdate`.
 - Put a scene into a state for an image test through the sketch module's address, such as `sketch.ts?score=90`, and check the held frame. A hold without a script gives the sketch no input.
+- Test a whole app or game in a browser suite that starts the real page, waits for a hook and asserts its state: `references/e2e-testing.md`.
 
 Before you believe a picture that judges a change, prove the page read the change:
 
@@ -102,7 +100,7 @@ Before you believe a picture that judges a change, prove the page read the chang
 
 ## 4. Testing on real devices
 
-URL switches for the dev server and other development builds, such as (0.2) the CDN build's `lib-dev/index.js` (engine docs `guides/testing`). A production build ignores them:
+URL switches for the dev server and other development builds, such as the CDN build's `lib-dev/index.js` (engine docs `guides/testing`). A production build ignores them:
 
 | Switch | Effect |
 | --- | --- |
@@ -133,8 +131,8 @@ URL switches for the dev server and other development builds, such as (0.2) the 
 | `?skinning=full`, `skip`, `narrow` | On WebGPU, skin in the skinning pass with fewer of its savings: `full` skins every drawn character every frame with 32-bit normals, `skip` keeps only the skip of unchanged poses, `narrow` keeps only the 8-bit normals (`guides/testing`) |
 | `?half=on`, `?half=off` | Do the scene shaders' color math at half precision, or at full precision; WebGPU needs the device feature `shader-f16`, and `engine.capabilities.halfPrecision` says which one the engine took (`guides/testing`) |
 | `?preset=low`, `?preset=medium`, `?preset=high`, `?preset=ultra` | Fix the quality preset, within the GPU path's highest (`concepts/quality-presets`) |
-| `?target-fps=display`, `?target-fps=90` | (0.2) Set the frame rate that the preset check and the governor defend, over the `targetFps` option of `createEngine` (`concepts/quality-presets`) |
-| `?preset-check=during-play`, `?preset-check=before-play` | (0.3) Set when the preset check measures, over the `presetCheck` option of `createEngine`: in the first frames of play, or before play, with `createEngine` waiting for it (`concepts/quality-presets`) |
+| `?target-fps=display`, `?target-fps=90` | Set the frame rate that the preset check and the governor defend, over the `targetFps` option of `createEngine` (`concepts/quality-presets`) |
+| `?preset-check=during-play`, `?preset-check=before-play` | Set when the preset check measures, over the `presetCheck` option of `createEngine`: in the first frames of play, or before play, with `createEngine` waiting for it (`concepts/quality-presets`) |
 | `?jobs=4` | Start at most this many job workers, from 1 to 255, instead of the logical cores minus 2. They start as the work grows |
 | `?memory=2048` | Set the maximum of the memory that worker threads share, in MiB, up to 4096, over the `memory` option of `createEngine`; the default is 1024 |
 | `?fps=30` | Hold drawing at this many frames per second, at most the display's rate, to compare runs on displays of different refresh rates |
@@ -147,8 +145,8 @@ Reaching the dev server:
 - Android phone: connect by USB and run `adb reverse tcp:5173 tcp:5173`; the phone opens `http://localhost:5173`, which counts as a secure context. Plain `http` on a network address does not, and Chrome 154 asks before loading it.
 - iPhone or iPad: serve HTTPS with a local certificate through the Vite plugin's `https` option (`getting-started/hosting`). Install the root certificate on the device, and trust it in Settings > General > About > Certificate Trust Settings. Debug from Safari on a Mac through the Develop menu.
 - Over the network, the plugin's dev server compresses what a phone or tablet downloads with Brotli, and `vite preview` does so for every visitor (`getting-started/hosting`). Over USB, the phone reaches `localhost`, which needs no compression and gets none. Chrome keeps no file in its cache from a site whose certificate it accepted after a warning. Each reload then downloads every file again, so install and trust the root certificate instead.
-- A dev page asks for hundreds of files, and HTTPS goes over HTTP/1.1, six requests at a time. The plugin's `http2: true` option (0.3) serves HTTP/2, which sends them all at once. Leave it off for Safari on an iPad, which can stall on HTTP/2 while a worker loads its modules.
-- Record the device, browser version, GPU tier and preset with every result: `engine.capabilities.tier` and `engine.mode.preset` give the last two. `bunx @null3d/cli doctor --device` (0.3, not built yet) prints them all. Record the engine version, the canvas size in CSS pixels, the pixel ratio, any CPU throttle and where the camera stood too. Without them, two numbers cannot be compared.
+- A dev page asks for hundreds of files, and HTTPS goes over HTTP/1.1, six requests at a time. The plugin's `http2: true` option serves HTTP/2, which sends them all at once. Leave it off for Safari on an iPad, which can stall on HTTP/2 while a worker loads its modules.
+- Record the device, browser version, GPU tier and preset with every result: `engine.capabilities.tier` and `engine.mode.preset` give the last two. Record the engine version, the canvas size in CSS pixels, the pixel ratio, any CPU throttle and where the camera stood too. Without them, two numbers cannot be compared.
 - Measure one page at a time. A second tab or a preview that draws a scene shares the GPU, and lowers what each one measures.
 - After a core rebuild or a merge that changes the shaders, delete `node_modules/.vite` and `node_modules/.cache/null3d-shaders`, then start the server with `--force`. The second folder holds the compiled custom materials, and `--force` does not clear it. An entry compiled against an older frame group keeps its old binding declarations, and the page dies with E1404 at a binding, which reads like an engine fault.
 
@@ -158,34 +156,18 @@ Engine docs: `api/debug`, `guides/debugging`.
 
 | Tool | Shows | Builds |
 | --- | --- | --- |
-| `debug.stats(true)` in the sketch; (0.2) `createEngine({ stats: true })`, `engine.stats(true)` or `?stats` on the page | An overlay over the canvas with the GPU path, the preset, the render scale, the frame rates and the CPU time per thread and phase. In 0.2 a header with the frame rate, and a card of four tabs with a fixed 360 by 396 pixel size. Frame holds the work bars against the target frame rate and the triangles and objects drawn, Memory the parts of memory, Steps the add-ons and the GPU's timed passes, and Systems the memory register that a development build reports, with each engine table's and allocator's bytes used, reserved and peak | Every build |
+| `debug.stats(true)` in the sketch; `createEngine({ stats: true })`, `engine.stats(true)` or `?stats` on the page | An overlay over the canvas with the GPU path, the preset, the render scale, the frame rates and the CPU time per thread and phase. In 0.2 a header with the frame rate, and a card of four tabs with a fixed 360 by 396 pixel size. Frame holds the work bars against the target frame rate and the triangles and objects drawn, Memory the parts of memory, Steps the add-ons and the GPU's timed passes, and Systems the memory register that a development build reports, with each engine table's and allocator's bytes used, reserved and peak | Every build |
 | `debug.frameStats()` | The overlay's figures for the sketch, as means over about half a second. It allocates nothing, so read it every frame if you need to | Every build |
 | `await engine.measure(5)` on the page | Every figure of section 3 of `references/performance.md`: CPU, GPU, frame rates, uploads, rebuilds, pipelines, memory | Every build |
 | `debug.view('normals')`, `'depth'`, `'wireframe'`, `'overdraw'`, `'shadows'`, `'motion'`, `'levels'`; `'lit'` to go back. `?view=<name>` on any page does the same | The whole scene with one debug shading in place of every material. Views ignore maps, alpha and custom shaders. `'levels'` colors each draw by its level of detail, dithers the two colors of a fading band, and marks a source that the size rule or a draw range hid. An add-on adds a view of its own through the `debugViews` field of its feature description | Development only |
 | `debug.line`, `box`, `sphere`, `arrow`, `axes`, `grid`, `frustum`, `light` | Lines for one frame, so call them in `onUpdate` in every frame that needs them | Development only |
 | `debug.cullingSpheres(true)` | The bounding sphere that culling tests for each object whose mesh has levels, for the first 128 objects, until `false`. Use it beside `debug.view('levels')`. `debug.cullingSpheresDrawn()` gives the count that the last frame drew: 0 while the switch is off, so a test can tell the switch drew them rather than nothing | Development only |
-| `debug.skeleton` (0.2) | The bones of a skinned mesh | Development only |
+| `debug.skeleton` | The bones of a skinned mesh | Development only |
 | `?record` on the page, then `?replay=<file>` or `shot --replay <file>` | A bug report from a phone. `?record` records each frame's step and the input that the sketch read, and shows a save button; the file replays here to the same frames. A sketch that reads the quality preset can differ, because the replay picks this computer's preset (`guides/testing`) | Every build |
 
 In a production build, the debug drawing calls and `debug.view` do nothing, but the code that computes their arguments still runs. Wrap work that only feeds them in `if (import.meta.env.DEV)`. A debug view's first frame builds its pipelines, so objects can be missing for a few frames after a change.
 
-## 6. The MCP server for agents (0.3, not built yet)
-
-`bunx @null3d/cli mcp` starts a Model Context Protocol server connected to the running dev session. Its tool names can change until `guides/agents` is stable:
-
-| Tool | Use |
-| --- | --- |
-| `null3d_list_objects` | Names, handles, types, static or dynamic, layers |
-| `null3d_get_object` / `null3d_set_transform` / `null3d_set_material` | Inspect and adjust objects live |
-| `null3d_capture` | A PNG of the current frame |
-| `null3d_stats` | Frame phases, buckets, uploads, memory, tier, preset |
-| `null3d_errors` | Recent engine errors and console output |
-| `null3d_render_graph` | The compiled render graph as DOT text |
-| `null3d_set_quality` / `null3d_set_gpu` | Switch preset or GPU tier (tier changes reload the page) |
-
-Live changes through the MCP server are for exploring; put the final values into code and tests.
-
-## 7. Error codes
+## 6. Error codes
 
 Every engine error is an `EngineError` with a code, the object's name, what failed, and the fix:
 
@@ -193,9 +175,9 @@ Every engine error is an `EngineError` with a code, the object's name, what fail
 E1203: setPosition() got NaN for x on "Player" (slot 12). Check the value computed before this call.
 ```
 
-Each code has a docs page, such as `errors/E1203`, with the full explanation. Release builds remove most checks, so reproduce problems in a development build. Use the dev server, or (0.2) the CDN build's `lib-dev/index.js` for a page with no bundler.
+Each code has a docs page, such as `errors/E1203`, with the full explanation. Release builds remove most checks, so reproduce problems in a development build. Use the dev server, or the CDN build's `lib-dev/index.js` for a page with no bundler.
 
-## 8. Troubleshooting table
+## 7. Troubleshooting table
 
 | Symptom | Likely cause | Fix | Docs |
 | --- | --- | --- | --- |
@@ -233,19 +215,19 @@ Each code has a docs page, such as `errors/E1203`, with the full explanation. Re
 | Stutter every few seconds | Garbage collection | Remove per-frame allocations | `guides/performance` |
 | Something appears late, or a hitch when it appears | Its pipeline was building | Create it hidden, `await scene.warmUp()`, then show it | `guides/loading-screens` |
 | Tab reloads or crashes on a phone | Memory limit | Fewer and smaller assets, and textures destroyed when unused. The next start runs one preset lower (`engine.mode.crashedStarts`) | `guides/phones` |
-| A replaying engine's scan refuses a game's simulation that imports null3D's math: `Math.sin`, `Math.cos`, `Math.acos`, `Math.exp`, `Math.random`, `**`, `Atomics`, `document`, `navigator`, `requestAnimationFrame` or `FinalizationRegistry`, or `Could not resolve` for a shader module | The simulation imports `@null3d/engine`, whose bundle holds the engine's page code and the helpers that use the browser's `Math` | Import the exact helpers from `@null3d/engine/math/vec3`, `/quat`, `/mat4` and `/math`, and build the angle helpers with `createMath` on an exact math library (0.3). Draw random numbers from the simulation's own generator | `guides/deterministic-simulation` |
+| A replaying engine's scan refuses a game's simulation that imports null3D's math: `Math.sin`, `Math.cos`, `Math.acos`, `Math.exp`, `Math.random`, `**`, `Atomics`, `document`, `navigator`, `requestAnimationFrame` or `FinalizationRegistry`, or `Could not resolve` for a shader module | The simulation imports `@null3d/engine`, whose bundle holds the engine's page code and the helpers that use the browser's `Math` | Import the exact helpers from `@null3d/engine/math/vec3`, `/quat`, `/mat4` and `/math`, and build the angle helpers with `createMath` on an exact math library. Draw random numbers from the simulation's own generator | `guides/deterministic-simulation` |
 | A development build warns `null3D: ctx.input was read, but the page started the engine with input: false`, or names an object's pointer event handler or `@null3d/controls` | The page turned the engine's input off, so the sketch hears no key, pointer or pad, and controls and object events never fire | Read the input in the code that records it, and send the sketch the state it draws. Or leave out `input: false` | `api/input#input-off` |
 | `InvalidStateError` from `setPointerCapture` on a page that locks the pointer itself | The page captured a pointer while the canvas held the lock, often from a flag that `pointerlockchange` had not set yet | Read `document.pointerLockElement` at each press, and take no capture while it is the canvas | `guides/deterministic-simulation` |
 | `engine.requestPointerLock()` fails with E1426 | The engine was started with `input: false`, so it reads no pointer movement | Lock the canvas with `canvas.requestPointerLock()` in the code that records the input, which reads the movement. Stopping the engine leaves that lock | `api/input#input-off` |
 | `document is not defined` or `window is not defined` | DOM code in `sketch.ts` | Move it to `page.ts`; send data with messages. A DOM-heavy app can run the sketch on the main thread with `sketchThread: 'main'` | `api/page`, `concepts/architecture` |
-| `assets.loadGltf` rejects with E1416, or `loadTexture` with E1412, on a file that users upload | The file is broken, or passes a limit on what one file may decode to. Loaders check each file's limits before they allocate (0.2) | Catch the error and tell the user; check the file in the Khronos glTF Validator; split a model that is too large | `concepts/assets` |
+| `assets.loadGltf` rejects with E1416, or `loadTexture` with E1412, on a file that users upload | The file is broken, or passes a limit on what one file may decode to. Loaders check each file's limits before they allocate | Catch the error and tell the user; check the file in the Khronos glTF Validator; split a model that is too large | `concepts/assets` |
 | Drawing stops with E1424 after a custom material, effect or tone curve appears | A file of the shader's builds (`material-*.js`, `effect-*.js` or `curve-*.js`, which `vite build` writes) did not download, or comes from another build | Deploy every file that `vite build` writes, from one build; let `script-src` allow them | `guides/custom-shaders` |
 | `createEngine` rejects with E1410 | The sketch module did not load, at the first import or at the second, which the engine makes after a console warning: a wrong address, or an error that its top-level code threw | Pass `sketch: new URL('./sketch.ts', import.meta.url)`; fix the error that the message quotes | `errors/E1410` |
 | Pointer position off by a factor | Mixing CSS pixels and render pixels | `input.pointer.x` and `y` are CSS pixels, as `ctx.engine.viewport` gives the canvas size | `api/input` |
 | E1432 at the start of a sketch that imports an add-on | The add-on and the engine are at different versions, and each add-on pins the engine version it was built for | `bunx @null3d/cli upgrade`, then `bun install`, so every null3D package takes one version | `errors/E1432`, `cli/null3d` |
 | E1433 at the start of a sketch that imports an add-on from another developer | The add-on declares a plugin interface range that this engine's interface is outside | Install the add-on release that matches the engine's plugin interface, or run the engine version that the add-on declares | `errors/E1433`, `api/engine` |
 
-## 9. Before you ship
+## 8. Before you ship
 
 Work through this list before a release, on the production build (`bunx vite build`, then `bunx vite preview`), not the dev server.
 

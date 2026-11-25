@@ -41,6 +41,28 @@ interface Place {
 	scale?: number[];
 }
 
+/** The limits of a move, as three.js's options of the same names. */
+interface Limits {
+	minX?: number;
+	maxX?: number;
+	minY?: number;
+	maxY?: number;
+	minZ?: number;
+	maxZ?: number;
+}
+
+/** Every limit of a move, with its default when the test gives none. */
+function allLimits(limits: Limits): Required<Limits> {
+	return {
+		minX: limits.minX ?? Number.NEGATIVE_INFINITY,
+		maxX: limits.maxX ?? Number.POSITIVE_INFINITY,
+		minY: limits.minY ?? Number.NEGATIVE_INFINITY,
+		maxY: limits.maxY ?? Number.POSITIVE_INFINITY,
+		minZ: limits.minZ ?? Number.NEGATIVE_INFINITY,
+		maxZ: limits.maxZ ?? Number.POSITIVE_INFINITY,
+	};
+}
+
 /** The transform that a drag gives its object. */
 interface Pose {
 	position: number[];
@@ -158,9 +180,11 @@ class Scene {
 		space: GizmoSpace,
 		from: [number, number],
 		to: [number, number],
+		limits: Limits = {},
 	): Pose {
 		this.reset();
 		const { controls, mesh } = this;
+		Object.assign(controls, allLimits(limits));
 		controls.setMode(mode);
 		controls.setSpace(space);
 		controls.axis = axis;
@@ -189,7 +213,12 @@ class Scene {
 		space: GizmoSpace,
 		from: [number, number],
 		to: [number, number],
-		options: { translationSnap?: number; rotationSnap?: number; scaleSnap?: number } = {},
+		options: {
+			translationSnap?: number;
+			rotationSnap?: number;
+			scaleSnap?: number;
+			limits?: Limits;
+		} = {},
 	): { drag: GizmoDrag; pose: Pose } {
 		this.reset();
 		const start = this.start(mode, axis, space);
@@ -200,6 +229,7 @@ class Scene {
 		drag.translationSnap = options.translationSnap ?? null;
 		drag.rotationSnap = options.rotationSnap ?? null;
 		drag.scaleSnap = options.scaleSnap ?? null;
+		Object.assign(drag, allLimits(options.limits ?? {}));
 		expect(drag.begin(start)).toBe(true);
 		const moved = this.ray(...to);
 		expect(drag.move(moved.origin, moved.direction)).toBe(true);
@@ -280,6 +310,77 @@ describe('a move', () => {
 			translationSnap: 0.25,
 		}).pose;
 		expect(apart(ours.position, snapped)).toBeLessThan(TOLERANCE);
+	});
+});
+
+describe('the limits of a move', () => {
+	// The object starts at (1.5, 0.5, -0.75), and each drag moves it past at least one limit.
+	const cases: { name: string; axis: GizmoAxis; to: [number, number]; limits: Limits }[] = [
+		{ name: 'maxX', axis: 'X', to: [420, 210], limits: { maxX: 1.8 } },
+		{ name: 'minX', axis: 'X', to: [220, 150], limits: { minX: 1.2 } },
+		{ name: 'maxY', axis: 'Y', to: [320, 100], limits: { maxY: 0.7 } },
+		{ name: 'minY', axis: 'Y', to: [320, 260], limits: { minY: 0.3 } },
+		{ name: 'maxZ', axis: 'Z', to: [360, 260], limits: { maxZ: -0.5 } },
+		{ name: 'minZ', axis: 'Z', to: [280, 110], limits: { minZ: -1 } },
+		{
+			name: 'every axis',
+			axis: 'XYZ',
+			to: [430, 90],
+			limits: { maxX: 1.6, maxY: 0.6, minZ: -0.8 },
+		},
+	];
+	for (const { name, axis, to, limits } of cases) {
+		it(`clamps the position to ${name}, as three.js does`, () => {
+			const scene = new Scene();
+			const free = scene.threeDrag('translate', axis, 'world', [320, 180], to);
+			const theirs = scene.threeDrag('translate', axis, 'world', [320, 180], to, limits);
+			// The case must reach a limit, or it tests nothing.
+			expect(apart(free.position, theirs.position)).toBeGreaterThan(0.01);
+			const ours = scene.nullDrag('translate', axis, 'world', [320, 180], to, { limits }).pose;
+			expect(apart(ours.position, theirs.position)).toBeLessThan(TOLERANCE);
+		});
+	}
+
+	it('clamps the position relative to a turned and scaled parent, as three.js does', () => {
+		const scene = new Scene(
+			{ position: [0, 2, -1], rotation: [0, 0.5, 0, 0.866025], scale: [2, 2, 2] },
+			{ position: [1, 0.5, -1] },
+		);
+		const limits = { minX: 0.95, maxZ: -0.8 };
+		const free = scene.threeDrag('translate', 'XZ', 'world', [320, 180], [400, 250]);
+		const theirs = scene.threeDrag('translate', 'XZ', 'world', [320, 180], [400, 250], limits);
+		expect(apart(free.position, theirs.position)).toBeGreaterThan(0.01);
+		const { drag, pose } = scene.nullDrag('translate', 'XZ', 'world', [320, 180], [400, 250], {
+			limits,
+		});
+		expect(apart(pose.position, theirs.position)).toBeLessThan(TOLERANCE);
+		// The handles follow the clamped position.
+		scene.mesh.position.fromArray(pose.position);
+		scene.parent.updateMatrixWorld(true);
+		const world = scene.mesh.getWorldPosition(new Vector3()).toArray();
+		expect(apart([...drag.worldPosition], world)).toBeLessThan(TOLERANCE);
+	});
+
+	it('clamps after a snap, as three.js does', () => {
+		const scene = new Scene();
+		const limits = { maxX: 1.8 };
+		const theirs = scene.threeDrag('translate', 'X', 'world', [320, 180], [430, 200], limits);
+		const ours = scene.nullDrag('translate', 'X', 'world', [320, 180], [430, 200], {
+			translationSnap: 0.25,
+			limits,
+		}).pose;
+		// three.js snaps here too, and then clamps: 1.8 is no step of 0.25, so the clamp wins.
+		expect(ours.position[0]).toBeCloseTo(1.8, 6);
+		expect(Math.abs((theirs.position[0] as number) - 1.8)).toBeLessThan(TOLERANCE);
+	});
+
+	it('leaves a scale and a turn alone', () => {
+		const scene = new Scene();
+		const limits = { maxX: 0, maxY: 0, maxZ: -5 };
+		const scaled = scene.nullDrag('scale', 'X', 'local', [320, 180], [420, 210], { limits });
+		expect(scaled.pose.position).toEqual(scene.mesh.position.toArray());
+		const turned = scene.nullDrag('rotate', 'Y', 'world', [360, 180], [320, 220], { limits });
+		expect(turned.pose.position).toEqual(scene.mesh.position.toArray());
 	});
 });
 

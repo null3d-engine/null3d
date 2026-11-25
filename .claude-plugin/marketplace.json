@@ -4,7 +4,7 @@
 		"name": "null3d",
 		"url": "https://github.com/null3d-engine/null3d"
 	},
-	"description": "Agent skills for null3D, a browser 3D engine.",
+	"description": "Agent skills for null3D, a high-performance browser 3D engine for agents.",
 	"plugins": [
 		{
 			"name": "null3d",

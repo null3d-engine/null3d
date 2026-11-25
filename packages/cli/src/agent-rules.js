@@ -34,7 +34,7 @@ export const RULES = /** @type {readonly Rule[]} */ ([
 		summary: 'Read a log file once instead of following it.',
 	},
 	{
-		id: 'no-planned-api',
+		id: 'no-unknown-api',
 		kind: 'source',
 		action: 'flag',
 		summary: 'Import only names that the installed engine exports.',
@@ -68,8 +68,8 @@ const FOLLOWING =
 	'null3D agent hook: do not follow a log. Read the file once, for example `tail -n 200 <file>`.';
 const ALLOCATION_TAIL =
 	'in onUpdate, which runs every frame. Make it once outside onUpdate and reuse it.';
-const PLANNED_TAIL =
-	'which the installed @null3d/engine does not export. A planned API does not exist in this version. Read its docs page and use the workaround that the page gives.';
+const UNKNOWN_TAIL =
+	'which the installed @null3d/engine does not export. Read the docs page of the feature and use a call that it shows.';
 const DOM_TAIL =
 	'in the sketch. The sketch runs in a worker and has no DOM: keep HTML in page.ts and send messages between the two. A sketch on the main thread may use the DOM, but it shares the page thread.';
 
@@ -79,7 +79,7 @@ export const MESSAGE_PHRASES = /** @type {readonly string[]} */ ([
 	STOPPING,
 	FOLLOWING,
 	ALLOCATION_TAIL,
-	PLANNED_TAIL,
+	UNKNOWN_TAIL,
 	DOM_TAIL,
 ]);
 
@@ -913,14 +913,14 @@ function allocationFinding(file, text) {
 
 /**
  * The first import of a name that the installed engine does not export, as the finding that names
- * it, or null. The docs mark an API that does not exist with `status: planned`.
+ * it, or null.
  *
  * @param {string} file
  * @param {string} text Source text whose comments are blank.
  * @param {string} declarations
  * @returns {Finding | null}
  */
-function plannedApiFinding(file, text, declarations) {
+function unknownApiFinding(file, text, declarations) {
 	if (declarations === '') return null;
 	for (const match of text.matchAll(ENGINE_IMPORT)) {
 		for (const part of (match[1] ?? '').split(',')) {
@@ -934,8 +934,8 @@ function plannedApiFinding(file, text, declarations) {
 			if (!new RegExp(`\\b${escaped}\\b`).test(declarations)) {
 				const line = lineAt(text, match.index ?? 0);
 				return {
-					id: 'no-planned-api',
-					message: `null3D agent hook: ${file}:${line} imports ${name}, ${PLANNED_TAIL}`,
+					id: 'no-unknown-api',
+					message: `null3D agent hook: ${file}:${line} imports ${name}, ${UNKNOWN_TAIL}`,
 				};
 			}
 		}
@@ -953,8 +953,8 @@ function plannedApiFinding(file, text, declarations) {
  */
 export function refusedSource(file, source, { declarations = '' } = {}) {
 	const { code, named } = scanSource(source);
-	const planned = plannedApiFinding(file, named, declarations);
-	if (planned) return planned;
+	const unknown = unknownApiFinding(file, named, declarations);
+	if (unknown) return unknown;
 	if (SKETCH_FILE.test(file)) {
 		const dom = DOM_NAMES.exec(code);
 		if (dom) {

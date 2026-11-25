@@ -3,7 +3,7 @@ id: guides/testing
 title: Testing your sketch
 status: experimental
 since: "0.1"
-summary: "Hold mode; image tests; reading results; frames that stay the same on every run."
+summary: "Hold mode; image tests; reading results; frames that stay the same on every run; browser tests of a whole app."
 ---
 
 # Testing your sketch
@@ -194,6 +194,20 @@ A live engine logs an error in `onUpdate` and carries on. Hold mode stops instea
 Loads that run side by side are safe in a held frame. While the engine holds frames or replays, the sketch's `assets` calls run one at a time, in the order the sketch made them. A model makes its textures in the file's order. So a held scene puts its content together in the same order on every run, however its files arrive ([Hold mode](#hold-mode)).
 
 The [hold mode demo](https://github.com/null3d-engine/null3d/tree/main/examples/hold-mode) drops 400 balls from random places, and moves them by each frame's step. Every live run differs. With `?hold=3`, every run draws the same frame.
+
+## Browser tests of a whole app
+
+Image tests check pictures. A game or an app also needs a suite that opens its real page in a browser, drives it and checks what it did. The null3d-develop agent skill's `references/e2e-testing.md` gives the whole setup, with a worked Playwright config and spec. Its main rules:
+
+- Run Playwright Test with its own pinned Chromium, installed with `bunx playwright install chromium`. Use one browser version on every machine, and never the installed Google Chrome.
+- Start the real app with Playwright's `webServer`: the dev server, and the production build through `vite preview`. CI tests the production build.
+- Serve the page from `localhost` or over HTTPS, with the null3D Vite plugin, which sends the isolation headers.
+- Wait for `engine.firstFrame`, for `window.__null3dHold` in a held page, or for the app's own hook. Never wait with a fixed sleep.
+- Give the page a read-only test hook. It holds the state, a hash of it and the input recording, and the same input functions that the UI calls. The sketch has no DOM, so input starts on the page and reaches the sketch by [message](../api/page.md).
+- Assert game logic on state and hashes. Assert pictures with hold-mode image tests, never with browser screenshots.
+- Step the logic in fixed ticks, seed every random number with [`math.seed`](../api/math.md#random-numbers), and keep `Date.now()` and `performance.now()` out of it. A recording then replays to the same hash.
+- Give each copy of the project its own port, fail a test on any console error, and record a trace on the first retry.
+- Keep real phones and tablets, and frame-rate timing, out of CI.
 
 ## Switches for tests
 

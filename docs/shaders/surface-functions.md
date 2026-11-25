@@ -8,7 +8,7 @@ summary: "The surface record; normals for the diffuse light and the sky's light;
 
 # Surface functions
 
-> Roadmap step 0.1, first released in null3D 0.1.0. Step 0.2 adds typed uniforms, textures, values per row of a batch, the diffuse transmission fields, the clear coat and sheen fields, the second texture coordinates, the pixel's position and the instance's index. Step 0.3 adds a material's own specular lobe, the coverage that a shadow caster tests and the surface's shadow offset. It also adds the normals for the diffuse light and the sky's light, and the occlusion that counts once. The API is experimental, so it can still change between versions.
+> Roadmap step 0.1, first released in null3D 0.1.0. The API is experimental, so it can still change between versions.
 
 A surface function changes how a material's surface looks, and keeps the engine's lighting. You write it in WGSL. For each pixel, the engine gives it a `SurfaceInput`, and it returns a `Surface`: the base color, roughness, metalness, normal and light of that point. The engine then lights the surface with the scene's lights and shadows, as it lights a standard material. The function works on every GPU path, because the null3D Vite plugin builds it into the standard material's shader for WebGPU and WebGL2.
 
@@ -316,7 +316,7 @@ const wall = materials.shader({ wgsl: facade, textures: { facades } });
 - A texture that does not go straight to a texture function.
 - `textureNumLayers` of a texture that the WGSL declares as a 2D texture.
 
-Full shaders take no textures in this version.
+Full shaders take no textures.
 
 ## Reflections
 
@@ -487,7 +487,7 @@ const stone = materials.shader({ wgsl: wet, color: '#8d8a84', roughness: 0.85 })
 ```
 
 - Only WGSL that sets or reads one of the fields builds the shaders that light the layers. Such a material always has them, and its layer options give `defaultSurface` their values. A layer option on a material whose WGSL never names the fields throws E1217.
-- The three iridescence fields work as the coat's and the sheen's do. Anisotropy needs the standard material's tangent frame, which a surface function does not have, so a custom material cannot set it yet.
+- The three iridescence fields work as the coat's and the sheen's do. Anisotropy needs the standard material's tangent frame, which a surface function does not have, so a custom material cannot set it.
 - Ripples on the water of a wet surface only need `clearcoatNormal`: the coat then shows them while the stone under it stays still.
 
 ## Vertex offsets

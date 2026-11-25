@@ -8,7 +8,7 @@ summary: "Directional, point, spot, hemisphere, ambient, rectangle and tube ligh
 
 # Lights
 
-> Roadmap step 0.1, first released in null3D 0.1.0. Step 0.2 adds the light from the sky, the light of hemisphere lights, rectangle and tube lights and contact shadows. Step 0.3 adds pictures that a spot light projects over its cone. The API is experimental, so it can still change between versions. Surfaces show up to four directional lights: the first casts the shadows, and three more add fill and rim light.
+> Roadmap step 0.1, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. Surfaces show up to four directional lights: the first casts the shadows, and three more add fill and rim light.
 
 A light is a scene object, like a mesh or a camera. It has a position, a rotation, a parent and layers, and `setVisible` and `destroy` work on it. Each kind of light has a class and a create call of its own. The standard material reflects lights, and the unlit material ignores them.
 
@@ -123,8 +123,6 @@ A point or spot light ends at its `range`, in meters. It has no default, because
 Every setter allocates nothing, `setColor` and `setGroundColor` included. So `onUpdate` can call `setIntensity`, `setColor`, `setDirection`, `setRange` and the others in every frame.
 
 ## Which lights reach surfaces
-
-In this version:
 
 - Surfaces show up to four directional lights that are visible and share a layer with the camera: the first four you created. The first one lights and casts the shadows. The next three light as fill and rim lights, without shadows. A fifth directional light gives no light.
 - Every ambient light that is visible and shares a layer with the camera adds its light.
