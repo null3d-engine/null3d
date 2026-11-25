@@ -247,6 +247,22 @@ startWorker('sketch', step, async (event: MessageEvent<SketchWorkerMessage>) => 
 		runner?.updateShaders(message.updates);
 	} else if (message.type === 'post') {
 		runner?.receive(message.name, message.data);
+	} else if (message.type === 'inspect') {
+		// The inspection channel is a development build's: a release build answers that it has none.
+		try {
+			if (!DEV || runner?.inspect === undefined)
+				throw new Error(
+					'The inspector needs a development build. Run the Vite dev server, not a production build.',
+				);
+			replyToPage({
+				type: 'inspect-reply',
+				id: message.id,
+				ok: true,
+				result: await runner.inspect(message.call, message.args),
+			});
+		} catch (e) {
+			replyToPage({ type: 'inspect-reply', id: message.id, ok: false, error: messageOf(e) });
+		}
 	} else if (message.type === 'capture' && draw && host.drawing && controlSlots) {
 		const capture = message.image ? draw.captureImage : draw.captureFrame;
 		await replyWithCapture(capture(host.drawing, controlSlots));

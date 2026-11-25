@@ -150,6 +150,7 @@ import {
 	SIZE_MAP_SLOTS,
 } from '../generated/gpu';
 import type { ShaderVariants } from '../generated/shaders';
+import { linearToSrgb } from '../math/color';
 import type { CustomShader } from '../shared/images';
 import { planEnded, planStarted, planTurn } from '../shared/task-pending';
 import type { WgslUpdate } from '../shared/wgsl-updates';
@@ -3512,6 +3513,30 @@ function linearOrNone(
 	return color === undefined ? undefined : writeLinearColor(out, color, call);
 }
 
+/** A linear RGB color as an sRGB hex string, for the inspector's color fields. */
+function hexOf(linear: ArrayLike<number>): string {
+	let value = 0;
+	for (let k = 0; k < 3; k++) {
+		const channel = Math.min(1, Math.max(0, linear[k] as number));
+		value = (value << 8) | Math.round(linearToSrgb(channel) * 255);
+	}
+	return `#${value.toString(16).padStart(6, '0')}`;
+}
+
+/** The numbers that a material's inspector shows, in the order of its record. */
+const INSPECTOR_NUMBERS = [
+	'opacity',
+	'metalness',
+	'roughness',
+	'emissiveIntensity',
+	'ior',
+	'specularIntensity',
+	'envIntensity',
+] as const;
+
+/** The value of each of those numbers where a material's options leave it out. */
+const INSPECTOR_DEFAULTS = [1, 0, 1, 1, 1.5, 1, 1] as const;
+
 /**
  * The linear value of a specular color option in `out`, or none when it is not set. Its three
  * linear components may exceed 1, as glTF's specular color factor may.
@@ -4066,6 +4091,22 @@ export class Material<Values extends MaterialOptions = MaterialOptions> {
 	private displacement: [number, number] | undefined;
 
 	/**
+	 * @internal The numbers that the inspector shows, in the order of `INSPECTOR_NUMBERS`, and
+	 * which of them a create or `set` has given. A development build makes the arrays at the first
+	 * record; a production build holds no trace of them.
+	 */
+	declare private inspectorNumbers: Float64Array | undefined;
+	declare private inspectorNumbersGiven: number;
+	/** @internal The base color and the emissive color as linear RGB, where a call gave them. */
+	declare private inspectorColor: Float64Array | undefined;
+	declare private inspectorEmissive: Float64Array | undefined;
+	declare private inspectorColorGiven: boolean;
+	declare private inspectorEmissiveGiven: boolean;
+	/** @internal The alpha mode and the blending that the inspector shows. */
+	declare private inspectorAlphaMode: string;
+	declare private inspectorBlending: string;
+
+	/**
 	 * Where each map sits on the texture coordinates, as `set` last gave them: for every slot, the
 	 * offset's two numbers, the scale's two and the rotation, so an animation can change one pair
 	 * of one map and keep the rest.
@@ -4097,6 +4138,68 @@ export class Material<Values extends MaterialOptions = MaterialOptions> {
 	/** @internal True until `destroy` runs. */
 	get live(): boolean {
 		return this.liveId !== 0;
+	}
+
+	/** @internal The editable values that the inspector shows for this material. */
+	values(): Readonly<Record<string, unknown>> {
+		const out: Record<string, unknown> = {};
+		if (!DEV) return out;
+		if (this.inspectorColorGiven) out.color = hexOf(this.inspectorColor as Float64Array);
+		if (this.inspectorEmissiveGiven) out.emissive = hexOf(this.inspectorEmissive as Float64Array);
+		const numbers = this.inspectorNumbers;
+		if (numbers === undefined) return out;
+		for (let k = 0; k < INSPECTOR_NUMBERS.length; k++)
+			if ((this.inspectorNumbersGiven & (1 << k)) !== 0)
+				out[INSPECTOR_NUMBERS[k] as string] = numbers[k] as number;
+		out.alphaMode = this.inspectorAlphaMode ?? 'opaque';
+		out.blending = this.inspectorBlending ?? 'normal';
+		return out;
+	}
+
+	/**
+	 * @internal Records the values that the inspector shows. Even `set` writes only into arrays and
+	 * fields, because a sketch may call it in every frame. A production build does nothing here.
+	 */
+	recordInspector(options: Values, defaults: boolean): void {
+		if (!DEV) return;
+		const values = options as AnyValues;
+		if (this.inspectorColor === undefined) this.inspectorColor = new Float64Array(3);
+		const color = this.inspectorColor;
+		if (values.color !== undefined) {
+			writeLinearColor(color, values.color, 'a material');
+			this.inspectorColorGiven = true;
+		} else if (defaults) {
+			color.set([1, 1, 1]);
+			this.inspectorColorGiven = true;
+		}
+		if (this.inspectorEmissive === undefined) this.inspectorEmissive = new Float64Array(3);
+		const emissive = this.inspectorEmissive;
+		if (values.emissive !== undefined) {
+			writeLinearColor(emissive, values.emissive, 'a material');
+			this.inspectorEmissiveGiven = true;
+		} else if (defaults) {
+			emissive.fill(0);
+			this.inspectorEmissiveGiven = true;
+		}
+		if (this.inspectorNumbers === undefined)
+			this.inspectorNumbers = new Float64Array(INSPECTOR_NUMBERS.length);
+		const numbers = this.inspectorNumbers;
+		this.inspectorNumbersGiven ??= 0;
+		for (let k = 0; k < INSPECTOR_NUMBERS.length; k++) {
+			const value = values[INSPECTOR_NUMBERS[k] as keyof AnyValues];
+			if (typeof value === 'number') {
+				numbers[k] = value;
+				this.inspectorNumbersGiven |= 1 << k;
+			} else if (defaults) {
+				numbers[k] = INSPECTOR_DEFAULTS[k] as number;
+				this.inspectorNumbersGiven |= 1 << k;
+			}
+		}
+		const creation = values as AnyValues & { alphaMode?: string; blending?: string };
+		if (creation.alphaMode !== undefined) this.inspectorAlphaMode = creation.alphaMode;
+		else if (defaults) this.inspectorAlphaMode = 'opaque';
+		if (creation.blending !== undefined) this.inspectorBlending = creation.blending;
+		else if (defaults) this.inspectorBlending = 'normal';
 	}
 
 	/** @internal The engine core's id. Throws E1101 once the material is destroyed. */
@@ -4149,6 +4252,7 @@ export class Material<Values extends MaterialOptions = MaterialOptions> {
 		);
 		writeMapUvTransforms(core, id, values.mapUvTransforms, this.owners, call);
 		this.writeHeights(values);
+		if (DEV) this.recordInspector(values as Values, false);
 	}
 
 	/**
@@ -4422,6 +4526,7 @@ export class Materials {
 		const material = new Material<Values>(id, this.core, `${call}.set`, shading, owners);
 		material.wholeOnly = wholeOnly;
 		material.facesBoth = facesBoth;
+		if (DEV) material.recordInspector(options as Values, true);
 		if (options.uvTransform !== undefined) material.recordUv(options.uvTransform);
 		material.recordMapUv(options.mapUvTransforms);
 		if (options.bumpMap || options.displacementMap) material.heights(options);

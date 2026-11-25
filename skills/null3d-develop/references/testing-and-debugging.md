@@ -13,7 +13,7 @@ Before you call a scene done, check frame rate, memory and looks on `?gpu=webgpu
 3. Behavior tests
 4. Testing on real devices
 5. Debugging tools
-6. The MCP server for agents (0.3, not built yet)
+6. The in-page inspector and the MCP server
 7. Error codes
 8. Troubleshooting table
 9. Before you ship
@@ -166,24 +166,42 @@ Engine docs: `api/debug`, `guides/debugging`.
 | `debug.cullingSpheres(true)` | The bounding sphere that culling tests for each object whose mesh has levels, for the first 128 objects, until `false`. Use it beside `debug.view('levels')`. `debug.cullingSpheresDrawn()` gives the count that the last frame drew: 0 while the switch is off, so a test can tell the switch drew them rather than nothing | Development only |
 | `debug.skeleton` (0.2) | The bones of a skinned mesh | Development only |
 | `?record` on the page, then `?replay=<file>` or `shot --replay <file>` | A bug report from a phone. `?record` records each frame's step and the input that the sketch read, and shows a save button; the file replays here to the same frames. A sketch that reads the quality preset can differ, because the replay picks this computer's preset (`guides/testing`) | Every build |
+| `?inspect` on the page | The in-page inspector: a panel at the left edge lists the scene as a tree, selects and outlines an object, and edits its transform, visibility and material values. It shows the frame figures at its foot. The page also publishes `window.__null3dInspector`, and `engine.inspect` runs the same calls from your code | Development only |
 
 In a production build, the debug drawing calls and `debug.view` do nothing, but the code that computes their arguments still runs. Wrap work that only feeds them in `if (import.meta.env.DEV)`. A debug view's first frame builds its pipelines, so objects can be missing for a few frames after a change.
 
-## 6. The MCP server for agents (0.3, not built yet)
+## 6. The in-page inspector and the MCP server
 
-`bunx @null3d/cli mcp` starts a Model Context Protocol server connected to the running dev session. Its tool names can change until `guides/agents` is stable:
+`?inspect` opens the inspector panel, and `bunx @null3d/cli mcp` starts a Model Context Protocol server over stdio. Both need a development build: a production build leaves the inspection channel out.
+
+The page publishes `window.__null3dInspector`, and `engine.inspect(call, args)` runs the same calls from your own code. An object is named by its name, `#<slot>` or `#camera`:
+
+| Call | Use |
+| --- | --- |
+| `objects` | Every live object: slot, handle, name, kind, static or dynamic, layers, parent |
+| `object` | One object's transform, flags and material values |
+| `setObject` | Change a position, rotation, scale, visibility, the static or dynamic flag, or layers |
+| `setMaterial` | Change a mesh's material values |
+| `stats` | The figures that `debug.frameStats` returns |
+| `errors` | The errors that the sketch and the engine's frame calls reported |
+| `graph` | The compiled render graph as DOT text |
+| `setQuality` | Switch the preset or change quality settings |
+| `highlight` | Outline an object, or clear the outline |
+| `info` | The GPU path, the preset and the render scale |
+
+The MCP server starts the project's dev server and a headless browser by default. With `--connect http://127.0.0.1:9222` it drives the tab of a Chrome that already runs with a debugging port. Register it with `claude mcp add null3d -- bunx @null3d/cli mcp`. Its tool names are stable within a version:
 
 | Tool | Use |
 | --- | --- |
-| `null3d_list_objects` | Names, handles, types, static or dynamic, layers |
-| `null3d_get_object` / `null3d_set_transform` / `null3d_set_material` | Inspect and adjust objects live |
-| `null3d_capture` | A PNG of the current frame |
-| `null3d_stats` | Frame phases, buckets, uploads, memory, tier, preset |
-| `null3d_errors` | Recent engine errors and console output |
-| `null3d_render_graph` | The compiled render graph as DOT text |
-| `null3d_set_quality` / `null3d_set_gpu` | Switch preset or GPU tier (tier changes reload the page) |
+| `list_objects` | List the scene's objects, with a filter |
+| `get_object` / `set_transform` / `set_material` | Read and adjust objects live |
+| `capture` | A PNG of the current frame |
+| `stats` | Frame phases, uploads, memory, tier, preset |
+| `errors` | Recent engine errors and console output |
+| `render_graph` | The compiled render graph as DOT text |
+| `set_quality` / `set_gpu` | Switch the preset or the GPU path (a path change reloads the page) |
 
-Live changes through the MCP server are for exploring; put the final values into code and tests.
+Live changes through the inspector or the MCP server are for exploring; put the final values into code and tests.
 
 ## 7. Error codes
 

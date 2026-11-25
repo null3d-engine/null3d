@@ -23,7 +23,7 @@ import type { CoreMemory, ViewHolder } from '../scene/memory';
 import {
 	type Camera,
 	type DirectionalLight,
-	type Mesh,
+	Mesh,
 	Object3D,
 	type OrthographicCamera,
 	type PerspectiveCamera,
@@ -63,6 +63,8 @@ const SKELETON = 4;
 const MAX_CULL_SPHERES = 128;
 /** The color of a culling sphere. */
 const CULL_SPHERE_COLOR = 0xffffff;
+/** The color that outlines the object that the inspector selected, as an sRGB hex color. */
+const HIGHLIGHT_COLOR = 0x00ffff;
 
 /** The color of a skeleton line's joint end and parent end: blue and green, as three.js's. */
 const JOINT_BLUE = 0xffff0000;
@@ -169,6 +171,8 @@ export class DebugDraw extends SketchDebug implements ViewHolder {
 	private readonly sides = new Float64Array(6);
 	/** True while the culling spheres of the meshes with levels draw. */
 	private cullingSpheresWanted = false;
+	/** The object that the inspector selected, which each frame outlines. */
+	private highlighted: Object3D | undefined;
 	/** The direction a drawn light's light travels. */
 	private readonly direction = new Float64Array(3);
 
@@ -232,6 +236,11 @@ export class DebugDraw extends SketchDebug implements ViewHolder {
 		// With the switch off, no later frame visits a sphere, so the last frame's count would
 		// outlive the switch.
 		if (!show) this.spheresDrawn = 0;
+	}
+
+	/** Outlines `object` in each frame until another call changes it, or clears it with undefined. */
+	highlight(object: Object3D | undefined): void {
+		this.highlighted = object;
 	}
 
 	cullingSpheresDrawn(): number {
@@ -369,7 +378,13 @@ export class DebugDraw extends SketchDebug implements ViewHolder {
 	 * any update, so they draw only the lines written since the frame before.
 	 */
 	flush(width: number, height: number, update = true): void {
-		if (!update && this.updated > 0 && this.points === 0 && this.followedCount === 0) {
+		if (
+			!update &&
+			this.updated > 0 &&
+			this.points === 0 &&
+			this.followedCount === 0 &&
+			this.highlighted === undefined
+		) {
 			this.core.check(
 				this.core.glue.drawDebugLines(this.updated),
 				'debug drawing',
@@ -394,6 +409,7 @@ export class DebugDraw extends SketchDebug implements ViewHolder {
 		}
 		this.followedCount = 0;
 		if (this.cullingSpheresWanted) this.drawCullingSpheres();
+		this.drawHighlight();
 		const points = this.points;
 		// Lines written outside an update overwrite the last update's, so none stay to draw again.
 		this.updated = update ? points : 0;
@@ -444,6 +460,43 @@ export class DebugDraw extends SketchDebug implements ViewHolder {
 		this.sphere(center, mesh.radius * scale, CULL_SPHERE_COLOR);
 		if (this.points > before) this.spheresDrawn += 1;
 		return true;
+	}
+
+	/**
+	 * Outlines the object that the inspector selected: its bounding sphere when it draws a mesh,
+	 * or a small box at its place otherwise.
+	 */
+	private drawHighlight(): void {
+		const object = this.highlighted;
+		if (object === undefined) return;
+		if (object.destroyedFrame !== -1) {
+			this.highlighted = undefined;
+			return;
+		}
+		if (this.core.readWorldMatrix(object.handle, this.matrix) !== 0) return;
+		const m = this.matrix;
+		if (object instanceof Mesh && object.mesh !== undefined) {
+			const scale = Math.max(
+				Math.hypot(m[0] as number, m[4] as number, m[8] as number),
+				Math.hypot(m[1] as number, m[5] as number, m[9] as number),
+				Math.hypot(m[2] as number, m[6] as number, m[10] as number),
+			);
+			const center = this.sphereCenter;
+			const [cx, cy, cz] = object.mesh.center;
+			for (let r = 0; r < 3; r++)
+				center[r] =
+					(m[r * 4] as number) * cx +
+					(m[r * 4 + 1] as number) * cy +
+					(m[r * 4 + 2] as number) * cz +
+					(m[r * 4 + 3] as number);
+			this.sphere(center, object.mesh.radius * scale, HIGHLIGHT_COLOR);
+			return;
+		}
+		const half = 0.35;
+		const x = m[3] as number;
+		const y = m[7] as number;
+		const z = m[11] as number;
+		this.box([x - half, y - half, z - half], [x + half, y + half, z + half], HIGHLIGHT_COLOR);
 	}
 
 	/**

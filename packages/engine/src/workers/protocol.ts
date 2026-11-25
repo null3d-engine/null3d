@@ -1,5 +1,6 @@
 // Messages between the page and the engine's workers.
 
+import type { InspectReply } from '../debug/channel';
 import type { StatsRequest } from '../debug/stats-options';
 import { messageOf } from '../errors/message';
 import type { PowerPreference } from '../page/capabilities';
@@ -240,6 +241,8 @@ export type WorkerReply =
 	| { type: 'replay-done'; result: ReplayResult }
 	/** The recording of the session so far, which the page saves as a file. */
 	| { type: 'recording'; bytes: Uint8Array }
+	/** The answer to a development build's inspection call: its value, or why it failed. */
+	| ({ type: 'inspect-reply'; id: number } & InspectReply)
 	| ({ type: 'captured' } & CapturedFrame)
 	| { type: 'captured-image'; image: Blob }
 	| { type: 'capture-failed'; message: string };
@@ -258,6 +261,8 @@ export type SketchWorkerMessage =
 	| ShaderPreload
 	| RendererRequest
 	| { type: 'post'; name: string; data: unknown }
+	/** A development build's inspection call, which the worker answers with `inspect-reply`. */
+	| { type: 'inspect'; id: number; call: string; args?: unknown }
 	/** Asks the sketch worker to save the recording of the session so far. */
 	| { type: 'save-recording' }
 	/** Hot updates of the project's WGSL on the dev server, for the sketch's custom materials. */

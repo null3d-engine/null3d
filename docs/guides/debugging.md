@@ -8,7 +8,7 @@ summary: "Error codes; the inspector; the MCP server; the render-graph dump; com
 
 # Debugging
 
-> Roadmap step 0.1, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. The in-page inspector and the MCP server come in step 0.3 and are not built yet, so coding agents must not use them.
+> Roadmap step 0.1, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. The in-page inspector and the MCP server come in step 0.3 and run in development builds only.
 
 ```mermaid
 flowchart TD
@@ -104,6 +104,7 @@ Switches in the page's address force a choice, so you can find which path shows 
 | `?threads=off` | Run the single-threaded build |
 | `?render=main` | Draw on the page's main thread |
 | `?latency=low` | Use the low latency mode |
+| `?inspect` | Open the in-page inspector, which lists the scene and edits it live ([The in-page inspector](#the-in-page-inspector)) |
 
 [Testing your sketch](testing.md#switches-for-tests) lists every switch.
 
@@ -139,6 +140,68 @@ The stats overlay shows frame figures over the top-right corner of the canvas. I
 `engine.measure(seconds)` measures the running engine from the page: CPU time per frame by thread and phase, GPU time, frame intervals, uploads, draw calls and memory. [Debug drawing and stats](../api/debug.md#frame-measurement) shows an example, and the [performance guide](performance.md) explains the numbers.
 
 To test a page's handling of a lost GPU, call `engine.simulateGpuLoss()`. The engine starts a new GPU device and draws the whole scene again, as it does after a real loss. The `gpuLosses` figure of `engine.measure()` counts the losses that the engine carried on after since it started, the simulated ones included.
+
+## The in-page inspector
+
+`?inspect` opens a panel at the left edge of the page, over the canvas. The panel lists the scene as a tree, with each object's name and kind under its parent. A search box narrows the tree by name or kind. A click selects an object and outlines it in the view. It then shows the object's fields: position, rotation, scale, visibility, the static or dynamic flag and, for a mesh, its base color, roughness, metalness and opacity. The panel also shows the frame figures at its foot, which it reads every second.
+
+The panel runs in a development build only, and its code loads when the page first asks for it. A change lasts until the page reloads. Live edits are for exploring: write the final values into the sketch and its tests.
+
+The page publishes the panel's bridge as `window.__null3dInspector`, and the engine's `inspect` method runs the same calls from your own code. Both exist in a development build only:
+
+```ts
+const objects = await engine.inspect?.('objects');
+if (engine.inspect) {
+  await engine.inspect('setObject', { selector: 'cr', position: [0, 1, 0] });
+  await engine.inspect('setMaterial', { selector: 'cr', values: { color: '#ff0000' } });
+}
+```
+
+Each call takes a selector and returns a JSON-safe value. A selector is an object's name, its slot as `#<slot>`, `#camera` for the active camera, or a slot number.
+
+| Call | Arguments | Answer |
+| --- | --- | --- |
+| `objects` | `{ filter?, limit? }` | Every live object, or the objects whose name or kind holds the filter: each one's slot, handle, name, kind, static or dynamic flag, layers, parent and child count |
+| `object` | `{ selector }` | One object, with its position, rotation, scale, world position, flags and material values |
+| `setObject` | `{ selector, position?, rotation?, rotationEuler?, scale?, visible?, dynamic?, layers? }` | The object after the change. `rotation` is a quaternion; `rotationEuler` is X, Y and Z angles in radians |
+| `setMaterial` | `{ selector, values }` | The mesh after the change. `values` takes the material's values, such as `color`, `opacity`, `metalness` and `roughness` |
+| `stats` | none | The frame figures that `debug.frameStats` returns |
+| `errors` | none | The errors that the sketch's code and the engine's frame calls reported, newest last |
+| `graph` | none | The compiled render graph as DOT text |
+| `setQuality` | `{ preset?, settings? }` | The preset and settings after the change |
+| `highlight` | `{ selector? }` | The outlined object, or none |
+| `info` | none | The GPU path, the preset and the render scale |
+
+## The MCP server
+
+`bunx @null3d/cli mcp` starts a Model Context Protocol server over stdio. A coding agent lists and changes the scene's objects, captures a frame, and reads the frame figures, the errors and the render graph. It can also switch the quality preset or the GPU path. The page needs a development build, because a production build leaves the inspection channel out.
+
+The server reaches the scene in one of two ways:
+
+- By default, it starts the project's own Vite dev server and a headless Chrome, as `shot` does. This works on a cloud agent with no window.
+- `--connect <endpoint>` attaches to a Chrome that already runs with a debugging port, and drives the tab that already shows the page. The agent then sees exactly what the developer sees. Start Chrome with `--remote-debugging-port=9222`, open the page with `?inspect`, and run `bunx @null3d/cli mcp --connect http://127.0.0.1:9222`.
+- `--url <address>` uses a dev server that already runs, and still starts its own headless browser.
+
+| Tool | What it does |
+| --- | --- |
+| `list_objects` | Lists the live objects, with a filter |
+| `get_object` | Reads one object's transform, flags and material |
+| `set_transform` | Changes an object's transform, visibility, static or dynamic flag, or layers |
+| `set_material` | Changes a mesh's material values |
+| `capture` | Returns a PNG of the current frame |
+| `stats` | Reads the frame figures |
+| `errors` | Reads the engine errors and the console's errors and warnings |
+| `render_graph` | Returns the compiled render graph as DOT text |
+| `set_quality` | Switches the preset, or changes quality settings |
+| `set_gpu` | Switches the GPU path and reloads the page |
+
+Register the server in Claude Code with:
+
+```sh
+claude mcp add null3d -- bunx @null3d/cli mcp
+```
+
+Live changes are for exploring. Write the final values into the sketch and the tests, and check them with `bunx @null3d/cli test`.
 
 ## Common failures
 

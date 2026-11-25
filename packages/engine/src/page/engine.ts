@@ -790,6 +790,15 @@ export interface Engine {
 	 */
 	measure(seconds: number, options?: MeasureOptions): Promise<FrameMetrics>;
 	/**
+	 * Runs an inspection call against the live scene, for the in-page inspector and the MCP server:
+	 * `objects`, `object`, `setObject`, `setMaterial`, `stats`, `errors`, `graph`, `setQuality`,
+	 * `highlight` and `info`, with the arguments that [Debugging](../../guides/debugging.md#the-in-page-inspector)
+	 * lists. The call runs between frames, in the sketch worker, and its value is JSON-safe. The
+	 * method exists only in a development build, which is the build that carries the channel; a
+	 * release build leaves it out, so code that uses it must check for it first.
+	 */
+	inspect?(call: string, args?: unknown): Promise<unknown>;
+	/**
 	 * Shows an overlay of figures over the top-right corner of the canvas, or hides it with
 	 * `false`: the GPU path, the frame rates, CPU time per frame of each thread, GPU time, draw
 	 * calls, triangles and objects drawn, memory, and the page thread's long tasks and input delay.
@@ -875,6 +884,8 @@ export interface Engine {
 
 /** The global where the `?bench` switch publishes the running engine. */
 const BENCH_GLOBAL = '__null3dEngine';
+/** The global where a development build publishes its inspection bridge, for the MCP server. */
+const INSPECTOR_GLOBAL = '__null3dInspector';
 /** The GPU the engine asks for on a device with two: the faster one. */
 const DEFAULT_POWER_PREFERENCE: PowerPreference = 'high-performance';
 /** How often the page reads the frame records while it measures. */
@@ -899,6 +910,13 @@ const MAX_EARLY_MESSAGES = 256;
  * the page to wait with no end.
  */
 export const WORKER_REPLY_LIMIT_MS = 600_000;
+
+/**
+ * How long an inspection call waits for the sketch worker's answer. A call runs between frames, but
+ * a quality change waits for the pipelines that it needs, so this is longer than a frame and far
+ * shorter than the limit that a start or a capture gets.
+ */
+const INSPECT_REPLY_LIMIT_MS = 30_000;
 
 /**
  * How long a copy of a worker whose script did not load may take to report its first reply. A
@@ -1045,6 +1063,21 @@ export function gpuFailure(thread: string, kind: GpuErrorKind, message: string):
  */
 export class EngineWorker {
 	private readonly waiting: Pending[] = [];
+	/**
+	 * The inspection calls that wait for their answers, by their id. A production build never makes
+	 * one, so the map is made at the first call.
+	 */
+	private inspectWaiters:
+		| Map<
+				number,
+				{
+					resolve: (value: unknown) => void;
+					reject: (error: Error) => void;
+					timer: ReturnType<typeof setTimeout>;
+				}
+		  >
+		| undefined;
+	private nextInspect = 1;
 	private readyPromise: Promise<WorkerReply>;
 	private readonly stoppedPromise: Promise<void>;
 	private worker: Worker;
@@ -1150,6 +1183,9 @@ export class EngineWorker {
 						return;
 					case 'recording':
 						events.recording?.(reply.bytes);
+						return;
+					case 'inspect-reply':
+						this.answerInspect(reply);
 						return;
 					case 'lost':
 						forgetWorkerProbe();
@@ -1348,6 +1384,52 @@ export class EngineWorker {
 		this.heardReply();
 		this.worker.terminate();
 		for (const pending of this.waiting.splice(0)) pending.reject(new Error('the engine stopped'));
+		const waiters = this.inspectWaiters;
+		if (waiters !== undefined) {
+			for (const waiter of waiters.values()) {
+				clearTimeout(waiter.timer);
+				waiter.reject(new Error('the engine stopped'));
+			}
+			waiters.clear();
+		}
+	}
+
+	/**
+	 * Runs a development build's inspection call in this worker, and waits for its answer. The
+	 * worker answers with the value of the call, or why it failed.
+	 */
+	inspect(call: string, args?: unknown): Promise<unknown> {
+		if (this.inspectWaiters === undefined) this.inspectWaiters = new Map();
+		const waiters = this.inspectWaiters;
+		return new Promise((resolve, reject) => {
+			const id = this.nextInspect++;
+			const timer = setTimeout(() => {
+				waiters.delete(id);
+				reject(
+					new Error(
+						`the ${this.role} worker did not answer the ${call} inspection within ${INSPECT_REPLY_LIMIT_MS / 1000} s`,
+					),
+				);
+			}, INSPECT_REPLY_LIMIT_MS);
+			waiters.set(id, { resolve, reject, timer });
+			this.send({ type: 'inspect', id, call, args });
+		});
+	}
+
+	/** Gives an inspection call its answer. */
+	private answerInspect(reply: {
+		id: number;
+		ok: boolean;
+		result?: unknown;
+		error?: string;
+	}): void {
+		const waiters = this.inspectWaiters;
+		const waiter = waiters?.get(reply.id);
+		if (waiter === undefined) return;
+		waiters?.delete(reply.id);
+		clearTimeout(waiter.timer);
+		if (reply.ok) waiter.resolve(reply.result);
+		else waiter.reject(new Error(reply.error ?? 'the inspection call failed'));
 	}
 
 	/**
@@ -3146,6 +3228,33 @@ async function startEngine(
 		};
 		const stopped = () => Atomics.load(slots, Slot.Running) === 0;
 
+		/**
+		 * The development build's inspection bridge: a capture reads the current frame here, and
+		 * every other call runs in the thread that runs the sketch. A release build defines none,
+		 * so code that uses it checks for it first.
+		 */
+		const inspectCall = DEV
+			? async (call: string, args?: unknown): Promise<unknown> => {
+					if (call === 'capture') {
+						const blob = await captureImage();
+						const url = await new Promise<string>((resolve, reject) => {
+							const reader = new FileReader();
+							reader.onload = () => resolve(reader.result as string);
+							reader.onerror = () => reject(reader.error);
+							reader.readAsDataURL(blob);
+						});
+						return { png: url.slice(url.indexOf(',') + 1), bytes: blob.size };
+					}
+					if (localRunner?.inspect !== undefined) return await localRunner.inspect(call, args);
+					const worker = threads?.sketch;
+					if (worker === undefined)
+						throw new Error(
+							'the sketch worker is not running, so the inspector has nothing to read',
+						);
+					return await worker.inspect(call, args);
+				}
+			: undefined;
+
 		const engine: Engine = {
 			capabilities,
 			report,
@@ -3154,6 +3263,7 @@ async function startEngine(
 			presetChecked,
 			labels,
 			postToSketch: sendToSketch,
+			...(inspectCall === undefined ? {} : { inspect: inspectCall }),
 			registerVideo: (video, videoOptions) =>
 				(videos as PageVideoCalls).register(video, videoOptions),
 			onSketchMessage(handler) {
@@ -3304,6 +3414,31 @@ async function startEngine(
 				.catch((error) => console.warn('null3D could not show the save-recording button:', error));
 		if (hold === undefined && replay === undefined) {
 			if (switches.bench) (globalThis as Record<string, unknown>)[BENCH_GLOBAL] = engine;
+			if (DEV && inspectCall !== undefined) {
+				// The page publishes the bridge so the MCP server and a developer's console can call
+				// it. The switch opens the panel, whose code loads on first use.
+				(globalThis as Record<string, unknown>)[INSPECTOR_GLOBAL] = {
+					inspect: inspectCall,
+					engine,
+				};
+				if (switches.inspect)
+					void (async () => {
+						// The panel's file loads from its source address. A development build runs the source,
+						// whose file is TypeScript; the published package holds the compiled JavaScript. A
+						// production build removes this branch, and emits no file for it.
+						const extension = new URL(import.meta.url).pathname.endsWith('.ts') ? 'ts' : 'js';
+						const source = `../debug/inspector.${extension}`;
+						const url = new URL(source, import.meta.url).href;
+						const module = (await import(
+							/* @vite-ignore */ url
+						)) as typeof import('../debug/inspector');
+						const inspector = module.openInspector({
+							inspect: inspectCall,
+							canvas: options.canvas,
+						});
+						engine.onStop(() => inspector.remove());
+					})().catch((error) => console.warn('null3D could not show the inspector:', error));
+			}
 			// The switch's start state goes on top of the option's corner.
 			if (switches.stats !== false) {
 				if (options.stats) statsSwitch.show(options.stats);
