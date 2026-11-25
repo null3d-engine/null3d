@@ -123,7 +123,7 @@ Raycasts hit a point where the ray crosses its square. The hit's `object` is the
 
 A batch costs about the same per point as an instance batch costs per row. The engine packs each point into the data that it keeps for an instance row. So points share the culling, sorting and drawing of instance batches. One batch of 100,000 points draws in one draw on WebGPU and WebGL2.
 
-Every point counts toward the device's limit of objects and instance rows, as an instance row does ([Instances and batching](../concepts/instances.md#limits)). Each point takes about 215 bytes of engine memory, so a cloud of a million points takes about 215 MB. Point batches count toward the limit of 256 instance batches.
+Every point counts toward the device's limit of objects and instance rows, as an instance row does ([Instances and batching](../concepts/instances.md#limits)). Each point takes about 215 bytes of engine memory, so a cloud of a million points takes about 215 MB. Point batches count toward the limit of 512 instance batches.
 
 ## API reference
 

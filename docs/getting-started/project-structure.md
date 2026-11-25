@@ -24,7 +24,7 @@ flowchart LR
 
 | Template | What its scene shows |
 | --- | --- |
-| `empty` | A cube that turns, with one light. It is the smallest project, for a scene of your own. |
+| `empty` | A cube that turns, lit by a directional light and an ambient light. It is the smallest project, for a scene of your own. |
 | `product` | A product viewer: shapes from `@null3d/geometry` with glazed, metal, wood and cloth materials on a turntable. A soft room light, shadows on a shadow catcher, the Neutral tone curve, and orbit controls with damping and limits. |
 | `game` | A small game: a player that keys, a gamepad or a dragged finger moves, gems to pick up, rocks in instance batches, a follow camera and a score on the page. |
 

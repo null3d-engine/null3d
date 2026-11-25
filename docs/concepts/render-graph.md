@@ -63,6 +63,8 @@ In the diagram, boxes are passes and cylinders are data. An arrow into a pass sh
 | Resolve | Resolve, on the 8-bit path with MSAA, while the render scale cannot drop below 1 | The scene color | The canvas |
 | Final pass | Fullscreen, on the HDR path, with FXAA or no anti-aliasing, and while the render scale can drop below 1 | The scene color | The canvas |
 
+The table lists the core passes. Each effect adds passes of its own while it is on. These are ambient occlusion, screen-space reflections, the bounce light, decals, TAA and the transparency layers. So are subsurface scattering, volumetric fog, custom effects, depth of field, bloom, automatic exposure, outlines and the still accumulation. The pick pass runs when a page asks what is under a pixel. [The post-processing chain](post-processing.md) describes most of them, and `render.dumpGraph()` lists every pass of a frame.
+
 On WebGL2 the job workers cull the objects and list the lights of each cluster before the frame draws. So the graph has no compute passes there. A shadow pass draws its casters' depth from the light. The opaque pass reads that depth, so every shadow pass runs before it. [Shadows](shadows.md) says when each cascade and each tile draws.
 
 With the depth prepass on, each view draws the depth of its opaque objects first, in the render pass that then shades them. The opaque pass then shades only the nearest surface at each pixel. [Quality presets](quality-presets.md#the-depth-prepass) says when the prepass saves time.
@@ -189,15 +191,16 @@ digraph "render graph" {
   graph [rankdir=LR, fontname="Helvetica", fontsize=10];
   subgraph "cluster 1" {
     label="compute pass";
-    "pass Culling" [shape=box, label="1. Culling\ncompute pass"];
+    "pass LightClusters" [shape=box, label="1. LightClusters\ncompute pass"];
+    "pass Culling" [shape=box, label="2. Culling\ncompute pass"];
   }
   subgraph "cluster 2" {
     label="render pass: full size, 4 samples\nsceneColor: clear, discard, resolve\nsceneDepth: clear, discard";
-    "pass Opaque" [shape=box, label="2. Opaque\nscene pass, full size, all layers"];
+    "pass Opaque" [shape=box, label="3. Opaque\nscene pass, full size, all layers"];
   }
   subgraph "cluster 3" {
     label="render pass: canvas size\ncanvas: clear, store";
-    "pass Final" [shape=box, label="3. Final\nfullscreen pass, canvas size"];
+    "pass Final" [shape=box, label="4. Final\nfullscreen pass, canvas size"];
   }
   "pass Resolve" [shape=box, style=dashed, label="Resolve\nresolve pass, full size, off"];
   "resource sceneColor" [shape=ellipse, label="sceneColor\nrg11b10ufloat, full size, 4 samples\ntexture 0: attachment\nresolves into texture 1: attachment, sampled"];

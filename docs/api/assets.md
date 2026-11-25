@@ -54,6 +54,7 @@ export default defineSketch(
 | `loadBinary(url)` | The file's bytes, as an `ArrayBuffer` |
 | `preload(urls)` | Nothing: it downloads the files ahead of their loads |
 | `onProgress(handler)` | A function that removes the handler |
+| `cache(name, version)` | A namespace of the browser's cache for data that the sketch or an add-on makes itself: [The cache of derived data](#the-cache-of-derived-data) |
 
 In [hold mode](../guides/testing.md#hold-mode), and while a recording replays, the calls run one at a time in the order the sketch made them. Each starts once the call before it has answered. A load makes its textures, meshes and materials as its files arrive, and the files arrive in another order on each run. A held frame would otherwise draw the scene's content in another order. Several loads at once therefore take longer there. A glTF extension handler's `load` must not wait for another `assets` call in hold mode, since that call waits for the load that runs the handler.
 

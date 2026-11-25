@@ -75,7 +75,7 @@ The scene's color target differs from tier to tier:
 | WebGPU compatibility mode | With MSAA, 8 bits per channel. With FXAA or none, as on core WebGPU. | With MSAA, each shader tone maps and encodes its own result. The render pass averages the samples into the canvas, or into a texture that the final pass copies while the render scale can drop below 1. With FXAA or none, as on core WebGPU. |
 | WebGL2 | `RGBA16F` where the float target test passes; 8 bits per channel elsewhere. With `?scene-format=rg11b10`, `R11F_G11F_B10F` where the canvas is opaque and that format passes the test too | As on core WebGPU with the float target. Without it, each shader tone maps its own result. MSAA then averages the samples as in compatibility mode. With FXAA or none, the final pass reads the color as it is, and FXAA smooths its edges. |
 
-On every tier, the final pass also scales the image up to the canvas when the [render scale](quality-presets.md#dynamic-resolution) is below 1. It blends the nearest four pixels, and skips FXAA there, because the scaling softens edges already. WebGL2 and compatibility mode run Low or Medium, whose lowest render scale is below 1, so there the final pass usually runs.
+On every tier, the final pass also scales the image up to the canvas when the [render scale](quality-presets.md#dynamic-resolution) is below 1. It then runs in two steps. The first applies FXAA, the tone curve and the sRGB encode at the render size. The second scales the image up to the canvas with GSR 1, an upscaler that keeps edges sharp ([The post-processing chain](post-processing.md#below-the-whole-canvass-render-scale)). WebGL2 and compatibility mode run Low or Medium, whose lowest render scale is below 1, so there the final pass usually runs.
 
 High dynamic range (HDR) color keeps light brighter than white until the tone mapping. It needs a float target that the GPU can draw into, with 4 samples for MSAA. Compatibility mode allows no MSAA on 16-bit float targets, so there MSAA takes the 8-bit path, and FXAA and none keep HDR color. Some WebGL2 devices draw into no float target at all. On WebGL2, `engine.report.webgl2.floatRenderTargets` gives the result of the engine's test for `RGBA16F`, `RGBA32F` and `R11F_G11F_B10F`. The target must be complete and keep values above 1. For MSAA it must also take 4 samples.
 
@@ -127,7 +127,7 @@ The WebGPU path stays inside WebGPU's default limits, and inside compatibility m
 
 | Limit | Budget |
 | --- | --- |
-| Bind groups | 4 (the engine uses 2) |
+| Bind groups | 4 (the engine uses all 4) |
 | Compute threads per workgroup | 128 |
 | Uniform binding size | 16 KB |
 | Color attachments | 4 |

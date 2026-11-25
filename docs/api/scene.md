@@ -53,12 +53,17 @@ export default defineSketch(({ scene, geometry, materials }) => {
 | `createDirectionalLight(options)` | A `DirectionalLight`: light from one direction, like sunlight |
 | `createPointLight(options)` | A `PointLight`: light from a point in every direction, out to its range |
 | `createSpotLight(options)` | A `SpotLight`: light from a point in a cone, out to its range |
+| `createRectAreaLight(options)` | A `RectAreaLight`: light from a glowing rectangle, out to its range: [Lights](lights.md) |
+| `createTubeLight(options)` | A `TubeLight`: light from a glowing tube, out to its range: [Lights](lights.md) |
 | `createHemisphereLight(options)` | A `HemisphereLight`: light from the sky above and the ground below |
 | `createAmbientLight(options)` | An `AmbientLight`: the same light on every surface |
 | `createSprites(options)` | A batch of camera-facing quads, after an `await`: [Sprites](sprites.md) |
 | `createPoints(options)` | A batch of points, after an `await`: [Points](points.md) |
 | `createLines(options)` | A batch of wide lines, after an `await`: [Lines](lines.md) |
 | `addFeatureDraw(description, options)` | A draw that an add-on's feature description declares, after an `await`: [Add-on feature draws](feature-draws.md) |
+| `addFeatureInstances(description, options)` | A draw of many copies of one shape that an add-on's feature description declares, after an `await`: [Add-on feature draws](feature-draws.md#many-copies-of-one-shape) |
+| `addComputeInstances(description, options)` | A draw of instances from the add-on's own GPU buffer, after an `await`: [Add-on instance draws](feature-instances.md) |
+| `createVertexDraw(options)` | A draw of a custom material over a vertex count, with no mesh data: [Draws from a vertex count](vertex-draws.md) |
 
 Groups, meshes, cameras and lights take the same object options: `name`, `position`, `rotation`, `scale`, `parent`, `dynamic` and `layers`. [Objects and transforms](objects.md) describes them. `createMesh` also takes `castShadows` and `receiveShadows`, which [Shadows](../concepts/shadows.md) explains. It takes `occluder` too, which [Culling](../concepts/culling.md) explains. `createInstances` takes `colors: true` and `values: true` for a color and four values per row: [Instances and batching](../concepts/instances.md). Meshes come from `geometry` and materials from `materials` in the sketch context. One mesh and one material can serve any number of objects.
 
@@ -99,6 +104,8 @@ door?.setVisible(false);
 ```
 
 `find` returns the general `Object3D` type. When you know which kind of object has the name, cast the result to its class, such as `Mesh`, to use its own calls. Look objects up at setup and keep them, rather than calling `find` in every frame.
+
+`scene.listObjects()` returns every object of the scene that is not destroyed, in the order of their slots, as a new array. It walks the whole scene and allocates, so call it from tools and setup code, never in every frame.
 
 ## The camera and the background
 
@@ -245,7 +252,7 @@ Development builds throw E1203 for a number that is not finite, and E1108 for a 
 import { defineFeature, defineSketch } from '@null3d/engine';
 import curtain from './curtain.wgsl';
 
-export default defineSketch(({ scene }) => {
+export default defineSketch(({ scene, time }) => {
   scene.setBackground({ sky: { cloudCoverage: 0.1 } });
   const description = defineFeature({
     name: 'curtain',
@@ -256,7 +263,7 @@ export default defineSketch(({ scene }) => {
   });
   const layer = scene.setSkyLayer(description, { wgsl: curtain, sun: 0.2 });
   return {
-    onUpdate(time) {
+    onUpdate() {
       layer.set({ opacity: 0.8 + 0.2 * Math.sin(time.now) });
     },
   };
@@ -558,7 +565,7 @@ The change reaches the frame after the call, and that frame rebuilds the engine'
 
 ## When changes take effect
 
-Creating an object, `destroy`, `setParent`, `setVisible`, `setLayers` and `setDynamic` change the structure of the scene, and so do the mesh calls: `setMaterial`, `setMesh`, `setCastShadows`, `setReceiveShadows`, `setRenderOrder`, `setFrustumCulled` and `setBounds`. The engine queues these changes and applies them after `onUpdate` returns, before it updates transforms and draws. The frame drawn after the call shows the change. Some of them make the engine rebuild its draw tables, as the [performance guide](../guides/performance.md#objects-during-play) lists.
+Creating an object, `destroy`, `setParent`, `setVisible`, `setLayers` and `setDynamic` change the structure of the scene, and so do the mesh calls: `setMaterial`, `setMesh`, `setCastShadows`, `setReceiveShadows`, `setRenderOrder` and `setFrustumCulled`, and so does `setBounds`. The engine queues these changes and applies them after `onUpdate` returns, before it updates transforms and draws. The frame drawn after the call shows the change. Some of them make the engine rebuild its draw tables, as the [performance guide](../guides/performance.md#objects-during-play) lists.
 
 Values that the engine computes, such as the result of `getWorldPosition`, come from the engine's last transform update. In `onUpdate` they come from the previous frame. In `onLateUpdate` they already hold the frame's changes, because the engine updates transforms before it calls `onLateUpdate`. Setters that `onLateUpdate` calls show in the same frame, and structural changes that it makes wait for the next frame ([Sketch API](sketch.md#when-changes-show)).
 
@@ -577,7 +584,7 @@ An instance batch is one object that draws many copies of one mesh with one mate
 - A scene starts with room for 1,023 objects: groups, meshes, cameras and lights together. When it needs more, it grows on its own. It doubles its room at the start of a frame once it is three quarters full. A create call that finds it full doubles it at once. A destroyed object frees its place when the frame applies the change.
 - Each growth copies the scene's tables, about 267 bytes per object, in one short pause. A scene that knows its size can start with room for every object, with the `expectedObjects` option of [`createEngine`](engine.md#options), and never grows during play.
 - A scene holds up to 1,048,575 objects, the most that a handle can name. Past that, a create call throws E1102. A growth that the engine's memory cannot hold throws E1109. Each place counts toward the objects and instance rows that the GPU draws (`engine.capabilities.maxInstances`), and a growth past that limit throws E1501.
-- The rows of an instance batch take none of those places. One engine holds up to 256 batches, and `createInstances(prefab, ...)` takes one for each mesh of the model.
+- The rows of an instance batch take none of those places. One engine holds up to 512 batches, and `createInstances(prefab, ...)` takes one for each mesh of the model.
 - The queue holds up to 65,536 changes between two frames. One more throws E1102.
 - Each copy of a model with clips or skins takes a place in the animation table, and its joints take places too. The table starts with room for 1,024 animated objects and 65,536 joints. When a copy does not fit, it doubles what it lacks, in one short pause that copies the table. It holds up to 1,048,576 joints in all. That is the most that the joint texture holds on every WebGL2 device: about 24,000 copies of a character of 43 joints. A copy past that throws E1102, and a growth that the engine's memory cannot hold throws E1109. Either way, `instantiate` or `clone` then creates no part of the copy.
 

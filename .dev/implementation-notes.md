@@ -121,8 +121,8 @@ The WebGL2 path builds its layout in its cull step, before the frame graph gives
 
 ## Quality presets
 
-- One table in `quality/presets.ts` holds every setting with its value on each preset. A feature adds its setting there as planned, then marks it applied where it reads the value. An applied setting that a sketch can change is also a member of `QualitySettings`, and a unit test keeps the two lists equal. The docs generator writes the preset tables on `concepts/quality-presets` from the table and the chooser's constants.
-- A setting whose value differs on WebGL2 has a `webgl2` row beside its `presets` row. Only the depth prepass has one ([D-43](decisions/D-43-webgl2-prepass.md#the-prepass-on-webgl2-at-every-preset)). The functions that read the table take the GPU path. Tests that compare a WebGL2 engine's settings with the table pass the path too.
+- One table in `quality/presets.ts` holds every setting that the engine applies, with its value on each preset. A setting whose feature is not built yet keeps its planned row in `PLANNED_SETTINGS` in `quality/preset-docs.ts`, and moves into the table when its feature applies it. An applied setting that a sketch can change is also a member of `QualitySettings`, and a unit test keeps the two lists equal. The docs generator writes the preset tables on `concepts/quality-presets` from the table and the chooser's constants.
+- A setting whose value differs on WebGL2 has a `webgl2` row beside its `presets` row. Three have one: the depth prepass ([D-43](decisions/D-43-webgl2-prepass.md#the-prepass-on-webgl2-at-every-preset)), `contactShadowSteps` and `bounceRays`. The functions that read the table take the GPU path. Tests that compare a WebGL2 engine's settings with the table pass the path too.
 - The docs generator and the device runner import the chooser and the table, and the tools' type check has no browser types. So `quality/presets.ts`, `quality/chooser.ts`, `quality/preset-docs.ts` and `shared/tier.ts` import no module that names a browser type, not even for types.
 - The page chooses the preset: workers have no media queries and no screen. The memory maximum follows the device hints and the crash marker alone, which the page has at once. So the core's download and the shared memory never wait for the GPU probe.
 - Hold mode and `?preset=` neither read nor write the crash marker, so a test that crashes can never lower the next test's preset.
@@ -431,7 +431,7 @@ A game may send a strict Content-Security-Policy, such as `default-src 'self'; s
 - The engine ships its own build of the Basis Universal v2.50 transcoder, not the official one. The official build makes its JavaScript bindings with `new Function` (Emscripten's embind), so a Content-Security-Policy without `'unsafe-eval'` stops every KTX2 load with that build. That happens when the host sends its policy on the transcoder worker's script. From a CDN it always happens, because a `blob:` worker takes the page's policy. A strict-policy test that loads no KTX2 file does not see it.
 - `bun tools/build-basis-transcoder.ts` makes the build. It downloads the Emscripten SDK 4.0.15 and the v2.50 sources into `target/basis-transcoder`, each checked against its SHA-256, and installs nothing outside that folder. It compiles the official build's sources with its definitions and flags (`webgl/transcoder/CMakeLists.txt`), and adds three link flags. The flag `-sDYNAMIC_EXECUTION=0` makes bindings without code from strings. The flags `-sEXPORT_ES6=1` and `-sENVIRONMENT=web,worker` make the script an ES module that a module worker imports, with no code for Node.
 - The script then transcodes the three KTX2 test files with both builds, into every format that the engine asks for, at every mip level. It fails unless the bytes match. All 15 match. A unit test keeps the official build's output hashes and checks the shipped build against them. It also checks that the script holds no `new Function` or `eval`.
-- Sizes: the script is 47,675 bytes (11,371 after Brotli), against the official build's 50,538 (12,137). The module is 1,060,612 bytes (361,016 after Brotli), against 1,060,846 (360,825). The script goes into the KTX2 task's file: 8.9 KB after Brotli. The size report holds that file to the 16 KB limit of first-use files.
+- Sizes: the script is 47,675 bytes (11,371 after Brotli), against the official build's 50,538 (12,137). The module is 1,060,612 bytes (361,016 after Brotli), against 1,060,846 (360,825). The script goes into the KTX2 task's file: 8.9 KB after Brotli. The size report holds that file to the 18 KB Brotli limit of files that load after the start (`LATER_BUDGET` in `tools/lib/size-report.ts`).
 - The script's module comes from the loader, which compiled it on the sketch thread while the file downloaded. So after the KTX2 loader, the first KTX2 file waits for the transcoder's module and for the task's file in the job worker. They download at the same time.
 - The loader imports only modules that the first file of its thread holds whole. An import of another module, such as the error message helper or the core's loader, splits that file. Rolldown then moves the modules that the loader shares with it into a new file. Every page would then download it at its start. The size report fails on such a file, as its part has no name.
 - A compressed texture has an array of its own, with exactly its layers. Compatibility mode copies no compressed texels, so such an array could never grow. Its GPU texture has no `RENDER_ATTACHMENT` and no `COPY_SRC` usage.
@@ -544,7 +544,7 @@ The shader compiler is the shader crate built as a WebAssembly module. Build too
 ## Tests that build a bundle
 
 Some unit tests build a bundle of engine code with Vite inside the test process, such as
-`math/tree-shaking.test.ts`. Build it the way a page is built, with a single input, and never with
+`math/tree-shaking-vec3.test.ts` and `math/tree-shaking-quat.test.ts`. Build it the way a page is built, with a single input, and never with
 `build.lib`.
 
 - A library build inlines every asset as a base64 data URL, and does not copy it as a file. Vite's
@@ -565,7 +565,7 @@ Some unit tests build a bundle of engine code with Vite inside the test process,
   `rollupOptions.preserveEntrySignatures: 'strict'` instead of `lib`. Without it the entry's exports
   go and so does the code under test.
 - A test that reads the shader text finds it in a copied file, not in the code, once the build is a
-  page's. `debug/release.test.ts` reads both.
+  page's. The `debug/release-*.test.ts` tests read both, through `tests/lib/release-build.ts`.
 
 ## Meshes on both GPU paths
 
@@ -578,7 +578,7 @@ Some unit tests build a bundle of engine code with Vite inside the test process,
 - WebGPU reads a plain integer that a shader takes as a float through its normalized twin, such as `unorm16x4` for 16-bit unsigned positions. The pipeline then sets the override constant of that location to the type's largest value. Its id is 1000 plus the location. The functions `mesh_position`, `mesh_uv` and `mesh_second_uv` of `null3d::vertex` multiply by it. WebGL2 reads the integer as its whole value with `vertexAttribPointer` and `normalized` false, so its GLSL keeps each constant at 1.
 - A compute dispatch reaches 65,535 workgroups per axis (`caps::MAX_WORKGROUPS_PER_DIMENSION`), and the mock backend refuses more. A pass whose work can pass it spreads its workgroups over rows, as the skinning pass does, and numbers each workgroup from `workgroup_id` and `num_workgroups`.
 - A storage binding may not pass the device's `maxStorageBufferBindingSize`, 128 MiB by default. The skinning pass splits skinned vertices over up to 8 buffers within it. The WebGPU builder caps each mesh page at it too, since the pass binds a page whole. The culling pass sizes its source buffer by the same limit. Both size their buffers by the storage binding that the engine requested. That binding stays at the portable 128 MiB one where the adapter offers no larger limit. So a pass that needs more than the default spreads over bindings instead of failing. `capacities.rs` covers the split and `gpu_driven.rs` the source limit.
-- The skinning pass writes normals and tangents as 8-bit normalized integers, one word each, and the passes read them through `snorm8x4`. The skinning shader's override constant `narrow_directions` (id 1100) writes 32-bit floats instead, for the measurements of `?skinning=full` and `?skinning=skip`. The core and the shader must agree. The core's skinned format (`skinned_format`) sets the stride and the offsets, and the WebGPU backend sets the constant from the same switch (`setSkinningMode`).
+- The skinning pass writes normals and tangents as 8-bit normalized integers, one word each, and the passes read them through `snorm8x4`. The skinning shader's override constant `narrow_directions` (id 1100) writes 32-bit floats instead, for the measurements of `?skinning=full` and `?skinning=skip`. The core and the shader must agree. The core's skinned format (`skinned_format`) sets the stride and the offsets, and the WebGPU backend sets the constant from the same switch (`skinWithFloatDirections`).
 - The skinning pass skips an object whose regions hold its pose. Its animated instance's pose step and its morph weights have then held still since its last skin. Anything that leaves the regions without a known pose must clear `held` in `gpu_driven/skin.rs`. These are a new layout, a new skinned vertex buffer, a new GPU device, and frames whose skinning pipeline may still build. A frame that fails keeps the structure marked as changed, so the next frame lays out again and clears it. A path that loses the regions' contents some other way must clear it too, or a still character draws stale or empty vertices.
 - The pose step comes from the animation step's compare of each instance's new matrices with the step before's. It costs one read of the other matrix buffer per joint, on the job workers. M2-C6's slower update rates must keep that compare true. An instance that a step leaves alone must keep its matrices in the buffer that step writes.
 - Joints are the one attribute that shaders read as integers (`vec4u`). WebGPU reads them with `uint8x4` or `uint16x4`, and WebGL2 with `vertexAttribIPointer`. A WebGL2 program that declares an integer input must get an integer pointer, or the draw fails. So only shaders that read joints declare location 6.
@@ -619,7 +619,7 @@ Some unit tests build a bundle of engine code with Vite inside the test process,
 
 ## Shader files that load on first use
 
-A feature that most pages do not use keeps its shader builds out of the start files ([D-56](decisions/D-56-first-use-shader-files.md)). Sprites, lines, skinning, morph targets, bloom, ambient occlusion, the texture background, GPU occlusion culling, area lights and the engine's test template do so.
+A feature that most pages do not use keeps its shader builds out of the start files ([D-56](decisions/D-56-first-use-shader-files.md)). Each `[first_use.<feature>]` table in `crates/null3d-shaders/shaders.toml` names one. Sprites, lines, particles, skinning, morph targets, bloom and ambient occlusion are such features. So are the background, the sky's clouds, area lights and GPU occlusion culling.
 
 - A feature declares its file with a `[first_use.<feature>]` table in `crates/null3d-shaders/shaders.toml`.
   - The engine test "the first use of X downloads its shader file once" (`tests/image/engine.spec.ts`) runs for every table, from the generated feature list. A feature without a sketch of its own draws in `tests/pages/sketches/first-use-sketch.ts`, whose `?feature=` names it. A new table fails that test until the sketch has a case that uses the feature alone.
@@ -644,7 +644,7 @@ A feature that most pages do not use keeps its shader builds out of the start fi
 - Each module that a preload asked for goes to the backend's `precompile` once it arrives, with the features that its builds need (`DeviceShaderSet.onPreloaded`). WebGL2 compiles a program for each build in the module, which its pipelines then share. WebGPU creates the shader modules, and the compute pipelines of skinning and occlusion culling, whose layouts are fixed. Skinning's and morph targets' mesh builds depend on materials, so neither path compiles them ahead, nor the builds of a file that needs skinning or morph targets on WebGL2, and `scene.warmUp()` builds those.
 - Sketch code that knows a feature is coming calls `ShaderPreloads.need` (`scene/shader-preloads.ts`), which `Materials` holds. The request goes to the thread that draws with the images and custom materials' shaders. `ImageTable.preload` keeps it for every renderer, and the renderer's `DeviceShaderSet.preload` starts the download. The glTF loader asks for skinning as soon as a file with skins is parsed. Batches, texture backgrounds and `post.set` ask for theirs.
 - A new feature adds its table, and moves no build that every scene draws. It gives each pass of either kind above the same wait. The engine test "a page that uses no feature that loads on first use downloads none of their files" then covers its files. A test of its own checks that its first use downloads one file once.
-- A custom material's WebGPU SKIN builds load on first use too, from the sketch's own files rather than the engine's ([D-20](decisions/D-20-webgpu-skinning.md)). The shader compiler puts them in `skinVariants`, and the Vite plugin moves them to a virtual module, `virtual:null3d/skin/<hash>`, which the material's packed value imports with `skinBuilds()` (`packages/vite-plugin/src/skin-builds.ts`). The material's shader reaches the thread that draws marked `skinBuilds`. The first pipeline that needs one of those builds parks in `templateReady`, through `ImageTable.buildsReady`. The table asks the sketch's thread once, through the port of the images, or straight through `askBuilds` when one thread does both. `ShaderTemplates.answer` imports the module and sends the builds of its GPU path, and `ImageTable.addBuilds` puts them into the shader's own object of builds, which the backend's template holds. A failed import fails the pipelines that need the builds, with its reason. A hot update brings the builds with the others, so a late answer for the older shader is dropped. WebGL2 keeps a material's SKIN builds with its others.
+- A custom material's builds load on first use too, from the sketch's own files rather than the engine's ([D-20](decisions/D-20-webgpu-skinning.md)). So do a custom effect's and a custom tone curve's. The module that holds a shader keeps none of its builds. The Vite plugin puts them in virtual modules, `virtual:null3d/builds/<kind>-<path>-<set>-<hash>` (`packages/vite-plugin/src/material-builds.ts`). A material gets a set for each GPU path, each value of the bits that a device fixes, and the SKIN bit. That makes 4 sets for WebGPU and 8 for WebGL2. An effect or a tone curve gets a set for each GPU path. The shader's packed value carries a function, `__null3dBuilds`, that imports one set. At the shader's first use, `ShaderTemplates.answer` imports the device's set and sends it to the thread that draws. A pipeline that needs another set, such as the SKIN builds for the first skinned mesh, parks in `templateReady`, through `ImageTable.buildsReady`. The table asks the sketch's thread once, through the port of the images, or straight through `askBuilds` when one thread does both. Then `ShaderTemplates.answer` imports that set and sends the builds of its GPU path. There `ImageTable.addBuilds` puts them into the shader's own object of builds, which the backend's template holds. A failed import fails the pipelines that need the builds, with its reason. A hot update brings the builds with the others, so a late answer for the older shader is dropped.
 
 ## Depth on WebGL2
 
@@ -952,8 +952,8 @@ The pick template (`pick.wgsl`) tests the scene's depth for equality. It has SKI
 - Safari on CI's Mac sometimes keeps a removed frame's whole page alive for minutes, with everything it reaches. A probe saw it even for a page that held one memory and ran no engine. Counts of the whole room showed 12 of 36 places held for 2 minutes after the frame restart pages. [D-92](decisions/D-92-safari-removed-frames.md) gives the data, and why the engine does not change.
 - WebGPU reports an out-of-memory or validation error only to an error scope or to `onuncapturederror`. `onSubmittedWorkDone` still resolves. So the frame pacing and the governor see normal frames, while the canvas stays black. Each WebGPU renderer sets `onuncapturederror` once. The first error of each kind reaches the page as E1304 or E1305, and later ones are counted. Error scopes in each frame would cost two promises a frame.
 - A pipeline that the GPU's driver refuses arrives as the rejection of `createRenderPipelineAsync`, a `GPUPipelineError` whose reason is `internal`. Dawn on Vulkan gives one for any result of `vkCreateGraphicsPipelines` but device loss: out of memory, or `VK_ERROR_UNKNOWN` from a driver's compiler. The device stays alive. The backend builds a refused pipeline of the scene's objects once more, alone, once no other build runs. Until then it counts as building. After a second refusal, the pipeline's slot stays as one that builds, so its draws draw nothing. The first such pipeline of each device reaches the page as E1307. WebGL2 does the same with a program whose link the driver refuses: it links new shaders once more, then skips the program's draws. Two refusals still stop the replays as E1404. One is a refused pipeline of a pass of the frame's own, whose output the frame needs. The other is a refusal by the browser's validation, which is an engine fault ([D-390](decisions/D-390-refused-pipelines.md)).
-- A capture keeps polling for pipeline builds. It ends when its renderer is destroyed, as after a GPU loss, and after two minutes, with E1414.
-- The capture route has one deadline and four waits without one. The deadline covers the wait for a frame's pipelines, in `FrameReplay.builtTaken()` (`render/scene-renderer.ts:134`, `BUILD_WAIT_LIMIT_MS`). Before that wait comes `Drawing.nextFrame()` (`render/recovery.ts:114`), which ends on a new frame, on a stop, or after 120 animation frame callbacks (`render/loop.ts:140`), and never on a time limit. On the page's thread the request that reaches a render worker waits for its answer with no limit at all (`page/engine.ts:906`). On WebGPU the capture then waits on the first pass (`render/webgpu-renderers.ts:272`) and on `buffer.mapAsync` (`gpu/readback.ts:104`), again with no limit. So a thread that draws and stops taking frames gives a test a bare timeout and the page no error. CI run 38963883452 has that shape: the showcase controls test waited its full 600 seconds inside its still check, with the engine silent.
+- A capture keeps polling for pipeline builds. It ends when its renderer is destroyed, as after a GPU loss, and after five minutes (`BUILD_WAIT_LIMIT_MS`), with E1414.
+- The capture route has three deadlines and two waits without one. The first, `FrameReplay.builtTaken()` (`render/scene-renderer.ts`), waits for a frame's pipelines for at most `BUILD_WAIT_LIMIT_MS`, five minutes. Before that wait comes `Drawing.nextFrame()` (`render/recovery.ts`). It ends on a new frame, on a stop, or after `CAPTURE_WAIT_CALLBACKS`, 120 animation frame callbacks (`render/loop.ts`). Its clock, `CAPTURE_CLOCK_MS`, fails it after eight minutes with no callback. On the page's thread, the request that reaches a render worker fails after `WORKER_REPLY_LIMIT_MS` (`page/engine.ts`), ten minutes. That limit starts again while the page is hidden. On WebGPU the capture then waits on the first pass (`render/webgpu-renderers.ts`) and on `buffer.mapAsync` (`gpu/readback.ts`) with no limit. A thread that draws and stops answering fails the page's request only after ten minutes, which is also the image tests' longest limit. So such a test can end in a bare timeout before the page reports an error.
 
 ## Browser faults
 
@@ -1328,8 +1328,7 @@ paragraph, so it reads no whole file into memory.
 
 ### The build's work is a product of its bits
 
-The manifest makes 53,762 GLSL builds and 19,227 WGSL builds, the figures that `BUILD_BUDGET`
-records. The translucency bit of M2-EX36 joins the lit, standard-material, probe grid and custom
+`BUILD_BUDGET` holds the manifest to 66,531 GLSL builds and 25,795 WGSL builds. The translucency bit of M2-EX36 joins the lit, standard-material, probe grid and custom
 material templates, and its two subsurface templates add one more pair. The count includes the
 probe grid's translucency builds, which the engine draws when a translucent mesh stands in a scene
 with a probe grid. The still view adds an accumulate build on each target, and the motion pass's
@@ -1350,10 +1349,8 @@ percent of the large variants. The rare lit features cost less: area lights and 
 ### The count the manifest may not pass
 
 `BUILD_BUDGET` in `crates/null3d-shaders/src/manifest.rs` records the figures above, and a commit
-that adds builds on purpose raises them here and in the constant together. The unlit surface hook,
-which lets a custom material show its own color with no lighting, is one such build on each
-target: it adds one WGSL build and one GLSL build, so the figures stand one higher than the
-count before it. The test
+that adds builds on purpose raises them here and in the constant together. The unlit surface hook lets
+a custom material show its own color with no lighting. It adds one WGSL build and one GLSL build. The test
 `the_manifests_builds_stay_within_the_recorded_figure` in the shader crate counts the manifest's
 builds and fails when either target passes its figure. The test builds no shader, so it costs a
 test run almost nothing. Its problem names the figure, the file that holds it and this guide.
@@ -1382,9 +1379,7 @@ The masked transmission joined the pair that the permutation table allows, so th
 transmission, and its three mask shapes multiply the transmission words. The levels debug view adds
 the `DEBUG_VIEW_LEVELS` and `LOD_FADE` bits to the debug view template: 192 GLSL builds and 48 WGSL
 builds. That template stays in `shaders.ts`, where only development builds import it, so a release
-page downloads none of those builds. The manifest makes 57,678 GLSL builds and 20,827 WGSL builds,
-78,505 in all. The shader build compiled 78,489 programs in the run that wrote the modules.
-`BUILD_BUDGET` records the two figures.
+page downloads none of those builds.
 
 The temporal resolve's study added two library modules. One is the motion math that a custom
 material's vertex offset calls, and the other is the temporal helpers that its history pass uses.
@@ -1397,13 +1392,13 @@ prepass, structure and lit pipelines. `proto_s3_ao` has nine pipelines. They are
 gtao_wide, bitmask, blur_x, blur_y, three_horizon and three_denoise. `proto_s3_ao_ms` has its copy
 pipeline. They add 7 GLSL builds and 8 WGSL builds. The main module holds them, which
 `tests/pages/proto-s3.ts` imports. No engine build and no shipped page draws them. The engine's
-start files do not grow. `BUILD_BUDGET` records 62,341 GLSL builds and 24,525 WGSL builds.
+start files do not grow.
 
-The count rose again with M3-V2: an instance batch whose rows bring values takes its mask's own test, as a mesh without rows does, so `ROW_VALUES` left `APART` beside
+An instance batch whose rows bring values takes its mask's own test, as a mesh without rows does. So `ROW_VALUES` left `APART` beside
 `ALPHA_COVERAGE` and `ALPHA_HASH` in the draw list. The lit templates then build each mask family
 over the row bit, and `SAMPLE_MASK` adds its WebGPU builds beside them, where a multisampled target
-has no alpha. The count rose by two WGSL builds with M3-R9: the light clusters' depth fit walks the slices by a
-compute pass of its own, `light_depth.wgsl`, which builds once for each of its two targets.
+has no alpha. The light clusters' depth fit walks the slices by a compute pass of its own,
+`light_depth.wgsl`, which adds two WGSL builds.
 
 The moment transparency layer adds its builds in two parts ([D-261](decisions/D-261-moment-transparency.md)).
 Its moment pass is a variant of the six mesh templates that a blended surface draws through, so
@@ -1411,13 +1406,11 @@ those templates gain the permutations that the layer carries. Its colour pass is
 of its own, one for each of those templates, because a first-use file takes the names of a build's
 bits and a shared value would pull another template's builds into the layer's files. The two parts
 add 4,181 GLSL builds and 1,261 WGSL builds, and all of them load on the layer's first use, so no
-page downloads them at its start. The milestone's bitmask ambient occlusion prototype adds seven
-GLSL builds and eight WGSL builds of its own, which the merge brought beside the layer's. The
-manifest makes 66,522 GLSL builds and 25,786 WGSL builds, and `BUILD_BUDGET` records those figures.
+page downloads them at its start.
 
 The screen-space bounce light (D-284) adds one shader with its trace and denoise pipelines, so 2
 GLSL builds and 2 WGSL builds. It loads on first use with ambient occlusion's steps, which the
-bounce reads. `BUILD_BUDGET` records 62,343 GLSL builds and 24,527 WGSL builds.
+bounce reads.
 
 The bounce light also shows the frame group's binding limit. The lit fragment stage already reads
 the sixteen sampled textures that every device allows: eight in the frame's group and eight map
@@ -1428,8 +1421,7 @@ binding is an array. The first texture of the screen steps stays a 2D image.
 The sky's volumetric cloud tier adds four shaders in M3-F11, and 6 GLSL builds and 6 WGSL builds
 with them. The analytic and physical skies' cloud draws build both targets with the `TONE_MAP`
 permutation, and the two sky-map steps build both targets once each. All four load on the tier's
-first use, so a page on Low or Medium downloads none of them (D-297). The merge makes 66,530 GLSL
-builds and 25,794 WGSL builds, and `BUILD_BUDGET` records those figures.
+first use, so a page on Low or Medium downloads none of them (D-297).
 
 A commit that adds builds on purpose raises the figure it passes and records the reason here, or in
 a decision record. A commit that raises the figure and gives no reason is the growth that this
@@ -1493,5 +1485,5 @@ The water's surface fades a wave's slope as the wave grows finer than a pixel's 
 
 - A page stops with E1402 when its engine core was built from other Rust sources than the checkout holds. The generated shader modules and the cores have separate caches. After a commit that changes Rust, run `bun run build` before any page test. The error names the missing function or the stamp.
 - A run that spans a change of the checkout has mixed results. Even a small commit can stop a page that loads after it. Start a gate run when the tree is still, name the commit in the run's record, and run one showcase scene at a time so a stop costs one scene.
-- Bind group layout ids are unique for each WebGPU renderer. The constants live in `bind_layout` in `crates/null3d-gpu/src/drawlist.rs`, and the generated TypeScript constants follow them. If the motion-vector pass took the subsurface blur's id 43, every WebGPU page would fail at the render worker's start with E1405. A unit test that checks the ids are unique would catch such a collision before a run.
+- Bind group layout ids are unique for each WebGPU renderer. The constants live in the `layout` module of `crates/null3d-gpu/src/drawlist.rs`, and the generated TypeScript constants follow them. If the motion-vector pass took the subsurface blur's id 43, every WebGPU page would fail at the render worker's start with E1405. The unit test `generated_layout_ids_are_unique` in the same file fails on such a collision.
 - Run one device runner at a time. Two runners on one checkout write the same run folder, and the results mix.

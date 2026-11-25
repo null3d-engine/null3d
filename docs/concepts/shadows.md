@@ -388,7 +388,7 @@ It follows these rules:
 - Only the first directional light draws one, and only while it casts shadows, and only in the frame's main camera view.
 - The object casts shadows (`castShadows: true`) and the light shares its layers. A hero that does not cast draws an empty tile.
 - The box fits the object's bounding sphere. A mesh takes its mesh's bounds; a group has none of its own, so give it a `setBounds` sphere. An object with no bounds draws no hero shadow.
-- The tile is square across the light around the object's bounding sphere, and reaches past it along the light by sixteen times the sphere's radius, where its shadow lands. A surface of the object, or one within that distance below it, reads the tile. Further out, the cascades shadow it.
+- The tile is square across the light around the object's bounding sphere. It reaches along the light from the sphere's side toward the light to fifteen radii past its far side, where its shadow lands. A surface of the object, or one within that distance below it, reads the tile. Further out, the cascades shadow it.
 - The tile spreads its texels over the object's bounds. A larger tile gives a larger object finer shadows. `heroTileSize` sets the size. The preset chooses the default: 1,024 on Low, 2,048 on Medium and High, and 4,096 on Ultra. At those defaults the demo's 4.4 m car gets at least four times the texel density of the cascade that holds 10 m, on every preset. A bigger object needs a bigger tile for the same ratio, and a page can name one.
 - The tile comes from `shadowTiles`, the atlas that point and spot lights share. Naming a hero adds a layer to the atlas for it, so the lights keep their tiles; only an atlas already at its limit of 24 layers gives one up, to the light that looks smallest. A hero makes the atlas while no spot or point light casts.
 - Every layer of a texture array takes the same size, so the tile sets the atlas's size. A tile larger than the preset's `shadowTileSize` makes every tile of the atlas that size, which takes more memory and draws each light's tile with more texels. An atlas above 1 GiB fails the frame with [E1501](../errors/E1501.md), which names the megabytes it would take; name a smaller `heroTileSize` or fewer `shadowTiles`.
@@ -400,7 +400,7 @@ A hero shadow suits a scene with one subject in close-up. When several objects n
 
 ### Where the box ends
 
-The box holds the object, a radius of space above it and sixteen radii below, where its shadow lands. A hero that stands far above the ground, such as a bird, then shadows nothing past the box's far face. An object that another object shadows keeps that shadow only where the caster lies in the box too, which reaches one radius past the hero toward the light. Keep a hero in scenes where it stands alone: a showroom floor, a starting grid, a plinth.
+The box holds the object's bounding sphere and fifteen radii of space below it, along the light, where its shadow lands. A hero that stands far above the ground, such as a bird, then shadows nothing past the box's far face. The box ends at the sphere on the light's side. So an object that another object shadows keeps that shadow only where the caster reaches into the box. Keep a hero in scenes where it stands alone: a showroom floor, a starting grid, a plinth.
 
 ## Which objects cast and receive
 

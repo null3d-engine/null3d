@@ -2039,9 +2039,9 @@ const VEGETATION_GRASS_PATHS = [
  * GPU time, its per-pass breakdown where the device times passes, the CPU time and the draw calls.
  * The page places 20,000 tufts at High, culls each view, thins the far tufts, draws a preset's
  * share of them, and measures five seconds. Its sun casts, so its rows hold the near shadow pass.
- * The 20,000 hill is a stress case with no ceiling. Four rows draw the hill at Creek's own density,
- * 2.0 tufts on each square meter of its 160 meter valley and 5.9 on its densest bank strip, which
- * is the scene that D-241's ceilings name. Each density runs with and without the view cull and
+ * The 20,000 hill is a stress case with no ceiling. Four rows draw the hill at the densities that
+ * D-241's ceilings name, those of the earlier Creek's grassy valley: 2.0 tufts on each square meter
+ * of its 160 meter valley and 5.9 on its densest bank strip. Each density runs with and without the view cull and
  * the far share, so the cull's own change shows on that scene.
  */
 export function vegetationGrassPlan(): PlanItem<Check>[] {

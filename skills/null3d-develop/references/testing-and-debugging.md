@@ -54,7 +54,7 @@ const { width, height, pixels } = await engine.captureFrame(); // the held frame
 
 - The engine seeds `math.random` in the sketch's thread, makes `Math.random` draw from it, and runs the setup. It steps the sketch from time 0 to the held time in fixed steps of 1/60 second, with no frame loop. Then it draws that one frame and reads it back through the engine.
 - `createEngine` resolves once the frame is read back. `engine.mode.hold` holds the time, or `null` in a live engine. A bare `?hold` holds at the `hold` option's time, or at 0.
-- The engine publishes the result as `window.__null3dHold`: `{ ok: true, time, frame, tier, width, height, pixels, stats }`, or `{ ok: false, code, error }` at the first failure. `stats` holds the held frame's figures in the form that `engine.measure()` returns. A test runner waits for it, so a page that failed never costs a timeout.
+- The engine publishes the result as `window.__null3dHold`: `{ ok: true, time, frame, tier, directDraws, clusterPatches, width, height, pixels, stats }`, or `{ ok: false, code, error }` at the first failure. The `stats` field holds the held frame's figures in the form that `engine.measure()` returns. The `directDraws` field tells whether the direct-draw path drew the frame. A timed script's results come in `script`, and a replay's in `replay`. A test runner waits for it, so a page that failed never costs a timeout.
 - The first error stops the hold: E1407 for a bad time, and E1408 for an error in `onUpdate` or the core. E1408 gives the sketch time of the error. A live engine would log that error and carry on.
 - Keep one reference image per GPU tier, and force the tier with `?gpu=`. Tiers, and software and real GPUs, can differ slightly at edges, so compare with a small tolerance. The `bunx @null3d/cli test` command fails an image when more than 0.1% of its pixels differ.
 - Pixels come back through the engine, never through a canvas screenshot, because some browsers alter canvas reads for privacy.
@@ -96,12 +96,12 @@ Test logic in three ways:
 Before you believe a picture that judges a change, prove the page read the change:
 
 - A sketch reads its address with `new URL(import.meta.url).searchParams`. Settings that a page puts on the sketch's address are silently lost if the query does not reach the module, and the sketch then draws its own defaults, so every variant is one picture. Have the sketch post back the values it built and print them beside the frame.
-- A dev server answers a sketch address whose query carries a `v=` value with `Cache-Control: max-age=31536000, immutable`, while any other address, with or without a query, answers `no-cache`. The plugin's immutable rule covers only hashed files under `/assets/`. A browser may therefore keep the first module it fetched for a `v=` address. When a value changes between runs, open the page twice with two markers, have the sketch report the one it read, and compare before trusting any difference.
+- A dev server answers a sketch address whose query carries a `v=` value with `Cache-Control: max-age=31536000, immutable`, while any other address, with or without a query, answers `no-cache`. The plugin's own immutable rule covers only hashed files under `/assets/`, and only on `vite preview`. A browser may therefore keep the first module it fetched for a `v=` address. When a value changes between runs, open the page twice with two markers, have the sketch report the one it read, and compare before trusting any difference.
 - When two variants look identical, suspect the pipeline first: the sketch not being re-read, the wrong module, or a stale server. The material is the last explanation, not the first.
 
 ## 4. Testing on real devices
 
-URL switches for the dev server and other development builds, such as the CDN build's `lib-dev/index.js` (engine docs `guides/testing`). A production build ignores them:
+URL switches for the dev server and other development builds, such as the CDN build's `lib-dev/index.js` (engine docs `guides/testing`). A production build ignores them, unless the Vite plugin's `urlSwitches: true` is set, as for builds of test and benchmark pages. The production build that `bunx @null3d/cli bench` makes sets it:
 
 | Switch | Effect |
 | --- | --- |
@@ -123,6 +123,7 @@ URL switches for the dev server and other development builds, such as the CDN bu
 | `?depth=reversed-gl` | On WebGL2, force a depth mode: `reversed`, `reversed-gl` (as in browsers without `EXT_clip_control`, such as Firefox) or `standard` (`concepts/backends`) |
 | `?latency=pipelined`, `?latency=low` | Latency mode |
 | `?prepass=on`, `?prepass=off` | Turn the depth prepass on or off over the `depthPrepass` option, to compare GPU time (`concepts/quality-presets`) |
+| `?moments=on`, `?moments=off` | Turn moment transparency on or off over the `momentTransparency` option, to compare blended surfaces and GPU time |
 | `?occlusion=on`, `?occlusion=off` | Turn GPU occlusion culling on or off over the `gpuOcclusion` option, to compare GPU time (WebGPU only; `concepts/culling`) |
 | `?occlusion-check=off` | On WebGPU, keep GPU occlusion culling's passes on in every frame, without the check that turns them off where they do not pay, so a test that compares the image with culling and without it compares frames that culled (`concepts/culling`) |
 | `?occlusion-buffer=384x216` | On WebGL2, give software occlusion culling's buffer about that many pixels instead of 256 x 144, to compare the CPU time it costs and the objects it hides (`concepts/culling`) |
@@ -134,9 +135,13 @@ URL switches for the dev server and other development builds, such as the CDN bu
 | `?preset=low`, `?preset=medium`, `?preset=high`, `?preset=ultra` | Fix the quality preset, within the GPU path's highest (`concepts/quality-presets`) |
 | `?target-fps=display`, `?target-fps=90` | Set the frame rate that the preset check and the governor defend, over the `targetFps` option of `createEngine` (`concepts/quality-presets`) |
 | `?preset-check=during-play`, `?preset-check=before-play` | Set when the preset check measures, over the `presetCheck` option of `createEngine`: in the first frames of play, or before play, with `createEngine` waiting for it (`concepts/quality-presets`) |
+| `?tier=off`, `?tier=lowest` | `off` keeps the governor out of its lowest quality tier, so a test measures the presets alone; `lowest` starts the page in that tier (`concepts/quality-presets`) |
 | `?jobs=4` | Start at most this many job workers, from 1 to 255, instead of the logical cores minus 2. They start as the work grows |
 | `?memory=2048` | Set the maximum of the memory that worker threads share, in MiB, up to 4096, over the `memory` option of `createEngine`; the default is 1024 |
 | `?fps=30` | Hold drawing at this many frames per second, at most the display's rate, to compare runs on displays of different refresh rates |
+| `?gpu-samples=every` | Time every drawn frame on the GPU, not one in eleven, to find the parts of a single long frame. It costs the timing's own GPU time |
+| `?still-camera=off` | Draw every frame of a view that holds still, as `createEngine({ still: false })` does |
+| `?stats=collapsed`, `?stats=open`, `?stats=off` | Show the stats overlay collapsed to its header or open, or hide it whatever the `stats` option says |
 | `?queue=3` | Let this many frames wait unfinished on the GPU instead of 2; `?queue=off` sets no limit, as browsers do on their own (`guides/performance`) |
 | `?hold=1.5` | Hold mode: step the sketch to 1.5 seconds, draw that one frame and publish it as `window.__null3dHold`; a bare `?hold` holds at the `hold` option's time, or at 0 |
 | `?bench` | Publish the running engine as `window.__null3dEngine`, where a benchmark tool calls `measure`; `bunx @null3d/cli bench` adds it |
@@ -157,13 +162,14 @@ Engine docs: `api/debug`, `guides/debugging`.
 
 | Tool | Shows | Builds |
 | --- | --- | --- |
-| `debug.stats(true)` in the sketch; `createEngine({ stats: true })`, `engine.stats(true)` or `?stats` on the page | An overlay over the canvas with the GPU path, the preset, the render scale, the frame rates and the CPU time per thread and phase. In 0.2 a header with the frame rate, and a card of four tabs with a fixed 360 by 396 pixel size. Frame holds the work bars against the target frame rate and the triangles and objects drawn, Memory the parts of memory, Steps the add-ons and the GPU's timed passes, and Systems the memory register that a development build reports, with each engine table's and allocator's bytes used, reserved and peak | Every build |
+| `debug.stats(true)` in the sketch; `createEngine({ stats: true })`, `engine.stats(true)` or `?stats` on the page | An overlay over the canvas with the GPU path, the preset, the render scale, the frame rates and the CPU time per thread and phase. A header with the frame rate, and a card of four tabs, 360 pixels wide, whose height follows the tab it shows. Frame holds the work bars against the target frame rate and the triangles and objects drawn, Memory the parts of memory, Steps the add-ons and the GPU's timed passes, and Systems the memory register that a development build reports, with each engine table's and allocator's bytes used, reserved and peak | Every build |
 | `debug.frameStats()` | The overlay's figures for the sketch, as means over about half a second. It allocates nothing, so read it every frame if you need to | Every build |
 | `await engine.measure(5)` on the page | Every figure of section 3 of `references/performance.md`: CPU, GPU, frame rates, uploads, rebuilds, pipelines, memory | Every build |
 | `debug.view('normals')`, `'depth'`, `'wireframe'`, `'overdraw'`, `'shadows'`, `'motion'`, `'levels'`; `'lit'` to go back. `?view=<name>` on any page does the same | The whole scene with one debug shading in place of every material. Views ignore maps, alpha and custom shaders. `'levels'` colors each draw by its level of detail, dithers the two colors of a fading band, and marks a source that the size rule or a draw range hid. An add-on adds a view of its own through the `debugViews` field of its feature description | Development only |
 | `debug.line`, `box`, `sphere`, `arrow`, `axes`, `grid`, `frustum`, `light` | Lines for one frame, so call them in `onUpdate` in every frame that needs them | Development only |
 | `debug.cullingSpheres(true)` | The bounding sphere that culling tests for each object whose mesh has levels, for the first 128 objects, until `false`. Use it beside `debug.view('levels')`. `debug.cullingSpheresDrawn()` gives the count that the last frame drew: 0 while the switch is off, so a test can tell the switch drew them rather than nothing | Development only |
 | `debug.skeleton` | The bones of a skinned mesh | Development only |
+| `debug.shadowCamera(camera)` | Places the main directional light's shadow cascades from another camera, so the active camera watches shadow edges shimmer or crawl as that camera moves. No argument goes back | Development only |
 | `?record` on the page, then `?replay=<file>` or `shot --replay <file>` | A bug report from a phone. `?record` records each frame's step and the input that the sketch read, and shows a save button; the file replays here to the same frames. A sketch that reads the quality preset can differ, because the replay picks this computer's preset (`guides/testing`) | Every build |
 | `?inspect` on the page | The in-page inspector: a panel at the left edge lists the scene as a tree, selects and outlines an object, and edits its transform, visibility and material values. It shows the frame figures at its foot. The page also publishes `window.__null3dInspector`, and `engine.inspect` runs the same calls from your code | Development only |
 
@@ -171,7 +177,7 @@ In a production build, the debug drawing calls and `debug.view` do nothing, but 
 
 ## 6. The in-page inspector and the MCP server
 
-`?inspect` opens the inspector panel, and `bunx @null3d/cli mcp` starts a Model Context Protocol server over stdio. Both need a development build: a production build leaves the inspection channel out.
+`?inspect` opens the inspector panel, and `bunx @null3d/cli mcp` starts a Model Context Protocol server over stdio. Both need a development build: a production build leaves the inspection channel out. A held page (hold mode) or a replay publishes no inspector bridge and opens no panel.
 
 The page publishes `window.__null3dInspector`, and `engine.inspect(call, args)` runs the same calls from your own code. An object is named by its name, `#<slot>` or `#camera`:
 
@@ -187,8 +193,9 @@ The page publishes `window.__null3dInspector`, and `engine.inspect(call, args)` 
 | `setQuality` | Switch the preset or change quality settings |
 | `highlight` | Outline an object, or clear the outline |
 | `info` | The GPU path, the preset and the render scale |
+| `capture` | A PNG of the next frame as `{ png, bytes }`: base64 text and its size. The page answers it itself |
 
-The MCP server starts the project's dev server and a headless browser by default. With `--connect http://127.0.0.1:9222` it drives the tab of a Chrome that already runs with a debugging port. Register it with `claude mcp add null3d -- bunx @null3d/cli mcp`. Its tool names are stable within a version:
+The MCP server starts the project's dev server and a headless browser by default. Its options pick the page to open (`--page`), the GPU path (`--gpu`) and the window (`--size`, `1280x720`). The `--timeout` option gives the seconds the page may take to publish the inspector (60). With `--url https://localhost:5174` it uses a dev server that already runs. With `--connect http://127.0.0.1:9222` it drives the tab of a Chrome that already runs with a debugging port. Register it with `claude mcp add null3d -- bunx @null3d/cli mcp`. Its tool names are stable within a version:
 
 | Tool | Use |
 | --- | --- |
@@ -264,7 +271,7 @@ Each code has a docs page, such as `errors/E1203`, with the full explanation. Re
 
 ## 9. Before you ship
 
-Work through this list before a release, on the production build (`bunx vite build`, then `bunx vite preview`), not the dev server.
+Work through this list before a release, on the production build (`bunx vite build`, then `bunx vite preview`), not the dev server. A production build ignores URL switches. For the items that use `?gpu=` or `?preset=`, build once with the Vite plugin's `urlSwitches: true`, or pass the `gpu` and `preset` options to `createEngine`.
 
 Rendering:
 

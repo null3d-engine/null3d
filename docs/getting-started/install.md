@@ -25,7 +25,7 @@ bun add -d vite @null3d/vite-plugin
 | --- | --- |
 | `@null3d/engine` | The API as JavaScript with TypeScript declarations, the worker entry points, both WebAssembly builds and these docs |
 | `@null3d/vite-plugin` | The build and dev server setup that null3D needs, and the shader compiler |
-| `@null3d/controls` | Orbit, map, fly and first-person camera controls, for sketches that use them |
+| `@null3d/controls` | Orbit, map, fly and first-person camera controls, and gizmos that move, turn and scale objects, for sketches that use them |
 
 Add the controls when a sketch uses them:
 
@@ -94,7 +94,7 @@ All `@null3d/*` packages share one version number, because the WebAssembly core 
 
 ## The `null3d` command
 
-The `null3d` command, in the `@null3d/cli` package, is optional. It does jobs that a bundler does not do: image tests and screenshots in a headless browser, and benchmarks of a production build. Install it when you need one of them, and run it as `bunx @null3d/cli` followed by the command:
+The `null3d` command, in the `@null3d/cli` package, is optional. It does jobs that a bundler does not do, such as image tests and screenshots in a headless browser and benchmarks of a production build. It also connects a coding agent to the live scene. Install it when you need one of them, and run it as `bunx @null3d/cli` followed by the command:
 
 ```sh
 bun add -d @null3d/cli

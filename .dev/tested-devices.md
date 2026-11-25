@@ -1,6 +1,6 @@
 # Tested devices
 
-This record lists every device and browser that null3D has run on, with the plans that ran and their results. [Device sessions](devices.md) says how each device runs. It feeds the compatibility matrix in the README and in the user docs, as the owner asked.
+This record lists every device and browser that null3D has run on, with the plans that ran and their results. [Device sessions](devices.md) says how each device runs. The README's "Where it runs" section sums it up for users, as the owner asked. No tool writes that section from the record, so update it by hand when the record gains a device or a browser.
 
 ## The record
 
@@ -62,6 +62,9 @@ on core WebGPU in a later run. The runs took one
 BrowserStack Automate session at a time. Each page fixed its GPU path and its preset. It also set
 the quality governor's target at 1 frame a second, so the render scale stayed at 1 and each
 preset's own cost shows.
+
+Every run in this section measured an earlier Creek, a stream in a grassy valley. Its Creek figures
+do not describe the current scene, the garden on a cliff above the cloud ([Examples](examples.md#creek)).
 
 WebGL2 and compatibility mode cap the preset at Medium ([the chooser](../packages/engine/src/quality/chooser.ts)).
 So High and Ultra ran on core WebGPU only. Creek at Low on WebGPU stalls an Apple device's page
@@ -218,14 +221,14 @@ texture bytes. Its figures are in no table here and must not be read. The device
 [Driver bug reports](driver-bugs.md).
 
 Creek at Medium failed: its first frame took 42 s, and then the measure drew no frame in 5.5 s. The
-tablet is the slowest measured device. It draws Creek at Low under one frame a second, and the
-forest at Medium under one frame a second.
+tablet was the slowest measured device. It drew that Creek at Low under one frame a second, and
+the forest at Medium under one frame a second.
 
 ### Galaxy S25, Chrome 152, Android 15: Creek on WebGPU
 
 Creek has no WebGPU row on the devices above. Its Low page stalls an Apple device after its first
 frame ([Driver bug reports](driver-bugs.md)). The Galaxy S24 offers no WebGPU adapter. The cloud
-Galaxy S25 draws Creek on core WebGPU at every preset. The owner ruled that this phone stands in for
+Galaxy S25 drew that Creek on core WebGPU at every preset. The owner ruled that this phone stands in for
 the S24 class, and its Adreno 830 is a faster GPU of another make than the S24's Xclipse 940.
 
 | Preset | Path | FPS | Frame ms | CPU ms | GPU ms | Triangles | Draws | Textures MiB | Buffers MiB | wasm MiB |

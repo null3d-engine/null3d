@@ -40,7 +40,7 @@ Measured from the build (`bun run build`):
 | `js/gltf-draco.js`, the engine's Draco code | 4,362 B | 1,987 B | 1,775 B |
 | Together | 254,276 B | 76,392 B | 60,019 B (58.6 KiB) |
 
-Each script stays within the 16 KB limit for files that load on first use, and the module goes in the size report's section of first-use WebAssembly, which has no budget. The start of each thread mode does not change: Draco's code loads only from the glTF worker.
+Each script stays within the 18 KB limit for files that load on first use, and the module goes in the size report's section of first-use WebAssembly, which has no budget. The start of each thread mode does not change: Draco's code loads only from the glTF worker.
 
 ### Decode speed
 

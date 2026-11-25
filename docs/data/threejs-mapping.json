@@ -98,7 +98,7 @@
       "status": "changed",
       "since": "0.1",
       "target": "debug.stats(true), or createEngine({ stats: true }) on the page; debug.frameStats() for numbers",
-      "notes": "The overlay shows the frame rates, CPU time per thread and phase, draw calls and uploads, the GPU tier, the preset and the render scale. It sits at the canvas's top right, and its header shows the frame rate. A click opens a card with each thread's and the GPU's time against the target frame rate, triangles and objects drawn, and the memory of the engine, the GPU's textures and buffers, the heap and the page. Triangles count every pass, shadow maps included, as renderer.info.render.triangles does. Objects count the instances of each draw, so an object counts once per pass that draws it. Each part of a mesh with several materials counts once, as each part is a mesh of its own in three.js. The page shows it with createEngine({ stats: true }), engine.stats(true) or ?stats. @null3d/engine/stats shows a three.js page's own figures in the same panel, with StatsPanel, or as text, with statsText. engine.measure() on the page gives percentiles of CPU and GPU time, and memory. In the sketch, debug.frameStats() also gives the textures' GPU bytes, their budget and their dropped mip levels.",
+      "notes": "The overlay shows the frame rates, CPU time per thread and phase, draw calls and uploads, the GPU tier, the preset and the render scale. It sits at the canvas's top right, and its header shows the frame rate. A click opens a card with each thread's and the GPU's time against the target frame rate, triangles and objects drawn, and the memory of the engine, the GPU's textures and buffers, the heap and the page. Triangles count every pass, shadow maps included, as renderer.info.render.triangles does. Objects count the instances of each draw, so an object counts once per pass that draws it. Each part of a mesh with several materials counts once, as each part is a mesh of its own in three.js. The page shows it with createEngine({ stats: true }), engine.stats(true) or ?stats. @null3d/engine/stats shows a three.js page's own figures in the same panel, with StatsPanel, or as text, with statsText. engine.measure(seconds) on the page gives percentiles of CPU and GPU time, and memory. In the sketch, debug.frameStats() also gives the textures' GPU bytes, their budget and their dropped mip levels.",
       "docs": "api/debug",
       "detect": "\\.info\\.(render|programs)|from\\s+['\"][^'\"]*stats(\\.module)?(\\.js)?['\"]|\\bnew\\s+Stats\\s*\\("
     },
@@ -571,7 +571,7 @@
       "status": "changed",
       "since": "0.1",
       "target": "scene.createDirectionalLight({ direction, color, intensity, castShadows, shadow })",
-      "notes": "The light is an object. Pass the target minus the position as direction, or call light.lookAt(x, y, z), again whenever the target moves. Surfaces show up to four directional lights: the first one created casts the shadows, and up to three more add fill and rim light, without shadows. Delete shadow.camera bounds: the engine's shadow cascades fit the view by themselves, and the shadow distance follows the farthest visible receiver by default, so a port with its own shadow.camera.far passes that number as shadow: { distance }. It also draws contact shadows on High and Ultra, which three.js lacks: set shadow: { contactDistance: 0 } to match three.js's look. intensity stays in lux, three.js's unit. three.js has no hero shadow. A port that fits a second shadowed light or a shadow camera to one object uses light.setShadow({ hero: object }), which follows it.",
+      "notes": "The light is an object. Pass the target minus the position as direction, or call light.lookAt(x, y, z), again whenever the target moves. Surfaces show up to four directional lights: the first one created casts the shadows, and up to three more add fill and rim light, without shadows. Delete shadow.camera bounds: the engine's shadow cascades fit the view by themselves, and the shadow distance follows the farthest visible receiver by default, so a port with its own shadow.camera.far passes that number as shadow: { distance }. It also draws contact shadows, which three.js lacks: on High and Ultra, and on Medium on WebGL2. Set shadow: { contactDistance: 0 } to match three.js's look. intensity stays in lux, three.js's unit. three.js has no hero shadow. A port that fits a second shadowed light or a shadow camera to one object uses light.setShadow({ hero: object }), which follows it.",
       "docs": "api/lights",
       "detect": "\\bDirectionalLight\\b"
     },
@@ -702,8 +702,8 @@
       "three": "SSSNode / sss() (screen-space shadows)",
       "status": "changed",
       "since": "0.2",
-      "target": "Contact shadows of the directional light: scene.createDirectionalLight({ contactDistance })",
-      "notes": "Both search the camera's depth toward the main light for short shadows where objects touch. contactDistance sets their reach in meters, 0.3 by default. They draw where the quality setting contactShadowSteps is above 0, as on High and Ultra.",
+      "target": "Contact shadows of the directional light: scene.createDirectionalLight({ castShadows: true, shadow: { contactDistance } })",
+      "notes": "Both search the camera's depth toward the main light for short shadows where objects touch. shadow.contactDistance sets their reach in meters, 0.3 by default. Only the first directional light draws them, while it casts shadows. They draw where the quality setting contactShadowSteps is above 0: on High and Ultra, and on Medium on WebGL2.",
       "docs": "api/lights",
       "detect": "\\bSSSNode\\b"
     },
@@ -890,7 +890,7 @@
       "status": "changed",
       "since": "0.2",
       "target": "materials.standard({ clearcoat, clearcoatRoughness, clearcoatNormalScale, clearcoatMap, clearcoatRoughnessMap, clearcoatNormalMap })",
-      "notes": "Same names, ranges and formulas, and glTF's KHR_materials_clearcoat loads into them. Give a clear coat option when you create the material, even as 0, to change it later. clearcoatMap and clearcoatRoughnessMap must be one texture, with the coat in red and its roughness in green, as glTF packs them: pack two textures into one. A material with a clear coat or a sheen takes no lightMap, specularIntensityMap or specularColorMap. A custom material sets s.clearcoat in its surface function. The car paint add-on builds metal flakes and panel seams over this clear coat, and three.js has no flake lobe: its metal flakes are a normal map.",
+      "notes": "Same names, ranges and formulas, and glTF's KHR_materials_clearcoat loads into them. Give a clear coat option when you create the material, even as 0, to change it later. clearcoatMap and clearcoatRoughnessMap must be one texture, with the coat in red and its roughness in green, as glTF packs them: pack two textures into one. A material with a clear coat or a sheen takes no lightMap, specularIntensityMap or specularColorMap. A custom material sets s.clearcoat in its surface function. The car paint example add-on (guides/car-paint) builds metal flakes and panel seams over this clear coat, and three.js has no flake lobe: its metal flakes are a normal map.",
       "docs": "api/materials",
       "detect": "\\bclearcoat(Roughness|NormalScale|Map|RoughnessMap|NormalMap)?\\b"
     },
@@ -967,7 +967,7 @@
       "status": "manual",
       "since": "0.1",
       "target": "materials.shader({ wgsl, uniforms }) with a toon surface function",
-      "notes": "Surface functions cannot read the scene's lights in this version. Pass the light direction as a uniform, step the light into bands, and return the result as emissive.",
+      "notes": "A surface function cannot read the scene's lights. Pass the light direction as a uniform, step the light into bands, and return the result as emissive. A lobe function, fn lobe(input: LobeInput) -> vec3f, does read each light. The engine calls it for the main directional light and for each point and spot light, with the light's direction and its shadowed irradiance. It adds the color that the lobe returns to that light's specular, so bands made there follow every such light and its shadows.",
       "docs": "shaders/surface-functions",
       "detect": "\\bMeshToonMaterial\\b"
     },
@@ -1198,7 +1198,7 @@
       "status": "manual",
       "since": "0.1",
       "target": "A surface function with alphaMode 'mask' that sets alpha to 0 beyond the plane, using input.worldPosition",
-      "notes": "Pass the plane as a vec4f uniform. Shadows still use the whole mesh, because the shadow pass ignores surface functions.",
+      "notes": "Pass the plane as a vec4f uniform. The shadow is cut at the plane too, as three.js does with clipShadows: true. A masked material's shadow caster runs the alpha that its surface function sets.",
       "docs": "shaders/surface-functions",
       "detect": "clippingPlanes|localClippingEnabled|clipIntersection"
     },
@@ -1297,7 +1297,7 @@
       "status": "changed",
       "since": "0.1",
       "target": "textures.fromData({ width, height, depth, format, data })",
-      "notes": "Formats rgba8unorm and rgba16float (a Uint16Array of half floats or a Float32Array). depth above 1 makes a texture array, but materials read only its first layer, and custom materials take textures of one layer only. Filters are linear by default, where three.js's DataTexture is nearest: pass filter: 'nearest'. A Data3DTexture made as a color grading table for LUTPass becomes assets.lutFromData({ size, data }). Data textures have no mip levels unless mipmaps is true, as DataTexture's generateMipmaps is false.",
+      "notes": "Formats rgba8unorm and rgba16float (a Uint16Array of half floats or a Float32Array). depth above 1 makes a texture array. The standard materials read its first layer. A custom material declares it as var name: texture_2d_array<f32> and samples a layer with textureSample(name, nameSampler, uv, layer). Filters are linear by default, where three.js's DataTexture is nearest: pass filter: 'nearest'. A Data3DTexture made as a color grading table for LUTPass becomes assets.lutFromData({ size, data }). Data textures have no mip levels unless mipmaps is true, as DataTexture's generateMipmaps is false.",
       "docs": "api/textures",
       "detect": "\\bData(Array|3D)?Texture\\b"
     },
@@ -1548,6 +1548,7 @@
       "category": "Animation",
       "three": "AnimationClip / KeyframeTrack built in code",
       "status": "changed",
+      "since": "0.2",
       "target": "const pulse = scene.animateProperty(lamp, 'light.intensity', { times: [0, 1, 2], values: [0, 5, 0], loop: true }); const recolor = scene.animateProperty(material, 'color', { times: [0, 1], values: [1, 0, 0, 0, 0, 1] })",
       "notes": "A track names a value of a light, a camera, a material or an object: 'light.intensity', 'light.color', 'camera.fov', a material value that setUniform takes, 'material.uvOffset' or 'material.uvScale' for where its maps sit on the texture coordinates, or 'position', 'rotation', 'scale' and 'visible'. Keys hold a number, two numbers for the offset or the scale of the maps, three for a color, a position or a scale, and four for a rotation. Interpolation: 'linear', 'step' or glTF's cubic spline ('cubic'), and a cubic key holds an in-tangent, the value and an out-tangent. animation.setTime(t) places the animation, setSpeed, setPaused, setLoop and stop control it, and a material animation changes every object that uses the material. glTF files play their KHR_animation_pointer tracks through the model's animator, with the clip's time, speed, fades and weights: a light's intensity, color and range, a material's values, the offset and scale of a base color or emissive texture's transform, a node's visibility, and a node's transform or morph weights. A material keeps a transform for each of its maps, so a file that moves two of them apart plays both, each on its own map. A pointer the engine does not read leaves its value as the file has it, with a warning in development builds. three.js needs a plugin for the extension.",
       "docs": "api/animation",
@@ -1651,6 +1652,17 @@
       "notes": "Call them in onUpdate: each call draws for one frame. Debug drawing exists in development builds only. debug.grid takes GridHelper's size and divisions, and its color and centerColor default to GridHelper's color2 and color1. debug.frustum draws orange by default, as CameraHelper draws a frustum. debug.box takes a box's lowest and highest corners. debug.light draws directional lights only. debug.skeleton draws an animated object's skin joints, blue at the joint and green at its parent, as SkeletonHelper does. PlaneHelper and PolarGridHelper have no equivalent.",
       "docs": "api/debug",
       "detect": "\\b(Axes|Grid|PolarGrid|Box|Box3|Arrow|Camera|DirectionalLight|PointLight|SpotLight|HemisphereLight|Skeleton|Plane)Helper\\b"
+    },
+    {
+      "id": "inspector",
+      "category": "Helpers and debugging",
+      "three": "three.js's Inspector add-on or developer tools extension, or code that walks scene.children to find an object while debugging",
+      "status": "changed",
+      "since": "0.3",
+      "target": "?inspect on the page in a development build; engine.inspect(call, args) from page code; bunx @null3d/cli mcp for a coding agent",
+      "notes": "The ?inspect panel lists the scene as a tree and outlines the object that you select. It shows and changes the object's transform, and a mesh's base color, roughness, metalness and opacity. A change lasts until the page reloads, so copy the final values into the sketch. engine.inspect runs the same calls from code, and the page answers capture itself with { png, bytes }. The MCP server gives a coding agent the same calls, frame captures and the frame figures. All three work in a development build only, because a production build leaves the channel out. A held page or a replay opens no panel.",
+      "docs": "guides/debugging",
+      "detect": "__THREE_DEVTOOLS__|from\\s+['\"][^'\"]*/inspector/Inspector(\\.js)?['\"]"
     },
     {
       "id": "math-objects",
@@ -1791,7 +1803,7 @@
       "status": "changed",
       "since": "0.2",
       "target": "post.set({ outline: { color, hiddenColor, width } }) and mesh.setOutlined(true), or createOutlinePass(ctx, { color, hiddenColor, strength, thickness, glow, pulsePeriod }) from @null3d/three-compat",
-      "notes": "selectedObjects becomes setOutlined(true) on each mesh, or on a model's copy from scene.instantiate. null3D draws a crisp line of one width in CSS pixels, with no blur. visibleEdgeColor and hiddenEdgeColor become color and hiddenColor. OutlinePass draws its edge at half size, so edgeThickness t becomes width of about 2t. OutlinePass draws a dark brown line around hidden parts by default; null3D draws none until hiddenColor is set, so set hiddenColor: [0.1, 0.04, 0.02], its linear default, to keep it. pmndrs OutlineEffect: xRay: false becomes hiddenColor: false, and its edge is one texel of its mask at resolutionScale, so width is about 1 / resolutionScale. For OutlinePass itself, install @null3d/three-compat and call createOutlinePass(ctx, { color, hiddenColor, strength, thickness, glow, pulsePeriod }): its settings are edgeStrength, edgeThickness, edgeGlow and pulsePeriod, with edgeStrength, edgeThickness and edgeGlow kept as they are, and visibleEdgeColor and hiddenEdgeColor as color and hiddenColor. It draws the soft edge, the glow and the pulse, and it turns the crisp line off. The pattern texture has no setting, the mask reads at half size, and downSampleRatio is fixed at 2. The core's crisp line stays the cheaper choice where a soft edge is not needed. One outline style covers every outlined object in either form. For a soft glow built by hand, a full-screen pass reads the mask with input: 'outlineMask', at scale 0.5, and an effect adds its texture to the scene color; width: 0 drops the crisp line (guides/custom-passes, a soft outline glow).",
+      "notes": "selectedObjects becomes setOutlined(true) on each mesh, or on a model's copy from scene.instantiate. null3D draws a crisp line of one width in CSS pixels, with no blur. visibleEdgeColor and hiddenEdgeColor become color and hiddenColor. OutlinePass draws its edge at half size, so edgeThickness t becomes width of about 2t. OutlinePass draws a dark brown line around hidden parts by default; null3D draws none until hiddenColor is set, so set hiddenColor: [0.1, 0.04, 0.02], its linear default, to keep it. pmndrs OutlineEffect: xRay: false becomes hiddenColor: false, and its edge is one texel of its mask at resolutionScale, so width is about 1 / resolutionScale. For OutlinePass itself, install @null3d/three-compat and call createOutlinePass(ctx, { color, hiddenColor, strength, thickness, glow, pulsePeriod }). edgeStrength, edgeThickness and edgeGlow keep their values as strength, thickness and glow, and pulsePeriod keeps its name. visibleEdgeColor and hiddenEdgeColor become color and hiddenColor. It draws the soft edge, the glow and the pulse, and it turns the crisp line off. The pattern texture has no setting, the mask reads at half size, and downSampleRatio is fixed at 2. The core's crisp line stays the cheaper choice where a soft edge is not needed. One outline style covers every outlined object in either form. For a soft glow built by hand, a full-screen pass reads the mask with input: 'outlineMask', at scale 0.5, and an effect adds its texture to the scene color; width: 0 drops the crisp line (guides/custom-passes, a soft outline glow).",
       "docs": "porting/threejs-postprocessing",
       "detect": "\\bOutline(Pass|Effect)\\b"
     },
@@ -1989,7 +2001,7 @@
       "status": "changed",
       "since": "0.3",
       "target": "const tree = await assets.loadGltf(url); scene.createInstances(tree.find(name).mesh, count, { material }) for the copies of each species; a materials.shader material whose vertexOffset samples the field of createWind(ctx, { camera }) from @null3d/wind, with swayDistance; far copies as cards from @null3d/impostors, with handOverToCards(meshes, cards.batch, switchDistance)",
-      "notes": "null3D ships no plant generator. A port keeps its tree models: export a procedural tree from Blender's Sapling, ez-tree or a similar tool as a glTF file, or build the tree in code as the forest demo does. Draw each species' copies as one instance batch, so the engine gives them levels of detail and culling. For wind, replace the three.js shader's sway with one custom material whose vertex offset reads the wind add-on's field, as examples/lib/sway.ts does. The sway fades to nothing at the material's swayDistance, so far trees stand still and keep their cached shadows. Past the last level, cards from the impostors add-on stand in for the trees, and handOverToCards sets the two distance bands.",
+      "notes": "null3D ships no plant generator. A port keeps its tree models: export a procedural tree from Blender's Sapling, ez-tree or a similar tool as a glTF file, or build the tree in code, as the forest demo that api/wind names does. Draw each species' copies as one instance batch, so the engine gives them levels of detail and culling. For wind, replace the three.js shader's sway with one custom material whose vertex offset reads the wind add-on's field, as api/wind shows. The sway fades to nothing at the material's swayDistance, so far trees stand still and keep their cached shadows. Past the last level, cards from the impostors add-on stand in for the trees, and handOverToCards sets the two distance bands.",
       "docs": "api/wind",
       "detect": "\\b(Tree|Foliage|Vegetation)(Generator|Factory)\\b|\\bSapling\\b|\\bez-tree\\b"
     },
@@ -2044,7 +2056,7 @@
       "status": "changed",
       "since": "0.3",
       "target": "@null3d/sound: createSound in the sketch, connectSound on the page",
-      "notes": "AudioListener is createSound's listener option, usually the camera. A looping PositionalAudio is a sound.loop at a place, with refDistance as near; one that plays once per event is a sound.shot. three.js's maxDistance only stops the fall with distance, while far fades the sound out: give far where the sound should end. A non-positional Audio is a loop with positional: false. AudioLoader has no counterpart: name the file by its address, and the page loads it once the user starts the sound. An AudioAnalyser has no counterpart; analyse the page's own Web Audio.",
+      "notes": "AudioListener is createSound's listener option, usually the camera. A looping PositionalAudio is a sound.loop at a place, with refDistance as near; one that plays once per event is a sound.shot. three.js's maxDistance only stops the fall with distance, while far fades the sound out: give far where the sound should end. A non-positional Audio is a loop with positional: false. AudioLoader has no counterpart: name the file by its address, and the page loads it once the user starts the sound. An AudioAnalyser has no counterpart; analyze the page's own Web Audio.",
       "docs": "api/sound",
       "detect": "\\b(PositionalAudio|AudioListener|AudioLoader|AudioAnalyser)\\b"
     },
@@ -2055,7 +2067,7 @@
       "status": "changed",
       "since": "0.1",
       "target": "Keep the panel on the page; send changes with engine.postToSketch and receive them with page.onMessage",
-      "notes": "",
+      "notes": "For values that you only tune while you develop, the ?inspect panel of a development build changes transforms and material values with no code of your own (guides/debugging).",
       "docs": "api/page",
       "detect": "\\blil-gui\\b|\\bdat\\.gui\\b|new\\s+GUI\\s*\\("
     },

@@ -71,6 +71,21 @@ Copyright (c) 2023, Qualcomm Innovation Center, Inc. All rights reserved.
 BSD 3-Clause License, whose text is below.
 
 ==============================================================================
+SMAA: the anti-aliasing of the moment transparency layer
+==============================================================================
+
+The shader library's moment transparency layer follows the SMAA 1x reference implementation's
+three steps, from https://github.com/iryoku/smaa.
+
+Copyright (C) 2013 Jorge Jimenez (jorge@iryoku.com)
+Copyright (C) 2013 Jose I. Echevarria (joseignacioechevarria@gmail.com)
+Copyright (C) 2013 Belen Masia (bmasia@unizar.es)
+Copyright (C) 2013 Fernando Navarro (fernandn@microsoft.com)
+Copyright (C) 2013 Diego Gutierrez (diegog@unizar.es)
+
+The MIT License, whose text is below.
+
+==============================================================================
 naga, naga-types and naga_oil: WGSL parsing, validation and translation
 ==============================================================================
 

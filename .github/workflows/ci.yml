@@ -484,9 +484,9 @@ jobs:
       - if: matrix.id == 'ci-1' && steps.passed.outputs.cache-hit != 'true'
         run: cargo test --workspace --doc --no-fail-fast
       - name: Save the built test binaries
-        # One part saves the tree; the four parts build the same workspace, so the others restore
-        # this one by the key's prefix. Four trees of about 1.2 GB would fill the repository's cache
-        # limit in six commits.
+        # One part saves the tree; the six parts build the same workspace, so the others restore
+        # this one by the key's prefix. Six trees of about 1.2 GB would fill the repository's cache
+        # limit in four commits.
         if: steps.passed.outputs.cache-hit != 'true' && env.SAVE_CACHES == 'true' && matrix.id == 'ci-1'
         uses: actions/cache/save@v4
         with:
@@ -2064,7 +2064,7 @@ jobs:
         # Safari takes more shards than Firefox because it is the slower browser: measured on run
         # 41059398975, its shards averaged 13.3 minutes and its slowest took 30, against Firefox's
         # 8.5 and 13, and the slowest shard decides when a full run ends. The Enterprise plan runs
-        # at most 50 macOS jobs at once and only Safari's shards and the benchmark's 8 take them, so
+        # at most 50 macOS jobs at once and only Safari's shards and the benchmark's 9 take them, so
         # Safari stops at 49: one more would put its own prebuilt shard over the cap and make shards
         # wait for machines, which costs more than the split saves. The two browsers are separate
         # jobs rather than one matrix because a job's `if` cannot read `matrix` at all: GitHub

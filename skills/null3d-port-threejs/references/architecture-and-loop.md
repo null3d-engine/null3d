@@ -68,7 +68,7 @@ for (let index = 0; index < ELEMENTS.length; index++) {
 - An element can hold an iframe or any other markup. Give it `pointer-events: auto` for the clicks that `CSS3DRenderer` gives its elements.
 - An orthographic camera carries the planes too. Give `scene.createOrthographicCamera` the height, or the four edges, that the example's camera uses.
 
-All seven three.js CSS3D examples have a port under `tests/pages/`: `css3d_periodictable`, `css3d_molecules`, `css3d_sprites`, `css3d_sandbox`, `css3d_orthographic`, `css3d_mixed` and `css3d_youtube`. Each page draws its scene with null3D and with three.js's `CSS3DRenderer`, and its test compares the element pictures of the two stages. The mixed port's test also compares the two drawn frames. Where an example adds an invisible plane that writes depth and no color, give its material `colorWrite: false`. Read a port before porting a CSS3D scene of your own.
+All seven three.js CSS3D examples have a port in the null3D repository's test pages (https://github.com/null3d-engine/null3d/tree/main/tests/pages): `css3d-periodictable.ts`, `css3d-molecules.ts`, `css3d-sprites.ts`, `css3d-sandbox.ts`, `css3d-orthographic.ts`, `css3d-mixed.ts` and `css3d-youtube.ts`. Each page draws its scene with null3D and with three.js's `CSS3DRenderer`, and its test compares the element pictures of the two stages. The mixed port's test also compares the two drawn frames. Where an example adds an invisible plane that writes depth and no color, give its material `colorWrite: false`. Read a port before porting a CSS3D scene of your own.
 
 ## 2. Messages between page and sketch
 
@@ -195,7 +195,7 @@ Pointer events that land on HTML UI elements above the canvas do not reach the e
 | Library | What to do |
 | --- | --- |
 | lil-gui, dat.gui, Tweakpane | Keep on the page; send values to the sketch |
-| stats.js | `debug.stats(true)` in the sketch, or `createEngine({ stats: true })` on the page, shows an overlay; `debug.frameStats()` gives its figures. In 0.2 it sits at the canvas's top right, takes a `{ collapsed }` option, and adds GPU time, triangles and objects drawn and memory; `engine.measure()` on the page gives percentiles |
+| stats.js | `debug.stats(true)` in the sketch, or `createEngine({ stats: true })` on the page, shows an overlay; `debug.frameStats()` gives its figures. It sits at the canvas's top right, takes a `{ collapsed }` option, and shows GPU time, triangles and objects drawn and memory too; `engine.measure(seconds)` on the page gives percentiles |
 | GSAP, tween.js | For a scene value, `scene.animateProperty(target, path, { times, values })`; a value that a tween drives from code still lerps in `onUpdate`. DOM tweens stay on the page |
 | cannon-es, Rapier, Ammo | Run in the sketch worker; copy transforms into dynamic objects or batches after each step |
 | three-mesh-bvh | Delete; raycasting uses built-in acceleration structures |

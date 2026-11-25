@@ -82,7 +82,7 @@ Motion that starts by itself and lasts more than five seconds needs a way to sto
 
 ## Loading and errors
 
-- Give the loading indicator `role="progressbar"` and set `aria-valuenow` from the load progress. Never let the value move back.
+- Give the loading indicator `role="progressbar"` and set `aria-valuenow` from the load progress. Within a phase, never let the value move back. When a new phase starts, name it in `aria-valuetext` ([Loading screens](loading-screens.md#show-progress-on-the-page)).
 - Remove the indicator when `engine.firstFrame` resolves, so the user never waits in front of a blank canvas.
 - `createEngine` rejects when the browser cannot run the engine. Show text that says so, and what the user can still do, or an image with a text alternative.
 

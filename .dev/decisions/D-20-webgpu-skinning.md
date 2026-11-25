@@ -319,10 +319,10 @@ Battle's comparison (task M2-EX41, [D-121](D-121-comparison-tier.md#battle)) nee
 
 SKIN builds double each custom material's WebGPU builds, as they double its WebGL2 builds. [D-10](D-10-webgl2-skinning.md) measured 17.0 KB against 22.7 KB after Brotli for one surface function. Most custom materials never draw a skinned mesh. So the owner chose option B: a custom material's WGSL SKIN builds load only when the material first draws a skinned mesh. The engine's own first-use shader files load the same way. A page with no skinned custom material pays nothing: no download and no pipeline.
 
-- The shader compiler puts a material's WebGPU SKIN builds apart from its other builds (`skinVariants`). The Vite plugin puts them in a module of their own, `virtual:null3d/skin/<hash>`, which the material's value imports with `skinBuilds()`. A production build puts that module in a file of its own.
+- The Vite plugin puts a material's SKIN builds in sets apart from its other builds, each in a virtual module under `virtual:null3d/builds/` (`packages/vite-plugin/src/material-builds.ts`). The material's value imports a set when a pipeline needs it. A production build puts each set in a file of its own.
 - The thread that draws holds a custom material's shader without its SKIN builds. The first pipeline that needs one parks, as a pipeline waits for a shader file. It asks the sketch's thread for them once, through the port of the images. The sketch's thread imports the module and sends the builds of its GPU path. The pipeline then builds. A failed import fails the pipelines that need the builds, with the reason.
 - `scene.warmUp()` waits for these pipelines too, so a game that must fetch nothing during play warms its skinned objects up in the setup.
-- WebGL2 keeps its SKIN builds in the material's module.
+- WebGL2 loads its SKIN builds the same way, from sets of its own.
 
 Options rejected:
 

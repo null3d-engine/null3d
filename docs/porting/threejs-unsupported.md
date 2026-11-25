@@ -35,12 +35,12 @@ Do not draw a three.js canvas over the null3D canvas to keep one effect. Two GPU
 
 | three.js | In null3D | Workaround |
 | --- | --- | --- |
-| `MeshToonMaterial` | Surface functions cannot read the scene's lights | Pass the light's direction as a uniform, step the light into bands, and return it as emissive ([Porting materials and textures](threejs-materials.md)) |
+| `MeshToonMaterial` | Surface functions cannot read the scene's lights | Pass the light's direction as a uniform, step the light into bands, and return it as emissive. Or step each light in a lobe function, which reads the light's direction and its shadowed irradiance ([Porting materials and textures](threejs-materials.md)) |
 | Standard maps on a `ShaderMaterial` | A custom material takes no standard maps, such as `map` or `normalMap` | Declare up to 6 textures in the WGSL, and pass them with the `textures` option ([Porting shaders](threejs-shaders.md)) |
 | `onBeforeCompile` shader chunks | The engine has no shader chunks to patch | A surface function or a vertex offset function |
 | `material.alphaMap` | No separate alpha map | Copy the map's green channel into the base color map's alpha |
 | `PointsMaterial.alphaMap` | No alpha map on points | Put the alpha in the points' `map` |
-| Clipping planes | No clipping planes | A surface function with `alphaMode: 'mask'`. Shadows still use the whole mesh, because the shadow pass ignores surface functions |
+| Clipping planes | No clipping planes | A surface function with `alphaMode: 'mask'`. Its shadow is cut at the plane too |
 
 ## Objects and scenes
 
@@ -60,8 +60,6 @@ Do not draw a three.js canvas over the null3D canvas to keep one effect. Two GPU
 | three.js | In null3D | Workaround |
 | --- | --- | --- |
 | `TrackballControls` and `ArcballControls` | No trackball or arcball controls | `createOrbitControls`, or your own rotation from `ctx.input` |
-| `TransformControls` limits `minX` to `maxZ` | The gizmos take no position limits | Clamp the object's position in `onUpdate` |
-| `TransformControls` handles `showXY`, `showYZ` and `showXZ` | `showX`, `showY` and `showZ` hide the plane handles too | No separate plane switches |
 | Controls events: `change`, `start` and `end` | The controls send no events | `update(dt)` returns true when the camera moved |
 | `PlaneHelper` and `PolarGridHelper` | No debug drawing for them | Draw the shape with `debug.arrow`, `debug.box` or lines |
 | `MathUtils.smootherstep`, `pingpong`, `generateUUID` and the power of two helpers | No helpers of these names | Write them in a line each, or use `crypto.randomUUID()` |

@@ -203,7 +203,7 @@ canvas.addEventListener('wheel', (e) => e.preventDefault(), { passive: false });
 | Library | What to do |
 | --- | --- |
 | lil-gui, dat.gui, Tweakpane | Keep them on the page, and send the values to the sketch |
-| stats.js | `debug.stats(true)` in the sketch, or `createEngine({ stats: true })` on the page; `engine.measure()` gives percentiles |
+| stats.js | `debug.stats(true)` in the sketch, or `createEngine({ stats: true })` on the page; `engine.measure(seconds)` gives percentiles |
 | GSAP, tween.js | For a scene value, `scene.animateProperty`. DOM tweens stay on the page |
 | cannon-es, Rapier, Ammo | Run them in the sketch, and copy the transforms into dynamic objects or batches after each step |
 | three-mesh-bvh | Delete it, because raycasts use the engine's own acceleration structures |

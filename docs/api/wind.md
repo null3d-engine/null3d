@@ -323,19 +323,19 @@ The box follows the camera, so update the material's `origin` values in each fra
 
 A vertex offset that reads the field orders the pass before every pass that draws the material. The shadows and the motion vectors therefore move with the plant.
 
-Trees and plants sway through such a material. The forest demo, `examples/forest`, draws its trees made in code with one custom material. Its vertex offset samples this field's block at each vertex, as the example above does. Its sway fades to nothing at the material's `swayDistance`. So a tree past it stands still, and its far shadow cascades keep their layers. A tree loaded from a glTF file sways the same way: give its meshes such a material with `setMaterial`. The grass package, [`@null3d/grass`](grass.md), reads the field for its blades. Its `swayDistanceFor(preset)` gives each quality preset's sway distance.
+Trees and plants sway through such a material. The forest demo, `examples/forest`, draws the bark of its trees made in code with one custom material, and their leaf cards with a standard material. The bark's vertex offset samples this field's block at each vertex, as the example above does. Its sway fades to nothing at the material's `swayDistance`. So a tree past it stands still, and its far shadow cascades keep their layers. A tree loaded from a glTF file sways the same way: give its meshes such a material with `setMaterial`. The grass package, [`@null3d/grass`](grass.md), reads the field for its blades. Its `swayDistanceFor(preset)` gives each quality preset's sway distance.
 
 Every reader takes the field as a plain texture and its box, so it needs no code from this add-on. A page's own material reads it, as the forest demo's does. The grass package's blades read it, and the water add-on's `wind` option lifts a water surface. They read the same sampling block, and each copy costs the reader one of its material's six texture slots. Tests hold the readers' blocks equal to this page's.
 
 ## What the field is
 
-The field keeps its state between frames. One pass holds two states and steps the air forward by a fixed sixtieth of a second at a time. It runs as many steps as the sketch time owes.
+The field keeps its state between frames. One pass holds two states and steps the air forward by the preset's step interval at a time. It runs as many steps as the sketch time owes.
 
 Each cycle pulls the air toward an analytic field of place and time. It injects the pushes and the gust, and keeps the eddies with vorticity confinement. It solves the pressure, and takes the pressure's slope out of the air, so the air never piles up. A wake therefore lasts after the body that made it has gone, and a gust sent upwind crosses the scene.
 
 The air starts when a page makes the wind, so a field made late in a sketch runs no air from before it.
 
-A held page steps its sketch's updates up to the held time. The pass runs with each step, so a held picture carries the air that the hold built. Two held pages at two times therefore differ by the air that moved between them.
+A held page steps its sketch's updates up to the held time. The first frame that draws runs the air that the hold owes, up to ten seconds of it. So a held picture carries the air that the hold built. Two held pages at two times therefore differ by the air that moved between them.
 
 Beyond its box the field carries on. The box sets the detail, not the field's extent. So a plant past the box reads the air at its own place.
 
@@ -358,7 +358,7 @@ Low keeps no grid: every reader works the air out from the steady field. A page 
 
 The grid is one flat slice at the crown's height, with no layered or volume grid. High and Ultra use the flat 128 and 256 grids.
 
-The field's own budget is 0.5, 1.2, 4.9 and 6.25 ms a frame from Low to Ultra. That budget is its own, and it is smaller than the room that D-241 leaves beside the plants' own budget in each preset's frame. A frame that spends both grows by the field's share, and the governor is what holds it. The governor lowers the field's share by a quarter at each of its steps, down to a quarter of the budget. The field still moves at the lowest step: the step interval reaches at most 133 ms, and the pressure count stays above zero. The overlay row reads the field's cost in a frame, which grows when a slow display owes the field more than one cycle in that frame. The stats overlay shows one line for the add-on. This example is the Medium row, with an example GPU time: `wind  gpu 0.62 ms  windStepMs 33 · windPressureSteps 16 · windSpringTrees 8 · windGrid 64 · budget 1.2 of 1.2 ms · memory 0.1 MiB`.
+The field's own budget is 0.5, 1.2, 4.9 and 6.25 ms a frame from Low to Ultra. That budget is its own, and it is smaller than the room that each preset's frame leaves beside the plants' own budget. A frame that spends both grows by the field's share, and the governor is what holds it. The governor lowers the field's share by a quarter at each of its steps, down to a quarter of the budget. The field still moves at the lowest step: the step interval reaches at most 133 ms, and the pressure count stays above zero. The overlay row reads the field's cost in a frame, which grows when a slow display owes the field more than one cycle in that frame. The stats overlay shows one line for the add-on. This example is the Medium row, with an example GPU time: `wind  gpu 0.62 ms  windStepMs 33 · windPressureSteps 16 · windSpringTrees 8 · windGrid 64 · budget 1.2 of 1.2 ms · memory 0.1 MiB`.
 
 A preset change that changes the grid makes the grid again at the new size. The air starts empty on the new grid. A reader takes `field.texture` again after that, because the texture is a new one.
 

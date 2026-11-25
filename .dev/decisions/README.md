@@ -8,7 +8,7 @@ A decision record settles one design question with measured data. It states the 
 
 ## Write a record
 
-1. Take the next free number, and check that no remote branch uses it: `git fetch`, then `git grep -l 'D-<number>' $(git for-each-ref --format='%(refname)' refs/remotes/origin) -- .dev/decisions`. Two branches can still take one number, and the docs check then refuses the second when it merges main.
+1. Take the next free number: run `git fetch`, then `bun tools/decisions.ts --next`. It prints the first number that this tree, every local branch and every remote-tracking branch leave free. Two branches can still take one number, and the docs check then refuses the second when it merges main.
 2. Copy [TEMPLATE.md](TEMPLATE.md) to `D-<number>-<short-name>.md`, with the short name in lowercase words joined by hyphens.
 3. Start with the line `# D-<number>: <title>`. Under it, write a `Status:` paragraph and a `Summary:` paragraph. The status says what is decided, what is built and what is pending now, with no dates. The summary gives the choice and its main figures in one to three sentences.
 4. Where the options differ in how the result looks, the `## Look` section says which looks better, and the decision takes that one ([hard rule 40](../../AGENTS.md#hard-rules)). Effort and schedule are no reason to take the worse look. Another hard rule may limit a cost, such as frame time. A quality preset or a cheaper technique of the same look then meets it, and the section says how. A record whose options look the same says so in one line.

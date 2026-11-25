@@ -10,9 +10,9 @@ name: Benchmarks
 # start it from the Actions tab with the pull request's number.
 #
 # On main it runs once a day, on main's newest commit, against the last commit on main that a run
-# measured, so one run measures every merge since then. Each run holds its Mac machines for about
-# half an hour, and GitHub gives about 5 at once, which CI's Safari jobs need, so main gets no run
-# for each push. When no merge came since the last measured commit, the run stops after choosing
+# measured, so one run measures every merge since then. Each run holds 9 Mac machines for about
+# half an hour, of the 50 that the plan runs at once, which CI's Safari jobs need, so main gets no
+# run for each push. When no merge came since the last measured commit, the run stops after choosing
 # the commits, before any Mac machine starts. A run measured its commit when
 # its report merged the shards into a whole comparison, whether the verdict passed or failed. So a
 # slowdown fails the one run that holds it, and the next run compares with that commit. A cancelled

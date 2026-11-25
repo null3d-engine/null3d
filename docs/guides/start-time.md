@@ -44,15 +44,15 @@ Each change below was then measured alone, on the same connection:
 | Change | Measured | Before | After |
 | --- | --- | --- | --- |
 | [Compress every file](#compress-every-file), `.wasm` included, with a smaller page script and no offline cache | A small demo's first frame | 4.6 s | 3.0 s |
-| The same | The garden demo's repeat visit | 3.0 s, or 5.6 s with its offline cache | 1.7 s |
+| The same | The creek demo's repeat visit | 3.0 s, or 5.6 s with its offline cache | 1.7 s |
 | [The sketch module loads while the core downloads](#what-the-engine-does-while-the-core-downloads) | From the core's arrival to the setup's start | 0.64 to 0.96 s | 0.15 to 0.51 s |
 | [The sketch's whole import chain is asked for at once](#what-the-engine-does-while-the-core-downloads), over HTTP/2 with Brotli | A small demo's first frame, and the skyway demo's | 3.24 s and 3.52 s | 2.90 s and 3.23 s |
 | [The stored list of the first frame's pipelines](#pipelines-on-phones) | The island's repeat visit on a Galaxy S25, from the setup's end to the first frame | 3.81 s | 1.56 s |
-| [The first frame before the large models](#draw-the-first-frame-before-the-large-models) | The garden demo's first frame | 25.7 s | 5.7 s, with every model in at 25.0 s |
+| [The first frame before the large models](#draw-the-first-frame-before-the-large-models) | The creek demo's first frame | 25.7 s | 5.7 s, with every model in at 25.0 s |
 | The same for the island's trees, town and people, with its heavy work moved to first use | The island demo's first frame on WebGPU, and on WebGL2 | 9.37 s and 23.56 s | 6.84 s and 7.97 s |
 | The splat scan draws once the nearest parts are in | The splat demo's first frame | 29.1 s | 8.8 s, with every part in at 28.2 s |
 | The splats add-on starts its decoder and its selection beside its first download | The splat demo's first parts on screen | 8.3 s | 7.0 s |
-| [The download list](#start-the-first-views-downloads-at-the-top-of-the-setup) names the garden demo's eleven models, with every model drawn before the first frame | The garden demo's first frame, and the time with nothing downloading before it | 25.9 s and 3.3 s | 21.3 s and 0.2 s |
+| [The download list](#start-the-first-views-downloads-at-the-top-of-the-setup) names the creek demo's eleven models, with every model drawn before the first frame | The creek demo's first frame, and the time with nothing downloading before it | 25.9 s and 3.3 s | 21.3 s and 0.2 s |
 | [The first view's downloads start together](#start-the-first-views-downloads-at-the-top-of-the-setup): a light map and a model | The character demo's first frame | 8.55 s | 8.2 s |
 | [The preset check during play](#the-preset-check) | A small demo's loading screen on a first visit, at full speed on a MacBook Pro | 1.18 s | 0.49 s |
 | [Chrome keeps the compiled core](#let-the-browser-keep-the-files) | A repeat visit's first frame on the engine's test page, at full speed, and the core's functions that it compiled again | 176 to 180 ms, 273 functions | 160 ms, 3 functions |
@@ -103,11 +103,11 @@ With the changes, on the same devices, a first visit in a fresh session drew its
 | Galaxy Tab A9 Plus, Chrome | 11.3 s | 17.7 s | 39 s | 31 s |
 | iPhone 17, Safari | 8.9 s | 17.2 s | 20.4 s | 11.1 s |
 
-The phones start at Low and run no preset check. On the Galaxy Tab A9 Plus, the check runs during play for 12 to 38 seconds after the first frame, and settles on Low. There the garden demo lost its GPU in 2 of 6 loads. The iPhone 17's repeat visits drew their first frame in 0.4 to 3.1 seconds. The small demo's times follow the tunnel's speed, which differed between the two runs.
+The phones start at Low and run no preset check. On the Galaxy Tab A9 Plus, the check runs during play for 12 to 38 seconds after the first frame, and settles on Low. There the creek demo lost its GPU in 2 of 6 loads. The iPhone 17's repeat visits drew their first frame in 0.4 to 3.1 seconds. The small demo's times follow the tunnel's speed, which differed between the two runs.
 
-A phone's processor makes the largest difference from a computer. The first frame's pipeline builds take seconds there, as [Pipelines on phones](#pipelines-on-phones) shows. The Galaxy Tab A9 Plus failed to build one custom material's pipeline in the garden demo, and on repeat visits of the island.
+A phone's processor makes the largest difference from a computer. The first frame's pipeline builds take seconds there, as [Pipelines on phones](#pipelines-on-phones) shows. The Galaxy Tab A9 Plus failed to build one custom material's pipeline in the creek demo, and on repeat visits of the island.
 
-The engine now builds a pipeline that the driver refuses once more, alone. When the driver refuses it again, the engine leaves that pipeline's objects out and draws on, with [E1307](../errors/E1307.md), which does not stop it. So the island draws on that tablet without its far tree cards, at 1.1 frames a second at Low. The garden demo reaches its first frame at 71 seconds there, but the tablet runs out of GPU memory 4 seconds later ([E1302](../errors/E1302.md)).
+The engine builds a pipeline that the driver refuses once more, alone. When the driver refuses it again, the engine leaves that pipeline's objects out and draws on, with [E1307](../errors/E1307.md), which does not stop it. So the island draws on that tablet without its far tree cards, at 1.1 frames a second at Low. The creek demo reaches its first frame at 71 seconds there, but the tablet runs out of GPU memory 4 seconds later ([E1302](../errors/E1302.md)).
 
 ## Compress every file
 

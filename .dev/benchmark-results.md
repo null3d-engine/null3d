@@ -282,7 +282,7 @@ Bloom's cost is the GPU time per frame with bloom on, less the time with it off,
 | Pixel 11 (PowerVR C-Series), Chrome 149 | 1 | 4.59 ms | 4.26 ms | 3.80 ms | 3.28 ms |
 | Pixel 11 (PowerVR C-Series), Chrome 149 | 0.5 | 4.26 ms | 4.39 ms | 3.80 ms | 3.21 ms |
 
-The presets' chains: Low has a base of 128 rows; Medium, High and Ultra 512. The `bloom` plan runs each phone's own preset. Its runs, 20261005-011315-bloom (Galaxy S25, Pixel 9) and 20261005-011736-bloom (Pixel 11), gave:
+In these runs, Low's chain had a base of 128 rows, and Medium's, High's and Ultra's 512. Low's base is 64 rows now ([D-21](decisions/D-21-effect-chain.md)). The `bloom` plan runs each phone's own preset. Its runs, 20261005-011315-bloom (Galaxy S25, Pixel 9) and 20261005-011736-bloom (Pixel 11), gave:
 
 | Device and browser | Render scale 1 | Render scale 0.5 |
 | --- | --- | --- |
@@ -290,7 +290,7 @@ The presets' chains: Low has a base of 128 rows; Medium, High and Ultra 512. The
 | Pixel 9 (Mali-G715), Chrome 149 | 0.85 ms | 0.85 ms |
 | Pixel 11 (PowerVR C-Series), Chrome 149 | 3.87 ms | 3.60 ms |
 
-The Galaxy S25's and the Pixel 11's figures match the 128-row base of Low. The Pixel 9's figures vary by about 0.3 ms between runs of one size, so they do not show its chain. With WebGL2, every page held the screen's frame rate with bloom on and off.
+The Galaxy S25's and the Pixel 11's figures match the 128-row base that Low had in these runs. The Pixel 9's figures vary by about 0.3 ms between runs of one size, so they do not show its chain. With WebGL2, every page held the screen's frame rate with bloom on and off.
 
 The phones also timed the built chain with the base on the canvas's shorter side, at commit f854dd72d of main. The steps of `UnrealBloomPass` ran in the same sittings, as the `unreal` items of the `bloom-p2` plan on the prototype's branch, `proto/p2-bloom` at commit 0c5f5d0e. Every phone ran Chrome 152.0.7977.54. Two figures in a cell come from two rounds of the same page. The sources are these runs:
 
@@ -386,7 +386,7 @@ The archive also keeps runs that compare no engine with three.js. Their records 
 
 ## Add a run
 
-After every benchmark, scale, governor, soak, startup or gate run, archive it and add its rows here:
+After every benchmark, comparison, sweep, scale, governor, soak, startup or gate run, archive it and add its rows here:
 
 1. Run `bun run bench:archive <run folder or run name>`. It writes `bench/results/<run>.json` and prints the run's rows, by table.
 2. Paste the rows into the tables above, in date order. Add a note where a figure needs one, such as heat or a known fault.

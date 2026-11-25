@@ -53,6 +53,10 @@ read its input, the canvas size and the user's motion preference. The camera can
 orthographic. Each option is also a property, so `controls.enablePan = false` turns off the pan at
 any time.
 
+`zoomToCursor` zooms toward the pointer. After `listenToKeyEvents()`, the arrow keys pan the camera,
+and `keys` names other keys. `minTargetRadius` and `maxTargetRadius` keep the target near `cursor`.
+`saveState()` keeps the view, and `reset()` puts it back.
+
 ## The page
 
 The controls read the input that the page forwards, so keep the browser's own gestures off the
@@ -72,16 +76,13 @@ canvas:
 - `createFirstPersonControls` walks over the ground with the keys and looks around with a drag.
   While the page holds the pointer lock (`engine.requestPointerLock()`), the mouse turns the view.
 - `createTransformControls` draws handles on one object. A drag of a handle moves, turns or scales
-  the object.
+  the object. `minX` to `maxZ` limit where a move puts it.
 - `createDragControls` drags any object of a list over a plane that faces the camera.
 
 ## Costs and limits
 
 - The camera controls' `update` allocates nothing.
 - If the camera has a parent, the parent must not be rotated.
-- Orbit controls do not zoom toward the pointer (`zoomToCursor`) or move with keys (`keys`). They
-  do not limit how far the target goes (`minTargetRadius`, `maxTargetRadius`), and they have no
-  `saveState` or `reset`. The gizmos do not limit a position (`minX` to `maxZ`).
 
 ## Docs
 

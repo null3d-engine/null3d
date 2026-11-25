@@ -1,8 +1,8 @@
 # D-06: Success targets
 
-Status: decided by the owner for the desktop target's measure: each engine's own CPU work on its busiest thread. The phone target passes on every device and browser measured, and the 600 KB budget for each core build stands. The owner set T-28's first-frame targets on the S24+, with the cold target in [D-83](D-83-m1-gate-rulings.md). The S24+ has no 120 Hz pass: the owner decides how to hold its display at 120 Hz, or whether to skip the pass.
+Status: decided by the owner for the desktop target's measure: each engine's own CPU work on its busiest thread. The phone target passes on every device and browser measured. Each core build's budget is 640 KB after Brotli: [D-383](D-383-wasm-size-budget.md) raised it from the 600 KB that this record kept. The owner set T-28's first-frame targets on the S24+, with the cold target in [D-83](D-83-m1-gate-rulings.md). The S24+ has no 120 Hz pass: the owner decides how to hold its display at 120 Hz, or whether to skip the pass.
 
-Summary: The desktop target keeps 50% and measures each engine's own CPU work on its busiest thread, apart from the game's code. In S1 on the Mac, null3D's own work is 26% of three.js's. The phone target (at most 100%) passes on the S24+ and the iPad, and the 600 KB budget for each core build stands.
+Summary: The desktop target keeps 50% and measures each engine's own CPU work on its busiest thread, apart from the game's code. In S1 on the Mac, null3D's own work is 26% of three.js's. The phone target (at most 100%) passes on the S24+ and the iPad. [D-383](D-383-wasm-size-budget.md) raised the budget for each core build from 600 KB to 640 KB.
 
 ## Question
 

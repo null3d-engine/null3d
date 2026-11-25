@@ -40,7 +40,7 @@ In null3D, a 3D scene is called a sketch: a module that builds the scene and upd
 | Sketch worker | Your sketch code and the engine core. Reading or writing scene data is a plain memory access here. | 1 |
 | Render worker | The GPU device and the canvas. It uploads changed data and replays draw lists into WebGPU or WebGL2 calls. It runs no sketch code. | 1 |
 | Job workers | Parallel loops over scene data in Rust: the animation of clips, transforms and bounds, instance batches, and the sort of see-through objects. On WebGL2 they also cull, hide what occluders hide, and list the lights of each cluster. Between frames, they compute the normals and tangents of new meshes, build the trees that raycasts use, cast batches of rays, and run decoders such as the KTX2 transcoder. | None at the start. They start as the work grows, up to the logical cores minus 2, and at least 1 |
-| Helper workers | Short-lived workers that start on first use. A glTF worker reads model files and decodes their images and meshopt data. A panorama worker reads HDR and EXR files. A task worker runs decoders where no job worker can take them. They run no frame work. | One of each kind, on first use |
+| Helper workers | Short-lived workers that start on first use. A glTF worker reads model files and decodes their images and meshopt data. A panorama worker reads HDR and EXR files. A task worker runs decoders where no job worker can take them. A probe worker runs once at startup. It tests whether a worker can draw with WebGL2 and WebGPU, and on an Apple GPU in WebKit it measures the two draw paths. They run no frame work. | One of each kind, on first use or at startup |
 
 ### When the job workers start
 
@@ -86,7 +86,7 @@ The engine times each step of the sketch worker's frame, the replay on the drawi
 
 ## The passes of a frame
 
-A frame's draw list holds a series of passes, and the [render graph](render-graph.md) puts them in order. A pass is one job for the GPU, such as drawing the scene from the camera. The engine declares its own passes, and a sketch adds [scene passes](../api/render.md) that draw the scene from other cameras into textures. A frame runs the passes in this order:
+A frame's draw list holds a series of passes, and the [render graph](render-graph.md) puts them in order. A pass is one job for the GPU, such as drawing the scene from the camera. The engine declares its own passes, and a sketch adds [scene passes](../api/render.md) that draw the scene from other cameras into textures. A frame runs its main passes in this order. The passes of the other effects, such as decals, TAA, the transparency layers, volumetric fog and depth of field, run between them ([The post-processing chain](post-processing.md)).
 
 1. Light clustering, on WebGPU: a compute pass fits the depth slices to the range the light depth pass measured in the frame before. It then lists the point and spot lights of each cluster of the camera's view ([Lighting and environment](lighting.md#clustered-forward-shading)).
 2. Culling, on WebGPU: a compute pass for each view tests the objects and instance rows against the view, on the GPU. In a scene over several grid cells, it skips the still objects of the cells out of view ([Culling](culling.md)). On a device that draws directly, the job workers cull on the CPU, as on WebGL2.

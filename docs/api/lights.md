@@ -209,7 +209,7 @@ export default defineSketch(async ({ scene, assets }) => {
 
 ## Shadows
 
-`castShadows: true` and `setCastShadows(true)` make a directional light cast shadows. The first directional light created casts them, and objects need `castShadows` and `receiveShadows` of their own. The `shadow` option and `setShadow` set the light's cascades, map size, distance and biases:
+`castShadows: true` and `setCastShadows(true)` make a directional light cast shadows. The first directional light created casts them, and objects need `castShadows` and `receiveShadows` of their own. The `shadow` option and `setShadow` set the light's cascades, map size, distance and biases, and `intensity`, how much of the shadow it draws, from 0 to 1:
 
 ```ts
 const sun = scene.createDirectionalLight({
@@ -223,7 +223,7 @@ sun.setShadow({ bias: 0.02, normalBias: 0.04 });
 
 The `distance` default is `'auto'`. The engine follows the farthest surface that receives shadows in the camera's view, rounded up on a ladder. A small scene then gets sharper shadows without naming a distance. Pass a number to fix it, as a port of a scene with its own shadow distance does. See [Shadows](../concepts/shadows.md#settings).
 
-Spot and point lights cast shadows with `castShadows` too. Their `shadow` option and `setShadow` take the biases alone:
+Spot and point lights cast shadows with `castShadows` too. Their `shadow` option and `setShadow` take the biases and `intensity` alone:
 
 ```ts
 const lamp = scene.createSpotLight({

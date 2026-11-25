@@ -473,7 +473,7 @@ async function openConnected(options) {
 		if (page === undefined) {
 			const open = pages.map((candidate) => candidate.url()).filter((url) => url !== '');
 			throw new Error(
-				`no open tab shows ${options.page}${open.length > 0 ? `. The tabs open: ${open.join(', ')}` : ''}. Open the page in Chrome with ?inspect, or let the server start its own browser without --connect`,
+				`no open tab shows ${options.page}${open.length > 0 ? `. The tabs open: ${open.join(', ')}` : ''}. Open the page from the Vite dev server in that Chrome, or leave out --connect so the server starts its own browser`,
 			);
 		}
 		const shown = page;

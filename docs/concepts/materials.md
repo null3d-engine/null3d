@@ -84,7 +84,7 @@ The shader that drops fragments costs more than one that never does: a GPU canno
 
 `alphaToCoverage`, on by default, smooths a mask's cut edges with MSAA. The masked alpha fades over about one pixel above the cutoff, and MSAA covers that share of each edge pixel's samples. Where the target's format has an alpha channel, the GPU turns the alpha into coverage. WebGPU's HDR scene color has none, so there the shader writes the covered samples itself. Those shader builds load the first time a material needs them. Without MSAA, alpha to coverage is a plain mask.
 
-The `blend` mode blends the surface over what lies behind it. Its `blending` chooses how: `normal`, `additive` or `multiply`. [Materials](../api/materials.md#alpha-modes) shows each mode.
+The `blend` mode blends the surface over what lies behind it. Its `blending` chooses how: `normal`, `additive`, `multiply` or `weighted` ([Weighted blending](../api/materials.md#weighted-blending)). [Materials](../api/materials.md#alpha-modes) shows each mode.
 
 ## The transparent pass
 

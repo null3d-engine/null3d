@@ -56,6 +56,9 @@ null3d({ https: true, certDir: 'certs', assets: { lod: true, maxTextureSize: 102
 - `https` serves HTTPS on your local network, from both `vite` and `vite preview`. A phone or
   tablet needs it for shared memory and WebGPU. The plugin reads `cert.pem` and `key.pem` from
   `certDir`, which is `target/dev-cert` in the project unless you set it.
+- `http2` serves the `https` server over HTTP/2, which sends all of the page's requests at once on
+  one connection. A dev page asks for hundreds of modules. It is off by default, because Safari on
+  an iPad sometimes stops while a worker loads its modules over HTTP/2.
 - `wgslDeclarations` writes a TypeScript declaration beside each `.wgsl` file, with the types of
   its uniforms. It is on by default. Set it to false in a project without TypeScript.
 - `assets` takes the asset tool's options for `?optimized` models, such as `lod`, `simplify` and

@@ -16,9 +16,9 @@ Some null3D packages ship code from other projects, as the original file or as a
 
 | Package | Third-party code | License | Where | Notices |
 | --- | --- | --- | --- | --- |
-| `@null3d/engine` | Basis Universal 2.50 with Zstandard, meshoptimizer 1.3.0, Draco 1.5.7, three.js 0.186.1, TinyEXR and OpenEXR, Linearly transformed cosines, Filament, KinoBokeh and Unity's post-processing stack v1, AMD FidelityFX FSR 1 and SSSR, Qualcomm Snapdragon GSR 1, and the core's Rust crates | Apache License 2.0, BSD 3-Clause and MIT | `vendor/`, the shader modules, `panorama-worker.js`, `dist/wasm` | `THIRD-PARTY-NOTICES.txt` |
+| `@null3d/engine` | Basis Universal 2.50 with Zstandard, meshoptimizer 1.3.0, Draco 1.5.7, three.js 0.186.1, TinyEXR and OpenEXR, Linearly transformed cosines, Filament, KinoBokeh and Unity's post-processing stack v1, AMD FidelityFX FSR 1 and SSSR, Qualcomm Snapdragon GSR 1, SMAA 1x, and the core's Rust crates | Apache License 2.0, BSD 3-Clause and MIT | `vendor/`, the shader modules, `panorama-worker.js`, `dist/wasm` | `THIRD-PARTY-NOTICES.txt` |
 | `@null3d/cli` | Basis Universal 2.50 with Zstandard, ufbx 0.23.1, the `exr` and `lebe` crates, three.js 0.186.1, and the asset module's other crates | Apache License 2.0, BSD 3-Clause and MIT | `vendor/`, `dist/assets.wasm` | `THIRD-PARTY-NOTICES.txt` |
-| `@null3d/vite-plugin` | naga and naga-types 30.0.1, naga_oil 0.23.0, serde, serde_json, toml, the shader compiler's other crates, and the engine shaders it embeds: three.js 0.186.1, Filament, KinoBokeh and Unity's post-processing stack v1, AMD FidelityFX, Qualcomm Snapdragon GSR 1 | MIT, Apache License 2.0, BSD 3-Clause and Zlib | `dist/shader-compiler.wasm` | `THIRD-PARTY-NOTICES.txt` |
+| `@null3d/vite-plugin` | naga and naga-types 30.0.1, naga_oil 0.23.0, serde, serde_json, toml, the shader compiler's other crates, and the engine shaders it embeds: three.js 0.186.1, Filament, KinoBokeh and Unity's post-processing stack v1, AMD FidelityFX, Qualcomm Snapdragon GSR 1, SMAA 1x | MIT, Apache License 2.0, BSD 3-Clause and Zlib | `dist/shader-compiler.wasm` | `THIRD-PARTY-NOTICES.txt` |
 | `@null3d/controls` | three.js 0.186.1, the math and the option names of its controls | MIT | `lib/index.js` | `THIRD-PARTY-NOTICES.txt` |
 | `@null3d/geometry` | three.js 0.186.1, its generators, curves, paths and shapes; earcut 3.0.2 | MIT and ISC | `lib/index.js` | `THIRD-PARTY-NOTICES.txt` |
 | `@null3d/three-compat` | three.js 0.186.1, its tone curves and its outline pass | MIT | `lib/index.js` | `THIRD-PARTY-NOTICES.txt` |
@@ -81,6 +81,7 @@ The command-line tool and the Vite plugin put no code in a page. Their packages 
 | The engine shaders in the module: KinoBokeh and Unity's post-processing stack v1 | MIT |
 | The engine shaders in the module: AMD FidelityFX FSR 1's RCAS and SSSR's ray march | MIT |
 | The engine shaders in the module: Qualcomm Snapdragon GSR 1 | BSD 3-Clause |
+| The engine shaders in the module: SMAA 1x's three steps | MIT |
 
 ## The example add-ons
 

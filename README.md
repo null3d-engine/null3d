@@ -130,7 +130,7 @@ const dissolve = materials.shader({
 | --- | --- |
 | [`@null3d/engine`](packages/engine) | The engine: the TypeScript API, the workers and both WebAssembly builds |
 | [`@null3d/vite-plugin`](packages/vite-plugin) | The Vite setup that every null3D project needs, with the shader compiler |
-| [`@null3d/cli`](packages/cli) | The command line tool: new projects, frames, image tests, benchmarks and model preparation |
+| [`@null3d/cli`](packages/cli) | The command line tool: new projects, frames, image tests, benchmarks, model preparation and a Model Context Protocol server for agents |
 | [`@null3d/controls`](packages/controls) | Orbit, map, fly and first-person camera controls, and gizmos that move, turn and scale objects |
 | [`@null3d/geometry`](packages/geometry) | Shape generators: torus knots, polyhedra, lathes, extrusions and tubes |
 | [`@null3d/water`](packages/water) | Rivers and lakes with waves, ripples, caustics, foam and a view from under the surface |
@@ -240,7 +240,7 @@ The full [three.js to null3D mapping](https://github.com/null3d-engine/null3d/bl
 
 - Two agent skills come with the engine. [null3d-develop](skills/null3d-develop/SKILL.md) builds and speeds up null3D projects. [null3d-port-threejs](skills/null3d-port-threejs/SKILL.md) ports three.js and React Three Fiber apps.
 - `bunx @null3d/cli create` writes an `AGENTS.md` into each new project, and a hook that Claude Code and Codex both run.
-- `bunx @null3d/cli mcp` serves the running scene to an agent over the Model Context Protocol. The agent lists and changes objects, captures a frame, and reads the figures, errors and render graph. `?inspect` opens the same tools as a panel. [Debugging](https://github.com/null3d-engine/null3d/blob/generated/docs/guides/debugging.md) shows both.
+- `bunx @null3d/cli mcp` serves the running scene to an agent over the Model Context Protocol. The agent lists and changes objects, captures a frame, and reads the figures, errors and render graph. The `?inspect` switch opens a smaller panel on the page: it lists and edits the objects, and shows the frame figures. [Debugging](https://github.com/null3d-engine/null3d/blob/generated/docs/guides/debugging.md) shows both.
 - Every docs page has an ID, such as `concepts/architecture`, so an agent finds the page for an API by name. The pages ship inside the engine package, so they match the installed engine.
 
 Install the skills in Claude Code as a plugin:

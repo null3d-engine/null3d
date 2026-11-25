@@ -59,11 +59,10 @@ The engine fills a `SurfaceInput` for each pixel. Positions and directions are i
 | `frontFacing` | `bool` | True on the front face of a triangle |
 | `fragCoord` | `vec3f` | The pixel's position: `x` and `y` in pixels from the top left corner of the target, at the pixel's center, and `z` its depth, 1 at the near plane and 0 at the far plane |
 | `instance` | `u32` | The instance's row in its batch, from 0. It is 0 for an object of the scene |
-| `vertexRecord` | `vec4f` | The mesh's four-number vertex record, for a generated shape: the position that the vertex takes at a coarser level of detail and that level's error, or whatever the shape writes |
 
 `fragCoord` counts from the top left on every GPU path, in the pixels of `frame.resolution`. GLSL's `gl_FragCoord` counts from the bottom left, so a port that reads `gl_FragCoord.y` reads `frame.resolution.y - input.fragCoord.y`.
 
-The plugin gives a material the inputs that cost something only where its WGSL reads them: `uv1`, `colors`, `instance`, and the object's matrices and id. [Built-in shader inputs](builtins.md#what-the-inputs-cost) lists their costs.
+The plugin gives a material the inputs that cost something only where its WGSL reads them: `uv1`, `colors`, `instance`, `vertexRecord`, `tangent`, and the object's matrices and id. [Built-in shader inputs](builtins.md#what-the-inputs-cost) lists their costs.
 
 ## The surface
 
@@ -386,8 +385,8 @@ fn surface(input: SurfaceInput) -> Surface {
 - A surface that draws before the copy exists reads 0, the far plane. That is a surface in the opaque pass, and any surface in a scene pass or a reflection pass.
 - The engine makes the copy while a material that declares the input draws, whatever the quality preset says.
 - `sceneDistance` takes a perspective and an orthographic camera. On WebGL2, the values are the depth that the device stores, so a device that draws `reversed-gl` depth gives less precise distances.
-- A material that reads the scene's depth takes up to seven textures of its own. Its maps' group gives up one slot, which leaves the copy of the depth the fragment stage's last sampled texture.
-- Development builds throw E1217 when the declaration and the WGSL disagree, and for a material with both the depth and eight textures.
+- A material that reads the scene's depth takes up to 6 textures of its own, as every custom material does. The copy of the depth binds in a group of its own, so it takes none of their slots.
+- Development builds throw E1217 when the declaration and the WGSL disagree.
 
 [Custom materials](../api/materials.md#the-scene-behind-a-surface) gives the options and the cases where an input is absent.
 
@@ -513,6 +512,8 @@ The engine calls the function once for each vertex, with a `VertexInput`:
 | `uv1` | `vec2f` | The vertex's second texture coordinates, or its first on a mesh with one set |
 | `colors` | `vec4f` | The mesh's vertex color, which a vertex offset reads as data, such as a branch index and a phase for wind. A material whose WGSL reads it draws only a mesh with vertex colors: a mesh without them draws nothing with it |
 | `instance` | `u32` | The instance's row in its batch, from 0. It is 0 for an object of the scene |
+| `vertexRecord` | `vec4f` | The mesh's four-number vertex record, for a generated shape: the position that the vertex takes at a coarser level of detail and that level's error, or whatever the shape writes. The mesh carries it with `geometry.fromArrays({ targets })` |
+| `tangent` | `vec4f` | The mesh's tangent attribute, as the mesh stores it, which a vertex offset can read as data |
 
 The row lets a vertex offset lay out a batch by itself, with no values from the sketch. This one lines up a batch's rows in a ring of 64, each lifted by a wave:
 
@@ -607,7 +608,7 @@ fn surface(input: SurfaceInput) -> Surface {
 
 Your WGSL shares one file with the engine's standard material, so a few rules apply besides the [WGSL rules for portable shaders](wgsl-rules.md):
 
-- Do not declare a name that the engine declares. The build stops at your line when a name clashes. The engine's names are `SurfaceInput`, `Surface`, `VertexInput`, `surface_place`, `surface_input`, `LobeInput`, `defaultSurface`, `shade`, `light_surface`, `frame`, `camera`, `object`, `material`, `FrameValues`, `CameraValues`, `ObjectValues`, `fill_builtins`, `engine_frame`, `material_row`, `load_material_uniforms`, `custom_value`, `custom_texture_layers`, `load_custom_texture_layers`, `VertexIn`, `VertexOut`, `vs`, `fs`, `FLAT_SHADING`, `sceneDepth`, `sceneDistance`, `scene_depth_copy` and `scene_depth_texel`. They also include the library items that the standard material imports: `Material`, `InstanceIn`, `find_instance`, `clip_of`, `relative_position`, `world_normal`, `finish_exposed`, `fogged`, `fragment_color`, `material_of`, `PbrMaterial`, `pbr_material`, `with_specular`, `dfg_lut`, `direct_light`, `indirect_diffuse`, `multiscatter_compensation`, `clustered_light` and `sun_shadow`. WGSL that reads `instance` or `object.id` also meets `object_ids`, and WGSL that reads the object's matrices meets `affine_matrix` and `affine_normal_matrix`. A material that declares a lobe also meets `clustered_lobed_light`, `Reflected`, `half_vector`, `cluster_lights`, `cluster_sample`, `light_of`, `grid_word`, `KIND_RECT`, `area_light`, `AreaTerms` and `area_terms`, which its lobe's loop reads. The names `surface`, `vertexOffset` and `lobe` are yours to declare.
+- Do not declare a name that the engine declares. The build stops at your line when a name clashes. The engine's names are `SurfaceInput`, `Surface`, `VertexInput`, `surface_place`, `surface_input`, `LobeInput`, `defaultSurface`, `shade`, `light_surface`, `frame`, `camera`, `object`, `material`, `FrameValues`, `CameraValues`, `ObjectValues`, `fill_builtins`, `engine_frame`, `material_row`, `load_material_uniforms`, `custom_value`, `custom_texture_layers`, `load_custom_texture_layers`, `VertexIn`, `VertexOut`, `vs`, `fs`, `FLAT_SHADING`, `sceneDepth`, `sceneDistance`, `scene_depth_copy` and `scene_depth_texel`. They also include the library items that the standard material imports, such as `Material`, `Instance`, `InstanceIn`, `find_instance`, `clip_of`, `relative_position`, `world_normal`, `finish_material`, `finish_exposed_material`, `fogged`, `fragment_color`, `material_of`, `PbrMaterial`, `pbr_material`, `with_specular`, `dfg_lut`, `direct_light`, `indirect_diffuse`, `multiscatter_compensation`, `clustered_light` and `sun_shadow`. WGSL that reads `instance` or `object.id` also meets `object_ids`, and WGSL that reads the object's matrices meets `affine_matrix` and `affine_normal_matrix`. A material that declares a lobe also meets `clustered_lobed_light`, `Reflected`, `half_vector`, `cluster_lights`, `cluster_sample`, `light_of`, `grid_word`, `KIND_RECT`, `area_light`, `AreaTerms` and `area_terms`, which its lobe's loop reads. The names `surface`, `vertexOffset`, `lobe`, `unlit` and `coverage` are yours to declare.
 - Import library items by name, as in `#import null3d::noise::{fbm3}`. An import of a whole module reserves the module's name. After `#import null3d::color`, no name in the file can be `color`.
 - The WGSL cannot hold directives such as `enable`.
 - Do not declare a name that ends in `Sampler` after a texture's name, such as `detailSampler` beside `detail`. The engine declares it.
