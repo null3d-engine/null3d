@@ -10,7 +10,7 @@ Each line gives the feature, the pages that cover it, and the workaround, where 
 - Lines, points and sprites: no shadows cast or received, and overlap queries do not find them. docs/api/lines.md, points.md, sprites.md. No workaround.
 - Particles: cast no shadows, lights do not light them, no back-to-front sort inside a system. docs/api/particles.md. No workaround.
 - `materials.shader` and custom materials take no standard texture maps. docs/api/materials.md, docs/concepts/materials.md. They take up to 6 textures of their own.
-- The presets do not apply the light caps `maxLights` and `maxLightsPerCluster`. docs/api/quality.md, docs/concepts/quality-presets.md, docs/concepts/lighting.md ("The quality presets cap area lights, but not yet the other light limits"). The generated preset table leaves out the two rows.
+- The presets do not apply the light caps `maxLights` and `maxLightsPerCluster`. docs/api/quality.md, docs/concepts/quality-presets.md, docs/concepts/lighting.md. The generated preset table leaves out the two rows.
 - Terrain has no collision. docs/api/terrain.md. No workaround.
 - Materials cannot sample a cube map. docs/api/textures.md. A cube map can be a background (`assets.loadCubemap`).
 - Direct array writes to a single object. docs/concepts/static-dynamic.md. Move a single object with its setters.
