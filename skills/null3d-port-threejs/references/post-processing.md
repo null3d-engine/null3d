@@ -1,8 +1,8 @@
 # Porting post-processing
 
-three.js chains full-screen passes, each reading and writing the whole screen. null3D has a built-in chain: an HDR scene buffer, ambient occlusion at half size before the opaque pass, and mip-chain bloom. Custom effects (0.2) run after the scene and before bloom, on HDR color; the engine joins per-pixel effects into few passes. One final pass then merges bloom, tone mapping, FXAA, dithering, outlines, color grading, the vignette and sharpening. You port settings, and custom shaders as effects. Engine docs: `porting/threejs-postprocessing`, `api/post`, `concepts/post-processing`, `concepts/backends`.
+three.js chains full-screen passes, each reading and writing the whole screen. null3D has a built-in chain: an HDR scene buffer, ambient occlusion at half size before the opaque pass, and mip-chain bloom. Custom effects run after the scene and before bloom, on HDR color; the engine joins per-pixel effects into few passes. One final pass then merges bloom, tone mapping, FXAA, dithering, outlines, color grading, the vignette and sharpening. You port settings, and custom shaders as effects. Engine docs: `porting/threejs-postprocessing`, `api/post`, `concepts/post-processing`, `concepts/backends`.
 
-Versions: a number in parentheses, such as (0.2), names the roadmap step that adds the part, and no number means step 0.1. The first release, null3D 0.1.0, holds steps 0.1, 0.2 and 0.3; "not built yet" marks a part that the engine lacks today. The HDR scene buffer, the final pass and `post.set({ toneMapping, exposure })` are built. So are `bloom`, `ao`, `dof`, `outline`, `lut`, `vignette`, `sharpen`, custom effects with `post.addEffect` and custom tone curves (0.2). Scene passes that render into a texture (`render.addPass({ kind: 'scene' })` with `textures.fromPass`) are built in 0.2, so `WebGLRenderTarget` render-to-texture ports. So are reflection passes (`render.addPass({ kind: 'reflection', plane })`), which `Reflector`, `Water` and `Water2`'s reflection port to. So are full-screen passes of your own WGSL (`render.addPass({ kind: 'fullscreen' })`), for a `ShaderPass` that writes a render target of its own, and effects that read textures. Port a `ShaderPass` in the composer's chain as a custom effect. The port's report lists each effect it dropped.
+The HDR scene buffer, the final pass and `post.set({ toneMapping, exposure })` are built. So are `bloom`, `ao`, `dof`, `outline`, `lut`, `vignette`, `sharpen`, custom effects with `post.addEffect` and custom tone curves. Scene passes that render into a texture (`render.addPass({ kind: 'scene' })` with `textures.fromPass`) are built in 0.2, so `WebGLRenderTarget` render-to-texture ports. So are reflection passes (`render.addPass({ kind: 'reflection', plane })`), which `Reflector`, `Water` and `Water2`'s reflection port to. So are full-screen passes of your own WGSL (`render.addPass({ kind: 'fullscreen' })`), for a `ShaderPass` that writes a render target of its own, and effects that read textures. Port a `ShaderPass` in the composer's chain as a custom effect. The port's report lists each effect it dropped.
 
 ## Contents
 
@@ -11,17 +11,17 @@ Versions: a number in parentheses, such as (0.2), names the roadmap step that ad
 3. pmndrs postprocessing effects
 4. three.js WebGPU post nodes (TSL)
 5. Bloom settings
-6. Custom effects (0.2)
-7. Tone curves (0.2)
+6. Custom effects
+7. Tone curves
 8. Traps
 
 ## 1. Porting method
 
 1. Write down the original chain in order, with each pass's parameters.
 2. Delete `EffectComposer`, `RenderPass`, `OutputPass`, `GammaCorrectionShader` and `composer.render()`.
-3. Match tone mapping and exposure first: `post.set({ toneMapping, exposure })` (0.1). `ACESFilmicToneMapping`, `AgXToneMapping` and `NeutralToneMapping` become `'aces'`, `'agx'` and `'neutral'`, with the same formulas. `LinearToneMapping` and `NoToneMapping` both become `'none'`; `NoToneMapping` ignores `toneMappingExposure`, so keep `exposure` at 1 for it. Copy `toneMappingExposure` to `exposure` unchanged: null3D applies it to each light, which gives the same image. `ReinhardToneMapping` and `CineonToneMapping` become the `reinhard` and `cineon` curves of `@null3d/three-compat` (0.3, section 7), and `CustomToneMapping` becomes a custom tone curve (0.2, section 7).
-4. Add effects one at a time with `post.set` (0.2), and compare parity images after each.
-5. Port each custom `ShaderPass` last, as a custom effect with `post.addEffect` (0.2, section 6).
+3. Match tone mapping and exposure first: `post.set({ toneMapping, exposure })`. `ACESFilmicToneMapping`, `AgXToneMapping` and `NeutralToneMapping` become `'aces'`, `'agx'` and `'neutral'`, with the same formulas. `LinearToneMapping` and `NoToneMapping` both become `'none'`; `NoToneMapping` ignores `toneMappingExposure`, so keep `exposure` at 1 for it. Copy `toneMappingExposure` to `exposure` unchanged: null3D applies it to each light, which gives the same image. `ReinhardToneMapping` and `CineonToneMapping` become the `reinhard` and `cineon` curves of `@null3d/three-compat` (0.3, section 7), and `CustomToneMapping` becomes a custom tone curve (section 7).
+4. Add effects one at a time with `post.set`, and compare parity images after each.
+5. Port each custom `ShaderPass` last, as a custom effect with `post.addEffect` (section 6).
 
 ## 2. three.js EffectComposer passes
 
@@ -30,58 +30,58 @@ Versions: a number in parentheses, such as (0.2), names the roadmap step that ad
 | `RenderPass(scene, camera)` | Nothing | The scene pass is built in |
 | `OutputPass` | Nothing | The engine's final pass tone maps and converts to sRGB for the display once |
 | `GammaCorrectionShader`, `SRGBShader` in a `ShaderPass` | Delete | Keeping it applies gamma twice |
-| `UnrealBloomPass(resolution, strength, radius, threshold)` | `bloom: { intensity, threshold, knee: 0.01, blend: 'add', weights }` (0.2) | A mip chain, so map the settings (section 5). `resolution` is not needed: bloom takes the canvas's size |
-| `GTAOPass` with `updateGtaoMaterial({ radius, thickness, distanceExponent, distanceFallOff, scale, samples })` | `ao: { radius, thickness, distanceExponent, distanceFalloff, scale, samples }` (0.2) | `GTAOPass`'s own search and denoise at half size, so keep the numbers; `blendIntensity` becomes `intensity`. Add `quality.set({ aoScale: 0.5 })` where phones and tablets should draw it |
-| `SSAOPass` (`kernelRadius`, `minDistance`, `maxDistance`) | `ao: { radius, intensity }` (0.2) | Start with radius in world units about the original kernel radius |
-| `SAOPass`, N8AO | `ao: { radius, intensity }` (0.2) | Same |
+| `UnrealBloomPass(resolution, strength, radius, threshold)` | `bloom: { intensity, threshold, knee: 0.01, blend: 'add', weights }` | A mip chain, so map the settings (section 5). `resolution` is not needed: bloom takes the canvas's size |
+| `GTAOPass` with `updateGtaoMaterial({ radius, thickness, distanceExponent, distanceFallOff, scale, samples })` | `ao: { radius, thickness, distanceExponent, distanceFalloff, scale, samples }` | `GTAOPass`'s own search and denoise at half size, so keep the numbers; `blendIntensity` becomes `intensity`. Add `quality.set({ aoScale: 0.5 })` where phones and tablets should draw it |
+| `SSAOPass` (`kernelRadius`, `minDistance`, `maxDistance`) | `ao: { radius, intensity }` | Start with radius in world units about the original kernel radius |
+| `SAOPass`, N8AO | `ao: { radius, intensity }` | Same |
 | `FXAAPass`, `ShaderPass(FXAAShader)` | `createEngine({ antialias: 'fxaa' })` on the page | FXAA runs inside the final pass; the Low preset uses it |
 | `SMAAPass` | MSAA, which the presets from Medium use, or `createEngine({ antialias: 'fxaa' })` | No SMAA |
-| `SharpenNode`, the `sharpen()` node (`sharpness`, `denoise`) | `sharpen: 2^-sharpness` (0.2) | The same RCAS in the final pass, so no render target and no pass of its own. three.js's default of 0.2 is `sharpen: 0.87`, where 1 is the most and 0 is off. Noise damping is always on, which three.js has only with `denoise: true` |
-| `TAARenderPass`, `SSAARenderPass` | Delete; keep MSAA | A view that holds still blends jittered frames into a sharper picture by itself, then stops drawing, so `sampleLevel` has no setting. Views with bloom, outlines or automatic exposure keep MSAA alone. TAA of a moving view comes after 1.0 |
+| `SharpenNode`, the `sharpen()` node (`sharpness`, `denoise`) | `sharpen: 2^-sharpness` | The same RCAS in the final pass, so no render target and no pass of its own. three.js's default of 0.2 is `sharpen: 0.87`, where 1 is the most and 0 is off. Noise damping is always on, which three.js has only with `denoise: true` |
+| `TAARenderPass`, `SSAARenderPass` | Delete; keep MSAA | A view that holds still blends jittered frames into a sharper picture by itself, then stops drawing, so `sampleLevel` has no setting. Views with bloom, outlines or automatic exposure keep MSAA alone. A moving view gets no TAA |
 | `TRAANode`, `TAAUNode` | MSAA, which the presets from Medium use | null3D has no temporal anti-aliasing or temporal upscaler. Keep MSAA on, which `TAAUNode` turned off; the render scale gives the speed on phones |
-| `OutlinePass` (`visibleEdgeColor`, `hiddenEdgeColor`, `edgeStrength`, `edgeThickness`, `edgeGlow`, `pulsePeriod`, `selectedObjects`) | `createOutlinePass(ctx, { color, hiddenColor, strength, thickness, glow, pulsePeriod })` from `@null3d/three-compat` (0.3), or `outline: { color, hiddenColor, width }` and `mesh.setOutlined(true)` (0.2) for the crisp line | The add-on draws the soft edge, the glow and the pulse: `visibleEdgeColor` and `hiddenEdgeColor` become `color` and `hiddenColor`, and `edgeStrength`, `edgeThickness`, `edgeGlow` and `pulsePeriod` keep their values as `strength`, `thickness`, `glow` and `pulsePeriod`. It turns the crisp line off. The pattern texture has no setting, and `downSampleRatio` is fixed at 2. For the crisp line, `width` is about 2 × `edgeThickness`, and `hiddenColor: [0.1, 0.04, 0.02]` keeps three.js's dark brown hidden line. Select a model with `setOutlined` on its copy from `scene.instantiate`. One style covers every outlined mesh in either form |
-| `LUTPass` with `LUTCubeLoader` or `LUT3dlLoader` | `lut: await assets.loadLut(url)`, `lutIntensity` (0.2) | `intensity` becomes `lutIntensity`. The table grades after the tone mapping, as after `OutputPass`. `LUTImageLoader` strips: export a `.cube` file. A `Data3DTexture` that code fills becomes `lut: await assets.lutFromData({ size, data })`, floats from 0 to 1 in the same order (divide 8-bit values by 255) |
-| No three.js twin (`LiftGammaGain`, `SplitToning` or another color tool's look) | `grading: { whiteBalance, lift, gamma, gain, saturation, splitToning }` (0.3) | A job worker bakes the values into a table of its own, which the final pass applies before a `lut`. Take the numbers from the grade the port must match, or load its `.cube` file as a `lut` instead |
-| `ShaderPass(VignetteShader)` (`offset`, `darkness`) | `vignette: { size: offset, intensity: darkness }` (0.2) under ACES; under AgX, `vignette: { size: offset, intensity: Math.min(darkness, 1), falloff: 3 }` | null3D darkens HDR color before the tone curve, so bright corners darken instead of turning gray. Under ACES the default `falloff` of 2 gives a close match. With `darkness` below 1, three.js also lifts dark corners toward a gray: list that as a visible difference |
-| `BokehPass` (`focus`, `aperture`, `maxblur`) | `dof: { focusDistance: focus, aperture, maxBlur }` (0.2), with `camera.setFocalLength(mm)` (0.2) | A camera's lens: `aperture` is an f-number (try 2.8, lower blurs more), and the focal length is the camera's. `maxblur` is a share of the width; `maxBlur` of the height, so multiply by the aspect ratio. Near and far fields blur apart, so sharp edges spread no halo: list that as a visible difference. It draws where `dofSamples` is above 0: Medium and up, or `quality.set({ dofSamples: 16 })` on Low |
-| `SSRPass` (`maxDistance`, `thickness`, `opacity`, `selects`), the WebGPU `ssr()` node | `ssr: { maxDistance, thickness, intensity: opacity }` (0.2), with `quality.set({ ssrScale: 0.5 })` where phones should draw it | Reflections take the place of the environment's, through the material's Fresnel term, where `SSRPass` adds them over the image. Smooth materials reflect: `selects` and `blur` have no setting, and `maxRoughness` sets how rough a reflecting surface may be. Give the scene an environment, which shows where rays miss. `resolutionScale` becomes `ssrScale` |
-| `ReflectorForSSRPass` (`groundReflector`) | A reflection pass for the flat floor (0.2) | It wins over the screen's reflections on its plane |
-| `FilmPass`, `GlitchPass`, `HalftonePass`, `DotScreenPass`, `RenderPixelatedPass` | `post.addEffect` (0.2), one effect each | Port the shader as in section 6. Grain sized for display color looks weaker on HDR color: tune it by eye. `GlitchPass`'s random texture becomes the effect's texture, or `null3d::noise` |
+| `OutlinePass` (`visibleEdgeColor`, `hiddenEdgeColor`, `edgeStrength`, `edgeThickness`, `edgeGlow`, `pulsePeriod`, `selectedObjects`) | `createOutlinePass(ctx, { color, hiddenColor, strength, thickness, glow, pulsePeriod })` from `@null3d/three-compat`, or `outline: { color, hiddenColor, width }` and `mesh.setOutlined(true)` for the crisp line | The add-on draws the soft edge, the glow and the pulse: `visibleEdgeColor` and `hiddenEdgeColor` become `color` and `hiddenColor`, and `edgeStrength`, `edgeThickness`, `edgeGlow` and `pulsePeriod` keep their values as `strength`, `thickness`, `glow` and `pulsePeriod`. It turns the crisp line off. The pattern texture has no setting, and `downSampleRatio` is fixed at 2. For the crisp line, `width` is about 2 × `edgeThickness`, and `hiddenColor: [0.1, 0.04, 0.02]` keeps three.js's dark brown hidden line. Select a model with `setOutlined` on its copy from `scene.instantiate`. One style covers every outlined mesh in either form |
+| `LUTPass` with `LUTCubeLoader` or `LUT3dlLoader` | `lut: await assets.loadLut(url)`, `lutIntensity` | `intensity` becomes `lutIntensity`. The table grades after the tone mapping, as after `OutputPass`. `LUTImageLoader` strips: export a `.cube` file. A `Data3DTexture` that code fills becomes `lut: await assets.lutFromData({ size, data })`, floats from 0 to 1 in the same order (divide 8-bit values by 255) |
+| No three.js twin (`LiftGammaGain`, `SplitToning` or another color tool's look) | `grading: { whiteBalance, lift, gamma, gain, saturation, splitToning }` | A job worker bakes the values into a table of its own, which the final pass applies before a `lut`. Take the numbers from the grade the port must match, or load its `.cube` file as a `lut` instead |
+| `ShaderPass(VignetteShader)` (`offset`, `darkness`) | `vignette: { size: offset, intensity: darkness }` under ACES; under AgX, `vignette: { size: offset, intensity: Math.min(darkness, 1), falloff: 3 }` | null3D darkens HDR color before the tone curve, so bright corners darken instead of turning gray. Under ACES the default `falloff` of 2 gives a close match. With `darkness` below 1, three.js also lifts dark corners toward a gray: list that as a visible difference |
+| `BokehPass` (`focus`, `aperture`, `maxblur`) | `dof: { focusDistance: focus, aperture, maxBlur }`, with `camera.setFocalLength(mm)` | A camera's lens: `aperture` is an f-number (try 2.8, lower blurs more), and the focal length is the camera's. `maxblur` is a share of the width; `maxBlur` of the height, so multiply by the aspect ratio. Near and far fields blur apart, so sharp edges spread no halo: list that as a visible difference. It draws where `dofSamples` is above 0: Medium and up, or `quality.set({ dofSamples: 16 })` on Low |
+| `SSRPass` (`maxDistance`, `thickness`, `opacity`, `selects`), the WebGPU `ssr()` node | `ssr: { maxDistance, thickness, intensity: opacity }`, with `quality.set({ ssrScale: 0.5 })` where phones should draw it | Reflections take the place of the environment's, through the material's Fresnel term, where `SSRPass` adds them over the image. Smooth materials reflect: `selects` and `blur` have no setting, and `maxRoughness` sets how rough a reflecting surface may be. Give the scene an environment, which shows where rays miss. `resolutionScale` becomes `ssrScale` |
+| `ReflectorForSSRPass` (`groundReflector`) | A reflection pass for the flat floor | It wins over the screen's reflections on its plane |
+| `FilmPass`, `GlitchPass`, `HalftonePass`, `DotScreenPass`, `RenderPixelatedPass` | `post.addEffect`, one effect each | Port the shader as in section 6. Grain sized for display color looks weaker on HDR color: tune it by eye. `GlitchPass`'s random texture becomes the effect's texture, or `null3d::noise` |
 | `AfterimagePass` | No port | It blends in the frame before, which an effect cannot read. List it as dropped |
-| `ShaderPass(customShader)` | `post.addEffect({ wgsl, uniforms, order })` (0.2) | Section 6; GLSL to WGSL: `references/shaders.md` |
-| A streak or glare pass that blurs the bright parts on its own | `post.addEffect({ wgsl, bloomLevel })` (0.3) with WGSL that calls `effectBloom(input.uv)` | The effect reads a level of bloom's chain instead of blurring the picture again, so it costs one texture read. Level 0 is the narrowest glow |
-| `ClearPass`, `MaskPass`, `TexturePass` | A full-screen pass of your own WGSL (0.2), if still needed | Masks usually become layers |
+| `ShaderPass(customShader)` | `post.addEffect({ wgsl, uniforms, order })` | Section 6; GLSL to WGSL: `references/shaders.md` |
+| A streak or glare pass that blurs the bright parts on its own | `post.addEffect({ wgsl, bloomLevel })` with WGSL that calls `effectBloom(input.uv)` | The effect reads a level of bloom's chain instead of blurring the picture again, so it costs one texture read. Level 0 is the narrowest glow |
+| `ClearPass`, `MaskPass`, `TexturePass` | A full-screen pass of your own WGSL, if still needed | Masks usually become layers |
 
 ## 3. pmndrs postprocessing effects
 
 | Effect | null3D |
 | --- | --- |
-| `EffectComposer`, `RenderPass`, `EffectPass` | Nothing: settings go in `post.set`, and custom effects in `post.addEffect` (0.2) |
-| `BloomEffect` (`intensity`, `luminanceThreshold`, `luminanceSmoothing`, `radius`, `levels`, `mipmapBlur`) | `bloom: { intensity, threshold: luminanceThreshold, knee: luminanceSmoothing, blend: 'screen', weights }` (0.2), mapped (section 5). `mipmapBlur: false` (Kawase) has no match: map it as the mip blur and list the difference |
-| `ToneMappingEffect` (`mode`) | `toneMapping`. `REINHARD`, `REINHARD2`, `CINEON`, `OPTIMIZED_CINEON` and `UNCHARTED2` become a custom tone curve (0.2, section 7), with their settings as constants |
-| `ToneMappingEffect` with `REINHARD2_ADAPTIVE` (`adaptationRate`, `middleGrey`), `AdaptiveLuminancePass`, three.js's old `AdaptiveToneMappingPass` | `autoExposure: { metering: 'mean', speedUp, speedDown, compensation }` (0.2), plus the custom Reinhard curve. `adaptationRate` becomes about `speedUp` and `speedDown`, and `middleGrey` the `compensation`, `log2(middleGrey / 0.18)` stops. null3D weights the center and meters on the GPU, so the exposure differs a little: list it |
+| `EffectComposer`, `RenderPass`, `EffectPass` | Nothing: settings go in `post.set`, and custom effects in `post.addEffect` |
+| `BloomEffect` (`intensity`, `luminanceThreshold`, `luminanceSmoothing`, `radius`, `levels`, `mipmapBlur`) | `bloom: { intensity, threshold: luminanceThreshold, knee: luminanceSmoothing, blend: 'screen', weights }`, mapped (section 5). `mipmapBlur: false` (Kawase) has no match: map it as the mip blur and list the difference |
+| `ToneMappingEffect` (`mode`) | `toneMapping`. `REINHARD`, `REINHARD2`, `CINEON`, `OPTIMIZED_CINEON` and `UNCHARTED2` become a custom tone curve (section 7), with their settings as constants |
+| `ToneMappingEffect` with `REINHARD2_ADAPTIVE` (`adaptationRate`, `middleGrey`), `AdaptiveLuminancePass`, three.js's old `AdaptiveToneMappingPass` | `autoExposure: { metering: 'mean', speedUp, speedDown, compensation }`, plus the custom Reinhard curve. `adaptationRate` becomes about `speedUp` and `speedDown`, and `middleGrey` the `compensation`, `log2(middleGrey / 0.18)` stops. null3D weights the center and meters on the GPU, so the exposure differs a little: list it |
 | `SMAAEffect`, `FXAAEffect` | MSAA, which the presets from Medium use, or `createEngine({ antialias: 'fxaa' })` |
-| `VignetteEffect` (`offset`, `darkness`) | As `VignetteShader` (0.2) for the `ESKIL` technique; for the default technique, tune `intensity` and `size` by eye |
-| `SSAOEffect`, N8AO | `ao` (0.2) |
-| `LUT3DEffect` | `lut: await assets.loadLut(url)` (0.2) |
-| `ChromaticAberrationEffect`, `NoiseEffect`, `ScanlineEffect`, `PixelationEffect` | `post.addEffect` (0.2), section 6. Effects that read only their own pixel join into one pass, so each can stay an effect of its own |
-| `DepthOfFieldEffect` (`worldFocusDistance`, `bokehScale`, `target`) | `dof: { focusDistance, maxBlur, aperture }` (0.2): `worldFocusDistance` becomes `focusDistance`, a `target` becomes `focusPoint`, and `bokehScale` becomes `maxBlur` with `aperture`, tuned by eye |
-| `GodRaysEffect` | `scene.setFog({ color, density, heightFalloff, volumetric: { intensity, anisotropy } })` (0.2): the scene's fog lit by the sun and lamps through their shadows, so rays also come from shadows off the screen. Set the fog's density low where the scene had no fog. It draws where the quality setting `fogSlices` is above 0: Medium and up |
-| `SSREffect` | `ssr` (0.2), mapped as `SSRPass` |
-| `OutlineEffect` (`visibleEdgeColor`, `hiddenEdgeColor`, `xRay`, `resolutionScale`, `blur`, `pulseSpeed`) | `outline: { color, hiddenColor, width }` (0.2): a crisp line. `visibleEdgeColor` becomes `color` and `hiddenEdgeColor` becomes `hiddenColor`; `xRay: false` becomes `hiddenColor: false`. The edge is one texel of the effect's mask, so `width` is about 1 / `resolutionScale` (2 at the default 0.5). `blur` and `pulseSpeed` have no setting: list them as visible differences |
-| `SelectiveBloomEffect` | Selective bloom through emissive strength and the bloom threshold (0.2) |
+| `VignetteEffect` (`offset`, `darkness`) | As `VignetteShader` for the `ESKIL` technique; for the default technique, tune `intensity` and `size` by eye |
+| `SSAOEffect`, N8AO | `ao` |
+| `LUT3DEffect` | `lut: await assets.loadLut(url)` |
+| `ChromaticAberrationEffect`, `NoiseEffect`, `ScanlineEffect`, `PixelationEffect` | `post.addEffect`, section 6. Effects that read only their own pixel join into one pass, so each can stay an effect of its own |
+| `DepthOfFieldEffect` (`worldFocusDistance`, `bokehScale`, `target`) | `dof: { focusDistance, maxBlur, aperture }`: `worldFocusDistance` becomes `focusDistance`, a `target` becomes `focusPoint`, and `bokehScale` becomes `maxBlur` with `aperture`, tuned by eye |
+| `GodRaysEffect` | `scene.setFog({ color, density, heightFalloff, volumetric: { intensity, anisotropy } })`: the scene's fog lit by the sun and lamps through their shadows, so rays also come from shadows off the screen. Set the fog's density low where the scene had no fog. It draws where the quality setting `fogSlices` is above 0: Medium and up |
+| `SSREffect` | `ssr`, mapped as `SSRPass` |
+| `OutlineEffect` (`visibleEdgeColor`, `hiddenEdgeColor`, `xRay`, `resolutionScale`, `blur`, `pulseSpeed`) | `outline: { color, hiddenColor, width }`: a crisp line. `visibleEdgeColor` becomes `color` and `hiddenEdgeColor` becomes `hiddenColor`; `xRay: false` becomes `hiddenColor: false`. The edge is one texel of the effect's mask, so `width` is about 1 / `resolutionScale` (2 at the default 0.5). `blur` and `pulseSpeed` have no setting: list them as visible differences |
+| `SelectiveBloomEffect` | Selective bloom through emissive strength and the bloom threshold |
 
 ## 4. three.js WebGPU post nodes (TSL)
 
 | three.js | null3D |
 | --- | --- |
-| `new PostProcessing(renderer)`, `pass(scene, camera)`, `postProcessing.outputNode = ...` | `post.set`, and `post.addEffect` (0.2) for custom nodes |
-| `bloom(node, strength, radius, threshold)` | `bloom: { ..., blend: 'add' }` (0.2), mapped as `UnrealBloomPass` at a third of the intensity (section 5) |
+| `new PostProcessing(renderer)`, `pass(scene, camera)`, `postProcessing.outputNode = ...` | `post.set`, and `post.addEffect` for custom nodes |
+| `bloom(node, strength, radius, threshold)` | `bloom: { ..., blend: 'add' }`, mapped as `UnrealBloomPass` at a third of the intensity (section 5) |
 | `fxaa(node)`, `smaa(node)` | `createEngine({ antialias: 'fxaa' })`, or MSAA, which the presets from Medium use |
-| `ao(...)`, `gtao(...)` | `ao` (0.2) |
-| `dof(node, viewZ, focus, aperture, maxblur)` | `dof: { focusDistance: focus, aperture, maxBlur }` (0.2), mapped as `BokehPass` |
-| `ssr(...)` | `ssr` (0.2), mapped as `SSRPass`; `resolutionScale` becomes `ssrScale`, and `quality` becomes `ssrSteps` |
-| Custom node graphs on the scene color | A custom effect in WGSL (0.2), section 6. The pass's color node becomes `input.color` or `effectColor(uv)`, and its depth node `effectDepth(uv)` |
+| `ao(...)`, `gtao(...)` | `ao` |
+| `dof(node, viewZ, focus, aperture, maxblur)` | `dof: { focusDistance: focus, aperture, maxBlur }`, mapped as `BokehPass` |
+| `ssr(...)` | `ssr`, mapped as `SSRPass`; `resolutionScale` becomes `ssrScale`, and `quality` becomes `ssrSteps` |
+| Custom node graphs on the scene color | A custom effect in WGSL, section 6. The pass's color node becomes `input.color` or `effectColor(uv)`, and its depth node `effectDepth(uv)` |
 
 ## 5. Bloom settings
 
@@ -122,7 +122,7 @@ pmndrs `BloomEffect` with `mipmapBlur` and 8 levels, for the same canvas. Set `b
 
 For the `bloom()` node, take `UnrealBloomPass`'s row and divide the intensity by 3: the node returns the glow alone, and the port adds it.
 
-## 6. Custom effects (0.2)
+## 6. Custom effects
 
 A custom effect is WGSL that declares `fn effect(input: EffectInput) -> vec4f`. The engine runs it once for each pixel, in a full-screen pass that it shares with the per-pixel effects after it. Engine docs `porting/threejs-postprocessing` hold a worked `RGBShiftShader` port and a depth fog. Port a `ShaderPass` in these steps:
 
@@ -155,11 +155,11 @@ This example is symmetric, so the uv flip does not matter here. It keeps the alp
 
 Some chains render into render targets of their own, such as a blur at half size that a later pass adds back. Each such step becomes a full-screen pass: `render.addPass({ kind: 'fullscreen', wgsl, writes, scale: 0.5, input: 'sceneColor', textures })`. It runs an effect's WGSL into a texture of its own. Its `input.uv` belongs to its own texture, and `effectInputSize()` gives the input image's size. The effect that composites reads the pass's texture through `textures`. `OutlinePass`'s soft glow ports this way, and `@null3d/three-compat`'s `createOutlinePass` builds it with the `OutlinePass` settings (0.3, section 2). A pass with `input: 'outlineMask'` blurs the mask, and `post.set({ outline: { width: 0 } })` drops the crisp line (engine docs `guides/custom-passes`, a soft outline glow). A chain of passes after the scene color or the mask names that image as the `input` of every pass in the chain. A pass with no input runs before the camera's passes, so a chain that starts from the mask then reports a cycle (E1504).
 
-## 7. Tone curves (0.2)
+## 7. Tone curves
 
 `post.set({ toneMapping: wgsl })` takes a custom tone curve: WGSL that declares `fn toneCurve(color: vec3f) -> vec3f`. It gets the exposed linear color after bloom. The engine clamps the result to 0 to 1, then encodes sRGB, dithers and grades. A tone curve takes no uniforms, so write settings as constants. `post.set({ toneMapping: 'aces' })` returns to a built-in curve.
 
-`@null3d/three-compat` gives three.js's two curves as `reinhard` and `cineon` (0.3), so a port of `ReinhardToneMapping` or `CineonToneMapping` needs no WGSL:
+`@null3d/three-compat` gives three.js's two curves as `reinhard` and `cineon`, so a port of `ReinhardToneMapping` or `CineonToneMapping` needs no WGSL:
 
 ```ts
 import { cineon, reinhard } from '@null3d/three-compat';

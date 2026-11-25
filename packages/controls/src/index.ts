@@ -29,6 +29,7 @@ export type {
 	OneFingerAction,
 	OrbitControls,
 	OrbitControlsOptions,
+	OrbitKeys,
 	TouchActions,
 	TwoFingerAction,
 } from './orbit-controls';

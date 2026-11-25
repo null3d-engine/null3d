@@ -20,9 +20,9 @@ import { frameDirection, type OctahedralAtlas } from './octahedral';
 import { encodeImpostorSurface } from './surface';
 
 export type { OctahedralAtlas } from './octahedral';
-// A caller that measures a view's own figures reads the atlas's grid and its directions through
-// this module, as the bake does, so the two agree on every cell.
-export { frameDirection } from './octahedral';
+// A caller that measures a view's own figures, or picks a grid for a bake, reads the atlas's grid
+// and its directions through this module, as the bake does, so the two agree on every cell.
+export { frameDirection, octahedralAtlas } from './octahedral';
 
 /**
  * A map that a bake samples: its pixels, four bytes a texel in the first row first, and the cell

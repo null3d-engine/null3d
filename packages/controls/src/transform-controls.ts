@@ -53,6 +53,34 @@ export interface TransformControlsOptions {
 	showY?: boolean;
 	/** False hides the handles of the Z axis, and the planes that it lies in. The default is true. */
 	showZ?: boolean;
+	/**
+	 * False hides the handle of the XY plane. As in three.js, it also hides each handle whose axis
+	 * name holds "XY", such as the center handle `XYZ`. The default is true.
+	 */
+	showXY?: boolean;
+	/**
+	 * False hides the handle of the YZ plane. As in three.js, it also hides each handle whose axis
+	 * name holds "YZ", such as the center handle `XYZ`. The default is true.
+	 */
+	showYZ?: boolean;
+	/** False hides the handle of the XZ plane. The default is true. */
+	showXZ?: boolean;
+	/**
+	 * The limits of a move on each axis, as three.js's options of the same names. A move clamps the
+	 * object's position relative to its parent to them, after it snaps. The defaults are
+	 * `-Infinity` and `Infinity`: no limit.
+	 */
+	minX?: number;
+	/** The largest X that a move gives the object's position. The default is `Infinity`. */
+	maxX?: number;
+	/** The smallest Y that a move gives the object's position. The default is `-Infinity`. */
+	minY?: number;
+	/** The largest Y that a move gives the object's position. The default is `Infinity`. */
+	maxY?: number;
+	/** The smallest Z that a move gives the object's position. The default is `-Infinity`. */
+	minZ?: number;
+	/** The largest Z that a move gives the object's position. The default is `Infinity`. */
+	maxZ?: number;
 	/** False ignores the user's input. The default is true. */
 	enabled?: boolean;
 	/** The steps, in meters, that a move snaps to. The default is null: a free move. */
@@ -216,6 +244,24 @@ export class TransformControls {
 	showY = true;
 	/** True shows the handles of the Z axis, and the planes that it lies in. */
 	showZ = true;
+	/** True shows the handle of the XY plane, and the other handles whose names hold "XY". */
+	showXY = true;
+	/** True shows the handle of the YZ plane, and the other handles whose names hold "YZ". */
+	showYZ = true;
+	/** True shows the handle of the XZ plane. */
+	showXZ = true;
+	/** The smallest X that a move gives the object's position relative to its parent. */
+	minX: number;
+	/** The largest X that a move gives the object's position relative to its parent. */
+	maxX: number;
+	/** The smallest Y that a move gives the object's position relative to its parent. */
+	minY: number;
+	/** The largest Y that a move gives the object's position relative to its parent. */
+	maxY: number;
+	/** The smallest Z that a move gives the object's position relative to its parent. */
+	minZ: number;
+	/** The largest Z that a move gives the object's position relative to its parent. */
+	maxZ: number;
 	/** False ignores the user's input. */
 	enabled: boolean;
 	/** The steps, in meters, that a move snaps to, or null for a free move. */
@@ -323,6 +369,15 @@ export class TransformControls {
 		this.showX = options.showX ?? true;
 		this.showY = options.showY ?? true;
 		this.showZ = options.showZ ?? true;
+		this.showXY = options.showXY ?? true;
+		this.showYZ = options.showYZ ?? true;
+		this.showXZ = options.showXZ ?? true;
+		this.minX = options.minX ?? Number.NEGATIVE_INFINITY;
+		this.maxX = options.maxX ?? Number.POSITIVE_INFINITY;
+		this.minY = options.minY ?? Number.NEGATIVE_INFINITY;
+		this.maxY = options.maxY ?? Number.POSITIVE_INFINITY;
+		this.minZ = options.minZ ?? Number.NEGATIVE_INFINITY;
+		this.maxZ = options.maxZ ?? Number.POSITIVE_INFINITY;
 		this.enabled = options.enabled ?? true;
 		this.translationSnap = options.translationSnap ?? null;
 		this.rotationSnap = options.rotationSnap ?? null;
@@ -492,6 +547,12 @@ export class TransformControls {
 		drag.translationSnap = this.translationSnap;
 		drag.rotationSnap = this.rotationSnap;
 		drag.scaleSnap = this.scaleSnap;
+		drag.minX = this.minX;
+		drag.maxX = this.maxX;
+		drag.minY = this.minY;
+		drag.maxY = this.maxY;
+		drag.minZ = this.minZ;
+		drag.maxZ = this.maxZ;
 		if (!drag.begin(start)) return false;
 		this.grabbed = start.axis;
 		this.hovering = null;
@@ -522,7 +583,10 @@ export class TransformControls {
 			MODES.indexOf(this.mode) |
 			(this.showX ? 0 : 16) |
 			(this.showY ? 0 : 32) |
-			(this.showZ ? 0 : 64);
+			(this.showZ ? 0 : 64) |
+			(this.showXY ? 0 : 128) |
+			(this.showYZ ? 0 : 256) |
+			(this.showXZ ? 0 : 512);
 		if (key === this.shownKey) return;
 		this.shownKey = key;
 		const all = this.showX && this.showY && this.showZ;
@@ -532,6 +596,10 @@ export class TransformControls {
 			if (axis.indexOf('Y') !== -1 && !this.showY) shown = false;
 			if (axis.indexOf('Z') !== -1 && !this.showZ) shown = false;
 			if (axis === 'E' && !all) shown = false;
+			// The plane flags, by three.js's rule: a name that holds the pair hides with it.
+			if (axis.indexOf('XY') !== -1 && !this.showXY) shown = false;
+			if (axis.indexOf('YZ') !== -1 && !this.showYZ) shown = false;
+			if (axis.indexOf('XZ') !== -1 && !this.showXZ) shown = false;
 			object.setVisible(shown);
 		}
 	}

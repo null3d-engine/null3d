@@ -1,5 +1,6 @@
 // Runs orbit, map, fly and first-person controls over scripted input in a loop, for the test that
-// checks that their update allocates nothing. The input goes through the engine's input ring and
+// checks that their update allocates nothing. Two orbit controls also take the keys, zoom toward
+// the pointer and keep the target within a radius. The input goes through the engine's input ring and
 // reader, as the page writes it, and stand-in cameras keep their poses as the engine's cameras do:
 // perspective cameras and an orthographic one. The script cycles through every gesture: each mouse
 // button's drag, the wheel, a trackpad's pinch, one finger, two fingers, and the mouse while the
@@ -55,6 +56,19 @@ const orbit = createOrbitControls(context, perspective(), {
 	maxDistance: 30,
 });
 const map = createMapControls(context, perspective(), { enableDamping: true });
+/** Orbit controls with the options that add work to a frame: keys, zoom and target limits. */
+const toPointer = createOrbitControls(context, perspective(), {
+	enableDamping: true,
+	zoomToCursor: true,
+	maxTargetRadius: 3,
+});
+toPointer.listenToKeyEvents();
+const orthographicToPointer = createOrbitControls(context, standIn(new StandInOrthographic()), {
+	zoomToCursor: true,
+	minZoom: 0.5,
+	maxZoom: 4,
+});
+orthographicToPointer.listenToKeyEvents();
 const orthographic = createMapControls(context, standIn(new StandInOrthographic()), {
 	enableDamping: true,
 	minZoom: 0.5,
@@ -76,8 +90,13 @@ const MOUSE = 1;
 const FINGER_A = 101;
 const FINGER_B = 102;
 
-/** Keys that the script holds for part of each cycle, and the numbers the page gives them. */
-const KEYS = ['KeyW', 'KeyA', 'ArrowLeft', 'KeyQ', 'KeyR'].map((code) => KEY_CODES.indexOf(code));
+/**
+ * Keys that the script holds for part of each cycle, and the numbers the page gives them. Shift
+ * turns the orbit controls' arrow keys from a pan into a turn while both are down.
+ */
+const KEYS = ['KeyW', 'KeyA', 'ArrowLeft', 'ShiftLeft', 'KeyQ', 'KeyR'].map((code) =>
+	KEY_CODES.indexOf(code),
+);
 
 /** Writes one frame of the script into the ring: a cycle of 70 frames through every gesture. */
 function script(frame: number): void {
@@ -85,7 +104,7 @@ function script(frame: number): void {
 	// Each key goes down at the start of a cycle, and up at a different step.
 	for (const [k, key] of KEYS.entries()) {
 		if (step === 0) ring.write(EVENT_KEY_DOWN, 0, 0, key, 0, 0, 0);
-		else if (step === 12 * (k + 1)) ring.write(EVENT_KEY_UP, 0, 0, key, 0, 0, 0);
+		else if (step === 10 * (k + 1)) ring.write(EVENT_KEY_UP, 0, 0, key, 0, 0, 0);
 	}
 	const phase = step % 10;
 	// Wobbles back and forth, so the camera stays near where it started.
@@ -134,6 +153,8 @@ function script(frame: number): void {
 (globalThis as unknown as { __controls: unknown }).__controls = {
 	orbit,
 	map,
+	toPointer,
+	orthographicToPointer,
 	orthographic,
 	fly,
 	firstPerson,
@@ -146,6 +167,8 @@ window.__null3dControlsRun = (frames) => {
 		frame++;
 		orbit.update(1 / 60);
 		map.update(1 / 60);
+		toPointer.update(1 / 60);
+		orthographicToPointer.update(1 / 60);
 		orthographic.update(1 / 60);
 		fly.update(1 / 60);
 		firstPerson.update(1 / 60);

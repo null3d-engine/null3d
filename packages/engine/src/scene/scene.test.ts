@@ -1260,6 +1260,92 @@ describe('screenToRay and worldToScreen', () => {
 		}
 	});
 
+	test("a view's ray takes the view's rectangle and shape, and its center looks straight ahead", () => {
+		const { scene, setWorld } = setup();
+		const camera = scene.createPerspectiveCamera({ fov: 50, near: 0.5, far: 300 });
+		const matrix = world([3, -2, 7], [0.3, -1.2, 0.1]);
+		setWorld(camera, matrix);
+		// The right half of the canvas: 320 x 360 CSS pixels, a shape narrower than the canvas's.
+		const view = scene.createView({ camera, rect: [0.5, 0, 0.5, 1] });
+		const ray = newRay();
+		view.screenToRay(480, 180, ray);
+		const forward = new Vector3(0, 0, -1).transformDirection(matrix);
+		const eye = new Vector3().setFromMatrixPosition(matrix);
+		expectClose(rayOf(ray), [...eye.toArray(), ...forward.toArray()], 9);
+		// Each point matches three.js's ray through the same point of a canvas of the view's shape.
+		const theirs = new ThreePerspectiveCamera(50, 320 / 360, 0.5, 300);
+		for (const [x, y] of [
+			[320, 0],
+			[640, 360],
+			[401.5, 77.25],
+		] as const) {
+			view.screenToRay(x, y, ray);
+			const ndc = new Vector2(((x - 320) / 320) * 2 - 1, 1 - (y / 360) * 2);
+			theirs.matrixWorld.copy(matrix);
+			theirs.matrixWorldInverse.copy(matrix).invert();
+			theirs.updateProjectionMatrix();
+			const caster = new Raycaster();
+			caster.setFromCamera(ndc, theirs);
+			expectClose(
+				rayOf(ray),
+				[...caster.ray.origin.toArray(), ...caster.ray.direction.toArray()],
+				9,
+			);
+		}
+	});
+
+	test("a view's worldToScreen places points in its rectangle, and inverts its screenToRay", () => {
+		const { scene, setWorld } = setup();
+		const matrix = world([2, 1, 10], [-0.2, 0.3, 0.05]);
+		const perspective = scene.createPerspectiveCamera({ fov: 50 });
+		const orthographic = scene.createOrthographicCamera({ height: 8 });
+		setWorld(perspective, matrix);
+		setWorld(orthographic, matrix);
+		// A picture in picture at the bottom left, wider than the canvas's shape.
+		const rect = [0.05, 0.6, 0.5, 0.25] as const;
+		const out = [0, 0, 0];
+		const ray = newRay();
+		for (const camera of [perspective, orthographic]) {
+			const view = scene.createView({ camera, rect });
+			// The camera's own forward point lands at the rectangle's center.
+			const ahead = new Vector3(0, 0, -6).applyMatrix4(matrix);
+			view.worldToScreen(ahead.toArray(), out);
+			expectClose(out, [(0.05 + 0.25) * 640, (0.6 + 0.125) * 360, 6], 7);
+			for (const point of [
+				[1, 2, 3],
+				[-2.5, 0.5, -4],
+			]) {
+				view.worldToScreen(point, out);
+				view.screenToRay(out[0] as number, out[1] as number, ray);
+				const along = new Vector3(...point).sub(new Vector3(...ray.origin));
+				const across = along.clone().cross(new Vector3(...ray.direction));
+				expect(across.length()).toBeLessThan(1e-9);
+			}
+			view.destroy();
+		}
+	});
+
+	test('scene.viewAt finds the view on top under a point, and none outside every view', () => {
+		const { scene } = setup();
+		const camera = scene.createPerspectiveCamera({ fov: 60 });
+		const left = scene.createView({ camera, rect: [0, 0, 0.5, 1] });
+		const inset = scene.createView({ camera, rect: [0.25, 0.25, 0.5, 0.5] });
+		expect(scene.viewAt(10, 10)).toBe(left);
+		expect(scene.viewAt(320, 180)).toBe(inset);
+		expect(scene.viewAt(600, 10)).toBeUndefined();
+		expect(left.contains(0, 0)).toBe(true);
+		expect(left.contains(320, 0)).toBe(false);
+		inset.destroy();
+		expect(scene.viewAt(320, 180)).toBeUndefined();
+		expect(scene.viewAt(200, 180)).toBe(left);
+		expect(thrown(() => inset.screenToRay(0, 0, newRay())).message).toStartWith(
+			'E1101: screenToRay() was called on a view that was removed',
+		);
+		expect(thrown(() => left.screenToRay(Number.NaN, 0, newRay())).message).toContain(
+			'screenToRay() got NaN for x',
+		);
+	});
+
 	test('worldToScreen keeps its precision far from the origin', () => {
 		const { scene, setWorld } = setup();
 		const camera = scene.createPerspectiveCamera({ fov: 90 });

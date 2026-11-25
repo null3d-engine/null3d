@@ -55,7 +55,7 @@ describe('parseCreateArgs', () => {
 	});
 
 	it('reads another template and the help', () => {
-		expect(parseCreateArgs(['my-game', '--template', 'empty']).template).toBe('empty');
+		expect(parseCreateArgs(['my-game', '--template', 'game']).template).toBe('game');
 		expect(parseCreateArgs(['--help']).help).toBe(true);
 	});
 
@@ -103,6 +103,37 @@ describe('createProject', () => {
 		expect(manifest.devDependencies['@null3d/cli']).toBe('0.1.0');
 	});
 
+	it('writes each template with its scene, its pins and no unfilled text', () => {
+		/** The packages beyond the engine that each template's scene imports. */
+		const extra: Record<string, string[]> = {
+			empty: [],
+			game: [],
+			product: ['@null3d/controls', '@null3d/geometry'],
+		};
+		expect(templateNames()).toEqual(Object.keys(extra));
+		for (const [template, packages] of Object.entries(extra)) {
+			const root = tempRoot();
+			const target = createProject({ dir: join(root, 'my-app'), template, version: '0.3.0' });
+			const manifest = JSON.parse(readFileSync(join(target, 'package.json'), 'utf8'));
+			expect(Object.keys(manifest.dependencies).sort(), template).toEqual(
+				['@null3d/engine', ...packages].sort(),
+			);
+			for (const version of Object.values(manifest.dependencies)) expect(version).toBe('0.3.0');
+			const sketch = readFileSync(join(target, 'src/sketch.ts'), 'utf8');
+			for (const name of packages) expect(sketch, template).toContain(`from '${name}'`);
+			for (const file of [
+				'package.json',
+				'AGENTS.md',
+				'index.html',
+				'src/page.ts',
+				'src/sketch.ts',
+			]) {
+				expect(readFileSync(join(target, file), 'utf8'), `${template} ${file}`).not.toContain('{{');
+			}
+			expect(readFileSync(join(target, 'AGENTS.md'), 'utf8')).toContain('null3D 0.3.0');
+		}
+	});
+
 	it('names the installed version and the skill in the agent rules', () => {
 		const root = tempRoot();
 		const target = createProject({ dir: join(root, 'my-game'), version: '0.2.0' });
@@ -110,7 +141,7 @@ describe('createProject', () => {
 
 		expect(agents).toContain('null3D 0.2.0');
 		expect(agents).toContain('null3d-develop');
-		expect(agents).toContain('status is `planned`');
+		expect(agents).toContain('Use only the calls that the page shows');
 		expect(agents).not.toContain('{{');
 	});
 
@@ -265,7 +296,7 @@ describe('createProject', () => {
 	it('refuses a template that it does not ship', () => {
 		const root = tempRoot();
 		expect(() => createProject({ dir: join(root, 'game'), template: 'missing' })).toThrow(
-			'it has no "missing" template; its templates: empty',
+			'it has no "missing" template; its templates: empty, game, product',
 		);
 	});
 
@@ -305,7 +336,7 @@ describe('createProject', () => {
 		expect(readFileSync(settings, 'utf8')).toBe(before);
 	});
 
-	it('ships a template with the agent files', () => {
-		expect(templateNames()).toContain('empty');
+	it('ships the empty, game and product templates', () => {
+		expect(templateNames()).toEqual(['empty', 'game', 'product']);
 	});
 });

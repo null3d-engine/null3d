@@ -475,7 +475,7 @@ export default defineSketch(({ scene, geometry, materials, textures, render, tim
 });
 ```
 
-A pass never draws the objects that show its own texture, so the screen does not show itself. A pass that nothing shows costs nothing. [Render graph API](../api/render.md) says what a scene pass draws in this version.
+A pass never draws the objects that show its own texture, so the screen does not show itself. A pass that nothing shows costs nothing. [Render graph API](../api/render.md) says what a scene pass draws.
 
 ## Screens in the world
 

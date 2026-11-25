@@ -8,7 +8,7 @@ summary: "quality.preset, quality.set, quality.setPreset, the preset check, the 
 
 # Quality API
 
-> Roadmap step 0.1, first released in null3D 0.1.0. Step 0.2 adds `quality.setBudget`. The API is experimental, so it can still change between versions. `quality.set` takes every setting that changes during play, as [Settings](#settings) says. The others stay fixed while the engine runs. The settings that the preset table marks as planned are not built yet. Coding agents must not use them.
+> Roadmap step 0.1, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. `quality.set` takes every setting that changes during play, as [Settings](#settings) says. The others stay fixed while the engine runs.
 
 `ctx.quality` gives a sketch the quality preset that the engine runs and its settings. The sketch can change the settings that change during play, switch to another preset, and hear when either changes. [Quality presets](../concepts/quality-presets.md) explains how the engine chooses and checks the preset, and lists each preset's values.
 

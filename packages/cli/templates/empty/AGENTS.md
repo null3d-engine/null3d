@@ -17,7 +17,7 @@ call goes on.
 | `no-sleep` | refuse | A command that waits with `sleep`. |
 | `no-kill-by-name` | refuse | `pkill`, `killall`, or `kill` with a process name. |
 | `no-log-follow` | refuse | `tail -f`, `journalctl -f`, `docker logs -f` and their like. |
-| `no-planned-api` | flag | An import that the installed engine does not export. |
+| `no-unknown-api` | flag | An import that the installed engine does not export. |
 | `no-allocation-in-onupdate` | flag | An object, array or string made inside `onUpdate`. |
 | `no-dom-in-sketch` | flag | A DOM name in `sketch.ts`. |
 
@@ -30,8 +30,7 @@ follow the same rules. The hook is optional: delete its entries in `.claude/sett
 
 ## Before you build a feature
 
-A request may need a capability that null3D has not built. A user who asks for such a feature brings
-three things:
+A user who asks for a new feature brings three things:
 
 - What they want to see on screen, with a reference picture or the effect in another engine.
 - The devices and browsers it must run on, such as a mid-range Android phone.
@@ -39,39 +38,36 @@ three things:
 
 Settle its state before you design the scene.
 
-1. Read the docs page for the feature. Its status says whether the call exists. A `planned` page or
-   a part marked "not built yet" is not in this version: tell the user, and use the workaround the
-   page gives. Never invent an option in its place.
+1. Read the docs page for the feature. Use only the calls that the page and the engine's type
+   declarations show. Never invent a call or an option.
 2. Check the foundation add-ons below before you write a generator, control, effect or loader of
    your own. Each is the one place that feature lives, and it gets fixes with the engine. Do not
    write a second version of one.
 3. If nothing covers the need, build it above the public API: a custom material, a vertex offset, a
    post effect or a render pass. Keep that code in the project, and add no property or call that
    imitates engine API, because it breaks on the next update.
-4. Say in your summary what the engine lacks, what you used instead, and what a later version
-   changes.
+4. Say in your summary what you built above the public API, and why.
 
-| Need | Package | Status |
+| Need | Use | Notes |
 | --- | --- | --- |
-| Orbit, map, fly and first-person cameras, and drag, rotate or scale handles | `@null3d/controls` | built |
-| Torus knots, polyhedra, lathes, extrusions and tubes | `@null3d/geometry` | built |
-| Far objects as camera-facing cards, or one mesh per far grid cell | `@null3d/impostors` | built; bake several views for any card bigger than a few pixels |
-| Fire, smoke, sparks, rain and other particle effects | `@null3d/particles` | built |
-| Gaussian splats from a scan or a training run | `@null3d/splats` | built |
-| Ground from a height field | `@null3d/terrain` | built |
-| Grass over a ground, swaying in the wind | `@null3d/grass` | built; see the docs page api/grass |
-| Rigid bodies, joints and character movement | the physics add-on | not built yet; run Rapier or cannon-es in the sketch worker |
-| Text in the scene | the MSDF text add-on | not built yet; use HTML labels |
-| A river or a lake, with waves, foam and soft shores | `@null3d/water` | built; see the docs page api/water |
-| Trees, shrubs and ferns | no add-on | make plants in code or from glTF models, with `@null3d/wind` for the sway |
-| Wind that plants, flags and smoke read, with travelling gusts and pushes | `@null3d/wind` | built (the field carries no state between frames yet; see the docs page api/wind) |
-| Sound placed in the scene: loops, groups of many sources and one-shots | `@null3d/sound` | built; see the docs page api/sound |
-| three.js look modes for a port | `@null3d/three-compat` | built |
+| Orbit, map, fly and first-person cameras, and drag, rotate or scale handles | `@null3d/controls` | |
+| Torus knots, polyhedra, lathes, extrusions and tubes | `@null3d/geometry` | |
+| Far objects as camera-facing cards, or one mesh per far grid cell | `@null3d/impostors` | bake several views for any card bigger than a few pixels |
+| Fire, smoke, sparks, rain and other particle effects | `@null3d/particles` | |
+| Gaussian splats from a scan or a training run | `@null3d/splats` | |
+| Ground from a height field | `@null3d/terrain` | |
+| Grass over a ground, swaying in the wind | `@null3d/grass` | see the docs page api/grass |
+| Rigid bodies, joints and character movement | Rapier or cannon-es | run the library in the sketch worker |
+| Text in the scene | HTML labels | `ui.trackLabel` keeps a label on an object |
+| A river or a lake, with waves, foam and soft shores | `@null3d/water` | see the docs page api/water |
+| Trees, shrubs and ferns | code or glTF models | make plants in code or from glTF models, with `@null3d/wind` for the sway |
+| Wind that plants, flags and smoke read, with travelling gusts and pushes | `@null3d/wind` | see the docs page api/wind |
+| Sound placed in the scene: loops, groups of many sources and one-shots | `@null3d/sound` | see the docs page api/sound |
+| three.js look modes for a port | `@null3d/three-compat` | |
 
 ## Rules
 
-1. Read the docs page before you call an API. A page whose status is `planned` describes an API
-   that does not exist in this version.
+1. Read the docs page before you call an API. Use only the calls that the page shows.
 2. Do not wait with `sleep`. Run a check that finishes on its own, such as
    `bunx @null3d/cli test`, or use the tool's own time limit.
 3. Stop only a process that you started, by its PID. Do not stop a process by name.

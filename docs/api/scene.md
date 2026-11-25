@@ -8,7 +8,7 @@ summary: "Creating objects; models and copies; find; multiple views of one scene
 
 # Scene
 
-> Roadmap step 0.1, first released in null3D 0.1.0. Step 0.2 adds the environment, the sky and environment backgrounds, the sky's environment, the light probe grid, `timeOfDay` and volumetric fog. The API is experimental, so it can still change between versions.
+> Roadmap step 0.1, first released in null3D 0.1.0. The API is experimental, so it can still change between versions.
 
 The scene holds everything the engine draws: the objects, the camera that the canvas shows, the lights and the background. A sketch gets it as `scene` in its setup function, and creates everything through it.
 
@@ -310,7 +310,7 @@ Each view culls the scene on its own, and draws it at its rectangle's pixels wit
 
 A view costs one more cull and one more scene draw. The camera's view still draws the whole canvas first, with the canvas's aspect ratio, so a split screen of two half-width views draws the scene three times: once across the canvas underneath and once for each half. A picture in picture draws it twice. The rectangle follows the render scale, as the camera's view does, so a lower scale lowers a view's cost too. A small rectangle costs little on a phone. Bloom's threshold and the tone curve see the whole image once.
 
-A view's objects take no ambient occlusion or screen-space reflections, which shade the camera's view. The camera's volumetric fog and outline are added to the whole image after the views draw, so they also reach a view's rectangle. An object whose material shows a render pass's texture does not draw in a view, as it does not draw in another pass. `screenToRay` and `worldToScreen` map the whole canvas, so they do not follow a view's rectangle. A scene and its passes share 32 views, the camera's included; `scene.createView` throws E1501 when none is free. Development builds throw E1213 for a camera or a rectangle that a view does not take, and E1203 for a number that is not finite.
+A view's objects take no ambient occlusion or screen-space reflections, which shade the camera's view. The camera's volumetric fog and outline are added to the whole image after the views draw, so they also reach a view's rectangle. An object whose material shows a render pass's texture does not draw in a view, as it does not draw in another pass. `camera.screenToRay` and `camera.worldToScreen` map the whole canvas. `view.screenToRay` and `view.worldToScreen` map the view's image, and `scene.viewAt(x, y)` finds the view under a point ([Multiple views](../guides/multiple-views.md#picking-in-a-view)). A scene and its passes share 32 views, the camera's included; `scene.createView` throws E1501 when none is free. Development builds throw E1213 for a camera or a rectangle that a view does not take, and E1203 for a number that is not finite.
 
 [Multiple views](../guides/multiple-views.md) covers split screens, picture in picture and their cost.
 
@@ -542,7 +542,7 @@ A third argument is an object that the call fills, in place of making one: `time
 
 ## Lights
 
-Each light is an object, so a scene can hold many, and each call creates another. Without lights, standard materials draw black. [Lights](lights.md) covers each kind, and which of them light surfaces in this version.
+Each light is an object, so a scene can hold many, and each call creates another. Without lights, standard materials draw black. [Lights](lights.md) covers each kind, and which of them light surfaces.
 
 ## Decals
 

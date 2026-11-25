@@ -125,6 +125,16 @@ export class GizmoDrag {
 	translationSnap: number | null = null;
 	rotationSnap: number | null = null;
 	scaleSnap: number | null = null;
+	/**
+	 * The limits of a move, on each axis of the object's position relative to its parent, as
+	 * three.js's `minX` to `maxZ`. A move clamps the position to them after it snaps.
+	 */
+	minX = Number.NEGATIVE_INFINITY;
+	maxX = Number.POSITIVE_INFINITY;
+	minY = Number.NEGATIVE_INFINITY;
+	maxY = Number.POSITIVE_INFINITY;
+	minZ = Number.NEGATIVE_INFINITY;
+	maxZ = Number.POSITIVE_INFINITY;
 
 	/** The object's transform as the drag began, relative to its parent. */
 	readonly startPosition = vec3.create();
@@ -142,6 +152,8 @@ export class GizmoDrag {
 	private readonly startWorld = vec3.create();
 	private readonly startWorldRotation = quat.create();
 	private readonly parentInverse = mat4.create();
+	/** The parent's world matrix, which places the handles on a clamped position. */
+	private readonly parentMatrix = mat4.create();
 	private readonly parentRotation = quat.create();
 	private readonly parentRotationInverse = quat.create();
 	private readonly eye = vec3.create();
@@ -196,6 +208,7 @@ export class GizmoDrag {
 		vec3.copy(this.worldPosition, start.worldPosition);
 		quat.copy(this.worldRotation, start.worldRotation);
 		mat4.copy(this.parentInverse, start.parentInverse);
+		mat4.invert(this.parentMatrix, this.parentInverse);
 		quat.copy(this.parentRotation, start.parentRotation);
 		quat.invert(this.parentRotationInverse, this.parentRotation);
 		vec3.normalize(this.eye, start.eye);
@@ -285,6 +298,26 @@ export class GizmoDrag {
 			if (this.bits & Y_BIT) this.position[1] = snap(this.position[1] as number, step);
 			if (this.bits & Z_BIT) this.position[2] = snap(this.position[2] as number, step);
 		}
+		this.clampPosition();
+	}
+
+	/**
+	 * Clamps the position to the move's limits, as three.js does after its snap. A clamped position
+	 * moves the handles' world position with it.
+	 */
+	private clampPosition(): void {
+		const position = this.position;
+		const x = position[0] as number;
+		const y = position[1] as number;
+		const z = position[2] as number;
+		const cx = Math.max(this.minX, Math.min(this.maxX, x));
+		const cy = Math.max(this.minY, Math.min(this.maxY, y));
+		const cz = Math.max(this.minZ, Math.min(this.maxZ, z));
+		if (cx === x && cy === y && cz === z) return;
+		position[0] = cx;
+		position[1] = cy;
+		position[2] = cz;
+		vec3.transformMat4(this.worldPosition, position, this.parentMatrix);
 	}
 
 	/** Scales the object on the handle's axes, by the ratio of the pointer's distances. */

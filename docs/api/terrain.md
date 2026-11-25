@@ -8,7 +8,7 @@ summary: "createTerrain: a height field drawn as a camera-centered quadtree of b
 
 # Terrain (@null3d/terrain)
 
-> Roadmap step 0.2, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. The ground carries no collision. A block morphs toward its parent block's surface before it gives way to it, and a skirt closes the seam between neighbours that differ by more than one level. Coding agents must not use these parts.
+> Roadmap step 0.2, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. The ground has no collision. A block morphs toward its parent block's surface before it gives way to it, and a skirt closes the seam between neighbours that differ by more than one level.
 
 ```mermaid
 flowchart LR

@@ -8,7 +8,7 @@ summary: "Built-in materials; permutations; pipeline warm-up; why changing shade
 
 # Materials and pipelines
 
-> Roadmap step 0.1, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. Custom materials take a surface function, a vertex offset, their uniforms and up to 6 textures of their own, or a full shader. They take none of the standard texture maps. Coding agents must not use the parts that are not built.
+> Roadmap step 0.1, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. Custom materials take a surface function, a vertex offset, their uniforms and up to 6 textures of their own, or a full shader. They take none of the standard texture maps.
 
 ```mermaid
 flowchart LR

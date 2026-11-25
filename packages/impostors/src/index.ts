@@ -9,6 +9,8 @@ import { VERSION } from './version';
 
 checkAddonVersion('@null3d/impostors', VERSION);
 
+export type { ImpostorAtlasFile } from './atlas-file';
+export { IMPOSTOR_FILE_FORMAT } from './atlas-file';
 export type {
 	ImpostorBake,
 	ImpostorBakeMap,
@@ -27,6 +29,8 @@ export {
 	handOverSwitches,
 	handOverToCards,
 } from './hand-over';
+export type { LoadedImpostorAtlas } from './load';
+export { loadImpostorAtlas } from './load';
 export type { FarPart } from './merge';
 export { farCellGroups, mergeFarGeometry } from './merge';
 export type { Direction, OctahedralAtlas, OctahedralUv } from './octahedral';

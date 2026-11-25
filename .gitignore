@@ -52,12 +52,3 @@ docs/porting/threejs-mapping.md
 docs/shaders/library.md
 skills/null3d-port-threejs/references/api-mapping.md
 skills/null3d-port-threejs/references/threejs-mapping.json
-# Placeholder pages of planned pages. Take a page off this list when you write it.
-docs/guides/deploying.md
-docs/porting/react-three-fiber.md
-docs/porting/threejs-loop-and-threads.md
-docs/porting/threejs-materials.md
-docs/porting/threejs-overview.md
-docs/porting/threejs-shaders.md
-docs/porting/threejs-unsupported.md
-docs/porting/verification.md

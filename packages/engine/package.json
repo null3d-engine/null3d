@@ -1,7 +1,7 @@
 {
 	"name": "@null3d/engine",
 	"version": "0.0.0",
-	"description": "The null3D engine, a browser 3D engine for games and apps with many moving objects: the TypeScript API, the page shim, the worker entry points, both WebAssembly builds and the docs.",
+	"description": "The null3D engine, a high-performance browser 3D engine for agents, faster than three.js, with wide device compatibility: the TypeScript API, the page shim, the worker entry points, both WebAssembly builds and the docs.",
 	"license": "MIT OR Apache-2.0",
 	"author": "Ramesh Nair (https://hiddentao.com)",
 	"homepage": "https://github.com/null3d-engine/null3d#readme",

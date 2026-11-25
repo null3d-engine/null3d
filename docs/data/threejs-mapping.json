@@ -5,8 +5,7 @@
     "direct": "Same concept; the call or option changes name only.",
     "changed": "Supported, with a different API or pattern. Follow the note.",
     "manual": "Must be rewritten by hand, for example GLSL shaders or render hooks.",
-    "post-1.0": "Not in version 1.0. Use the workaround in the note.",
-    "unsupported": "Out of scope for null3D. Use the workaround in the note."
+    "unsupported": "null3D has no equivalent. Use the workaround in the note."
   },
   "sinceLegend": {
     "0.1": "the core renderer, with cameras, materials, lights and shadows",
@@ -99,7 +98,7 @@
       "status": "changed",
       "since": "0.1",
       "target": "debug.stats(true), or createEngine({ stats: true }) on the page; debug.frameStats() for numbers",
-      "notes": "The overlay shows the frame rates, CPU time per thread and phase, draw calls and uploads, the GPU tier, the preset and the render scale. From 0.2 it sits at the canvas's top right, and its header shows the frame rate. A click opens a card with each thread's and the GPU's time against the target frame rate, triangles and objects drawn, and the memory of the engine, the GPU's textures and buffers, the heap and the page. Triangles count every pass, shadow maps included, as renderer.info.render.triangles does. Objects count the instances of each draw, so an object counts once per pass that draws it. Each part of a mesh with several materials counts once, as each part is a mesh of its own in three.js. The page shows it with createEngine({ stats: true }), engine.stats(true) or ?stats (0.2). @null3d/engine/stats (0.2) shows a three.js page's own figures in the same panel, with StatsPanel, or as text, with statsText. engine.measure() on the page gives percentiles of CPU and GPU time, and memory. In the sketch, debug.frameStats() (0.2) also gives the textures' GPU bytes, their budget and their dropped mip levels.",
+      "notes": "The overlay shows the frame rates, CPU time per thread and phase, draw calls and uploads, the GPU tier, the preset and the render scale. It sits at the canvas's top right, and its header shows the frame rate. A click opens a card with each thread's and the GPU's time against the target frame rate, triangles and objects drawn, and the memory of the engine, the GPU's textures and buffers, the heap and the page. Triangles count every pass, shadow maps included, as renderer.info.render.triangles does. Objects count the instances of each draw, so an object counts once per pass that draws it. Each part of a mesh with several materials counts once, as each part is a mesh of its own in three.js. The page shows it with createEngine({ stats: true }), engine.stats(true) or ?stats. @null3d/engine/stats shows a three.js page's own figures in the same panel, with StatsPanel, or as text, with statsText. engine.measure() on the page gives percentiles of CPU and GPU time, and memory. In the sketch, debug.frameStats() also gives the textures' GPU bytes, their budget and their dropped mip levels.",
       "docs": "api/debug",
       "detect": "\\.info\\.(render|programs)|from\\s+['\"][^'\"]*stats(\\.module)?(\\.js)?['\"]|\\bnew\\s+Stats\\s*\\("
     },
@@ -110,7 +109,7 @@
       "status": "changed",
       "since": "0.2",
       "target": "quality.textureMemory; textures.memoryBytes; the quality setting textureMemoryMiB; debug.frameStats().gpuTextureBytes and gpuBufferBytes",
-      "notes": "three.js counts the textures that the renderer holds, not their bytes, and sets no budget. null3D reports the textures' GPU bytes and holds them under the preset's budget: past it, textures from files drop their largest mip levels, which load again once room returns. debug.frameStats() (0.2) also gives the bytes of every GPU texture and buffer that the engine holds, render targets and shadow maps included.",
+      "notes": "three.js counts the textures that the renderer holds, not their bytes, and sets no budget. null3D reports the textures' GPU bytes and holds them under the preset's budget: past it, textures from files drop their largest mip levels, which load again once room returns. debug.frameStats() also gives the bytes of every GPU texture and buffer that the engine holds, render targets and shadow maps included.",
       "docs": "concepts/quality-presets",
       "detect": "\\.info\\.memory\\b"
     },
@@ -131,7 +130,7 @@
       "three": "renderer.setClearColor / scene.background = color or texture",
       "status": "direct",
       "since": "0.1",
-      "target": "scene.setBackground('#rrggbb' | texture | environment (0.2) | cube map (0.2) | { sky } (0.2), options)",
+      "target": "scene.setBackground('#rrggbb' | texture | environment | cube map | { sky }, options)",
       "notes": "A texture fills the view behind every object and stretches to its shape, as a texture background does in three.js. An environment or a cube map surrounds the scene, as a PMREM texture or a CubeTexture in scene.background does. Exposure and tone mapping change the background, as in three.js's WebGPURenderer; WebGLRenderer draws a background color, and an sRGB background texture, without them. For an exact page color, set toneMapping: \"none\", or use createEngine({ transparent: true }) over a CSS background. setClearColor(color, 0) on an alpha canvas becomes transparent: true with no background.",
       "docs": "api/scene",
       "detect": "\\.setClearColor\\s*\\(|\\.background\\s*="
@@ -197,7 +196,7 @@
       "three": "logarithmicDepthBuffer / reverseDepthBuffer",
       "status": "direct",
       "since": "0.1",
-      "target": "Nothing to do; createEngine({ largeWorld: true }) and batch origins for planet-scale scenes (0.2)",
+      "target": "Nothing to do; createEngine({ largeWorld: true }) and batch origins for planet-scale scenes",
       "notes": "The engine draws reversed depth in a 32-bit float buffer. On WebGL2 without EXT_clip_control, reversed depth keeps GL's range, which is less precise. engine.capabilities.depth says which depth the device draws. The engine also renders relative to the camera through per-cell offsets. With largeWorld: true, positions that you set keep their full precision at any distance, and createInstances takes an origin that its rows are relative to. The page switch ?depth=standard draws depth as three.js's WebGLRenderer does by default, which helps compare pictures with a three.js original. It works on WebGL2 only and draws no shadows.",
       "docs": "concepts/large-worlds",
       "detect": "logarithmicDepthBuffer|reverseDepthBuffer"
@@ -385,7 +384,7 @@
       "status": "direct",
       "since": "0.1",
       "target": "mesh.setCastShadows(true) / setReceiveShadows(true), or the castShadows and receiveShadows options of createMesh",
-      "notes": "Both are false by default, as in three.js. The directional light, spot lights and point lights cast them on both GPU paths; point lights where the preset's pointLightShadows is on. Unlit materials show no shadows. An instance batch takes castShadows and receiveShadows in createInstances, or batch.setCastShadows(true) / setReceiveShadows(true), for every row (since 0.2).",
+      "notes": "Both are false by default, as in three.js. The directional light, spot lights and point lights cast them on both GPU paths; point lights where the preset's pointLightShadows is on. Unlit materials show no shadows. An instance batch takes castShadows and receiveShadows in createInstances, or batch.setCastShadows(true) / setReceiveShadows(true), for every row.",
       "docs": "api/objects",
       "detect": "\\.(castShadow|receiveShadow)\\s*="
     },
@@ -396,7 +395,7 @@
       "status": "changed",
       "since": "0.1",
       "target": "obj.setLayers(mask), obj.getLayers(), camera.setLayers(mask), batch.setLayers(mask); the layers option of createMesh, createInstances and createPerspectiveCamera",
-      "notes": "Masks have the same 32 bits and the same default, layer 0 alone, and a camera draws an object when their masks share a bit. layers.set(n) becomes setLayers(1 << n), layers.enableAll() becomes setLayers(0xffffffff), and layers.mask becomes getLayers(). For enable and disable, read the mask with getLayers() and pass the new mask. An InstancedMesh's layers become its batch's, for every row. Raycasts and declared passes take layer masks from 0.2. Shadow casters differ: three.js tests them against the camera's layers, and null3D against the light's. Give each light that casts shadows the layers of every object that must cast, or those objects cast nothing.",
+      "notes": "Masks have the same 32 bits and the same default, layer 0 alone, and a camera draws an object when their masks share a bit. layers.set(n) becomes setLayers(1 << n), layers.enableAll() becomes setLayers(0xffffffff), and layers.mask becomes getLayers(). For enable and disable, read the mask with getLayers() and pass the new mask. An InstancedMesh's layers become its batch's, for every row. Raycasts and declared passes take layer masks. Shadow casters differ: three.js tests them against the camera's layers, and null3D against the light's. Give each light that casts shadows the layers of every object that must cast, or those objects cast nothing.",
       "docs": "concepts/render-layers",
       "detect": "\\.layers\\.(set|enable|disable|toggle|enableAll|disableAll|mask)\\b"
     },
@@ -439,8 +438,8 @@
       "three": "object.onBeforeRender / onAfterRender",
       "status": "manual",
       "since": "0.1",
-      "target": "onUpdate / onLateUpdate, or a declared pass (0.2)",
-      "notes": "The engine draws from lists that the sketch records, so it calls no sketch code per draw. Move per-object work into onUpdate or onLateUpdate. Declared passes come with step 0.2.",
+      "target": "onUpdate / onLateUpdate, or a declared pass",
+      "notes": "The engine draws from lists that the sketch records, so it calls no sketch code per draw. Move per-object work into onUpdate or onLateUpdate.",
       "docs": "api/sketch",
       "detect": "\\.on(Before|After)Render\\s*="
     },
@@ -461,8 +460,8 @@
       "three": "geometry.dispose() / material.dispose() / texture.dispose()",
       "status": "changed",
       "since": "0.1",
-      "target": "texture.destroy(); material.destroy() (0.2); mesh.destroy() (0.2); prefab.destroy() (0.2) for a loaded glTF model",
-      "notes": "texture.destroy() frees a texture's GPU memory, and materials that map it draw with their colors alone. material.destroy() (0.2) frees the material's place, and a custom material's pipelines with its last material, once no object uses it; objects that still use it draw nothing. mesh.destroy() (0.2) frees a mesh's GPU memory and data at the next frame, and throws E1111 while an object or instance batch uses it, so destroy those first, in the same frame or before. prefab.destroy() (0.2) frees every mesh, material and texture of a loaded model, and its skeleton and clips, once its copies are destroyed. three.js's dispose leaves the object usable and uploads it again on the next render; null3D's destroy ends it, and later calls throw E1101.",
+      "target": "texture.destroy(); material.destroy(); mesh.destroy(); prefab.destroy() for a loaded glTF model",
+      "notes": "texture.destroy() frees a texture's GPU memory, and materials that map it draw with their colors alone. material.destroy() frees the material's place, and a custom material's pipelines with its last material, once no object uses it; objects that still use it draw nothing. mesh.destroy() frees a mesh's GPU memory and data at the next frame, and throws E1111 while an object or instance batch uses it, so destroy those first, in the same frame or before. prefab.destroy() frees every mesh, material and texture of a loaded model, and its skeleton and clips, once its copies are destroyed. three.js's dispose leaves the object usable and uploads it again on the next render; null3D's destroy ends it, and later calls throw E1101.",
       "docs": "api/textures",
       "detect": "\\.dispose\\s*\\("
     },
@@ -561,7 +560,7 @@
       "status": "unsupported",
       "since": null,
       "target": "None; split screens use scene.createView with one camera for each view",
-      "notes": "Stereo rendering belongs to XR, which is out of scope.",
+      "notes": "null3D has no stereo rendering. For split screens, give each view a camera and a rectangle of the canvas.",
       "docs": "porting/threejs-unsupported",
       "detect": "\\b(Array|Stereo)Camera\\b"
     },
@@ -572,7 +571,7 @@
       "status": "changed",
       "since": "0.1",
       "target": "scene.createDirectionalLight({ direction, color, intensity, castShadows, shadow })",
-      "notes": "The light is an object. Pass the target minus the position as direction, or call light.lookAt(x, y, z), again whenever the target moves. Surfaces show up to four directional lights: the first one created casts the shadows, and up to three more add fill and rim light, without shadows. Delete shadow.camera bounds: the engine's shadow cascades fit the view by themselves, and the shadow distance follows the farthest visible receiver by default, so a port with its own shadow.camera.far passes that number as shadow: { distance }. It also draws contact shadows on High and Ultra (0.2), which three.js lacks: set shadow: { contactDistance: 0 } to match three.js's look. intensity stays in lux, three.js's unit. three.js has no hero shadow. A port that fits a second shadowed light or a shadow camera to one object uses light.setShadow({ hero: object }), which follows it.",
+      "notes": "The light is an object. Pass the target minus the position as direction, or call light.lookAt(x, y, z), again whenever the target moves. Surfaces show up to four directional lights: the first one created casts the shadows, and up to three more add fill and rim light, without shadows. Delete shadow.camera bounds: the engine's shadow cascades fit the view by themselves, and the shadow distance follows the farthest visible receiver by default, so a port with its own shadow.camera.far passes that number as shadow: { distance }. It also draws contact shadows on High and Ultra, which three.js lacks: set shadow: { contactDistance: 0 } to match three.js's look. intensity stays in lux, three.js's unit. three.js has no hero shadow. A port that fits a second shadowed light or a shadow camera to one object uses light.setShadow({ hero: object }), which follows it.",
       "docs": "api/lights",
       "detect": "\\bDirectionalLight\\b"
     },
@@ -770,7 +769,7 @@
       "status": "changed",
       "since": "0.1",
       "target": "geometry.fromArrays({ positions, normals, uvs, uvs1, colors, tangents, joints, weights, indices })",
-      "notes": "Returns a mesh that createMesh and createInstances accept. The attributes position, normal, uv, uv1, color and tangent each become one array, and setIndex becomes indices, 16-bit or 32-bit. The engine copies the arrays. From 0.2, skinIndex and skinWeight become joints and weights, 8-bit and 16-bit integer arrays stay integers on the GPU, and { array, normalized: true } keeps a BufferAttribute's normalized flag.",
+      "notes": "Returns a mesh that createMesh and createInstances accept. The attributes position, normal, uv, uv1, color and tangent each become one array, and setIndex becomes indices, 16-bit or 32-bit. The engine copies the arrays. skinIndex and skinWeight become joints and weights, 8-bit and 16-bit integer arrays stay integers on the GPU, and { array, normalized: true } keeps a BufferAttribute's normalized flag.",
       "docs": "api/geometry",
       "detect": "\\bBufferGeometry\\b|\\.setAttribute\\s*\\(|\\.setIndex\\s*\\(|\\b(Float32|Uint16|Uint32)?BufferAttribute\\b"
     },
@@ -814,7 +813,7 @@
       "status": "changed",
       "since": "0.3",
       "target": "DOM labels (ui.trackLabel), a texture with pre-rendered text, or a text mesh baked into glTF",
-      "notes": "Not built yet. An add-on that draws text with MSDF fonts comes in step 0.3. Until then, use the target's options.",
+      "notes": "null3D draws no text of its own. Use DOM labels for text that follows an object, a texture for text on a surface, and a baked mesh for 3D letters.",
       "docs": "porting/threejs-unsupported",
       "detect": "\\bTextGeometry\\b|\\bFontLoader\\b|troika-three-text"
     },
@@ -978,7 +977,7 @@
       "three": "MeshNormalMaterial / MeshDepthMaterial / MeshDistanceMaterial / MeshMatcapMaterial",
       "status": "changed",
       "since": "0.1",
-      "target": "debug.view('normals' | 'depth') for debugging; matcap is a surface-function recipe (0.2)",
+      "target": "debug.view('normals' | 'depth') for debugging; matcap is a surface-function recipe",
       "notes": "debug.view shades the whole scene, in development builds only. Its normals are in world space, where MeshNormalMaterial's are in view space. Its depth is white at the near plane, on a logarithmic scale for a perspective camera.",
       "docs": "api/debug",
       "detect": "\\bMesh(Normal|Depth|Distance|Matcap)Material\\b"
@@ -990,7 +989,7 @@
       "status": "manual",
       "since": "0.1",
       "target": "materials.shader({ wgsl, uniforms, textures }) with a WGSL surface function, or a full WGSL shader",
-      "notes": "Rewrite in WGSL, in one literal tagged /* wgsl */. Prefer a surface function, so lighting, shadows, fog and instancing keep working. The built-ins that ShaderMaterial adds have WGSL names of their own (see the ShaderMaterial built-ins entry). Declare the uniforms once, as struct Uniforms. Updates such as material.uniforms.uSpeed.value = 2 become material.set({ speed: 2 }), and from 0.2 the type check rejects a name that struct Uniforms lacks. A sampler2D uniform (0.2) becomes var name: texture_2d<f32>; in the WGSL and an entry of the textures option, sampled with textureSample(name, nameSampler, uv). Textures are fixed when the material is created. Full shaders take no textures.",
+      "notes": "Rewrite in WGSL, in one literal tagged /* wgsl */. Prefer a surface function, so lighting, shadows, fog and instancing keep working. The built-ins that ShaderMaterial adds have WGSL names of their own (see the ShaderMaterial built-ins entry). Declare the uniforms once, as struct Uniforms. Updates such as material.uniforms.uSpeed.value = 2 become material.set({ speed: 2 }), and the type check rejects a name that struct Uniforms lacks. A sampler2D uniform becomes var name: texture_2d<f32>; in the WGSL and an entry of the textures option, sampled with textureSample(name, nameSampler, uv). Textures are fixed when the material is created. Full shaders take no textures.",
       "docs": "shaders/surface-functions",
       "detect": "\\b(Raw)?ShaderMaterial\\b"
     },
@@ -1001,7 +1000,7 @@
       "status": "manual",
       "since": "0.1",
       "target": "materials.shader({ wgsl }) with a surface function or a vertex-offset function",
-      "notes": "The engine has no shader chunks to patch. Keep the standard options on the new material: defaultSurface applies them. A custom material takes no standard maps (map, normalMap and the rest): declare textures in the WGSL and pass them with the textures option (0.2).",
+      "notes": "The engine has no shader chunks to patch. Keep the standard options on the new material: defaultSurface applies them. A custom material takes no standard maps (map, normalMap and the rest): declare textures in the WGSL and pass them with the textures option.",
       "docs": "shaders/surface-functions",
       "detect": "\\.onBeforeCompile\\s*="
     },
@@ -1044,7 +1043,7 @@
       "three": "transparent / opacity / alphaTest / depthWrite / depthTest / blending / vertexColors / flatShading / colorWrite",
       "status": "changed",
       "since": "0.1",
-      "target": "alphaMode: 'blend' | 'mask' (with alphaCutoff), depthWrite, depthTest, colorWrite, blending: 'normal' | 'additive' | 'multiply' | 'weighted' (0.2), vertexColors, flatShading",
+      "target": "alphaMode: 'blend' | 'mask' (with alphaCutoff), depthWrite, depthTest, colorWrite, blending: 'normal' | 'additive' | 'multiply' | 'weighted', vertexColors, flatShading",
       "notes": "transparent: true becomes alphaMode: 'blend'; alphaTest becomes alphaMode: 'mask' with alphaCutoff; its cut edges are smoothed by default, and alphaToCoverage: false keeps three.js's hard edges. depthTest: false writes no depth either, as in three.js's WebGL renderer. colorWrite: false writes depth and no color. Its objects draw before the opaque objects that write color, so the depth holds back their color behind the surface. three.js orders that by material. blending takes effect with alphaMode: 'blend' only, where three.js blends an opaque material with additive or multiply blending too. The engine blends in linear color before the tone mapping, as WebGPURenderer does; WebGLRenderer blends after its tone mapping and sRGB encoding, so see-through surfaces look a little lighter in null3D and additive glows a little weaker. A blended material writes depth by default, as three.js's transparent materials do. Set depthWrite: false on glows and on surfaces that cross, so they never hide each other.",
       "docs": "api/materials",
       "detect": "\\b(transparent|alphaTest|depthWrite|depthTest|colorWrite|blending|vertexColors|flatShading)\\s*[:=]"
@@ -1067,7 +1066,7 @@
       "status": "changed",
       "since": "0.1",
       "target": "doubleSided: true",
-      "notes": "Fixed when the material is created. A back face lights as if it faced the camera, as in three.js. A double-sided material with alphaMode: 'blend' draws its back faces first, then its front faces, as three.js does (since 0.2). BackSide has no equivalent: flip the geometry.",
+      "notes": "Fixed when the material is created. A back face lights as if it faced the camera, as in three.js. A double-sided material with alphaMode: 'blend' draws its back faces first, then its front faces, as three.js does. BackSide has no equivalent: flip the geometry.",
       "docs": "api/materials",
       "detect": "\\bside\\s*[:=]"
     },
@@ -1187,7 +1186,7 @@
       "three": "material.alphaMap",
       "status": "manual",
       "since": "0.1",
-      "target": "Alpha packed into the base color map's alpha channel offline, or a surface function that sets s.alpha from the texture (0.2)",
+      "target": "Alpha packed into the base color map's alpha channel offline, or a surface function that sets s.alpha from the texture",
       "notes": "three.js reads the alpha map from its green channel. Copy that channel into the base color map's alpha, and set alphaMode to 'mask' or 'blend'.",
       "docs": "api/materials",
       "detect": "\\balphaMap\\b"
@@ -1254,7 +1253,7 @@
       "status": "direct",
       "since": "0.1",
       "target": "colorSpace: 'srgb' for color maps, 'linear' for data maps",
-      "notes": "Same rule as three.js: base color and emissive maps are sRGB; normal, roughness, metalness and AO maps are linear. The default is 'srgb' for images and 'linear' for data. glTF models (0.2) set them automatically. NoColorSpace and LinearSRGBColorSpace become colorSpace: 'linear'.",
+      "notes": "Same rule as three.js: base color and emissive maps are sRGB; normal, roughness, metalness and AO maps are linear. The default is 'srgb' for images and 'linear' for data. glTF models set them automatically. NoColorSpace and LinearSRGBColorSpace become colorSpace: 'linear'.",
       "docs": "concepts/color-management",
       "detect": "\\.colorSpace\\s*=|\\b(Linear)?SRGBColorSpace\\b|sRGBEncoding"
     },
@@ -1265,7 +1264,7 @@
       "status": "direct",
       "since": "0.1",
       "target": "flipY in the loadTexture options",
-      "notes": "The default is true, as in three.js. A KTX2 file takes no flipY: true, so encode it flipped. glTF textures (0.2) never flip.",
+      "notes": "The default is true, as in three.js. A KTX2 file takes no flipY: true, so encode it flipped. glTF textures never flip.",
       "docs": "api/textures",
       "detect": "\\.flipY\\s*="
     },
@@ -1375,7 +1374,7 @@
       "status": "direct",
       "since": "0.1",
       "target": "uvSet: 0 or 1 in the texture's options",
-      "notes": "Each map of a material reads the set that its texture names. glTF models (0.2) carry this per texture, so loaded models need nothing.",
+      "notes": "Each map of a material reads the set that its texture names. glTF models carry this per texture, so loaded models need nothing.",
       "docs": "api/textures",
       "detect": "\\.channel\\s*="
     },
@@ -1397,7 +1396,7 @@
       "status": "changed",
       "since": "0.2",
       "target": "const prefab = await assets.loadGltf(url); scene.instantiate(prefab)",
-      "notes": "A worker parses the file. Named nodes via prefab.find(name), and a copy's objects via instance.find(name); prefab.bounds frames the model. A node's textures, which three.js reads from mesh.material.map and its other maps, come from prefab.find(name).maps (0.3). KTX2 textures, WebP and AVIF textures (EXT_texture_webp, EXT_texture_avif) and meshopt compression need no decoder setup. Clips play through the copy's animator: scene.instantiate(prefab).animator().play(name), with the names in prefab.clips. Joints are not objects. Morph targets draw, and clips animate their weights. Materials follow GLTFLoader's rules. Vertex colors turn on, a mesh without normals shades flat, and blended materials write no depth. A mesh without tangents turns the normal map's green channel over. KHR_lights_punctual lights load with the intensities that three.js gives them. A clip without a name is named animation_0, animation_1 and so on, as three.js names it. KHR_animation_pointer needs no plugin: the loader reads it, and moves the same texture transform values as three.js's plugin. assets.registerGltfExtension(handler) takes the place of GLTFLoader.register() for an add-on's extensions. GLTFLoader ignores the MSFT_lod levels of `bunx @null3d/cli assets optimize --lod` and draws the full mesh.",
+      "notes": "A worker parses the file. Named nodes via prefab.find(name), and a copy's objects via instance.find(name); prefab.bounds frames the model. A node's textures, which three.js reads from mesh.material.map and its other maps, come from prefab.find(name).maps. KTX2 textures, WebP and AVIF textures (EXT_texture_webp, EXT_texture_avif) and meshopt compression need no decoder setup. Clips play through the copy's animator: scene.instantiate(prefab).animator().play(name), with the names in prefab.clips. Joints are not objects. Morph targets draw, and clips animate their weights. Materials follow GLTFLoader's rules. Vertex colors turn on, a mesh without normals shades flat, and blended materials write no depth. A mesh without tangents turns the normal map's green channel over. KHR_lights_punctual lights load with the intensities that three.js gives them. A clip without a name is named animation_0, animation_1 and so on, as three.js names it. KHR_animation_pointer needs no plugin: the loader reads it, and moves the same texture transform values as three.js's plugin. assets.registerGltfExtension(handler) takes the place of GLTFLoader.register() for an add-on's extensions. GLTFLoader ignores the MSFT_lod levels of `bunx @null3d/cli assets optimize --lod` and draws the full mesh.",
       "docs": "api/assets",
       "detect": "\\bGLTFLoader\\b"
     },
@@ -1485,7 +1484,7 @@
       "status": "changed",
       "since": "0.1",
       "target": "scene.createInstances(mesh, count, { material, dynamic, colors }); write batch.positions / rotations / scales / colors",
-      "notes": "Static batches call markDirty(start, count) after writes; dynamic batches upload every frame without it. colors: true adds the colors array: linear RGBA per row, which multiplies the base color and opacity as setColorAt's color does (drawn from step 0.2). scene.createInstances(prefab, count) instances a glTF model (0.2). One set of rows serves all its meshes, in place of an InstancedMesh per mesh kept in step by hand. castShadow and receiveShadow become the castShadows and receiveShadows options, or batch.setCastShadows / setReceiveShadows (0.2). An InstancedMesh's boundingSphere becomes batch.setBoundingRadius(radius) for that batch (0.2): each row's sphere then holds the sphere of that radius around the row's origin.",
+      "notes": "Static batches call markDirty(start, count) after writes; dynamic batches upload every frame without it. colors: true adds the colors array: linear RGBA per row, which multiplies the base color and opacity as setColorAt's color does. scene.createInstances(prefab, count) instances a glTF model. One set of rows serves all its meshes, in place of an InstancedMesh per mesh kept in step by hand. castShadow and receiveShadow become the castShadows and receiveShadows options, or batch.setCastShadows / setReceiveShadows. An InstancedMesh's boundingSphere becomes batch.setBoundingRadius(radius) for that batch: each row's sphere then holds the sphere of that radius around the row's origin.",
       "docs": "concepts/instances",
       "detect": "\\bInstancedMesh\\b|\\.set(Matrix|Color)At\\s*\\(|\\binstance(Matrix|Color)\\b"
     },
@@ -1604,7 +1603,7 @@
       "three": "DOM pointer, mouse, touch and keyboard listeners",
       "status": "changed",
       "since": "0.1",
-      "target": "input.pointer, input.isDown('KeyW'), input.wasPressed('Mouse0'), input.touches, input.actions.define(); obj.on('click' | 'pointerdown' | 'pointerup' | 'pointermove' | 'pointerenter' | 'pointerleave', fn) (0.2)",
+      "target": "input.pointer, input.isDown('KeyW'), input.wasPressed('Mouse0'), input.touches, input.actions.define(); obj.on('click' | 'pointerdown' | 'pointerup' | 'pointermove' | 'pointerenter' | 'pointerleave', fn)",
       "notes": "The page forwards pointer, touch, keyboard and gamepad input to the sketch, which reads it once per frame and adds no DOM listeners. Keys take KeyboardEvent.code names, and the main mouse button or a tap is Mouse0. A canvas that takes touch gestures needs touch-action: none in its CSS. obj.on replaces a canvas listener that raycasts: the closest object under the pointer gets the event, then its parents. input.pointer.wheel gives the scroll in pixels, counting a line as 16 pixels and a page as 100, as three.js's controls count deltaMode.",
       "docs": "api/input",
       "detect": "addEventListener\\s*\\(\\s*['\"](pointer\\w*|mouse\\w*|click|dblclick|touch\\w*|keydown|keyup|wheel|contextmenu)['\"]"
@@ -1616,7 +1615,7 @@
       "status": "changed",
       "since": "0.1",
       "target": "createOrbitControls(ctx, camera, { target, enableDamping, dampingFactor, minDistance, maxDistance, maxPolarAngle }) or createMapControls(ctx, camera) from @null3d/controls; controls.update(dt) in onUpdate",
-      "notes": "Option names and defaults match OrbitControls and MapControls, and the same input gives the camera the same pose. mouseButtons and touches take strings such as 'rotate' and 'dolly-pan'. There is no DOM element, so connect, disconnect, dispose and listenToKeyEvents have no equivalent. There are no change, start or end events: update(dt) returns true when the camera moved. For keys, call controls.pan or controls.rotateLeft with the input the sketch reads. An orthographic camera zooms by its view height, and minZoom and maxZoom count zoom as three.js does from the height when the controls start. zoomToCursor, keys, keyPanSpeed, keyRotateSpeed, cursor, minTargetRadius, maxTargetRadius, saveState and reset are not built yet. getDistance, getPolarAngle and getAzimuthalAngle keep three.js's meaning. rotateLeft, rotateUp, pan, dollyIn and dollyOut take effect at the next update, not at once. dampingFactor is the share at 60 frames per second. The engine scales it to each frame's step, so the motion takes the same time at any frame rate. The controls orbit around +Y, where three.js orbits around the camera's up. three.js takes a frame's events one at a time, so a two-finger pan can differ by a few percent of the move. Trackball and Arcball come after 1.0.",
+      "notes": "Option names and defaults match OrbitControls and MapControls, and the same input gives the camera the same pose. mouseButtons and touches take strings such as 'rotate' and 'dolly-pan'. There is no DOM element, so connect, disconnect and dispose have no equivalent, and listenToKeyEvents() takes no element: it turns on the keys, which the sketch's input already reads. There are no change, start or end events: update(dt) returns true when the camera moved. zoomToCursor, keys, keyPanSpeed, keyRotateSpeed, cursor, minTargetRadius, maxTargetRadius, saveState and reset keep three.js's names and behavior. A held key repeats after half a second, then 30 times a second, where three.js follows the system's key repeat. An orthographic camera zooms by its view height, and minZoom and maxZoom count zoom as three.js does from the height when the controls start. getDistance, getPolarAngle and getAzimuthalAngle keep three.js's meaning. rotateLeft, rotateUp, pan, dollyIn and dollyOut take effect at the next update, not at once. dampingFactor is the share at 60 frames per second. The engine scales it to each frame's step, so the motion takes the same time at any frame rate. The controls orbit around +Y, where three.js orbits around the camera's up. Trackball and Arcball controls have no equivalent. three.js takes a frame's events one at a time, so a two-finger pan can differ by a few percent of the move.",
       "docs": "api/controls",
       "detect": "\\b(Orbit|Map|Trackball|Arcball)Controls\\b"
     },
@@ -1638,7 +1637,7 @@
       "status": "changed",
       "since": "0.3",
       "target": "createTransformControls(ctx, camera, { mode, space, size, showX, showY, showZ, translationSnap, rotationSnap, scaleSnap }) from @null3d/controls, then attach(object) and controls.update(dt) in onUpdate; createDragControls(ctx, camera, objects, { recursive, transformGroup, rotateSpeed, mouseButtons, touches })",
-      "notes": "Option names and defaults match TransformControls and DragControls. There is no DOM element, getHelper or event: the controls make their handles in the scene, report dragging, axis, hovered and state, and update(dt) returns true when it moved something. A gizmo turns an object by the exact angle that the pointer sweeps around the axis, where three.js scales a linear approximation of it. minX to maxZ and showXY, showYZ and showXZ are not built yet, and showX, showY and showZ hide the plane handles too. A press on a handle reaches the handle alone, so a click handler on the object behind it does not hear it. dragging and axis replace the dragging-changed, objectChange, mouseDown and mouseUp events of TransformControls. dragging, hovered and state replace the dragstart, drag, dragend, hoveron and hoveroff events of DragControls.",
+      "notes": "Option names and defaults match TransformControls and DragControls. There is no DOM element, getHelper or event: the controls make their handles in the scene, report dragging, axis, hovered and state, and update(dt) returns true when it moved something. A gizmo turns an object by the exact angle that the pointer sweeps around the axis, where three.js scales a linear approximation of it. minX to maxZ clamp a move, and showXY, showYZ and showXZ hide the plane handles, as in three.js. showX, showY and showZ hide the plane handles too. A press on a handle reaches the handle alone, so a click handler on the object behind it does not hear it. dragging and axis replace the dragging-changed, objectChange, mouseDown and mouseUp events of TransformControls. dragging, hovered and state replace the dragstart, drag, dragend, hoveron and hoveroff events of DragControls.",
       "docs": "api/controls",
       "detect": "\\b(Transform|Drag)Controls\\b"
     },
@@ -1660,7 +1659,7 @@
       "status": "changed",
       "since": "0.1",
       "target": "Plain arrays and the vec3, quat, mat4 and color helpers from @null3d/engine, such as vec3.add(out, a, b) and quat.slerp(out, a, b, t)",
-      "notes": "Create scratch arrays once with vec3.create(), quat.create() or mat4.create(), outside onUpdate. Most names match three.js, and where three.js has the same operation, a helper does three.js's arithmetic, so the results match. Coordinates are right-handed with +Y up, as in three.js. A mat4 holds its 16 numbers column by column, as Matrix4.elements does, with the translation in elements 12, 13 and 14. multiplyMatrices(a, b) is mat4.multiply(out, a, b), and multiplyQuaternions(a, b) is quat.multiply(out, a, b): both apply b first, then a. setFromRotationMatrix(m) is quat.fromMat4(out, m), which needs a matrix without scale; use mat4.decompose for one with scale. applyQuaternion is vec3.transformQuat, applyMatrix4 is vec3.transformMat4, multiplyScalar is vec3.scale and addScaledVector is vec3.scaleAndAdd. setFromUnitVectors is quat.rotationTo, and setFromEuler is quat.fromEuler, in radians. There are no helpers for Box3, Sphere, Ray or Plane. three.js math classes may stay in setup code during a port, but not in per-frame code. Game rules that a server replays import the exact helpers from @null3d/engine/math/vec3, quat, mat4 and math, and build setAxisAngle, fromEuler, rotateX, rotateY, rotateZ, slerp, vec3.angle and math.damp with createMath on an exact math library (0.3).",
+      "notes": "Create scratch arrays once with vec3.create(), quat.create() or mat4.create(), outside onUpdate. Most names match three.js, and where three.js has the same operation, a helper does three.js's arithmetic, so the results match. Coordinates are right-handed with +Y up, as in three.js. A mat4 holds its 16 numbers column by column, as Matrix4.elements does, with the translation in elements 12, 13 and 14. multiplyMatrices(a, b) is mat4.multiply(out, a, b), and multiplyQuaternions(a, b) is quat.multiply(out, a, b): both apply b first, then a. setFromRotationMatrix(m) is quat.fromMat4(out, m), which needs a matrix without scale; use mat4.decompose for one with scale. applyQuaternion is vec3.transformQuat, applyMatrix4 is vec3.transformMat4, multiplyScalar is vec3.scale and addScaledVector is vec3.scaleAndAdd. setFromUnitVectors is quat.rotationTo, and setFromEuler is quat.fromEuler, in radians. There are no helpers for Box3, Sphere, Ray or Plane. three.js math classes may stay in setup code during a port, but not in per-frame code. Game rules that a server replays import the exact helpers from @null3d/engine/math/vec3, quat, mat4 and math, and build setAxisAngle, fromEuler, rotateX, rotateY, rotateZ, slerp, vec3.angle and math.damp with createMath on an exact math library.",
       "docs": "api/math",
       "detect": "new\\s+(THREE\\.)?(Vector[234]|Quaternion|Matrix[34]|Euler|Color|Box[23]|Sphere|Ray|Plane|Frustum|Spherical|Cylindrical)\\s*\\("
     },
@@ -1682,7 +1681,7 @@
       "status": "direct",
       "since": "0.1",
       "target": "math.degToRad, radToDeg, clamp, lerp, inverseLerp, mapLinear, damp, smoothstep, euclideanModulo, randFloat, randInt and randFloatSpread; math.seed and math.random",
-      "notes": "Same names and arithmetic. The random helpers draw from math.random, which hold mode seeds. MathUtils.seededRandom(s) becomes math.seed(s) once, then math.random(). smootherstep, pingpong, generateUUID and the power of two helpers have no equivalent. Game rules that a server replays import clamp, lerp and the other exact helpers from @null3d/engine/math/math, build damp with createMath on an exact math library, and draw random numbers from a generator of their own (0.3).",
+      "notes": "Same names and arithmetic. The random helpers draw from math.random, which hold mode seeds. MathUtils.seededRandom(s) becomes math.seed(s) once, then math.random(). smootherstep, pingpong, generateUUID and the power of two helpers have no equivalent. Game rules that a server replays import clamp, lerp and the other exact helpers from @null3d/engine/math/math, build damp with createMath on an exact math library, and draw random numbers from a generator of their own.",
       "docs": "api/math",
       "detect": "\\bMathUtils\\.\\w+"
     },
@@ -2020,10 +2019,10 @@
       "id": "xr",
       "category": "Other",
       "three": "WebXR (renderer.xr, VRButton, ARButton)",
-      "status": "post-1.0",
+      "status": "unsupported",
       "since": null,
       "target": "None",
-      "notes": "WebXR is not in version 1. It comes after 1.0.",
+      "notes": "null3D has no WebXR support. Keep an XR view in three.js.",
       "docs": "porting/threejs-unsupported",
       "detect": "\\.xr\\.|\\b(VR|AR|XR)Button\\b|XRControllerModelFactory"
     },
@@ -2067,7 +2066,7 @@
       "status": "changed",
       "since": "0.1",
       "target": "Run the physics library in the sketch worker; copy body transforms into dynamic arrays after each step",
-      "notes": "WebAssembly physics builds run in workers. An official Rapier adapter, @null3d/rapier, comes in step 0.3. It is not built yet.",
+      "notes": "null3D has no physics API. WebAssembly physics builds run in workers.",
       "docs": "guides/physics",
       "detect": "from\\s+['\"](cannon-es|cannon|@dimforge/rapier3d(-compat)?|ammo\\.js|oimo|@react-three/rapier|@react-three/cannon)['\"]"
     },

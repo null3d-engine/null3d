@@ -76,6 +76,7 @@ interface ThreeHandlers {
 	_onMouseWheel(event: object): void;
 	_interceptControlDown(event: object): void;
 	_interceptControlUp(event: object): void;
+	_onKeyDown(event: object): void;
 	_rotateLeft(angle: number): void;
 }
 
@@ -143,10 +144,15 @@ class Twin {
 		const Controls = kind === 'map' ? ThreeMapControls : ThreeOrbitControls;
 		const element = standInElement() as unknown as HTMLElement;
 		this.three = new Controls(this.threeCamera, element) as ThreeControls;
-		const { target, mouseButtons, touches, ...rest } = options;
+		const { target, mouseButtons, touches, keys, cursor, ...rest } = options;
 		Object.assign(this.three, rest);
 		if (target)
 			this.three.target.set(target[0] as number, target[1] as number, target[2] as number);
+		if (cursor)
+			this.three.cursor.set(cursor[0] as number, cursor[1] as number, cursor[2] as number);
+		Object.assign(this.three.keys, keys ?? {});
+		// null3D's keys act once the sketch asks; three.js's _onKeyDown takes every key it is given.
+		this.controls.listenToKeyEvents();
 		for (const [button, action] of Object.entries(mouseButtons ?? {}))
 			Object.assign(this.three.mouseButtons, { [button]: action ? THREE_MOUSE[action] : -1 });
 		for (const [fingers, action] of Object.entries(touches ?? {}))
@@ -210,15 +216,22 @@ class Twin {
 		this.ring.write(ringType, x, y, options.button ?? -1, id, options.buttons, flags);
 	}
 
-	/** Wheel scroll in pixels. A pinch on a trackpad comes as scroll with the Control key's flag. */
-	wheel(deltaY: number, pinch = false): void {
+	/**
+	 * Wheel scroll in pixels. A pinch on a trackpad comes as scroll with the Control key's flag. With
+	 * a point, the pointer first moves there; without one, three.js's controls hear the scroll at the
+	 * canvas's center.
+	 */
+	wheel(deltaY: number, pinch = false, at?: readonly [number, number]): void {
 		const ctrlKey = pinch || this.held.has('ControlLeft');
+		const [x, y] = at ?? [WIDTH / 2, HEIGHT / 2];
+		// The sketch's pointer comes to the point with a move; three.js reads it from the wheel event.
+		if (at) this.pointer('move', x, y, { buttons: 0 });
 		this.three._onMouseWheel({
 			deltaY,
 			deltaMode: 0,
 			ctrlKey,
-			clientX: WIDTH / 2,
-			clientY: HEIGHT / 2,
+			clientX: x,
+			clientY: y,
 			preventDefault() {},
 		});
 		this.ring.write(EVENT_WHEEL, 0, deltaY, 0, 0, 0, ctrlKey ? FLAG_CONTROL : 0);
@@ -234,6 +247,23 @@ class Twin {
 			else this.three._interceptControlUp(event);
 		}
 		this.ring.write(down ? EVENT_KEY_DOWN : EVENT_KEY_UP, 0, 0, KEY_CODES.indexOf(code), 0, 0, 0);
+	}
+
+	/**
+	 * A key's press and release, as three.js's controls hear its `keydown`, with the modifier keys
+	 * that are held.
+	 */
+	press(code: string): void {
+		this.three._onKeyDown({
+			code,
+			shiftKey: this.held.has('ShiftLeft'),
+			ctrlKey: this.held.has('ControlLeft'),
+			metaKey: this.held.has('MetaLeft'),
+			preventDefault() {},
+		});
+		const key = KEY_CODES.indexOf(code);
+		this.ring.write(EVENT_KEY_DOWN, 0, 0, key, 0, 0, 0);
+		this.ring.write(EVENT_KEY_UP, 0, 0, key, 0, 0, 0);
 	}
 
 	/** One frame: null3D's controls read the frame's input, and both cameras update and draw. */
@@ -842,5 +872,221 @@ describe('orbit controls', () => {
 		expect(controls.update(0.5)).toBe(true);
 		// Auto-rotation turns the camera to its left: the azimuth falls.
 		expect(controls.getAzimuthalAngle()).toBeCloseTo(-(2 * Math.PI * 2 * 0.5) / 60, 9);
+	});
+});
+
+describe('orbit controls against three.js: keys, zoom to the pointer, limits and state', () => {
+	const ARROWS = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'];
+
+	it('pan with each arrow key, and turn with each while Shift, Control or Meta is down', () => {
+		for (const kind of ['orbit', 'map'] as const) {
+			const twin = new Twin(kind, [2, 4, 9]);
+			// The last two presses pan the same way, so the target ends away from its start.
+			for (const code of [...ARROWS, 'ArrowLeft', 'ArrowUp']) {
+				twin.press(code);
+				twin.stepAndCompare();
+			}
+			for (const modifier of ['ShiftLeft', 'ControlLeft', 'MetaLeft']) {
+				twin.key(modifier, true);
+				for (const code of ARROWS) {
+					twin.press(code);
+					twin.stepAndCompare();
+				}
+				twin.key(modifier, false);
+				twin.stepAndCompare();
+			}
+			expect(twin.travel().target).toBeGreaterThan(0.1);
+		}
+	});
+
+	it('follow the keys, the key speeds and the enable flags they are given', () => {
+		const twin = new Twin('orbit', [0, 3, 8], {
+			keys: { LEFT: 'KeyA', RIGHT: 'KeyD', UP: 'KeyW', BOTTOM: 'KeyS' },
+			keyPanSpeed: 20,
+			keyRotateSpeed: 3,
+		});
+		for (const code of ['KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyD', 'ArrowLeft']) {
+			twin.press(code);
+			twin.stepAndCompare();
+		}
+		twin.key('ShiftLeft', true);
+		twin.press('KeyA');
+		twin.stepAndCompare();
+		twin.controls.enableRotate = false;
+		twin.three.enableRotate = false;
+		twin.press('KeyD');
+		twin.stepAndCompare();
+		twin.key('ShiftLeft', false);
+		twin.controls.enablePan = false;
+		twin.three.enablePan = false;
+		twin.press('KeyW');
+		twin.stepAndCompare();
+	});
+
+	it('zoom a perspective camera toward the point under the pointer', () => {
+		// Screen-space panning keeps the target in front of the camera. Over the ground, a camera
+		// that looks steeply down moves the target over the ground, and one near level turns back.
+		const cases = [
+			{ kind: 'orbit', position: [0, 2, 8], targetMoves: true },
+			{ kind: 'map', position: [1, 12, 4], targetMoves: true },
+			{ kind: 'map', position: [0, 0.5, 10], targetMoves: false },
+		] as const;
+		for (const { kind, position, targetMoves } of cases) {
+			const twin = new Twin(kind, position, { zoomToCursor: true, minDistance: 2 });
+			for (const [scroll, x, y] of [
+				[-120, 480, 90],
+				[-200, 500, 80],
+				[90, 120, 300],
+				[-600, 200, 200],
+				[-900, 320, 180],
+			] as const) {
+				twin.wheel(scroll, false, [x, y]);
+				twin.stepAndCompare();
+			}
+			twin.wheel(-4, true, [400, 250]);
+			twin.stepAndCompare();
+			expect(twin.travel().camera).toBeGreaterThan(0.5);
+			if (targetMoves) expect(twin.travel().target).toBeGreaterThan(0.01);
+			else expect(twin.travel().target).toBe(0);
+		}
+	});
+
+	it('zoom an orthographic camera toward the point under the pointer, within its zoom limits', () => {
+		const twin = new Twin(
+			'orbit',
+			[3, 5, 9],
+			{ zoomToCursor: true, minZoom: 0.5, maxZoom: 3 },
+			'orthographic',
+		);
+		for (const [scroll, x, y] of [
+			[-300, 100, 300],
+			[-400, 600, 40],
+			[-900, 320, 180],
+			[700, 50, 50],
+			[2000, 600, 300],
+		] as const) {
+			twin.wheel(scroll, false, [x, y]);
+			twin.stepAndCompare();
+		}
+		expect(twin.travel().target).toBeGreaterThan(0.01);
+	});
+
+	it('zoom toward the point between two fingers', () => {
+		const twin = new Twin('orbit', [0, 2, 8], { zoomToCursor: true });
+		const a = finger(twin, 41, true);
+		const b = finger(twin, 42, false);
+		a.down(150, 120);
+		b.down(260, 160);
+		twin.stepAndCompare();
+		// One finger moves in each frame, so the point between them is the one three.js sees.
+		for (let k = 1; k <= 6; k++) {
+			b.move(260 + 10 * k, 160 + 4 * k);
+			twin.stepAndCompare();
+		}
+		a.up(150, 120);
+		b.up(320, 184);
+		twin.stepAndCompare();
+		expect(twin.travel().target).toBeGreaterThan(0.01);
+	});
+
+	it('keep the target within its radius limits around the cursor', () => {
+		const far = new Twin('orbit', [0, 2, 8], { maxTargetRadius: 1.5 });
+		far.drag(320, 180, 12, 5, 12, RIGHT);
+		expect(Math.hypot(...far.controls.target)).toBeCloseTo(1.5, 6);
+		const near = new Twin('orbit', [6, 2, 8], {
+			target: [3, 0, 0],
+			cursor: [2, 0, 0],
+			minTargetRadius: 1,
+		});
+		near.drag(320, 180, -14, 0, 12, RIGHT);
+		near.drag(320, 180, 14, 0, 12, RIGHT);
+		const [x, y, z] = near.controls.target;
+		expect(Math.hypot(x - 2, y, z)).toBeGreaterThanOrEqual(1 - 1e-9);
+	});
+
+	it('save their state and reset to it, or to the start', () => {
+		for (const lens of ['perspective', 'orthographic'] as const) {
+			const twin = new Twin('orbit', [2, 3, 7], {}, lens);
+			twin.drag(320, 180, 7, 3, 6, LEFT);
+			twin.wheel(-200);
+			twin.stepAndCompare();
+			twin.controls.reset();
+			twin.three.reset();
+			expect(twin.differences()).toEqual([]);
+			twin.drag(320, 180, 7, 3, 6, LEFT);
+			twin.drag(320, 180, 5, -4, 6, RIGHT);
+			twin.wheel(-300);
+			twin.stepAndCompare();
+			twin.controls.saveState();
+			twin.three.saveState();
+			twin.drag(320, 180, -9, 6, 8, LEFT);
+			twin.wheel(400);
+			twin.stepAndCompare();
+			twin.controls.reset();
+			twin.three.reset();
+			expect(twin.differences()).toEqual([]);
+			twin.idle(2);
+		}
+	});
+});
+
+describe('orbit controls: keys', () => {
+	/** Controls whose camera starts on +Z, so the azimuth counts their turns to the left. */
+	function keyed() {
+		const input = new ScriptedInput(WIDTH, HEIGHT);
+		const camera = new StandInCamera();
+		camera.setPosition(0, 0, 5);
+		const controls = createOrbitControls(input.context, camera as unknown as Perspective);
+		const write = (code: string, down: boolean) =>
+			input.ring.write(
+				down ? EVENT_KEY_DOWN : EVENT_KEY_UP,
+				0,
+				0,
+				KEY_CODES.indexOf(code),
+				0,
+				0,
+				0,
+			);
+		return { input, controls, write };
+	}
+	const TURN = (2 * Math.PI) / HEIGHT;
+
+	it('take no keys until listenToKeyEvents, and none after stopListenToKeyEvents', () => {
+		const { input, controls, write } = keyed();
+		write('ShiftLeft', true);
+		write('ArrowLeft', true);
+		write('ArrowLeft', false);
+		input.beginFrame();
+		expect(controls.update(STEP)).toBe(false);
+		controls.listenToKeyEvents();
+		write('ArrowLeft', true);
+		write('ArrowLeft', false);
+		input.beginFrame();
+		expect(controls.update(STEP)).toBe(true);
+		expect(controls.getAzimuthalAngle()).toBeCloseTo(-TURN, 12);
+		controls.stopListenToKeyEvents();
+		write('ArrowLeft', true);
+		write('ArrowLeft', false);
+		input.beginFrame();
+		expect(controls.update(STEP)).toBe(false);
+	});
+
+	it('repeat a held key after half a second, 30 times a second', () => {
+		const { input, controls, write } = keyed();
+		controls.listenToKeyEvents();
+		write('ShiftLeft', true);
+		write('ArrowLeft', true);
+		// The press steps once. Held, the key repeats at 0.5 s, then every thirtieth of a second.
+		const steps: number[] = [];
+		for (let frame = 0; frame < 7; frame++) {
+			input.beginFrame();
+			controls.update(0.125);
+			steps.push(Math.round(-controls.getAzimuthalAngle() / TURN));
+		}
+		expect(steps).toEqual([1, 1, 1, 1, 2, 5, 9]);
+		write('ArrowLeft', false);
+		input.beginFrame();
+		controls.update(0.125);
+		expect(Math.round(-controls.getAzimuthalAngle() / TURN)).toBe(9);
 	});
 });

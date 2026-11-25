@@ -11,9 +11,12 @@ import {
 	refusedSource,
 	ruleFor,
 } from './agent-rules.js';
+import { templateNames } from './create.js';
 
-/** The template's own files, which must follow every rule that the hook checks. */
-const TEMPLATE = fileURLToPath(new URL('../templates/empty/', import.meta.url));
+/** The templates' own files, which must follow every rule that the hook checks. */
+const TEMPLATES = fileURLToPath(new URL('../templates/', import.meta.url));
+/** Every template that ships with the command. */
+const TEMPLATE_NAMES = templateNames(TEMPLATES);
 
 /** The folders that the tests made, removed after each test. */
 const roots: string[] = [];
@@ -58,7 +61,7 @@ describe('the rule list', () => {
 			'no-sleep',
 			'no-kill-by-name',
 			'no-log-follow',
-			'no-planned-api',
+			'no-unknown-api',
 			'no-allocation-in-onupdate',
 			'no-dom-in-sketch',
 		]);
@@ -72,10 +75,12 @@ describe('the rule list', () => {
 		expect(ruleFor('no-such-rule')).toBeUndefined();
 	});
 
-	it('lists the same rules in the template AGENTS.md', () => {
-		const agents = readFileSync(join(TEMPLATE, 'AGENTS.md'), 'utf8');
-		for (const rule of RULES) {
-			expect(agents).toContain(`\`${rule.id}\` | ${rule.action} |`);
+	it("lists the same rules in each template's AGENTS.md", () => {
+		for (const name of TEMPLATE_NAMES) {
+			const agents = readFileSync(join(TEMPLATES, name, 'AGENTS.md'), 'utf8');
+			for (const rule of RULES) {
+				expect(agents, name).toContain(`\`${rule.id}\` | ${rule.action} |`);
+			}
 		}
 	});
 
@@ -249,7 +254,7 @@ describe('no-log-follow', () => {
 	});
 });
 
-describe('no-planned-api', () => {
+describe('no-unknown-api', () => {
 	/** A folder that holds an installed engine with one exported name. */
 	function engineRoot() {
 		const root = tempRoot();
@@ -268,10 +273,10 @@ describe('no-planned-api', () => {
 
 	it('flags an import that the installed engine does not export', () => {
 		const declarations = engineRoot();
-		const planned =
+		const unknown =
 			"import { createEngine, createWorld } from '@null3d/engine';\nawait createEngine();\n";
-		expect(sourceRule('src/page.ts', planned, declarations)).toBe('no-planned-api');
-		expect(refusedSource('src/page.ts', planned, { declarations })?.message).toContain(
+		expect(sourceRule('src/page.ts', unknown, declarations)).toBe('no-unknown-api');
+		expect(refusedSource('src/page.ts', unknown, { declarations })?.message).toContain(
 			'createWorld',
 		);
 	});
@@ -394,12 +399,18 @@ describe('no-dom-in-sketch', () => {
 	});
 });
 
-describe('the template', () => {
-	it('passes every rule with the engine missing', () => {
-		const sketch = readFileSync(join(TEMPLATE, 'src/sketch.ts'), 'utf8');
-		const page = readFileSync(join(TEMPLATE, 'src/page.ts'), 'utf8');
-		expect(sourceRule('src/sketch.ts', sketch)).toBeNull();
-		expect(sourceRule('src/page.ts', page)).toBeNull();
+describe('the templates', () => {
+	it('ship more than the empty template', () => {
+		expect(TEMPLATE_NAMES).toEqual(['empty', 'game', 'product']);
+	});
+
+	it('pass every rule with the engine missing', () => {
+		for (const name of TEMPLATE_NAMES) {
+			const sketch = readFileSync(join(TEMPLATES, name, 'src/sketch.ts'), 'utf8');
+			const page = readFileSync(join(TEMPLATES, name, 'src/page.ts'), 'utf8');
+			expect(sourceRule('src/sketch.ts', sketch), name).toBeNull();
+			expect(sourceRule('src/page.ts', page), name).toBeNull();
+		}
 	});
 
 	it('passes its own AGENTS.md rules as a command', () => {

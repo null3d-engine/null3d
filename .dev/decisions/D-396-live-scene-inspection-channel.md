@@ -1,4 +1,4 @@
-# D-394: The live scene inspection channel
+# D-396: The live scene inspection channel
 
 Status: decided, and built. Development builds carry a request and response channel between the page and the sketch worker, and the scene lists every live object. The `mcp` command speaks the Model Context Protocol over the channel, and the in-page inspector is a panel of its own. A production build holds none of the channel.
 

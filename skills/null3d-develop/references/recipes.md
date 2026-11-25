@@ -1,26 +1,26 @@
 # null3D recipes
 
-Each recipe states the goal, gives the code, explains why it is written that way, and names the docs pages to read. Code runs in `sketch.ts` unless it says `page.ts`. A number in parentheses, such as (0.2), names the roadmap step that adds the part, and no number means step 0.1. The first release, null3D 0.1.0, holds steps 0.1, 0.2 and 0.3; "not built yet" marks a part that the engine lacks today. Check the docs status before using a part.
+Each recipe states the goal, gives the code, explains why it is written that way, and names the docs pages to read. Code runs in `sketch.ts` unless it says `page.ts`.
 
 ## Contents
 
 1. Start a new project
 2. Orbit camera around a model
-3. Load a glTF model and play its animations (0.2)
+3. Load a glTF model and play its animations
 4. Thousands of moving objects
 5. Pool short-lived objects such as bullets
-6. Click to select, with an outline (0.2)
-7. HTML labels above objects (0.2)
+6. Click to select, with an outline
+7. HTML labels above objects
 8. Loading screen with progress and warm-up
 9. HTML settings panel that controls the scene
-10. Day and night: sun, sky and environment (0.2)
+10. Day and night: sun, sky and environment
 11. Physics with a library in the sketch worker
-12. Minimap with a second camera (0.2)
+12. Minimap with a second camera
 13. Screenshots
 14. Video on a surface, with frames from the page
-15. A screen drawn on a canvas (0.2)
-16. Custom full-screen effect (0.2)
-17. Very large worlds (0.2)
+15. A screen drawn on a canvas
+16. Custom full-screen effect
+17. Very large worlds
 18. Move a player with keys, a gamepad or touch
 19. Camera that follows a moving object
 20. Water and mirror floors with a reflection
@@ -28,10 +28,23 @@ Each recipe states the goal, gives the code, explains why it is written that way
 22. Terrain from a height field
 23. Outdoor land with an edge the camera never sees
 24. Trees that sway in the wind
-25. A game whose simulation a server replays (0.3)
+25. A game whose simulation a server replays
 26. Sound that fits the scene
 
 ## 1. Start a new project
+
+`bunx @null3d/cli create` writes a whole project, with the agent rules and hook. Pick the template closest to the request (`getting-started/project-structure`):
+
+- `empty`: a scene of your own.
+- `product`: a product viewer.
+- `game`: a game that keys, a gamepad and touch control.
+
+```sh
+bunx @null3d/cli create my-project --template product
+cd my-project && bun install
+```
+
+To add null3D to an existing Vite project instead, install the packages yourself:
 
 ```sh
 mkdir my-project && cd my-project
@@ -47,7 +60,7 @@ import null3d from '@null3d/vite-plugin';
 export default defineConfig({ plugins: [null3d()] });
 ```
 
-Add `index.html` with a canvas that CSS sizes and a module script for `page.ts`. Then write `page.ts` and `sketch.ts` as SKILL.md section 2 shows. Run `bunx vite`, and open the address it prints. The Vite plugin sends the cross-origin isolation headers, so the threaded build runs. It also compiles the sketch for its worker and the WGSL in your code. It caches each compiled shader in `node_modules/.cache/null3d-shaders`, so a later build is fast. `bunx @null3d/cli create` (0.3, not built yet) makes these files from a template. Docs: `getting-started/install`, `getting-started/first-scene`, `getting-started/hosting`.
+Add `index.html` with a canvas that CSS sizes and a module script for `page.ts`. Then write `page.ts` and `sketch.ts` as SKILL.md section 2 shows. Run `bunx vite`, and open the address it prints. The Vite plugin sends the cross-origin isolation headers, so the threaded build runs. It also compiles the sketch for its worker and the WGSL in your code. It caches each compiled shader in `node_modules/.cache/null3d-shaders`, so a later build is fast. `bunx @null3d/cli create my-game` makes these files from a template. Docs: `getting-started/install`, `getting-started/first-scene`, `getting-started/hosting`.
 
 A game starts in either build. Do not gate Play on `crossOriginIsolated`. The engine falls back to the single-threaded build by itself. Read `engine.capabilities.threaded` to record the build a run used.
 
@@ -74,7 +87,7 @@ export default defineSketch(async (ctx) => {
 
 Controls read forwarded input inside the sketch worker, so the sketch adds no DOM listeners. On the page, give the canvas `touch-action: none` in its CSS, and stop its wheel events from scrolling and zooming the page: `canvas.addEventListener('wheel', (e) => e.preventDefault(), { passive: false })`. Damping only works when `update(dt)` runs every frame, and it takes the same time at every frame rate. Docs: `api/controls`.
 
-## 3. Load a glTF model and play its animations (0.2)
+## 3. Load a glTF model and play its animations
 
 ```ts
 const heroPrefab = await assets.loadGltf('/models/hero.glb');  // parsed in a worker
@@ -97,7 +110,7 @@ return {
 
 For a crowd, start each copy at its own time, `copy.animator().play('walk', { time: k * 0.37 })`, so the copies do not step in time. Give the copies the camera sees from far a longer pose interval with `copy.animator().setUpdateInterval(quality.governor.farAnimationInterval)`, and hold the near ones at 1. The job workers then sample and blend the far copies less often. For a jump or an attack, `anim.crossFade('jump', 0.15, { loop: false })` takes over the layer, and `anim.playBlend(...)` with a `fade` brings the blend back at the step it had. To switch a walk and a run without sliding the feet through a mix of both gaits, give the play `transition: 'inertial'`. It samples only the new clip, and the pose that the layer leaves eases into it at its own speed. It needs a fade above 0. A new scene should use it for `play` with a fade. `crossFade` always cross-fades, so it shows the mix of both clips while the fade runs. Clips side by side at weights you set come from `anim.play(name, { weight })` and `anim.setWeight(name, w)`. To aim a walking character, turn its spine chain toward the target with `anim.lookAt(target, AIM, weight)`, where `AIM` is a frozen `{ joints: ['Spine', 'Chest', 'Neck'], limit }`. Do not turn the whole object to aim. `anim.setJointRotation(joint, q, weight)` and `anim.addJointRotation(joint, q, weight)` turn one joint on top of the clips. They hold until `anim.clearJoint(joint)`, and calling them every frame allocates nothing.
 
-The joints of a model's skins, and every node that its clips move, become the copy's skeleton, not objects. So `hero.find('Hips')` finds nothing, and a crowd costs one object per mesh. A mesh that the file puts under a bone, such as a sword in a hand, follows its joint; hide it with `sword.setVisible(false)`. The job workers put every clip at the engine's key rate while `loadGltf` waits, so no frame stalls. Every copy shares the prefab's meshes, materials and textures, so load a model once and instantiate it many times. For hundreds of still props, `scene.createInstances(prefab, count)` draws them with batches, and one row places a whole copy. Optimize models first with `bunx @null3d/cli assets optimize models/ public/models/` (0.2): integer vertices, clips at the engine's key rate, and KTX2 textures in a `textures` folder beside each `.glb`. Its clips load with a copy, not a resample. In a Vite project, `import heroUrl from './models/hero.glb?optimized'` (0.2) runs the same steps, cached, and gives the URL for `loadGltf`. Cross-fade or play a blend on state changes only; calling `play` every frame restarts blending work, while `setBlend` and `setWeight` cost nothing. Keep a switch's options and blend points in `Object.freeze` constants: the animator reads a frozen object once, so the switch allocates nothing. A face's morph targets load with the model. The call `(hero.find('Face') as Mesh).setMorphWeight('Smile', 0.8)` sets a weight by name. The file's clips animate the weights too, blended with the ones you set. Set weights in `onUpdate` freely; it allocates nothing. Docs: `api/assets`, `api/animation`, `guides/assets-pipeline`.
+The joints of a model's skins, and every node that its clips move, become the copy's skeleton, not objects. So `hero.find('Hips')` finds nothing, and a crowd costs one object per mesh. A mesh that the file puts under a bone, such as a sword in a hand, follows its joint; hide it with `sword.setVisible(false)`. The job workers put every clip at the engine's key rate while `loadGltf` waits, so no frame stalls. Every copy shares the prefab's meshes, materials and textures, so load a model once and instantiate it many times. For hundreds of still props, `scene.createInstances(prefab, count)` draws them with batches, and one row places a whole copy. Optimize models first with `bunx @null3d/cli assets optimize models/ public/models/`: integer vertices, clips at the engine's key rate, and KTX2 textures in a `textures` folder beside each `.glb`. Its clips load with a copy, not a resample. In a Vite project, `import heroUrl from './models/hero.glb?optimized'` runs the same steps, cached, and gives the URL for `loadGltf`. Cross-fade or play a blend on state changes only; calling `play` every frame restarts blending work, while `setBlend` and `setWeight` cost nothing. Keep a switch's options and blend points in `Object.freeze` constants: the animator reads a frozen object once, so the switch allocates nothing. A face's morph targets load with the model. The call `(hero.find('Face') as Mesh).setMorphWeight('Smile', 0.8)` sets a weight by name. The file's clips animate the weights too, blended with the ones you set. Set weights in `onUpdate` freely; it allocates nothing. Docs: `api/assets`, `api/animation`, `guides/assets-pipeline`.
 
 ## 4. Thousands of moving objects
 
@@ -181,7 +194,7 @@ export default defineSketch(({ scene, geometry, materials, input }) => {
 
 No objects are created or destroyed during play. `setActiveCount` draws only the live rows, so keep them at the front of the arrays. Unlit bullets need no lights. Docs: `concepts/instances`.
 
-## 6. Click to select, with an outline (0.2)
+## 6. Click to select, with an outline
 
 ```ts
 post.set({ outline: { color: '#ffcc00', width: 3 } });   // a crisp line, width in CSS pixels
@@ -254,7 +267,7 @@ if (input.wasPressed('Mouse0')) {
 
 The hit carries `uv` and `hasUv` as a raycast's hit does. Repeated textures give values past 1, and a material's `uvTransform` leaves them alone. A scene with a whole shader of your own answers its picks with a raycast instead. A custom material with a vertex offset is the exception: the engine's pick build repeats the offset, so that surface is picked where it draws. A blend, a transmissive material, a sprite, a point or a line answers with a raycast too. A raycast tests triangles, so it ignores masks. A pick that waits for its read when the browser takes the GPU away rejects with E1436: ask again on the new device. Docs: `api/raycast#pixel-exact-picking`.
 
-## 7. HTML labels above objects (0.2)
+## 7. HTML labels above objects
 
 ```ts
 // sketch.ts
@@ -342,9 +355,9 @@ try {
 ```
 
 - A percentage comes from measured work. `onProgress` reports the engine core's bytes, and `assets.onProgress` reports the scene's files. A phase with no total has no percentage: keep its bar moving instead of taking a number from a timer or from the stage's place in the start. The label names the phase, so the number always measures the work that it names. The figure never falls within a phase, but it can fall across the whole start, because a later phase that counts starts a new measure.
-- `onProgress` reports `memory-wait` when the browser has refused the engine's memory for 10 s (0.2). The engine then tries for about 35 s more before E1109, so show a "taking longer than usual" message.
+- `onProgress` reports `memory-wait` when the browser has refused the engine's memory for 10 s. The engine then tries for about 35 s more before E1109, so show a "taking longer than usual" message.
 - Pass `onSketchMessage` to `createEngine`. A handler added after `createEngine` resolves hears the setup's messages only once setup is over, which is too late for a progress bar.
-- Remove the loading screen when `engine.firstFrame` resolves, not when setup ends. Until the GPU finishes the first frame, the canvas is blank. When the engine stops drawing before that frame, `engine.firstFrame` rejects with the failure that ended the frames (0.3): show its message on the loading screen.
+- Remove the loading screen when `engine.firstFrame` resolves, not when setup ends. Until the GPU finishes the first frame, the canvas is blank. When the engine stops drawing before that frame, `engine.firstFrame` rejects with the failure that ended the frames: show its message on the loading screen.
 - `createEngine` rejects when the browser cannot run the engine. Examples are Safari before 18 and every iPhone or iPad browser before iOS 18 (E1306), and a browser without WebAssembly SIMD (E1303). Show a message or a still image in place of the canvas.
 - `warmUp` resolves once every pipeline that the scene needs is built, hidden objects included. For a later loading stage, create its objects hidden, await it, then show them, so nothing appears late or stalls a frame. The Godot browser port measured seconds of such stalls.
 
@@ -380,7 +393,7 @@ export default defineSketch(({ scene, geometry, materials, page }) => {
 
 UI libraries need the DOM, so they live on the page. Each change sends one message, and the sketch keeps the value until the next one. Docs: `guides/ui-overlays`, `api/page`.
 
-## 10. Day and night: sun, sky and environment (0.2)
+## 10. Day and night: sun, sky and environment
 
 ```ts
 import { timeOfDay } from '@null3d/engine';
@@ -450,7 +463,7 @@ return {
 
 WebAssembly physics libraries run in workers. The fixed step keeps the simulation stable at any frame rate. Check the library's own docs for allocation: some return new objects from `translation()`; prefer bulk-read APIs where the library has them. Docs: `guides/physics`. Physics in the sketch only moves what the player sees. A game whose server replays its simulation keeps the physics that decides a result in that simulation (recipe 25).
 
-## 12. Minimap with a second camera (0.2)
+## 12. Minimap with a second camera
 
 ```ts
 const MAP = 1 << 2;                                    // layer for map-only markers
@@ -477,7 +490,7 @@ shotButton.onclick = async () => {
 
 The thread that draws reads the frame back and encodes it, so the canvas needs no `preserveDrawingBuffer`. After `destroy()` the call fails with E1414. For tests, use `bunx @null3d/cli shot` or hold-mode tests instead (`references/testing-and-debugging.md`). Docs: `api/engine`.
 
-## 14. Video on a surface (0.3)
+## 14. Video on a surface
 
 A video element lives on the page. `engine.registerVideo` follows it there, and `textures.fromVideo` in the sketch shows it. The page sends one `ImageBitmap` per frame that the video presents, scaled to `maxSize`. The engine closes the image once it is on the GPU:
 
@@ -505,7 +518,7 @@ export default defineSketch(({ scene, geometry, materials, textures }) => {
 
 Keep a frame within the preset's upload budget, 2 MiB on Low: a frame larger than that drops the frames that come during its upload. A video with sound needs a click before it plays. `texture.destroy()` or the function that `registerVideo` returns stops the frames. A cross-origin video needs `video.crossOrigin = 'anonymous'` and the server's CORS headers. Docs: `guides/video-textures`, `api/textures`.
 
-## 15. A screen drawn on a canvas (0.2)
+## 15. A screen drawn on a canvas
 
 An `OffscreenCanvas` is a texture, and a refresh uploads only the rectangle that changed. A score board is 512 square texels, and the score's rectangle refreshes at most 30 times a second.
 
@@ -527,7 +540,7 @@ The rectangle counts from the canvas's top-left corner. `fromCanvas` puts the ca
 
 The screens example add-on in `examples/addons/screens` wraps this pattern: `createScreen` draws its first picture in the setup, adds a refresh rate per screen, an LCD look by distance, a boot glitch, and `screen.pointOf(event)` for a click on the canvas. A screen's mesh is a plane with texture coordinates, so a click on it lands on a canvas pixel without plane maths. Docs: `guides/screens`.
 
-## 16. Custom full-screen effect (0.2)
+## 16. Custom full-screen effect
 
 ```ts
 const pixelate = /* wgsl */ `
@@ -545,7 +558,7 @@ post.setEffectUniform(blocks, 'size', 8);
 
 The effect runs on HDR color before bloom and the tone curve. The engine joins an effect that reads only its own pixel into the pass of the effect before it, and folds the last pass into the final pass when bloom and FXAA are off, so per-pixel looks can stay separate effects. An effect that calls `effectDepth` or `effectDistance` reads the scene's depth. Docs: `guides/custom-passes`, `api/post`, `references/shaders.md` section 6.
 
-## 17. Very large worlds (0.2)
+## 17. Very large worlds
 
 ```ts
 // page.ts
@@ -685,7 +698,7 @@ export default defineSketch(({ scene, geometry, materials, textures, render }) =
 });
 ```
 
-The engine lights `s.reflection` with the material's Fresnel, so water reflects little straight down and much at a low angle. For a mirror floor, drop the ripples and give the material `metalness: 1, roughness: 0` (a dark polished floor keeps `metalness: 0`). The pass draws the sky, the sun's light and shadows, and the point and spot lights that it sees. The preset sets its size (`quality.set({ reflectionScale })`): pass `scale: 1` for a sharp mirror, or `every: 2` to draw it in every other frame. Depth tint, foam and soft shores: read the depth behind the sheet with `sceneInputs: ['sceneDepth']` (0.3). The water's depth is the gap between the sheet and the surface behind it: convert `input.fragCoord.z` with `engine_frame.camera_range` and subtract it from `sceneDistance(uv)`. Fade the alpha over the end of that gap and the shore ends softly. Or use the height-field water recipe in `guides/custom-passes`. For a river or a lake, use `createWater` from `@null3d/water` instead: one shape gives either body, with waves that the current carries, foam, a soft shore or a bed of the shape's own, caustics, a reflection whose cadence follows the preset, and `createUnderwater` for the view from below. A slow stream takes a small `waveAmplitude`, which leaves the surface nearly flat while its fine ripples stay. A pool, a basin or a fountain is small beside a long swell. Give such a body `windRipple`, and a gust shows as short crests of its own rather than one flat tilt of the whole surface. Build water by hand only for a shape the add-on does not take. A sheet that reads the depth takes up to seven textures of its own, so the mirror joins it. Docs: `api/water`, `api/render`, `shaders/surface-functions`.
+The engine lights `s.reflection` with the material's Fresnel, so water reflects little straight down and much at a low angle. For a mirror floor, drop the ripples and give the material `metalness: 1, roughness: 0` (a dark polished floor keeps `metalness: 0`). The pass draws the sky, the sun's light and shadows, and the point and spot lights that it sees. The preset sets its size (`quality.set({ reflectionScale })`): pass `scale: 1` for a sharp mirror, or `every: 2` to draw it in every other frame. Depth tint, foam and soft shores: read the depth behind the sheet with `sceneInputs: ['sceneDepth']`. The water's depth is the gap between the sheet and the surface behind it: convert `input.fragCoord.z` with `engine_frame.camera_range` and subtract it from `sceneDistance(uv)`. Fade the alpha over the end of that gap and the shore ends softly. Or use the height-field water recipe in `guides/custom-passes`. For a river or a lake, use `createWater` from `@null3d/water` instead: one shape gives either body, with waves that the current carries, foam, a soft shore or a bed of the shape's own, caustics, a reflection whose cadence follows the preset, and `createUnderwater` for the view from below. A slow stream takes a small `waveAmplitude`, which leaves the surface nearly flat while its fine ripples stay. A pool, a basin or a fountain is small beside a long swell. Give such a body `windRipple`, and a gust shows as short crests of its own rather than one flat tilt of the whole surface. Build water by hand only for a shape the add-on does not take. A sheet that reads the depth takes up to seven textures of its own, so the mirror joins it. Docs: `api/water`, `api/render`, `shaders/surface-functions`.
 
 ## 21. Fire, smoke and sparks with particles
 
@@ -903,7 +916,7 @@ To cover a hill with grass, use `@null3d/grass`. Await `createGrass(ctx, { heigh
 
 Docs: `api/wind` (the sampling blocks and the vertex offset), `api/impostors`, `concepts/instances`, `api/grass`.
 
-## 25. A game whose simulation a server replays (0.3)
+## 25. A game whose simulation a server replays
 
 The rules run in a simulation that steps by ticks from a seed and an input log, which a server replays to check a score. The simulation takes its math from the maths entry, and builds the helpers that need a sine or an exponential on an exact math library:
 
@@ -950,7 +963,7 @@ page.onMessage((name, data) => {
 // In onUpdate: ship.setPosition(position[0], position[1], position[2]); ship.setRotation(heading[0], heading[1], heading[2], heading[3]);
 ```
 
-- Never import `@null3d/engine` in the simulation. Its bundle holds engine code with a top-level `FinalizationRegistry`, so a replaying engine's scan refuses it. A bundler that keeps namespaces whole also brings `Math.sin` and `Math.random` (`references/testing-and-debugging.md`, section 8).
+- Never import `@null3d/engine` in the simulation. Its bundle holds engine code with a top-level `FinalizationRegistry`, so a replaying engine's scan refuses it. A bundler that keeps namespaces whole also brings `Math.sin` and `Math.random` (`references/testing-and-debugging.md`, section 7).
 - The sub-paths `@null3d/engine/math/vec3`, `/quat`, `/mat4` and `/math` hold the exact helpers. `createMath` builds `quat.setAxisAngle`, `fromEuler`, `rotateX`, `rotateY`, `rotateZ` and `slerp`, `vec3.angle` and `math.damp`. The random helpers and `color` are drawing only.
 - Input, pointer events on objects, raycasts, controls and physics in the sketch are not in the input log. Anything that decides a result runs in the simulation: hit-test the recorded pointer against the simulation's own shapes, with its own camera.
 - The sketch draws the state it gets, with the main entry's helpers. It never computes the state again: an exact library and `Math` can differ in the last bit.

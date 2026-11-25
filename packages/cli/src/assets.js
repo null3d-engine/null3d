@@ -24,6 +24,11 @@ const COMMANDS = {
 		summary: 'Makes a normal map from a height map, such as a bump map',
 		load: () => import('./assets/normal-from-bump.js'),
 	},
+	impostor: {
+		summary:
+			"Bakes a model's impostor atlases ahead of time, for the @null3d/impostors add-on's cards",
+		load: () => import('./assets/impostor.js'),
+	},
 	env: {
 		summary:
 			'Makes an environment map from an HDR image: a prefiltered cube map and its diffuse light',

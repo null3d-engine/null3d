@@ -240,6 +240,70 @@ export class FrameCameras {
 	}
 
 	/**
+	 * Writes the ray from `camera` as it stands through the point (`x`, `y`) into `out`, for a view
+	 * that draws into `rect` of the canvas: x, y, width and height as fractions of the canvas from
+	 * its top-left corner. The point counts in CSS pixels from the canvas's top-left corner, and the
+	 * lens takes the rectangle's shape, as the view's frame draws it. A camera that is gone throws
+	 * the core's error, naming `call`.
+	 */
+	viewRay(
+		camera: FrameLens,
+		rect: readonly number[],
+		x: number,
+		y: number,
+		out: Ray,
+		call: string,
+	): void {
+		const e = this.stand(camera, call);
+		const { point } = this;
+		point[0] = x - (rect[0] as number) * (e[CSS_WIDTH] as number);
+		point[1] = y - (rect[1] as number) * (e[CSS_HEIGHT] as number);
+		inRect(e, rect);
+		writeRay(e, 0, point, out);
+	}
+
+	/**
+	 * Writes where `point` lies on the canvas for `camera` as it stands, drawn into `rect` of the
+	 * canvas, into `out`: x and y in CSS pixels from the canvas's top-left corner, then the distance
+	 * in front of the camera along its view. The lens takes the rectangle's shape.
+	 */
+	viewToScreen(
+		camera: FrameLens,
+		rect: readonly number[],
+		point: Vec3Like,
+		out: Vec3Like,
+		call: string,
+	): void {
+		const e = this.stand(camera, call);
+		const left = (rect[0] as number) * (e[CSS_WIDTH] as number);
+		const top = (rect[1] as number) * (e[CSS_HEIGHT] as number);
+		inRect(e, rect);
+		const view = this.view;
+		writeView(e, 0, view);
+		projectPoint(view, point, out);
+		out[0] = left + (((out[0] as number) + 1) / 2) * (e[CSS_WIDTH] as number);
+		out[1] = top + ((1 - (out[1] as number)) / 2) * (e[CSS_HEIGHT] as number);
+	}
+
+	/**
+	 * True when the point (`x`, `y`) in CSS pixels from the canvas's top-left corner lies in `rect`
+	 * of the canvas as it is now, its left and top edges included.
+	 */
+	holds(rect: readonly number[], x: number, y: number): boolean {
+		const { slotFloats } = this.control;
+		const width = slotFloats[Slot.CanvasCssWidth] as number;
+		const height = slotFloats[Slot.CanvasCssHeight] as number;
+		const left = (rect[0] as number) * width;
+		const top = (rect[1] as number) * height;
+		return (
+			x >= left &&
+			y >= top &&
+			x < left + (rect[2] as number) * width &&
+			y < top + (rect[3] as number) * height
+		);
+	}
+
+	/**
 	 * Writes the projection of `camera` as it stands, on a canvas of `width` by `height` device
 	 * pixels, into `view` (`VIEW_FLOATS` numbers), for `projectPoint`. Returns false, and writes
 	 * nothing, when the camera is gone.
@@ -287,6 +351,19 @@ export class FrameCameras {
 		entry[at + CSS_HEIGHT] = slotFloats[Slot.CanvasCssHeight] as number;
 		entry.set(this.matrix, at + MATRIX);
 	}
+}
+
+/**
+ * Shrinks the canvas of the entry at 0 to the rectangle `rect` of it, in device and in CSS pixels,
+ * so the lens takes the rectangle's shape, as a view's frame builds its projection from it.
+ */
+function inRect(e: Float64Array, rect: readonly number[]): void {
+	const width = rect[2] as number;
+	const height = rect[3] as number;
+	e[WIDTH] = (e[WIDTH] as number) * width;
+	e[HEIGHT] = (e[HEIGHT] as number) * height;
+	e[CSS_WIDTH] = (e[CSS_WIDTH] as number) * width;
+	e[CSS_HEIGHT] = (e[CSS_HEIGHT] as number) * height;
 }
 
 /** True when the ring's entry at `at` holds the same view as `view`, whatever their frames. */

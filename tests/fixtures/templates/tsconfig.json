@@ -1,0 +1,13 @@
+{
+	"extends": "../../../tsconfig.web.base.json",
+	"compilerOptions": {
+		"types": ["@webgpu/types"],
+		"noUncheckedIndexedAccess": false,
+		"paths": {
+			"@null3d/engine": ["../../../packages/engine/src/index.ts"],
+			"@null3d/controls": ["../../../packages/controls/src/index.ts"],
+			"@null3d/geometry": ["../../../packages/geometry/src/index.ts"]
+		}
+	},
+	"include": ["../../../packages/cli/templates/*/src/*.ts"]
+}
