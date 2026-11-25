@@ -265,7 +265,7 @@ if (input.wasPressed('Mouse0')) {
 }
 ```
 
-The hit carries `uv` and `hasUv` as a raycast's hit does. Repeated textures give values past 1, and a material's `uvTransform` leaves them alone. A scene with a whole shader of your own answers its picks with a raycast instead. A custom material with a vertex offset is the exception: the engine's pick build repeats the offset, so that surface is picked where it draws. A blend, a transmissive material, a sprite, a point or a line answers with a raycast too. A raycast tests triangles, so it ignores masks. A pick that waits for its read when the browser takes the GPU away rejects with E1436: ask again on the new device. Docs: `api/raycast#pixel-exact-picking`.
+The hit carries `uv` and `hasUv` as a raycast's hit does. Repeated textures give values past 1, and a material's `uvTransform` leaves them alone. A scene with a custom material that has no vertex offset, such as your own whole shader, answers its picks with a raycast. So does a masked custom material. A custom material with a vertex offset is picked where it draws, because the engine's pick build repeats the offset. A material with `alphaMode: 'hash'`, a blend, a transmissive material, a sprite, a point or a line answers with a raycast too. A raycast tests triangles, so it ignores masks. A pick that waits for its read when the browser takes the GPU away rejects with E1436: ask again on the new device. Docs: `api/raycast#pixel-exact-picking`.
 
 ## 7. HTML labels above objects
 

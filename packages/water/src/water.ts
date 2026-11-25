@@ -161,8 +161,9 @@ export interface WaterOptions {
 	 */
 	readonly layers?: number;
 	/**
-	 * The reflection's size as a share of the render size each way: 1, 0.5 or 0.25. It is the render
-	 * size by default. A smaller share softens the reflection and costs less.
+	 * The reflection's size as a share of the render size each way: 1, 0.5 or 0.25. By default it
+	 * follows the quality preset's `reflectionScale`. A smaller share softens the reflection and
+	 * costs less.
 	 */
 	readonly reflectionScale?: 1 | 0.5 | 0.25;
 	/** How fine the surface's mesh is, for the bodies that give no detail of their own. */

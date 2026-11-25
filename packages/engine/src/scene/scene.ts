@@ -222,8 +222,8 @@ export interface MeshOptions extends NodeOptions {
 	/** How the surface looks, from `ctx.materials`. */
 	material: Material;
 	/**
-	 * True makes the mesh cast the shadows of a directional light, like `setCastShadows(true)`. The
-	 * default is false.
+	 * True makes the mesh cast the shadows of the lights that cast them, like `setCastShadows(true)`.
+	 * The default is false.
 	 */
 	castShadows?: boolean;
 	/**
@@ -1747,8 +1747,8 @@ export class Mesh extends Object3D {
 	}
 
 	/**
-	 * Makes the mesh cast the shadows of a directional light, or stop. The default is false. A
-	 * change rebuilds the engine's tables of what it draws, as a new material does.
+	 * Makes the mesh cast the shadows of the lights that cast them, or stop. The default is false.
+	 * A change rebuilds the engine's tables of what it draws, as a new material does.
 	 */
 	setCastShadows(cast: boolean): void {
 		this.setFlag('setCastShadows', C.FLAG_CAST_SHADOWS, cast);

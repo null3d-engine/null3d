@@ -96,7 +96,7 @@ The setters write numbers into the table and make no object, so a sketch may cal
 | tone | 0 to 1, 1 by default | A low-pass filter. 1 plays the file as it is, and 0 keeps only its lows, from about 120 Hz down. Strong wind sounds brighter than a breeze, so raise its tone with its speed. |
 | place | world units | Where the sound comes from. A bed that plays in both ears has no place. |
 
-Each value eases toward the one that the sketch writes, so a change never clicks. The level eases in about 50 ms, and the tone and the rate in about 80 ms. A level or a place that is not a finite number silences the sound until the sketch writes one that is. A rate or a tone that is not one plays the file at its own pitch and brightness.
+Each value eases toward the one that the sketch writes, so a change never clicks. The level, the tone and the rate each ease in about 80 ms. A level or a place that is not a finite number silences the sound until the sketch writes one that is. A rate or a tone that is not one plays the file at its own pitch and brightness.
 
 ## Distance
 

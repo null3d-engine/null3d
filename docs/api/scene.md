@@ -50,6 +50,7 @@ export default defineSketch(({ scene, geometry, materials }) => {
 | `clone(object)` | A copy of an object and of every object below it |
 | `createPerspectiveCamera(options)` | A `PerspectiveCamera` that the scene can draw from |
 | `createOrthographicCamera(options)` | An `OrthographicCamera`, whose view is a box, that the scene can draw from |
+| `createView({ camera, rect })` | A `SceneView` that draws the scene again from another camera, into a rectangle of the canvas: [Multiple views](#multiple-views) |
 | `createDirectionalLight(options)` | A `DirectionalLight`: light from one direction, like sunlight |
 | `createPointLight(options)` | A `PointLight`: light from a point in every direction, out to its range |
 | `createSpotLight(options)` | A `SpotLight`: light from a point in a cone, out to its range |
@@ -57,9 +58,11 @@ export default defineSketch(({ scene, geometry, materials }) => {
 | `createTubeLight(options)` | A `TubeLight`: light from a glowing tube, out to its range: [Lights](lights.md) |
 | `createHemisphereLight(options)` | A `HemisphereLight`: light from the sky above and the ground below |
 | `createAmbientLight(options)` | An `AmbientLight`: the same light on every surface |
+| `createReflectionProbe(options)` | A `ReflectionProbe` that lights the surfaces inside its box with the scene around a point: [Reflection probes](#reflection-probes) |
 | `createSprites(options)` | A batch of camera-facing quads, after an `await`: [Sprites](sprites.md) |
 | `createPoints(options)` | A batch of points, after an `await`: [Points](points.md) |
 | `createLines(options)` | A batch of wide lines, after an `await`: [Lines](lines.md) |
+| `createParticleBuffer(options)` | A `ParticleBuffer`, a table of particles that the GPU moves, after an `await`. The [particles add-on](particles.md)'s emitters fill it: [The particle buffer](../concepts/particle-buffer.md) |
 | `addFeatureDraw(description, options)` | A draw that an add-on's feature description declares, after an `await`: [Add-on feature draws](feature-draws.md) |
 | `addFeatureInstances(description, options)` | A draw of many copies of one shape that an add-on's feature description declares, after an `await`: [Add-on feature draws](feature-draws.md#many-copies-of-one-shape) |
 | `addComputeInstances(description, options)` | A draw of instances from the add-on's own GPU buffer, after an `await`: [Add-on instance draws](feature-instances.md) |
@@ -292,7 +295,7 @@ A layer declares no uniforms, textures or bindings of its own: the engine binds 
 
 The layer reaches the sky's environment map as well as the background, so every place that a sky is seen shows it: a lake or a window reflects the layer, and the diffuse light that the sky gives the scene carries its color, so it lights the ground under it. The engine builds the layer's WGSL a second time into the shader that fills the map's cube faces, and finds the map's light in the map itself: a small pass sums a level of the map onto the nine coefficients of its diffuse light, and the engine reads them back once for each fill, never in a frame and with nothing waiting: the read is asynchronous, and a fill that cannot start while another runs starts on a later frame. None of this is the add-on's work, and the light matches the reflections because it comes from them.
 
-A fill spreads over some twenty frames, one stage a frame, so a layer that its clock moves tells the map how often to capture it with `refresh`, in seconds. A shorter time follows a faster layer, at a rate of one fill each `refresh` seconds: at the default of a second that is 15 stage draws a second, and a page that asks for less waits for none of it. A layer of 0 stands still and costs one fill per change. Until the first capture of a new layer lands, the scene keeps the core sky's own light, and a frame or two passes before the map's light follows its texels. The aurora example add-on in `examples/addons/aurora/` draws one, over a frozen lake that reflects it.
+A fill spreads over some twenty frames, one stage a frame, so a layer that its clock moves tells the map how often to capture it with `refresh`, in seconds. A shorter time follows a faster layer, at a rate of one fill each `refresh` seconds: at the default of a second that is 20 stage draws a second, and a page that asks for less waits for none of it. A layer of 0 stands still and costs one fill per change. Until the first capture of a new layer lands, the scene keeps the core sky's own light, and a frame or two passes before the map's light follows its texels. The aurora example add-on in `examples/addons/aurora/` draws one, over a frozen lake that reflects it.
 
 ## Multiple views
 

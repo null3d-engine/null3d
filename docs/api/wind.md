@@ -335,7 +335,7 @@ Each cycle pulls the air toward an analytic field of place and time. It injects 
 
 The air starts when a page makes the wind, so a field made late in a sketch runs no air from before it.
 
-A held page steps its sketch's updates up to the held time. The first frame that draws runs the air that the hold owes, up to ten seconds of it. So a held picture carries the air that the hold built. Two held pages at two times therefore differ by the air that moved between them.
+A held page steps its sketch's updates up to the held time. The first frame that draws runs the air that the hold owes, up to ten seconds of it. So a held picture carries the air that the hold built. Two held pages at two times within ten seconds of the wind's start therefore differ by the air that moved between them. A longer hold runs only ten seconds of air.
 
 Beyond its box the field carries on. The box sets the detail, not the field's extent. So a plant past the box reads the air at its own place.
 

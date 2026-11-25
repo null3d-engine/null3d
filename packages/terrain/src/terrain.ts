@@ -87,7 +87,7 @@ export interface TerrainOptions {
 	morph?: boolean;
 	/** How much the ground acts like a metal, from 0 to 1. The default is 0. */
 	metalness?: number;
-	/** True makes the ground cast the sun's shadows. The default is true. */
+	/** True makes the ground cast the shadows of the lights that cast them. The default is true. */
 	castShadows?: boolean;
 	/** True makes shadows fall on the ground. The default is true. */
 	receiveShadows?: boolean;

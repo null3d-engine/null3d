@@ -134,7 +134,7 @@ the bed at a point, and the current there.
 | `reflectionEvery` | A frame count from 1 to 16 for each preset | 2 on Low and Medium, 1 on High and Ultra | The frames between two draws of the reflection. The frame-budget governor doubles it while frames take too long |
 | `reflectionFollowsBudget` | `true` or `false` | `true` | Whether the frame-budget governor may raise `reflectionEvery`. Between draws the water shows the reflection of an older camera, so on a moving camera a raised count reads as a lag. `false` keeps the count |
 | `layers` | A 32-bit mask | The camera's layers | The layers that the reflection draws. Leave out what lies on or under the water |
-| `reflectionScale` | `1`, `0.5` or `0.25` | 1 | The reflection's size as a share of the render size each way |
+| `reflectionScale` | `1`, `0.5` or `0.25` | The quality preset's `reflectionScale`: 0.25 on Low, 0.5 on Medium and High, 1 on Ultra | The reflection's size as a share of the render size each way |
 | `mesh` | `{ step, across, cell, reach }` | 2, 16, 2 and 1.36 | The meters between two cross sections along a river, the sections across it, a lake's grid cell, and how far past a river's half width its mesh reaches as a factor |
 | `bed` | `'scene'` or `'shape'` | `'scene'` | Where the surface reads the depth of the bed: the copy of the scene's depth behind each pixel, or the depth that each shape describes |
 | `material` | The standard material values | None | The surface's material, such as its volume's tint. The surface works its own thickness and transmission out, so it takes no value for those |
@@ -411,7 +411,7 @@ export default defineSketch(async (ctx) => {
 | `reflectionEvery` | A frame count from 1 to 16 for each preset | 2 on Low and Medium, 1 on High and Ultra | The frames between two draws of the reflection |
 | `reflectionFollowsBudget` | `true` or `false` | `true` | Whether the frame-budget governor may raise `reflectionEvery`. Between draws the sea shows the reflection of an older camera, so on a moving camera a raised count reads as a lag. `false` keeps the count |
 | `layers` | A 32-bit mask | The camera's layers | The layers that the reflection draws |
-| `reflectionScale` | `1`, `0.5` or `0.25` | 1 | The reflection's size as a share of the render size each way |
+| `reflectionScale` | `1`, `0.5` or `0.25` | The quality preset's `reflectionScale`: 0.25 on Low, 0.5 on Medium and High, 1 on Ultra | The reflection's size as a share of the render size each way |
 | `material` | The standard material values | None | The surface's material, such as the water's tint and its thickness |
 
 `OCEAN_BANDS` holds the default bands. Give a band of your own to change the sea: a wider tile
@@ -470,9 +470,9 @@ near the eye and spends its vertices far away.
   ocean is a feature of its own, so a page may draw a river and a sea.
 - **The ocean's transform.** A sea adds 14 butterfly passes, one pass that puts the heights in
   meters and one reflection pass. Those 16 passes take 16 of the 31 passes that a sketch may add,
-  so leave room for the sketch's own. Each pass runs on a 128 by 128 grid, with a band to a layer. The stats
-  overlay names the add-on's ocean row and its budget, and the frame's GPU time holds the
-  transform's share.
+  so leave room for the sketch's own. Each transform pass runs on a 128 by 128 grid, with a band
+  to a layer, and the reflection draws at the reflection scale. The stats overlay names the
+  add-on's ocean row and its budget, and the frame's GPU time holds the transform's share.
 
 [The API reference](reference/water.md) lists every export of this page with its type and
 description. The engine's doc comments make it.

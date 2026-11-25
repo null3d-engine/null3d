@@ -1,7 +1,7 @@
 // The grading controls that `post.set({ grading })` sets, and the 32-texel table that a job worker
-// bakes from them: white balance, lift, gamma, gain, saturation and split toning, each applied to
-// the picture's display color after the tone mapping. The final pass reads the table, so changing a
-// value costs the frames nothing but a texture upload that the worker computed.
+// bakes from them: white balance, saturation, lift, gamma, gain and split toning, in that order,
+// applied to the picture's display color after the tone mapping. The final pass reads the table,
+// so changing a value costs the frames nothing but a texture upload that the worker computed.
 //
 // The lookup takes the color's square root first, so the table's texels lie closer together toward
 // black, where a grade's curve is steepest. This module is loaded on first use, and the job worker

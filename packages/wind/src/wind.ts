@@ -225,7 +225,8 @@ export function createWind(ctx: SketchContext, options: WindOptions): Wind {
 	// time owes, so the air keeps the same pace whatever the frame rate.
 	//
 	// The air starts when a page makes the wind. A held page's first drawn frame runs the air from
-	// then to the held time, so a held picture carries the air that the hold built. Each frame reads
+	// then to the held time, up to ten seconds of it, so a held picture carries the air that the
+	// hold built. Each frame reads
 	// the sketch time from the engine's field, because a helper that answered it would box its
 	// fraction on a call that the browser does not inline. The time that the air has run to sits in
 	// a typed array, because a fraction written to a closure's variable makes a number object at each

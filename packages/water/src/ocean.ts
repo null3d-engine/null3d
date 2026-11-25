@@ -99,8 +99,8 @@ export interface OceanOptions {
 	/** The layers that the reflection pass draws, as a 32-bit mask. It is the camera's by default. */
 	readonly layers?: number;
 	/**
-	 * The reflection's size as a share of the render size each way: 1, 0.5 or 0.25. It is the render
-	 * size by default.
+	 * The reflection's size as a share of the render size each way: 1, 0.5 or 0.25. By default it
+	 * follows the quality preset's `reflectionScale`.
 	 */
 	readonly reflectionScale?: 1 | 0.5 | 0.25;
 	/** The standard material values, such as the water's tint and its thickness. */
