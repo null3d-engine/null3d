@@ -1351,52 +1351,6 @@ jobs:
           path: test-results/drawn/
           if-no-files-found: ignore
 
-  texture-arrays-diag:
-    # TEMPORARY DIAGNOSTIC: the texture-arrays image test on WebGPU, again and again, printing what
-    # the page met once its textures loaded in every mode (tests/image/texture-arrays-diag.spec.ts).
-    # It looks for the stall in which drawing on the main thread took no frame for a second (CI run
-    # 45547116242). Remove it with the spec once the cause is known.
-    name: texture-arrays-diag (${{ matrix.copy }})
-    needs: [build, sketch-shaders]
-    runs-on: ubuntu-latest
-    timeout-minutes: 25
-    strategy:
-      fail-fast: false
-      matrix:
-        copy: [1, 2, 3, 4, 5, 6, 7, 8]
-    env:
-      NULL3D_REQUIRE_FRESH_SHADERS: "1"
-      NULL3D_PRODUCTION_PAGES: skip
-      HUSKY: "0"
-    steps:
-      - uses: actions/checkout@v5
-        timeout-minutes: 2
-        with: *software-gpu-references
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: ${{ env.BUN_VERSION }}
-      - run: bun install --frozen-lockfile
-      - uses: ./.github/actions/archive
-        timeout-minutes: 5
-        with:
-          mode: download
-          name: page-wasm
-      - uses: ./.github/actions/playwright-chromium
-      - name: Build the packages' lib that the specs load
-        run: bun tools/build-package.ts impostors
-      - uses: ./.github/actions/archive
-        timeout-minutes: 5
-        continue-on-error: true
-        with:
-          mode: download
-          name: sketch-shaders
-          pattern: sketch-shaders-*
-      - uses: ./.github/actions/samples
-      - name: The texture-arrays test on WebGPU, eight times
-        env:
-          NULL3D_TEXTURE_ARRAYS_DIAG: webgpu
-        run: bun run test:browser image/texture-arrays-diag.spec.ts --repeat-each=8 --workers=1 --reporter=line
-
   browser-alone:
     # The tests that run alone check frame rates, times and allocations, which a heavy test beside
     # them can upset (tests/lib/alone.ts). Each runs one at a time on a machine of its own shard, and
@@ -2352,7 +2306,6 @@ jobs:
       - real-browsers
       - real-browsers-firefox
       - real-browsers-prebuilt
-      - texture-arrays-diag
     runs-on: ubuntu-latest
     timeout-minutes: 5
     # Reading the run's jobs and their messages, to tell a time-out from a cancel.
