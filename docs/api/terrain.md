@@ -90,7 +90,9 @@ A skirt hangs from the edge of each block to close the seam between blocks of di
 <details>
 <summary>Technical details: the morph and the skirt</summary>
 
-Over the last part of the approach, the block's vertices move to the parent grid's heights, so the two surfaces match when the switch comes and the ground does not pop. The parent grid is triangulated the same way, so a block whose morph is complete has exactly the parent's surface. The morph adds no draw and no work in a frame: each block carries the parent's height at each vertex in its own vertex record, written when the block is built or reused. The selection does not restrict neighbors, so two blocks that meet can differ by more than one level. The morph ends on a block's own parent, which cannot match a neighbor two levels coarser, so the skirt still covers that seam.
+Over the last part of the approach, the block's vertices move to the parent grid's heights, so the two surfaces match when the switch comes and the ground does not pop. The parent grid is triangulated the same way, so a block whose morph is complete has exactly the parent's surface. The morph adds no draw and no work in a frame: each block carries the parent's height at each vertex in its own vertex record, written when the block is built or reused.
+
+The selection does not restrict neighbors, so two blocks that meet can differ by more than one level. The morph ends on a block's own parent, which cannot match a neighbor two levels coarser, so the skirt still covers that seam.
 
 </details>
 
@@ -98,7 +100,9 @@ Over the last part of the approach, the block's vertices move to the parent grid
 
 The ground's material blends up to four layers. Each layer is a tiled color map with its own repeat distance and roughness. A splat map, one channel per layer, gives the weight of each layer at each point.
 
-A layer also carries a height at each texel. Its map's brightness gives that height by default, or its alpha channel where `heightFrom` says `'alpha'`. The four maps that `terrainTextures` makes keep a height in their alpha channel, so give their layers `heightFrom: 'alpha'`. At a boundary between two layers, the heights push one through the other. Rock then shows through the grass in ragged patches rather than in a smooth cross-fade. `contrast` sets how strongly a layer's height scales its weight, from 0 to 1. The default is 1, and 0 blends by the splat map's weights alone.
+A layer also carries a height at each texel. Its map's brightness gives that height by default, or its alpha channel where `heightFrom` says `'alpha'`. The four maps that `terrainTextures` makes keep a height in their alpha channel, so give their layers `heightFrom: 'alpha'`. At a boundary between two layers, the heights push one through the other.
+
+Rock then shows through the grass in ragged patches rather than in a smooth cross-fade. `contrast` sets how strongly a layer's height scales its weight, from 0 to 1. The default is 1, and 0 blends by the splat map's weights alone.
 
 The default splat map comes from the ground itself. Grass takes the low, gentle ground, soil the higher dry ground, rock the steep slopes, and snow the ground above. Give `splat`, a function of x and z that writes the four layer weights into `out`, to set the weights yourself. `terrainTextures` makes the four layer maps in code, or give any `Texture` from `textures.fromData` or `assets`.
 
@@ -112,7 +116,9 @@ The terrain carries no collision. Read `heightAt(x, z)` and `normalAt(x, z, out)
 
 ## Speed
 
-A terrain draws one mesh per visible block. The blocks near the camera are the most and the finest, and the few coarse blocks cover the rest. A 1,200 meter ground at the default settings draws about 200 blocks, near 130,000 triangles, from a camera near the ground. That figure is for a picture 1,080 pixels tall. A taller picture draws more and finer blocks, and a shorter one draws fewer. A higher camera or a wider field of view draws fewer and coarser blocks, and the Low preset draws coarser blocks than High. A block splits or merges only when the camera moves far enough to need other blocks.
+A terrain draws one mesh per visible block. The blocks near the camera are the most and the finest, and the few coarse blocks cover the rest. A 1,200 meter ground at the default settings draws about 200 blocks, near 130,000 triangles, from a camera near the ground. That figure is for a picture 1,080 pixels tall. A taller picture draws more and finer blocks, and a shorter one draws fewer.
+
+A higher camera or a wider field of view draws fewer and coarser blocks, and the Low preset draws coarser blocks than High. A block splits or merges only when the camera moves far enough to need other blocks.
 
 The quadtree selection and the block build run in the add-on's own WebAssembly module. The module runs on the engine's job workers, so `update` only asks for the work. A crossing can need tens of new blocks. The ground draws its last complete selection until the new one is built, and `terrain.building` is true meanwhile.
 

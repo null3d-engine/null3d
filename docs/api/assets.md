@@ -77,7 +77,11 @@ export default defineSketch(async ({ scene, assets }) => {
 });
 ```
 
-A model that the tool wrote with `--stages` holds its coarsest level. Each finer level downloads from a file of its own. `loadGltf` returns once the coarse level is ready. The copies that you make then refine as the finer levels arrive. The loader holds back a level that the camera never draws, and fetches it once the camera comes close enough to show it. So a page downloads the levels that its camera shows, and no others. `maxLevels` sets the most levels to load, the file's own counted first. Set 1 to draw the coarse level alone and download no stage. A model with a cluster tree streams the tree's bands the same way, and a band counts as a level. [Levels of detail](../concepts/lod.md#levels-from-the-asset-tool) explains the files.
+A model that the tool wrote with `--stages` holds its coarsest level. Each finer level downloads from a file of its own. `loadGltf` returns once the coarse level is ready. The copies that you make then refine as the finer levels arrive.
+
+The loader holds back a level that the camera never draws, and fetches it once the camera comes close enough to show it. So a page downloads the levels that its camera shows, and no others. `maxLevels` sets the most levels to load, the file's own counted first. Set 1 to draw the coarse level alone and download no stage.
+
+A model with a cluster tree streams the tree's bands the same way, and a band counts as a level. [Levels of detail](../concepts/lod.md#levels-from-the-asset-tool) explains the files.
 
 A worker parses the file outside the sketch's frames, and decodes the images that the file holds there. The files that a `.gltf` file names download through `assets`, so `preload` and `onProgress` cover them too.
 
@@ -146,7 +150,11 @@ A material with many extensions can drop some textures, and the loader notes eac
 <details>
 <summary>Technical details: which textures a material with many extensions keeps</summary>
 
-A masked material keeps its transmission, so its cut-out decides which pixels draw and the light from behind fills the rest. A material that also gives specular textures keeps both families: each transmission or thickness texture samples a specular slot's texture array. A thickness texture stays out beside a specular color texture, whose sRGB texels never share its array. A layered material goes without its specular textures and its diffuse transmission, unless a layer map fills the array that it samples, and the loader notes the one that stays out. A coat roughness or sheen roughness texture that is not the texture of its pair is not drawn. The coat's and the sheen's textures keep their places ahead of the iridescence's and the anisotropy's, whose textures are then noted. Transmission wins over diffuse transmission. A volume without an attenuation distance spreads no light, and `scatterAnisotropy` is not drawn.
+A masked material keeps its transmission, so its cut-out decides which pixels draw and the light from behind fills the rest. A material that also gives specular textures keeps both families: each transmission or thickness texture samples a specular slot's texture array.
+
+A thickness texture stays out beside a specular color texture, whose sRGB texels never share its array. A layered material goes without its specular textures and its diffuse transmission, unless a layer map fills the array that it samples, and the loader notes the one that stays out. A coat roughness or sheen roughness texture that is not the texture of its pair is not drawn.
+
+The coat's and the sheen's textures keep their places ahead of the iridescence's and the anisotropy's, whose textures are then noted. Transmission wins over diffuse transmission. A volume without an attenuation distance spreads no light, and `scatterAnisotropy` is not drawn.
 
 </details>
 
@@ -186,7 +194,9 @@ remove(); // the handler reads no more files
 An add-on registers its own handler as its module loads, with the engine's `registerGltfExtension`,
 which serves every sketch of the thread. A page that imports the add-on then loads the add-on's
 files with no other call, and a file that requires the extension names the package to import instead
-of failing with E1417. `@null3d/splats` reads `KHR_gaussian_splatting` this way. A handler that a
+of failing with E1417. `@null3d/splats` reads `KHR_gaussian_splatting` this way.
+
+A handler that a
 sketch registers with `assets.registerGltfExtension` for the same extension reads its files in the
 add-on's place. A later add-on handler for the same extension replaces the earlier one, so a development reload of the add-on works. When two add-ons read one extension, the one that loaded last reads it.
 
@@ -205,9 +215,13 @@ The loader calls `load` once for each primitive that carries one of the handler'
 | `context.geometry` | The engine's `geometry`, for the meshes that the handler returns |
 | `context.materials` | The engine's `materials`, for the materials that the handler returns |
 
-`load` returns one part, a list of parts, or nothing, which draws nothing. A part is `{ mesh, material }`. The loader places the parts at the primitive's node, so copies of the model draw them, and `prefab.destroy()` frees them. A primitive that a handler claims draws only what the handler returns. The other primitives of the same mesh draw as usual. `load` may return a promise. In hold mode, `load` must not wait for another `assets` call, since that call waits for the load that runs the handler.
+`load` returns one part, a list of parts, or nothing, which draws nothing. A part is `{ mesh, material }`. The loader places the parts at the primitive's node, so copies of the model draw them, and `prefab.destroy()` frees them. A primitive that a handler claims draws only what the handler returns.
 
-A file that requires an extension which an add-on reads loads with that add-on's handler. Without it, the load fails with [E1417](../errors/E1417.md), and the message names the package to import. For example, the message for `KHR_gaussian_splatting` names `@null3d/splats`. A file that only uses such an extension, and does not require it, draws without that extension's data when no handler reads it. Development builds warn about each name in a file's `extensionsUsed` that neither the loader nor a registered handler reads. When an add-on reads the extension, the warning names the package to import. Production builds print nothing.
+The other primitives of the same mesh draw as usual. `load` may return a promise. In hold mode, `load` must not wait for another `assets` call, since that call waits for the load that runs the handler.
+
+A file that requires an extension which an add-on reads loads with that add-on's handler. Without it, the load fails with [E1417](../errors/E1417.md), and the message names the package to import. For example, the message for `KHR_gaussian_splatting` names `@null3d/splats`.
+
+A file that only uses such an extension, and does not require it, draws without that extension's data when no handler reads it. Development builds warn about each name in a file's `extensionsUsed` that neither the loader nor a registered handler reads. When an add-on reads the extension, the warning names the package to import. Production builds print nothing.
 
 ## Color grading tables
 
@@ -294,7 +308,13 @@ export default defineSketch(async ({ scene, assets }) => {
 <details>
 <summary>Technical details: sizes, limits and GPU times</summary>
 
-The first environment file loads the file reader, under 1 KB after Brotli. An HDR map has faces of 256 texels, as the asset tool's default. An image wider than 2,048 texels becomes the averages of squares of its texels first. An unclipped sun, or other light beyond 65,408, keeps its share of the rough levels and the diffuse light. Only the sharpest level stops at 65,408, as in the tool's files. The OpenEXR reader reads single-part files of scanlines with R, G and B channels, as half floats, floats or whole numbers. It reads every compression but DWAA and DWAB: none, RLE, ZIPS, ZIP, PIZ, PXR24, B44 and B44A. Tiled, deep and multi-part files fail with E1412, as do Radiance files stored from the bottom row up. The room's map takes about 20 ms of GPU time on a MacBook Pro, and 50 to 110 ms on recent phones. The sky's map takes about 10 ms on a MacBook Pro. The sky refreshes in 20 stages, each about 1 ms of GPU time on a MacBook Pro; a sun that turns less than half a degree leaves the map as it is, and so does a color value that drifts by less than 2%. After Brotli, Venice Sunset's 2K Radiance file takes 3.8 MB and its map 1.4 MB. A 1K OpenEXR file and its map take about 1.3 MB each. [Lighting and environment](../concepts/lighting.md#sky-and-backgrounds) gives the detail.
+The first environment file loads the file reader, under 1 KB after Brotli. An HDR map has faces of 256 texels, as the asset tool's default. An image wider than 2,048 texels becomes the averages of squares of its texels first. An unclipped sun, or other light beyond 65,408, keeps its share of the rough levels and the diffuse light. Only the sharpest level stops at 65,408, as in the tool's files.
+
+The OpenEXR reader reads single-part files of scanlines with R, G and B channels, as half floats, floats or whole numbers. It reads every compression but DWAA and DWAB: none, RLE, ZIPS, ZIP, PIZ, PXR24, B44 and B44A. Tiled, deep and multi-part files fail with E1412, as do Radiance files stored from the bottom row up.
+
+The room's map takes about 20 ms of GPU time on a MacBook Pro, and 50 to 110 ms on recent phones. The sky's map takes about 10 ms on a MacBook Pro. The sky refreshes in 20 stages, each about 1 ms of GPU time on a MacBook Pro; a sun that turns less than half a degree leaves the map as it is, and so does a color value that drifts by less than 2%.
+
+After Brotli, Venice Sunset's 2K Radiance file takes 3.8 MB and its map 1.4 MB. A 1K OpenEXR file and its map take about 1.3 MB each. [Lighting and environment](../concepts/lighting.md#sky-and-backgrounds) gives the detail.
 
 </details>
 
@@ -349,7 +369,9 @@ The files that the setup loads start sooner when `defineSketch`'s `downloads` op
 
 `preload` downloads files ahead of the loads that use them, all at once, and resolves when every file has arrived. Use it for files that a later stage loads during play. The next load of each address takes its file from memory, so it downloads nothing. The files wait in memory until then.
 
-`onProgress` calls its handler as a download's bytes arrive and when one finishes or fails. It passes two counts: the bytes downloaded so far and the bytes expected so far. The expected bytes are the lengths of the responses that gave one, and 0 while none has. A response with no length still counts its bytes into the first count, so a page draws `Math.min(1, loaded / Math.max(total, loaded))`. A download that fails counts as finished too, so a loading bar reaches its end. It counts the bytes its response announced, or one byte when it announced none. Each call names the address whose bytes moved. The files of the download list count too, also the bytes that arrived before the setup added the handler.
+`onProgress` calls its handler as a download's bytes arrive and when one finishes or fails. It passes two counts: the bytes downloaded so far and the bytes expected so far. The expected bytes are the lengths of the responses that gave one, and 0 while none has. A response with no length still counts its bytes into the first count, so a page draws `Math.min(1, loaded / Math.max(total, loaded))`.
+
+A download that fails counts as finished too, so a loading bar reaches its end. It counts the bytes its response announced, or one byte when it announced none. Each call names the address whose bytes moved. The files of the download list count too, also the bytes that arrived before the setup added the handler.
 
 ```ts
 assets.onProgress((loaded, total, url) => page.post('loading', { loaded, total, url }));

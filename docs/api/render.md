@@ -14,7 +14,9 @@ flowchart LR
     opaque --> final["Final pass"] --> canvas[("canvas")]
 ```
 
-`ctx.render` adds passes of your own to the engine's [render graph](../concepts/render-graph.md). A scene pass draws the scene from a second camera into a texture. `textures.fromPass` gives that texture to materials and sprites, so a minimap, a security camera's screen or a portal shows it. A reflection pass draws the camera's view mirrored across a plane, for water and polished floors ([Reflection passes](#reflection-passes)). A full-screen pass runs WGSL of your own over a texture, such as a blur step or a texture that the GPU paints ([Full-screen passes](#full-screen-passes)). A compute pass runs a compute shader over a storage texture that materials, effects and passes sample in the same frame ([Compute passes](#compute-passes)). The render graph orders the passes, plans their memory and checks them as one.
+`ctx.render` adds passes of your own to the engine's [render graph](../concepts/render-graph.md). A scene pass draws the scene from a second camera into a texture. `textures.fromPass` gives that texture to materials and sprites, so a minimap, a security camera's screen or a portal shows it.
+
+A reflection pass draws the camera's view mirrored across a plane, for water and polished floors ([Reflection passes](#reflection-passes)). A full-screen pass runs WGSL of your own over a texture, such as a blur step or a texture that the GPU paints ([Full-screen passes](#full-screen-passes)). A compute pass runs a compute shader over a storage texture that materials, effects and passes sample in the same frame ([Compute passes](#compute-passes)). The render graph orders the passes, plans their memory and checks them as one.
 
 ## A minimap
 
@@ -51,7 +53,8 @@ export default defineSketch(({ scene, materials, geometry, textures, render }) =
 
 - A pass runs only while something shows its texture: a texture from `textures.fromPass`, or another running pass that names it in `reads`. A pass that nothing shows costs nothing, not even its texture's memory.
 - The texture holds linear color, after the exposure and before the tone curve. On most devices it holds high dynamic range color. A material that shows it, such as an unlit material, gives the camera the same light that the pass saw. The final pass then maps it as it maps the rest of the scene.
-- Devices that draw 8-bit color tone map in each material's shader: compatibility mode with MSAA, and WebGL2 devices without float targets ([Color management](../concepts/color-management.md)). In compatibility mode the engine turns the pass's colors back to linear as it fills the texture. But they stay tone mapped, so the material that shows the texture applies the tone curve a second time. With the default curve the image then looks a little lighter in the middle tones. On WebGL2 devices without float targets the texture holds display color, so the image looks brighter and flatter.
+- Devices that draw 8-bit color tone map in each material's shader: compatibility mode with MSAA, and WebGL2 devices without float targets ([Color management](../concepts/color-management.md)). In compatibility mode the engine turns the pass's colors back to linear as it fills the texture. But they stay tone mapped, so the material that shows the texture applies the tone curve a second time.
+- With the default curve the image then looks a little lighter in the middle tones. On WebGL2 devices without float targets the texture holds display color, so the image looks brighter and flatter.
 - The image stands upright on a plane, with v = 0 at its bottom row. A reflection pass's texture on the HDR WebGPU path is the exception: its rows start at the top, so read it with `reflection_uv`.
 - Each pass texture has the scene's anti-aliasing: with MSAA the pass draws with the same samples, then resolves.
 - A pass never draws an object whose material shows the texture of a pass that it does not read, or its own texture. So a mirror does not show itself, and a minimap's screen does not appear in the minimap. To show a mirror in a mirror, add a second pass for it.
@@ -60,7 +63,9 @@ export default defineSketch(({ scene, materials, geometry, textures, render }) =
 
 ### What a scene pass draws
 
-A scene pass draws the scene's objects with their materials, the sun and its shadows where the camera's shadow cascades reach. It draws the ambient and hemisphere lights, the environment's light and the fog. It also draws the point, spot and area lights that its camera sees. Such a light casts its shadow in the pass when the camera's view gives it one. A light that only the pass sees casts no shadow there. It draws the scene's background behind the objects, the sky included. With a `clearColor`, the texture clears to that color and shows no background, which suits a minimap. It culls each frame in one pass, without occlusion culling.
+A scene pass draws the scene's objects with their materials, the sun and its shadows where the camera's shadow cascades reach. It draws the ambient and hemisphere lights, the environment's light and the fog. It also draws the point, spot and area lights that its camera sees. Such a light casts its shadow in the pass when the camera's view gives it one. A light that only the pass sees casts no shadow there.
+
+It draws the scene's background behind the objects, the sky included. With a `clearColor`, the texture clears to that color and shows no background, which suits a minimap. It culls each frame in one pass, without occlusion culling.
 
 A pass draws no ambient occlusion.
 
@@ -139,13 +144,19 @@ export default defineSketch(({ scene, materials, geometry, textures, render }) =
 
 ### What a reflection draws
 
-A reflection draws the scene's objects with their materials, and the scene's background: the color, texture, environment, cube map or sky that `scene.setBackground` sets. It draws the sun, its shadows where the camera's shadow cascades reach, the ambient and hemisphere lights, the environment's light and the fog. It draws the point, spot and area lights that the mirrored view sees, as a scene pass does. A light casts its shadow in the reflection when the camera's view gives it one. A reflection draws no ambient occlusion, as scene passes do not.
+A reflection draws the scene's objects with their materials, and the scene's background: the color, texture, environment, cube map or sky that `scene.setBackground` sets. It draws the sun, its shadows where the camera's shadow cascades reach, the ambient and hemisphere lights, the environment's light and the fog.
+
+It draws the point, spot and area lights that the mirrored view sees, as a scene pass does. A light casts its shadow in the reflection when the camera's view gives it one. A reflection draws no ambient occlusion, as scene passes do not.
 
 Devices that draw 8-bit color apply the tone curve twice to a reflection, as to a scene pass's texture. The reflected sky looks a little grayer there.
 
 ### Cost of a reflection
 
-A reflection draws the scene a second time. Its cost follows its pixels and the part of the scene that it sees. At half the render size each way it shades a quarter of the pixels. Each quality preset gives it a share of the render size. Low takes a quarter, Medium and High take half, and Ultra takes the whole size. When the engine lowers the render scale to keep up, the reflection's texture shrinks with it, so the reflection costs less too. Take S1, the swarm benchmark, with water under 100,000 boxes. On a MacBook Pro on WebGPU, the reflection added about 0.6 ms of GPU time per frame at half size, and 0.7 ms at full size. On WebGL2 it added 0.2 to 0.4 ms. Small objects such as S1's boxes cost the reflection their vertices at any size, so its size matters most where large surfaces fill its pixels.
+A reflection draws the scene a second time. Its cost follows its pixels and the part of the scene that it sees. At half the render size each way it shades a quarter of the pixels. Each quality preset gives it a share of the render size. Low takes a quarter, Medium and High take half, and Ultra takes the whole size. When the engine lowers the render scale to keep up, the reflection's texture shrinks with it, so the reflection costs less too.
+
+Take S1, the swarm benchmark, with water under 100,000 boxes. On a MacBook Pro on WebGPU, the reflection added about 0.6 ms of GPU time per frame at half size, and 0.7 ms at full size. On WebGL2 it added 0.2 to 0.4 ms.
+
+Small objects such as S1's boxes cost the reflection their vertices at any size, so its size matters most where large surfaces fill its pixels.
 
 ## Full-screen passes
 
@@ -378,9 +389,11 @@ render.setPassSteps(pressure, 24);  // from the next frame on
 A material or an effect that declares the texture as `texture_2d<f32>` samples the state that the
 last run wrote. A reader that wants both states declares it as `texture_2d_array<f32>` and names the
 layers: the first state holds the first `layers` layers, and the second the layers after them.
-`texture.layer` gives the first layer of the state that the last run wrote. A reader of the array
-names the newest state without counting runs. A run writes the state that the run before read, so
-after an odd number of runs the last run wrote the state that the frame started from.
+`texture.layer` gives the first layer of the state that the last run wrote.
+
+A reader of the array names the newest state without counting runs. A run writes the state that the
+run before read, so after an odd number of runs the last run wrote the state that the frame started
+from.
 
 `render.resetPass(pass)` starts the states again from empty. The next frame clears every layer
 before the pass's first run, and after each run the state counts from zero again. A lost device also
@@ -392,11 +405,17 @@ A pass with history costs more than one state. On the WebGPU paths the target ho
 `layers * 2` layers, and the pass keeps two state textures of `layers` layers each: four times the
 texels of one state. On WebGL2 the fragment form keeps both states in the target's layers and adds
 one scratch texture of one layer. Before each layer's run, the engine copies the state that the run
-reads into the scratch. That is `layers * 2 + 1` layers in all. For a pass of one layer, that is
-three times the texels of one state. At `rgba16float` such a pass takes 32 bytes for each texel of
+reads into the scratch.
+
+That is `layers * 2 + 1` layers in all. For a pass of one layer, that is
+three times the texels of one state.
+
+At `rgba16float` such a pass takes 32 bytes for each texel of
 one state on the WebGPU paths and 24 on WebGL2. At `r32float` it takes 16 and 12. Size a history
 pass for its grid, not the canvas. One layer of 128 by 128 takes 512 KiB on the WebGPU paths and 384
-KiB on WebGL2. One layer of 256 by 256 takes 2 MiB and 1.5 MiB. The largest pass, 4096 by 4096 (the most that `textures.maxSize` allows), would take 512 MiB on the WebGPU paths, which no page should choose by accident.
+KiB on WebGL2. One layer of 256 by 256 takes 2 MiB and 1.5 MiB.
+
+The largest pass, 4096 by 4096 (the most that `textures.maxSize` allows), would take 512 MiB on the WebGPU paths, which no page should choose by accident.
 `render.dumpGraph()` does not list the state textures, so budget them beside its figures.
 
 ### Reading a region back
@@ -425,7 +444,8 @@ const red = data[(3 * width + 2) * 4];
 - A stopped pass gives back the last texels that it wrote, because its texture keeps them.
 - Throws E1220 for a pass of another kind, a region that is not whole texels, or one larger than 64
   each way. A region that reaches past the pass's texture throws E1220 at once, before a frame
-  records it. A canvas that shrinks between the call and the frame that copies the region skips the
+  records it.
+- A canvas that shrinks between the call and the frame that copies the region skips the
   copy, so the call fails after 240 frames rather than reading past the edge; a page sees the same
   E1220 as a slow read that never lands, and cannot tell the two apart. A pass with no texture gives
   no answer either.
@@ -436,11 +456,14 @@ WebGL2 has no compute shaders. A WebGL2 page runs the `fallback` WGSL as a full-
 
 A fragment form writes the same texels as the compute form, so a read by `render.readPass` and a chain of passes give the same values on every path.
 
-A pass of several layers draws each layer in a pass of its own. `input.layer` gives the layer that the draw writes, from 0. Up to 32 layers work on WebGL2, and a pass of more throws E1220. The WebGPU paths draw up to 128 with history and 256 without. The values keep their positions: the fields of the fragment form's `struct Uniforms` start at the same floats as the compute block's `u0`. Give no fallback when the work needs atomics or shared memory. A fragment shader cannot do those, and neither can it write to a place that the shader chooses. Without a fallback, the pass runs on WebGPU only, and `render.addPass` throws E1220 on WebGL2.
+A pass of several layers draws each layer in a pass of its own. `input.layer` gives the layer that the draw writes, from 0. Up to 32 layers work on WebGL2, and a pass of more throws E1220. The WebGPU paths draw up to 128 with history and 256 without. The values keep their positions: the fields of the fragment form's `struct Uniforms` start at the same floats as the compute block's `u0`.
+
+Give no fallback when the work needs atomics or shared memory. A fragment shader cannot do those, and neither can it write to a place that the shader chooses. Without a fallback, the pass runs on WebGPU only, and `render.addPass` throws E1220 on WebGL2.
 
 ## Switching and removing passes
 
-- `render.setPassEnabled(pass, false)` stops a pass from the next frame on. Its texture keeps the last image that it drew. It keeps it through a change of quality preset too, while the texture's shape and size stay the same. When the change moves between HDR and 8-bit color, a stopped full-screen pass draws once into its new texture, with its values as they stand. A compute pass's stored state survives a change of the edge smoothing, such as from MSAA to FXAA. A pass that has never drawn is out of the plan while it is off, so switching it on compiles the render graph. Once a pass has drawn, its passes stay in the plan while it is off, so the switch compiles nothing. Switch a pass when a feature starts or stops, and pace it with `render.setPassEvery`.
+- `render.setPassEnabled(pass, false)` stops a pass from the next frame on. Its texture keeps the last image that it drew. It keeps it through a change of quality preset too, while the texture's shape and size stay the same. When the change moves between HDR and 8-bit color, a stopped full-screen pass draws once into its new texture, with its values as they stand. A compute pass's stored state survives a change of the edge smoothing, such as from MSAA to FXAA.
+- A pass that has never drawn is out of the plan while it is off, so switching it on compiles the render graph. Once a pass has drawn, its passes stay in the plan while it is off, so the switch compiles nothing. Switch a pass when a feature starts or stops, and pace it with `render.setPassEvery`.
 - `render.setPassEvery(pass, every)` makes a pass draw in one frame of every `every`, from the next frame on, and its texture keeps the last image that it drew in between. It compiles nothing, so a sketch may change the cadence whenever the quality preset or the frame budget moves, as often as once a frame. A cadence of 1 draws every frame. In [hold mode](../guides/testing.md#hold-mode) every pass draws in every frame, so a held frame never shows a pass's older picture. The call allocates nothing.
 - `render.removePass(pass)` removes a pass and destroys the textures that `textures.fromPass` made of it.
 - `pass.live` is false after `removePass`, and `pass.enabled` gives the switch.

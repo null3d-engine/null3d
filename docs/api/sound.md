@@ -86,7 +86,9 @@ Call `sound.update()` once a frame, in `onLateUpdate`. It reads the listener's p
 | `destroy()` | Stops every sound and closes the link to the page. The page then waits for the sketch's next sound system. |
 | `connected` | True once the page's half has opened its link. |
 
-A loop has `setLevel`, `setRate`, `setTone`, `setPosition` and `destroy`. A group has the same setters with a member's index first, such as `setPosition(index, x, y, z)`. A group also has the arrays `positions`, `levels`, `rates` and `tones`, which are views of the table. A sketch that keeps its places in one array copies them in one call, as in `cars.positions.set(places)`. A shot has `play(x, y, z, level, rate)` and `destroy`. A destroyed sound's setters do nothing. Its arrays may then serve another sound, so a sketch drops them with the group.
+A loop has `setLevel`, `setRate`, `setTone`, `setPosition` and `destroy`. A group has the same setters with a member's index first, such as `setPosition(index, x, y, z)`. A group also has the arrays `positions`, `levels`, `rates` and `tones`, which are views of the table. A sketch that keeps its places in one array copies them in one call, as in `cars.positions.set(places)`.
+
+A shot has `play(x, y, z, level, rate)` and `destroy`. A destroyed sound's setters do nothing. Its arrays may then serve another sound, so a sketch drops them with the group.
 
 The setters write numbers into the table and make no object, so a sketch may call them in every frame. `update` makes no object either. A sound made before the page connects plays once it does, and a sketch may make sounds at any time.
 
@@ -115,7 +117,9 @@ A sound with neither distance keeps the level that the sketch gives it wherever 
 
 ## Groups and their voices
 
-A browser mixes a few dozen voices well, and a scene may have hundreds of sources of one kind. A group gives its members a few voices. The mixer ranks the members by their loudness where the listener stands, from their level and distance. It gives each voice to one of the loudest. A voice keeps its member while that member stays close to the cut. So a voice does not flap between two members at the same distance. A voice that moves to another member fades out first, so its sound never jumps across the scene. It takes the new member's pitch before it fades in.
+A browser mixes a few dozen voices well, and a scene may have hundreds of sources of one kind. A group gives its members a few voices. The mixer ranks the members by their loudness where the listener stands, from their level and distance. It gives each voice to one of the loudest.
+
+A voice keeps its member while that member stays close to the cut. So a voice does not flap between two members at the same distance. A voice that moves to another member fades out first, so its sound never jumps across the scene. It takes the new member's pitch before it fades in.
 
 A group's voices add as power: three at full level sound about 5 dB louder than one. Give a group's points lower levels than a loop's. Write a mass of like sources as one loop, whose level follows the density around the camera, not one source for each object.
 

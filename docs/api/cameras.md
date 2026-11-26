@@ -161,7 +161,9 @@ export default defineSketch(({ scene, input, page }) => {
 
 The engine draws a frame on one thread while the sketch computes the next one on another. A click therefore lands on a frame that is older than the sketch's current camera. During a fast pan, a ray from the current camera would miss what the user clicked.
 
-So the engine keeps the cameras of the last four views that it drew. Frames in a row with the same view count as one view. The frames that the engine draws while the setup runs count too, so a click during the setup picks what that frame showed. When `x` and `y` come from `input.pointer` or a finger in `input.touches`, the ray uses the camera of the frame on screen at that event. Any other point uses the camera of the frame that last ran, with its lens as it is now. This holds in every thread mode.
+So the engine keeps the cameras of the last four views that it drew. Frames in a row with the same view count as one view. The frames that the engine draws while the setup runs count too, so a click during the setup picks what that frame showed. When `x` and `y` come from `input.pointer` or a finger in `input.touches`, the ray uses the camera of the frame on screen at that event.
+
+Any other point uses the camera of the frame that last ran, with its lens as it is now. This holds in every thread mode.
 
 Objects keep their current positions. A ray finds a moving object where it is now. That can be up to a frame of its motion away from where the user saw it.
 

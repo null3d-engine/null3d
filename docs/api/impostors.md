@@ -85,7 +85,11 @@ A card's light comes from the scene's lights, as a mesh's does. The surface atla
 
 ### Cast and receive shadows
 
-The cards cast a shadow only if you ask. A caster needs a second batch from the same options and rows, with `castShadows: true` and a layer that the sun draws and no camera does. Add that layer to the sun's mask, or the cards cast nothing with no warning. The camera never draws the caster, so it pays nothing for it. In the shadow pass each card turns toward the sun and cuts the crown's shape from its stored coverage. A batch with `receiveShadows: true` takes the shadows of other objects at the surface that the stored depth shows, not at its own plane, so a card does not darken itself. Keep the rows of both batches in step: when you change one, write and mark the other too.
+The cards cast a shadow only if you ask. A caster needs a second batch from the same options and rows, with `castShadows: true` and a layer that the sun draws and no camera does. Add that layer to the sun's mask, or the cards cast nothing with no warning.
+
+The camera never draws the caster, so it pays nothing for it. In the shadow pass each card turns toward the sun and cuts the crown's shape from its stored coverage. A batch with `receiveShadows: true` takes the shadows of other objects at the surface that the stored depth shows, not at its own plane, so a card does not darken itself.
+
+Keep the rows of both batches in step: when you change one, write and mark the other too.
 
 <details>
 <summary>Technical details: how cards cast and receive shadows</summary>
@@ -127,7 +131,11 @@ const color = textures.fromData({ ...bake.color, colorSpace: 'srgb', mipmaps: fa
 const surface = textures.fromData({ ...bake.surface, colorSpace: 'linear', mipmaps: false });
 ```
 
-The bake is arithmetic over the arrays. It gives the same pixels on every device, and it needs no GPU pass, so a scene's fog and lights never color the picture. It returns the card's `size`: the width that holds the object's widest horizontal reach, and its full height. A card at scale 1 stands on the object's lowest point. Each view's picture is taller than the card, so that the object fits from every angle, from the side through to straight above. The picture's height is the diagonal of the card's width and the object's height. The bake's `room` is the factor between the two: the picture's height divided by the card's height. Pass it to `createImpostors` as `room`. A picture that you paint to fit its card takes the default, 1.
+The bake is arithmetic over the arrays. It gives the same pixels on every device, and it needs no GPU pass, so a scene's fog and lights never color the picture. It returns the card's `size`: the width that holds the object's widest horizontal reach, and its full height.
+
+A card at scale 1 stands on the object's lowest point. Each view's picture is taller than the card, so that the object fits from every angle, from the side through to straight above. The picture's height is the diagonal of the card's width and the object's height.
+
+The bake's `room` is the factor between the two: the picture's height divided by the card's height. Pass it to `createImpostors` as `room`. A picture that you paint to fit its card takes the default, 1.
 
 ## Load a baked atlas
 
@@ -180,7 +188,9 @@ The bake decides the result:
 A card's picture is what the player sees of the object, so it should hold as many views as the
 card's apparent size needs. `bakeImpostorAtlas` draws the mesh from every cell of an octahedral
 grid; the cell's square of texels holds the color, and the surface atlas holds each texel's normal
-in the object's own frame with its depth and its coverage. `createImpostors` blends the three views
+in the object's own frame with its depth and its coverage.
+
+`createImpostors` blends the three views
 nearest the eye and lights the blend from those normals, so a card turns with the camera and still
 catches the sun on the side the mesh would.
 

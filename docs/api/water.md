@@ -251,7 +251,9 @@ creek follows its depth, and the caller sets how fast the tint gathers.
 `attenuationColor` is the color that the light takes after `attenuationDistance` meters. A clear
 creek takes a pale color over a distance of several meters. Most of the bed's light then reaches
 the eye at every point, and a little more of it over the shallows. A dark color over a distance
-shorter than the bed is deep takes most of that light away. The water then reads as an opaque slab
+shorter than the bed is deep takes most of that light away.
+
+The water then reads as an opaque slab
 of its color, with no bed under it. The surface works out its own thickness and transmission, so
 those two values do not apply here.
 
@@ -286,12 +288,16 @@ flowchart LR
     spray --> fall
 ```
 
-`createWaterfall(ctx, options)` makes a waterfall that falls from a river's lip. Over its first meters it draws in to about a quarter of the lip's width, so a notch as wide as the lip shows rock beside it. It hangs close to the rock under the brink, and fades where it nears a wall or a ledge behind it. The sheet's material moves each streak with the water from the sketch's time alone, so the fall costs the CPU nothing in a frame. Spray froths at the lip, and a plume of mist rises at its foot.
+`createWaterfall(ctx, options)` makes a waterfall that falls from a river's lip. Over its first meters it draws in to about a quarter of the lip's width, so a notch as wide as the lip shows rock beside it. It hangs close to the rock under the brink, and fades where it nears a wall or a ledge behind it.
+
+The sheet's material moves each streak with the water from the sketch's time alone, so the fall costs the CPU nothing in a frame. Spray froths at the lip, and a plume of mist rises at its foot.
 
 <details>
 <summary>Technical details: how the fall is shaped and lit</summary>
 
-The water rolls over the lip as a smooth glassy tongue and arcs out. It then drops almost straight, as falling water does while the air slows it. Below the tongue it turns white: a solid column of rough round ropes, with soft gray shade between them and clumps of froth that ride down with the water. Its outline tears into lobes and wisps, and its sides wander and break into separate ropes as it falls. Over its lower half it breaks up into clumps and dissolves into a broad mist, about four times its width, that draws over its foot, so it never lands and never ends in a line.
+The water rolls over the lip as a smooth glassy tongue and arcs out. It then drops almost straight, as falling water does while the air slows it.
+
+Below the tongue it turns white: a solid column of rough round ropes, with soft gray shade between them and clumps of froth that ride down with the water. Its outline tears into lobes and wisps, and its sides wander and break into separate ropes as it falls. Over its lower half it breaks up into clumps and dissolves into a broad mist, about four times its width, that draws over its foot, so it never lands and never ends in a line.
 
 A streak rides down at the water's own speed, and it stretches as the water speeds up. The fall is one closed column with an oval section. It is thin under the brink and deepens out from the cliff over its first few meters as it falls, so the fall has a solid body from the side as well as from the front. Its outline thins and tears wherever the view grazes it, so no side shows a clean edge. Small drops fly off the column.
 

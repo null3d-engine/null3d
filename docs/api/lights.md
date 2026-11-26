@@ -86,7 +86,9 @@ export default defineSketch(({ scene, materials, geometry }) => {
 <details>
 <summary>Technical details: picture size and memory</summary>
 
-The engine keeps the picture's detail up to 512 texels a side, in every mip level, and reduces a larger texture to that. A small gobo therefore costs less memory than a detailed photograph of the same light. A surface far from the light shows the picture blurred and a surface near the light shows it sharp. A picture of 128 x 128 texels a side takes about 0.2 MB with its mip levels. One of 512 x 512 takes about 2.8 MB. The engine keeps room for four pictures once a scene has one. A scene with one detailed picture therefore takes about 11 MB.
+The engine keeps the picture's detail up to 512 texels a side, in every mip level, and reduces a larger texture to that. A small gobo therefore costs less memory than a detailed photograph of the same light. A surface far from the light shows the picture blurred and a surface near the light shows it sharp. A picture of 128 x 128 texels a side takes about 0.2 MB with its mip levels. One of 512 x 512 takes about 2.8 MB.
+
+The engine keeps room for four pictures once a scene has one. A scene with one detailed picture therefore takes about 11 MB.
 
 </details>
 
@@ -179,7 +181,11 @@ export default defineSketch(({ scene, materials, geometry }) => {
 - Area lights light every GPU path in the same way: WebGPU, WebGPU's compatibility mode and WebGL2.
 - Scene passes and reflection passes draw area lights too, with their pictures. The `areaLights` cap applies to each pass on its own.
 
-A rectangle light can show a picture over its area, such as a shop window or a screen. The `image` option and `setImage({ width, height, data })` take sRGB pixels, four bytes each, top row first. The light then varies over its area: a puddle shows the picture, and a rough wall gets its blurred colors. The color and intensity tint the picture, and the light gives out its intensity times the picture's average color. A mostly dark picture, such as thin neon tubes on black, lights little around it, so paint a faint glow around the tubes to light more. Pictures follow the same limits as [spot light maps](#spot-light-maps). `setImage(null)` goes back to one color. A new picture allocates and takes up to a few tens of milliseconds, so set it at setup or now and then.
+A rectangle light can show a picture over its area, such as a shop window or a screen. The `image` option and `setImage({ width, height, data })` take sRGB pixels, four bytes each, top row first. The light then varies over its area: a puddle shows the picture, and a rough wall gets its blurred colors.
+
+The color and intensity tint the picture, and the light gives out its intensity times the picture's average color. A mostly dark picture, such as thin neon tubes on black, lights little around it, so paint a faint glow around the tubes to light more. Pictures follow the same limits as [spot light maps](#spot-light-maps).
+
+`setImage(null)` goes back to one color. A new picture allocates and takes up to a few tens of milliseconds, so set it at setup or now and then.
 
 <details>
 <summary>Technical details: what area lights download</summary>
@@ -236,7 +242,9 @@ export default defineSketch(async ({ scene, assets }) => {
 
 ## Shadows
 
-Only one directional light casts shadows: the first one you created among those that are visible and share a layer with the camera. It casts them when it has `castShadows: true` or after `setCastShadows(true)`. On another directional light the option has no effect until that light becomes the first, for example when you hide or destroy the earlier ones. Objects need `castShadows` and `receiveShadows` of their own. The `shadow` option and `setShadow` set the light's cascades, map size, distance and biases, and `intensity`, how much of the shadow it draws, from 0 to 1:
+Only one directional light casts shadows: the first one you created among those that are visible and share a layer with the camera. It casts them when it has `castShadows: true` or after `setCastShadows(true)`.
+
+On another directional light the option has no effect until that light becomes the first, for example when you hide or destroy the earlier ones. Objects need `castShadows` and `receiveShadows` of their own. The `shadow` option and `setShadow` set the light's cascades, map size, distance and biases, and `intensity`, how much of the shadow it draws, from 0 to 1:
 
 ```ts
 const sun = scene.createDirectionalLight({

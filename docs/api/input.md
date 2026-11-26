@@ -78,7 +78,9 @@ The sketch counts presses and releases per frame. A key can go down and up betwe
 
 Use `dragDx` and `dragDy` for drags, such as turning an object with the mouse. A frame can hold the end of a hover and the start of a drag, and `dx` counts both.
 
-A frame's drag belongs to one press. During a slow frame, one drag can end and the next can start before the sketch reads either. The next press and the events after it then wait for the following frame, so each drag keeps its own button and movement. Two quick clicks between two frames also count as two presses, one in each of the next two frames. Wheel scroll that follows a release waits for the following frame in the same way. So a frame's scroll never comes after the end of its drag. Controls that ignore the wheel during a drag still take the scroll after it.
+A frame's drag belongs to one press. During a slow frame, one drag can end and the next can start before the sketch reads either. The next press and the events after it then wait for the following frame, so each drag keeps its own button and movement. Two quick clicks between two frames also count as two presses, one in each of the next two frames.
+
+Wheel scroll that follows a release waits for the following frame in the same way. So a frame's scroll never comes after the end of its drag. Controls that ignore the wheel during a drag still take the scroll after it.
 
 Browsers send a pinch on a trackpad as wheel scroll with the Control key's flag, while no Control key is down. Unless the page stops it, the browser also zooms the whole page on a pinch. [What the page does](#what-the-page-does) shows how to stop it.
 

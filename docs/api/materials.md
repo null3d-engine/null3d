@@ -107,7 +107,9 @@ The next sections explain the specular, transmission, diffuse transmission and l
 
 ## Specular reflection and index of refraction
 
-A surface reflects some light like a mirror, blurred by its roughness. This is its specular reflection. A metal's reflection takes its base color. A non-metal's reflection is white, and weak when you look at the surface head on: 4% of the light with the defaults. It grows to all the light at grazing angles. Three values change the non-metallic part, as glTF's `KHR_materials_ior` and `KHR_materials_specular` extensions do. The standard material's own lighting and shaders draw them, with the formulas in this table.
+A surface reflects some light like a mirror, blurred by its roughness. This is its specular reflection. A metal's reflection takes its base color. A non-metal's reflection is white, and weak when you look at the surface head on: 4% of the light with the defaults. It grows to all the light at grazing angles.
+
+Three values change the non-metallic part, as glTF's `KHR_materials_ior` and `KHR_materials_specular` extensions do. The standard material's own lighting and shaders draw them, with the formulas in this table.
 
 | Value | Head on | At grazing angles |
 | --- | --- | --- |
@@ -196,11 +198,12 @@ const shade = materials.standard({
 });
 ```
 
-A measured leaf reflects about 7 to 11 per cent of visible light and transmits about 4 to 6 per
-cent of it, and almost all of that comes out diffuse. The share of its diffuse light that passes
+A measured leaf reflects about 7 to 11 percent of visible light and transmits about 4 to 6
+percent of it, and almost all of that comes out diffuse. The share of its diffuse light that passes
 through therefore sits near a third: 0.25 to 0.45. Its gloss is a dielectric's, with a reflectance
-at normal incidence of about 0.03 to 0.04 and a perceptual roughness of 0.35 to 0.6. Give a leaf
-material values from these ranges. Petals and paper are
+at normal incidence of about 0.03 to 0.04 and a perceptual roughness of 0.35 to 0.6.
+
+Give a leaf material values from these ranges. Petals and paper are
 thinner than leaves and let more through, so the translucency demo keeps its petals at 0.7 and its
 paper lantern at 0.85; the measured range is for leaves.
 
@@ -302,7 +305,9 @@ Give any of these values, or a layer map, when you create the material, to chang
 | `sheenColorMap` | RGB, sRGB | Multiplies `sheenColor` |
 | `sheenRoughnessMap` | A | Multiplies `sheenRoughness` |
 
-The layers' maps take the places of the light map and the specular maps. So a material with a clear coat, a sheen, iridescence or anisotropy takes no `lightMap`, `specularIntensityMap` or `specularColorMap`, and no `diffuseTransmission`. Development builds throw E1217 for them, and production builds draw the material without them. Its `specularIntensity` and `specularColor` values still apply. Give `clearcoatMap` and `clearcoatRoughnessMap` as one texture, with the coat in red and its roughness in green, and `sheenColorMap` and `sheenRoughnessMap` as one texture, with the roughness in alpha. glTF packs them this way, and two textures for a pair throw E1217. An sRGB texture keeps its alpha linear, so one sRGB texture holds the sheen's color and roughness.
+The layers' maps take the places of the light map and the specular maps. So a material with a clear coat, a sheen, iridescence or anisotropy takes no `lightMap`, `specularIntensityMap` or `specularColorMap`, and no `diffuseTransmission`. Development builds throw E1217 for them, and production builds draw the material without them. Its `specularIntensity` and `specularColor` values still apply.
+
+Give `clearcoatMap` and `clearcoatRoughnessMap` as one texture, with the coat in red and its roughness in green, and `sheenColorMap` and `sheenRoughnessMap` as one texture, with the roughness in alpha. glTF packs them this way, and two textures for a pair throw E1217. An sRGB texture keeps its alpha linear, so one sRGB texture holds the sheen's color and roughness.
 
 A material with `transmission` keeps its `transmissionMap` and `thicknessMap` beside the layers, except for the pairs in [Texture maps](#texture-maps).
 
@@ -359,7 +364,9 @@ Give any of these values, or a map, when you create the material, to change the 
 | `iridescenceThicknessMap` | G, linear | Mixes `iridescenceThicknessRange` between its two values |
 | `anisotropyMap` | RG direction, B strength, linear | Red and green give the direction in the tangent plane, and blue multiplies `anisotropy` |
 
-A material with these maps takes no `lightMap` and no specular maps, since the maps take their places. A material takes the maps of a clear coat and a sheen, or the maps of iridescence and the anisotropy: the coat's and the sheen's maps fill every place. Development builds throw E1217 for a material that asks for both families. Production builds keep the coat's and the sheen's maps and draw the others' values alone. The glTF loader keeps the coat's and the sheen's maps and notes the others. A material with `transmission` keeps its `transmissionMap` and `thicknessMap` beside these maps, except for the pairs in [Texture maps](#texture-maps).
+A material with these maps takes no `lightMap` and no specular maps, since the maps take their places. A material takes the maps of a clear coat and a sheen, or the maps of iridescence and the anisotropy: the coat's and the sheen's maps fill every place. Development builds throw E1217 for a material that asks for both families.
+
+Production builds keep the coat's and the sheen's maps and draw the others' values alone. The glTF loader keeps the coat's and the sheen's maps and notes the others. A material with `transmission` keeps its `transmissionMap` and `thicknessMap` beside these maps, except for the pairs in [Texture maps](#texture-maps).
 
 A material with `anisotropy` draws with or without a map. The direction that it stretches along comes from the surface's tangent frame. The frame is the mesh's tangents where it has them, else the texture coordinates, else the normal map's coordinates where the material also has a normal map. A material without a map and with no texture coordinates takes any frame square to the surface.
 
@@ -501,7 +508,9 @@ Two maps of one slot draw together only when their images have one size and form
 
 The maps of a material are fixed when you create it. A mesh needs texture coordinates to show them, and a mesh without them draws the material without its maps. A map reads the set of coordinates that its texture's `uvSet` names. Light maps usually use the second set, so load them with `uvSet: 1`. A mesh without a second set gives its first set to such a map.
 
-A light map adds baked light to the ambient light. A bake often places its light map on each mesh with its own scale and offset, which `lightMapOffset` and `lightMapRepeat` give; the other maps keep their coordinates. A directional light map also stores the light's direction at each texel: give its `lightMapDirection` and the material's normal map bends the baked light, so relief faces the light of the bake and turns away from it. `assets.loadLightMap` reads a directional map from a [baked light file](../guides/baked-light-data.md). A material made from a model for Needle's viewer takes that model's light maps with their RGBM decode.
+A light map adds baked light to the ambient light. A bake often places its light map on each mesh with its own scale and offset, which `lightMapOffset` and `lightMapRepeat` give; the other maps keep their coordinates.
+
+A directional light map also stores the light's direction at each texel: give its `lightMapDirection` and the material's normal map bends the baked light, so relief faces the light of the bake and turns away from it. `assets.loadLightMap` reads a directional map from a [baked light file](../guides/baked-light-data.md). A material made from a model for Needle's viewer takes that model's light maps with their RGBM decode.
 
 A normal map takes its frame from the mesh's tangents when the mesh has them, as `geometry.fromArrays` with `computeTangents` makes them. Otherwise the shader finds the frame from how the positions and the coordinates change between pixels.
 
@@ -551,7 +560,9 @@ A page without relief pays nothing for it. The first material with a bump map lo
 
 ## Texture coordinate transform
 
-`uvTransform` places every map of a material on the texture coordinates: `offset`, `repeat` and `rotation` in radians. The engine turns the coordinates by `rotation` about their origin, scales them by `repeat`, and then adds `offset`: u' = repeat.u × (u cos r + v sin r) + offset.u, and v' = repeat.v × (v cos r − u sin r) + offset.v. A transform that leaves a value out takes its default. `set` changes the transform at any time. `mapUvTransforms` places one map by its option name, such as `emissiveMap`, where it differs from the others. A map without one keeps the transform that `uvTransform` gives it. Two maps that share a slot, as a sheen map and an anisotropy map do, share one transform too. A glTF file keeps a transform for each of its textures, so the loader places each map with its own.
+`uvTransform` places every map of a material on the texture coordinates: `offset`, `repeat` and `rotation` in radians. The engine turns the coordinates by `rotation` about their origin, scales them by `repeat`, and then adds `offset`: u' = repeat.u × (u cos r + v sin r) + offset.u, and v' = repeat.v × (v cos r − u sin r) + offset.v. A transform that leaves a value out takes its default. `set` changes the transform at any time.
+
+`mapUvTransforms` places one map by its option name, such as `emissiveMap`, where it differs from the others. A map without one keeps the transform that `uvTransform` gives it. Two maps that share a slot, as a sheen map and an anisotropy map do, share one transform too. A glTF file keeps a transform for each of its textures, so the loader places each map with its own.
 
 ## Color
 
@@ -561,7 +572,9 @@ A page without relief pays nothing for it. The first material with a bump map lo
 
 `set(options)` changes a material's values at any time, and every object that uses the material changes with it. It changes only the options that you pass. The others keep their values, so `set({ roughness: 0.5 })` keeps the color. A standard material's `set` takes every value in the table above, and an unlit material's `set` takes `color`, `opacity`, `alphaCutoff`, `uvTransform` and `mapUvTransforms`.
 
-`set` is for setup, and for several values at once. Change the values that a frame changes with `setUniform(name, value)`, which allocates nothing: `material.setUniform('roughness', 0.5 + 0.1 * Math.sin(t))`. On a standard material it takes these numbers: `opacity`, `alphaCutoff`, `metalness`, `roughness`, `emissiveIntensity`, `aoMapIntensity`, `lightMapIntensity`, `specularIntensity`, `envIntensity`, `transmission`, `thickness`, `dispersion`, `diffuseTransmission`, `subsurfaceRadius`, `clearcoat`, `clearcoatRoughness`, `sheenRoughness`, `iridescence`, `iridescenceIor`, `anisotropy`, `anisotropyRotation` and, on a decal, `edgeFade`. It also takes these colors: `color`, `emissive`, `specularColor`, `attenuationColor` and `sheenColor`. Give a color in an array that you change in place. Every other value goes through `set`, and `setUniform` throws [E1216](../errors/E1216.md) for it. A custom material's `setUniform` also changes one of its WGSL uniforms, by the name in its `struct Uniforms`. The engine's allocation benchmark checks `setUniform` in every frame and `set` at setup.
+`set` is for setup, and for several values at once. Change the values that a frame changes with `setUniform(name, value)`, which allocates nothing: `material.setUniform('roughness', 0.5 + 0.1 * Math.sin(t))`. On a standard material it takes these numbers: `opacity`, `alphaCutoff`, `metalness`, `roughness`, `emissiveIntensity`, `aoMapIntensity`, `lightMapIntensity`, `specularIntensity`, `envIntensity`, `transmission`, `thickness`, `dispersion`, `diffuseTransmission`, `subsurfaceRadius`, `clearcoat`, `clearcoatRoughness`, `sheenRoughness`, `iridescence`, `iridescenceIor`, `anisotropy`, `anisotropyRotation` and, on a decal, `edgeFade`. It also takes these colors: `color`, `emissive`, `specularColor`, `attenuationColor` and `sheenColor`.
+
+Give a color in an array that you change in place. Every other value goes through `set`, and `setUniform` throws [E1216](../errors/E1216.md) for it. A custom material's `setUniform` also changes one of its WGSL uniforms, by the name in its `struct Uniforms`. The engine's allocation benchmark checks `setUniform` in every frame and `set` at setup.
 
 <details>
 <summary>Technical details: why set can allocate</summary>
@@ -610,7 +623,9 @@ A material with `vertexColors` draws a mesh without colors in its base color alo
 
 ### Wireframe
 
-A material with `wireframe: true` draws each triangle's three edges as lines. An edge that two triangles share draws twice. The engine keeps an edge list for each mesh from the first wireframe on, which takes twice the GPU memory of the mesh's triangle indices. Its shadows draw lines too. Flat shading and bump maps have no effect, because lines have no faces. Lines are one pixel wide on every GPU path. For wide lines, or for a mesh's outline edges alone, use [Lines](lines.md).
+A material with `wireframe: true` draws each triangle's three edges as lines. An edge that two triangles share draws twice. The engine keeps an edge list for each mesh from the first wireframe on, which takes twice the GPU memory of the mesh's triangle indices. Its shadows draw lines too.
+
+Flat shading and bump maps have no effect, because lines have no faces. Lines are one pixel wide on every GPU path. For wide lines, or for a mesh's outline edges alone, use [Lines](lines.md).
 
 ## Alpha modes
 
@@ -625,7 +640,9 @@ A surface's alpha is its `opacity`, times the alpha of its base color map. With 
 
 A masked surface has hard edges, and it hides what lies behind it as an opaque one does, so its objects draw in any order. Use it for leaves, fences and cut-out shapes. Only masked and hashed materials draw with the shader that drops fragments, so opaque ones keep the GPU's early depth test.
 
-A hashed surface draws a share of its points that its alpha sets: half of them at an alpha of 0.5. A hash of each point's place on the mesh picks the points. So the pattern moves with the object and does not crawl as the camera moves. The hash uses integer math, so every GPU draws the same pattern. Hashed objects draw in any order, as masked ones do. They suit fades and see-through surfaces that cross each other, where blending would need a sort. The pattern is noisy up close. `alphaCutoff` has no effect in this mode.
+A hashed surface draws a share of its points that its alpha sets: half of them at an alpha of 0.5. A hash of each point's place on the mesh picks the points. So the pattern moves with the object and does not crawl as the camera moves. The hash uses integer math, so every GPU draws the same pattern.
+
+Hashed objects draw in any order, as masked ones do. They suit fades and see-through surfaces that cross each other, where blending would need a sort. The pattern is noisy up close. `alphaCutoff` has no effect in this mode.
 
 A blended surface lets what lies behind it show through. Blended objects draw after the opaque ones, farthest first, so each one blends over the objects behind it. A call to `mesh.setRenderOrder(order)` draws an object before or after the others, whatever its depth. The rows of an instance batch sort one by one. The page [Materials and pipelines](../concepts/materials.md#the-transparent-pass) explains the sort. It also says where the sort cannot help.
 
@@ -642,7 +659,9 @@ leaves.set({ alphaCutoff: 0.2 });
 
 A masked surface's cut edges are as smooth as its outer edges, as `alphaToCoverage` is on by default. The alpha fades from nothing at `alphaCutoff` to full over about one pixel. MSAA then draws the surface on that share of each edge pixel's samples. Foliage and fences lose their stair steps, and their objects still draw in any order.
 
-This is the best technique for cut-out shapes, so it is the default, as in Filament. For hard cut edges, give `alphaToCoverage: false`. The option needs MSAA, the default anti-aliasing. With FXAA or no anti-aliasing, as on the Low preset, the mask cuts as without it. On WebGPU, where the scene's colors have no alpha channel, the shader sets the covered samples itself, with the same look. The first such material loads the shader builds of alpha to coverage, and the first hashed material those of the hash. To load them before the first frame instead, list `'coverage'` and `'hash'` in `createEngine`'s `preload` option.
+This is the best technique for cut-out shapes, so it is the default, as in Filament. For hard cut edges, give `alphaToCoverage: false`. The option needs MSAA, the default anti-aliasing. With FXAA or no anti-aliasing, as on the Low preset, the mask cuts as without it. On WebGPU, where the scene's colors have no alpha channel, the shader sets the covered samples itself, with the same look.
+
+The first such material loads the shader builds of alpha to coverage, and the first hashed material those of the hash. To load them before the first frame instead, list `'coverage'` and `'hash'` in `createEngine`'s `preload` option.
 
 A [custom material](materials.md#custom-materials) takes both, but only where its WGSL sets or reads the surface's `alpha`. Such a material's shadow caster and motion build run that alpha too, so its shadow and its motion keep the mask's holes. WGSL that never names the alpha throws E1217 for `alphaToCoverage` and for the `hash` mode, and it casts its mesh's whole shape.
 
@@ -729,7 +748,9 @@ Each frame then draws the camera's weighted surfaces into two targets of the ren
 
 ### Moment transparency
 
-The quality setting `momentTransparency` blends the blended surfaces in a second layer that needs no sort. It is nearer an exact back-to-front blend than the weighted blending in the engine's test of five overlapping glass panes: more than twice nearer when the panes sit within a few meters, and about two and a half times nearer when they spread from 1 to 30 meters. The engine stores four depth moments of each pixel, then draws the surfaces a second time and weights each fragment's color by the light that the moments say survives in front of it. A last step blends the result over the scene. The fit is exact for one surface and for two, and closest to the exact blend of every method the engine has for overlapping glass, foliage and particles.
+The quality setting `momentTransparency` blends the blended surfaces in a second layer that needs no sort. It is nearer an exact back-to-front blend than the weighted blending in the engine's test of five overlapping glass panes: more than twice nearer when the panes sit within a few meters, and about two and a half times nearer when they spread from 1 to 30 meters.
+
+The engine stores four depth moments of each pixel, then draws the surfaces a second time and weights each fragment's color by the light that the moments say survives in front of it. A last step blends the result over the scene. The fit is exact for one surface and for two, and closest to the exact blend of every method the engine has for overlapping glass, foliage and particles.
 
 ```ts
 // The page turns the layer on when the engine starts, and every blended material draws in it.
@@ -902,7 +923,11 @@ A material with a vertex offset moves its shadows too: its casters draw with the
 
 An offset that fades out with distance, such as wind, declares `swayDistance`: the distance from the camera out to which the offset moves. The material's WGSL fades its offset to nothing by that distance, and the engine counts a caster of the material as moving only while its bounding sphere reaches within it. A plant past the distance stands still, so a far shadow cascade that only its sway reached keeps the layer it holds. Leave it out for an offset that moves at every distance.
 
-A masked custom material cuts its shadow at its cutoff only when its WGSL declares `fn coverage(input: SurfaceInput) -> f32`. The function returns the opacity of the point, and the engine calls it in the material's shadow caster builds, so a card casts the shape of the object it shows rather than its whole quad. A material that declares neither a coverage function nor a surface alpha casts its mesh's whole shape, whatever its mask. WGSL that declares a vertex offset, a coverage function or the surface's alpha gets the caster builds; a material with none casts through the engine's own depth template. A flat caster draws both faces, or it casts nothing: the shadow pass culls the front faces of single-sided geometry, so a single-sided quad is culled whole. Give a material whose caster is flat geometry `doubleSided: true`. The caster tests the coverage under the material's `alphaCutoff`, so it needs the `mask` alpha mode: a development build refuses a coverage function on a material that is not masked, because its caster would drop no texel and cast the whole shape.
+A masked custom material cuts its shadow at its cutoff only when its WGSL declares `fn coverage(input: SurfaceInput) -> f32`. The function returns the opacity of the point, and the engine calls it in the material's shadow caster builds, so a card casts the shape of the object it shows rather than its whole quad. A material that declares neither a coverage function nor a surface alpha casts its mesh's whole shape, whatever its mask.
+
+WGSL that declares a vertex offset, a coverage function or the surface's alpha gets the caster builds; a material with none casts through the engine's own depth template. A flat caster draws both faces, or it casts nothing: the shadow pass culls the front faces of single-sided geometry, so a single-sided quad is culled whole. Give a material whose caster is flat geometry `doubleSided: true`.
+
+The caster tests the coverage under the material's `alphaCutoff`, so it needs the `mask` alpha mode: a development build refuses a coverage function on a material that is not masked, because its caster would drop no texel and cast the whole shape.
 
 A surface function can move where the sun's shadow lookup reads by setting `s.shadowOffset`, a position in world space relative to the surface. A stand-in card sets it to the surface that its stored depth shows, so its own cast does not fall on it. [Surface functions](../shaders/surface-functions.md#shadows) shows the WGSL.
 

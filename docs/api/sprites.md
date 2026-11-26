@@ -144,7 +144,9 @@ Blended sprites draw after the opaque objects, farthest first, in the same trans
 
 ## Clicks and raycasts
 
-Raycasts hit a sprite where the ray crosses its quad. The hit's `object` is the batch, and its `instance` is the sprite. A sprite batch takes `sprites.on('click', handler)` and the other [pointer events on objects](input.md#pointer-events-on-objects), as an instance batch does. A ray hits the whole quad, also where the sprite's map is clear. [Raycasting](raycast.md#sprites-points-and-lines) has the details. Overlap queries do not find sprites. Use a raycast.
+Raycasts hit a sprite where the ray crosses its quad. The hit's `object` is the batch, and its `instance` is the sprite. A sprite batch takes `sprites.on('click', handler)` and the other [pointer events on objects](input.md#pointer-events-on-objects), as an instance batch does. A ray hits the whole quad, also where the sprite's map is clear.
+
+[Raycasting](raycast.md#sprites-points-and-lines) has the details. Overlap queries do not find sprites. Use a raycast.
 
 ```ts
 sprites.on('click', (event) => {

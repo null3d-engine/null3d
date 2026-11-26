@@ -64,11 +64,17 @@ export default defineSketch(({ scene, geometry, materials }) => {
 | `addComputeInstances(description, options)` | A draw of instances from the add-on's own GPU buffer, after an `await`: [Add-on instance draws](feature-instances.md) |
 | `createVertexDraw(options)` | A draw of a custom material over a vertex count, with no mesh data: [Draws from a vertex count](vertex-draws.md) |
 
-Groups, meshes, cameras and lights take the same object options: `name`, `position`, `rotation`, `scale`, `parent`, `dynamic` and `layers`. [Objects and transforms](objects.md) describes them. `createMesh` also takes `castShadows` and `receiveShadows`, which [Shadows](../concepts/shadows.md) explains. It takes `occluder` too, which [Culling](../concepts/culling.md) explains. `createInstances` takes `colors: true` and `values: true` for a color and four values per row: [Instances and batching](../concepts/instances.md). Meshes come from `geometry` and materials from `materials` in the sketch context. One mesh and one material can serve any number of objects.
+Groups, meshes, cameras and lights take the same object options: `name`, `position`, `rotation`, `scale`, `parent`, `dynamic` and `layers`. [Objects and transforms](objects.md) describes them.
+
+`createMesh` also takes `castShadows` and `receiveShadows`, which [Shadows](../concepts/shadows.md) explains. It takes `occluder` too, which [Culling](../concepts/culling.md) explains. `createInstances` takes `colors: true` and `values: true` for a color and four values per row: [Instances and batching](../concepts/instances.md).
+
+Meshes come from `geometry` and materials from `materials` in the sketch context. One mesh and one material can serve any number of objects.
 
 ## Models and copies
 
-`scene.instantiate(prefab, options)` creates the objects of a model that [`assets.loadGltf`](assets.md#gltf-models) loaded. It returns a `PrefabInstance`: a group that holds the copy of the file's nodes. The `options` place that group as they place any object. Every copy shares the model's meshes, materials and textures, so a second copy costs only its objects. `castShadows` and `receiveShadows` apply to every mesh of the copy, and to every row of the instance batches of nodes with instancing of their own. The engine reserves the places of all the copy's objects with one call, and queues their changes as one batch. So no frame shows part of a copy.
+`scene.instantiate(prefab, options)` creates the objects of a model that [`assets.loadGltf`](assets.md#gltf-models) loaded. It returns a `PrefabInstance`: a group that holds the copy of the file's nodes. The `options` place that group as they place any object. Every copy shares the model's meshes, materials and textures, so a second copy costs only its objects.
+
+`castShadows` and `receiveShadows` apply to every mesh of the copy, and to every row of the instance batches of nodes with instancing of their own. The engine reserves the places of all the copy's objects with one call, and queues their changes as one batch. So no frame shows part of a copy.
 
 ```ts
 const ship = await assets.loadGltf('/models/ship.glb');
@@ -81,7 +87,9 @@ turret?.rotateY(0.5);
 
 `scene.clone(object)` copies an object and every object below it, with their meshes, materials, lights, cameras and settings. The copy goes under the same parent, so it starts in the same place. It uses the same path as `instantiate`: one call and one batch of changes for the whole tree. Instance batches are not objects, so `clone` leaves them out.
 
-`scene.createInstances(prefab, count, options)` draws many copies of a model with instance batches, one for each mesh of the model. The batches share one set of rows, so each row places a whole copy. Write the returned batch's `positions`, `rotations` and `scales` as for a batch of one mesh. Each mesh keeps its place in the model. The model's lights are left out. A model with no meshes, or with instancing of its own, throws [E1417](../errors/E1417.md). Give `createInstances` one of its meshes and a material instead, from `prefab.find(name)`.
+`scene.createInstances(prefab, count, options)` draws many copies of a model with instance batches, one for each mesh of the model. The batches share one set of rows, so each row places a whole copy. Write the returned batch's `positions`, `rotations` and `scales` as for a batch of one mesh.
+
+Each mesh keeps its place in the model. The model's lights are left out. A model with no meshes, or with instancing of its own, throws [E1417](../errors/E1417.md). Give `createInstances` one of its meshes and a material instead, from `prefab.find(name)`.
 
 ```ts
 const tree = await assets.loadGltf('/models/tree.glb');
@@ -170,7 +178,11 @@ The analytic sky takes these settings:
 | `time` | 0 | The time in seconds that moves the clouds, such as the sketch's time |
 | `showSunDisc` | true | Whether the sky shows the sun's disc |
 
-The quality preset's [`cloudSteps`](../concepts/quality-preset-tables.md#settings-of-each-preset) chooses which layer draws: Low and Medium draw the flat layer, and High and Ultra draw volumetric clouds, ray marched through a noise volume. Both read the same settings above, so a setting keeps its meaning when the preset changes. A `cloudSteps` of 0 draws the flat layer. WebGL2 and compatibility mode stop at Medium, so they draw the flat layer unless the page sets `cloudSteps` above 0, with `quality.set({ cloudSteps: 32 })` or the `cloudSteps` option of `createEngine`. The tier's noise and shaders load at its first use, and a page on the flat presets downloads neither. The sky's environment map takes the clouds too, with two limits. A map marches at most 16 steps. It draws them only when the page starts with `cloudSteps` above 0, because the map picks the tier's shaders at the page's start. To show clouds in reflections on WebGL2, give the `cloudSteps` option of `createEngine`.
+The quality preset's [`cloudSteps`](../concepts/quality-preset-tables.md#settings-of-each-preset) chooses which layer draws: Low and Medium draw the flat layer, and High and Ultra draw volumetric clouds, ray marched through a noise volume. Both read the same settings above, so a setting keeps its meaning when the preset changes. A `cloudSteps` of 0 draws the flat layer.
+
+WebGL2 and compatibility mode stop at Medium, so they draw the flat layer unless the page sets `cloudSteps` above 0, with `quality.set({ cloudSteps: 32 })` or the `cloudSteps` option of `createEngine`. The tier's noise and shaders load at its first use, and a page on the flat presets downloads neither.
+
+The sky's environment map takes the clouds too, with two limits. A map marches at most 16 steps. It draws them only when the page starts with `cloudSteps` above 0, because the map picks the tier's shaders at the page's start. To show clouds in reflections on WebGL2, give the `cloudSteps` option of `createEngine`.
 
 Two more settings add a second sky, which `timeOfDay` uses to fade the moon's sky in as night falls:
 
@@ -235,7 +247,9 @@ export default defineSketch(async ({ scene, assets }) => {
 | `moonIntensity` | 0 | The moon's light above the air. It lights the air as the sun does, and the sky shows its disc, lit from the sun's side. 0 draws no moon |
 | `stars` | 0 | The stars' brightness. They show only where the sky is dark enough. 0 draws no stars |
 
-The sky's light is in the units of a directional light's intensity, so the exposure that suits the scene's lights suits the sky. It does not move a light: set the main light's direction and color with it, or take them from [`timeOfDay`](#time-of-day). The quality setting [`physicalSky`](../concepts/quality-presets.md) is off on Low. There the analytic sky stands in, with the same sun, moon, air and clouds, matched to the physical sky's brightness. The haze on objects stays. The first physical sky downloads its shaders, `'physical_sky'`, and the view shows the background color until its tables are drawn.
+The sky's light is in the units of a directional light's intensity, so the exposure that suits the scene's lights suits the sky. It does not move a light: set the main light's direction and color with it, or take them from [`timeOfDay`](#time-of-day).
+
+The quality setting [`physicalSky`](../concepts/quality-presets.md) is off on Low. There the analytic sky stands in, with the same sun, moon, air and clouds, matched to the physical sky's brightness. The haze on objects stays. The first physical sky downloads its shaders, `'physical_sky'`, and the view shows the background color until its tables are drawn.
 
 The sky lights nothing by itself. [`assets.skyEnvironment()`](assets.md#environments) makes an environment of it, which follows the sky's settings as they change: [Lighting and environment](../concepts/lighting.md#sky-and-backgrounds) shows how.
 
@@ -249,7 +263,9 @@ A value out of its range, `blur` on a background that is not an environment, `ro
 
 ### Sky layers
 
-`scene.setSkyLayer(description, { wgsl })` draws an add-on's own layer over the sky: the top of the sky, a second layer of clouds, an aurora or a space backdrop. The description is a [feature description](features.md): it names the feature and records at the `'background'` point, as a `'draw'`, provides `'sky'`, and draws in the `'main'`, `'scenePass'` and `'reflection'` views. The layer's WGSL declares `fn skyLayer(input: SkyLayerInput) -> SkyLayer` and the null3D Vite plugin builds it into the engine's sky-layer template, which owns the box around the camera, the bindings, the depth state and the blend. The layer draws right after the background, in the pixels that no object covers, on WebGPU, WebGL2 and in compatibility mode.
+`scene.setSkyLayer(description, { wgsl })` draws an add-on's own layer over the sky: the top of the sky, a second layer of clouds, an aurora or a space backdrop. The description is a [feature description](features.md): it names the feature and records at the `'background'` point, as a `'draw'`, provides `'sky'`, and draws in the `'main'`, `'scenePass'` and `'reflection'` views.
+
+The layer's WGSL declares `fn skyLayer(input: SkyLayerInput) -> SkyLayer` and the null3D Vite plugin builds it into the engine's sky-layer template, which owns the box around the camera, the bindings, the depth state and the blend. The layer draws right after the background, in the pixels that no object covers, on WebGPU, WebGL2 and in compatibility mode.
 
 ```ts
 import { defineFeature, defineSketch } from '@null3d/engine';
@@ -293,9 +309,15 @@ The layer's function reads one input and returns one value:
 
 A layer declares no uniforms, textures or bindings of its own: the engine binds the frame and the layer's values, and the add-on's numbers are constants in its WGSL. It draws in the camera's view, in scene passes and in reflections, and it draws nothing where the background draws nothing, as in a debug view. A second call replaces the layer, `set` changes its values, and `scene.clearSkyLayer()` removes it and gives the core sky its full sun back.
 
-The layer reaches the sky's environment map as well as the background, so every place that a sky is seen shows it: a lake or a window reflects the layer, and the diffuse light that the sky gives the scene carries its color, so it lights the ground under it. The engine builds the layer's WGSL a second time into the shader that fills the map's cube faces, and finds the map's light in the map itself: a small pass sums a level of the map onto the nine coefficients of its diffuse light, and the engine reads them back once for each fill, never in a frame and with nothing waiting: the read is asynchronous, and a fill that cannot start while another runs starts on a later frame. None of this is the add-on's work, and the light matches the reflections because it comes from them.
+The layer reaches the sky's environment map as well as the background, so every place that a sky is seen shows it. A lake or a window reflects the layer, and the diffuse light that the sky gives the scene carries its color. So the layer lights the ground under it.
 
-A fill spreads over some twenty frames, one stage a frame. A layer that its clock moves sets `refresh`, in seconds, to tell the map how often to capture it again. The map starts one fill each `refresh` seconds, so a shorter time follows a faster layer. At the default of one second, that is about 20 stage draws a second. A layer with `refresh: 0` stands still and costs one fill for each change. Until the first capture of a new layer lands, the scene keeps the core sky's own light, and a frame or two passes before the map's light follows its texels. The aurora example add-on in `examples/addons/aurora/` draws one, over a frozen lake that reflects it.
+The engine builds the layer's WGSL a second time into the shader that fills the map's cube faces. A small pass sums a level of the map onto the nine coefficients of its diffuse light. The engine reads them back once for each fill. The read is asynchronous and runs in no frame, so nothing waits. A fill that cannot start while another runs starts on a later frame.
+
+None of this is the add-on's work, and the light matches the reflections because it comes from them.
+
+A fill spreads over some twenty frames, one stage a frame. A layer that its clock moves sets `refresh`, in seconds, to tell the map how often to capture it again. The map starts one fill each `refresh` seconds, so a shorter time follows a faster layer. At the default of one second, that is about 20 stage draws a second. A layer with `refresh: 0` stands still and costs one fill for each change.
+
+Until the first capture of a new layer lands, the scene keeps the core sky's own light, and a frame or two passes before the map's light follows its texels. The aurora example add-on in `examples/addons/aurora/` draws one, over a frozen lake that reflects it.
 
 ## Multiple views
 
@@ -316,11 +338,17 @@ export default defineSketch(({ scene }) => {
 
 The view's camera gives its layer mask, as the active camera's does, and the view follows the camera's layers when they change. The rectangle's shape sets the camera's aspect ratio, so objects keep their proportions in a half-width view. `setCamera` changes the view's camera, `setRect` changes its rectangle, and `destroy` removes the view.
 
-Each view culls the scene on its own, and draws it at its rectangle's pixels with its own depth. The sun's and the spot lights' shadows, the environment's light and the fog cost nothing more than the camera's view. On every GPU path and in every thread mode the view draws in the same frame as the camera's view, and the final image takes the tone mapping, the effects and bloom once. On the 8-bit path the view writes display color into the camera's image, and the resolve pass or the final pass draws it to the canvas.
+Each view culls the scene on its own, and draws it at its rectangle's pixels with its own depth. The sun's and the spot lights' shadows, the environment's light and the fog cost nothing more than the camera's view.
 
-A view costs one more cull and one more scene draw. The camera's view still draws the whole canvas first, with the canvas's aspect ratio, so a split screen of two half-width views draws the scene three times: once across the canvas underneath and once for each half. A picture in picture draws it twice. The rectangle follows the render scale, as the camera's view does, so a lower scale lowers a view's cost too. A small rectangle costs little on a phone. Bloom's threshold and the tone curve see the whole image once.
+On every GPU path and in every thread mode the view draws in the same frame as the camera's view. The final image takes the tone mapping, the effects and bloom once. On the 8-bit path the view writes display color into the camera's image. The resolve pass or the final pass draws it to the canvas.
 
-A view's objects take no ambient occlusion or screen-space reflections, which shade the camera's view. The camera's volumetric fog and outline are added to the whole image after the views draw, so they also reach a view's rectangle. An object whose material shows a render pass's texture does not draw in a view, as it does not draw in another pass. `camera.screenToRay` and `camera.worldToScreen` map the whole canvas. `view.screenToRay` and `view.worldToScreen` map the view's image, and `scene.viewAt(x, y)` finds the view under a point ([Multiple views](../guides/multiple-views.md#picking-in-a-view)). A scene and its passes share 32 views, the camera's included; `scene.createView` throws [E1501](../errors/E1501.md) when none is free.
+A view costs one more cull and one more scene draw. The camera's view still draws the whole canvas first, with the canvas's aspect ratio, so a split screen of two half-width views draws the scene three times: once across the canvas underneath and once for each half. A picture in picture draws it twice. The rectangle follows the render scale, as the camera's view does, so a lower scale lowers a view's cost too.
+
+A small rectangle costs little on a phone. Bloom's threshold and the tone curve see the whole image once.
+
+A view's objects take no ambient occlusion or screen-space reflections, which shade the camera's view. The camera's volumetric fog and outline are added to the whole image after the views draw, so they also reach a view's rectangle. An object whose material shows a render pass's texture does not draw in a view, as it does not draw in another pass.
+
+`camera.screenToRay` and `camera.worldToScreen` map the whole canvas. `view.screenToRay` and `view.worldToScreen` map the view's image, and `scene.viewAt(x, y)` finds the view under a point ([Multiple views](../guides/multiple-views.md#picking-in-a-view)). A scene and its passes share 32 views, the camera's included; `scene.createView` throws [E1501](../errors/E1501.md) when none is free.
 
 [Multiple views](../guides/multiple-views.md) covers split screens, picture in picture and their cost.
 
@@ -348,7 +376,9 @@ Development builds throw E1203, E1108 and E1213 for values that they refuse, and
 
 `setLightProbeGrid` lights the scene with a grid of irradiance probes, so light that changes with a surface's place, bounced from colored walls or sky, reaches it. Each probe holds L1 spherical harmonics of the light that its surroundings bounce back. Standard materials read the grid per pixel, with four filtered reads each. Its light takes the place of the environment's diffuse light, and the environment keeps its reflections.
 
-A grid baked elsewhere passes in through `LightProbeGridData`, which packs its coefficients and its two masks into the texture. Each probe holds four RGB coefficients, 12 numbers: L0, then L1 along y, z and x. It also holds a validity and a sky visibility. The validity is 1 where the probe stands in open space and 0 where geometry encloses it, which stops its light leaking through the wall around it. The sky visibility is the share of the sky that its rays reached. A grid that a tool outside the engine baked can also come from a file: [`assets.loadLightProbeGrid`](assets.md#baked-light) reads the [baked light file](../guides/baked-light-data.md) format and gives the options below, with the texture already made. `assets.lightProbeGridFile` writes that format from a grid that `bakeProbes` made.
+A grid baked elsewhere passes in through `LightProbeGridData`, which packs its coefficients and its two masks into the texture. Each probe holds four RGB coefficients, 12 numbers: L0, then L1 along y, z and x. It also holds a validity and a sky visibility. The validity is 1 where the probe stands in open space and 0 where geometry encloses it, which stops its light leaking through the wall around it. The sky visibility is the share of the sky that its rays reached.
+
+A grid that a tool outside the engine baked can also come from a file: [`assets.loadLightProbeGrid`](assets.md#baked-light) reads the [baked light file](../guides/baked-light-data.md) format and gives the options below, with the texture already made. `assets.lightProbeGridFile` writes that format from a grid that `bakeProbes` made.
 
 ```ts
 const grid = new LightProbeGridData(
@@ -376,7 +406,9 @@ scene.setLightProbeGrid({
 | `intensity` | 1 | The factor of the grid's light, 0 or more. A factor of 0 gives none of it |
 | `environmentWeight` | 1 | The share of the environment's diffuse light that the grid takes over, 0 to 1 |
 
-`bakeProbes` bakes a grid in the browser. It casts directions from each probe with `scene.raycastBatch`, testing both faces of every triangle. A ray that reaches the sky counts toward the probe's sky visibility, which the live environment's light multiplies at draw time, weighted by how much the surface faces the sky above the horizon, so a change of the hour needs no new bake. A ray that meets a surface's back means geometry encloses the probe: the probe takes no validity, and the bake fills it from the probes around it. Where a ray hits a surface's front, `albedo` gives the surface's color for one colored bounce: the surface sends back that share of the environment's light at its normal, as a matte surface does. The bake counts no lamps, so the grid holds one colored bounce, its occlusion of the sky and which probes are enclosed.
+`bakeProbes` bakes a grid in the browser. It casts directions from each probe with `scene.raycastBatch`, testing both faces of every triangle. A ray that reaches the sky counts toward the probe's sky visibility, which the live environment's light multiplies at draw time, weighted by how much the surface faces the sky above the horizon, so a change of the hour needs no new bake.
+
+A ray that meets a surface's back means geometry encloses the probe: the probe takes no validity, and the bake fills it from the probes around it. Where a ray hits a surface's front, `albedo` gives the surface's color for one colored bounce: the surface sends back that share of the environment's light at its normal, as a matte surface does. The bake counts no lamps, so the grid holds one colored bounce, its occlusion of the sky and which probes are enclosed.
 
 | Option | Default | What it sets |
 | --- | --- | --- |
@@ -461,7 +493,9 @@ export default defineSketch(async ({ scene, assets, input }) => {
 | `layers` | The default layer | The layers of the objects that the captures draw |
 | `priority` | 0 | Where boxes overlap, the higher priority wins, then the smaller box |
 
-`probe.set(options)` sets every option again. A new position or new layers capture again. `probe.capture()` captures again in a frame soon after the call, as after an object around the probe moved. The surfaces in its box read the new map from that frame. Without a call, a probe that refreshes once keeps its last map. `probe.destroy()` removes the probe. Its box takes the light of other probes or of the environment from the next frame.
+`probe.set(options)` sets every option again. A new position or new layers capture again. `probe.capture()` captures again in a frame soon after the call, as after an object around the probe moved. The surfaces in its box read the new map from that frame. Without a call, a probe that refreshes once keeps its last map.
+
+`probe.destroy()` removes the probe. Its box takes the light of other probes or of the environment from the next frame.
 
 A scene has at most 16 probes, and their captures take 6 of the 32 views that the scene and its [passes](render.md) share. Each throws [E1430](../errors/E1430.md) past its limit. An option that probes do not take, or a call on a probe that was destroyed, throws one of the codes in [Errors](#errors).
 
@@ -499,7 +533,11 @@ scene.setFog({ color: '#b8c4d0', density: 0.04, sunGlow: 1.5 });
 
 Height fog sums the fog along each line of sight. A view down into the mist then sees thick fog, and a view up sees clear air. The sun glow takes the color and the intensity of the scene's main directional light, so it follows the light as it moves. Shadows do not block the glow.
 
-`background` mixes the scene's fog into the sky and the background, as if they stood at the camera's far plane. The haze over the land then runs on over the sky it meets, so a scene needs no haze sheet. It runs from 0 to 1 and defaults to 0. At 0 the background takes no fog, and the background's color or the scene's own sheets must blend the edge; [Where the land ends](../concepts/lighting.md#where-the-land-ends) says how. A material created with `fog: false` keeps its color at every distance, as [Materials](materials.md#options-fixed-at-creation) says. The engine mixes the fog into each pixel as it shades the pixel, before the tone mapping, so fog adds almost no work. The fog applies from the next frame. The `null3d::fog` module of the [shader library](../shaders/library.md#null3dfog) holds the same formulas for WGSL shaders.
+`background` mixes the scene's fog into the sky and the background, as if they stood at the camera's far plane. The haze over the land then runs on over the sky it meets, so a scene needs no haze sheet. It runs from 0 to 1 and defaults to 0.
+
+At 0 the background takes no fog, and the background's color or the scene's own sheets must blend the edge; [Where the land ends](../concepts/lighting.md#where-the-land-ends) says how. A material created with `fog: false` keeps its color at every distance, as [Materials](materials.md#options-fixed-at-creation) says.
+
+The engine mixes the fog into each pixel as it shades the pixel, before the tone mapping, so fog adds almost no work. The fog applies from the next frame. The `null3d::fog` module of the [shader library](../shaders/library.md#null3dfog) holds the same formulas for WGSL shaders.
 
 ### Volumetric fog
 
@@ -523,11 +561,19 @@ scene.setFog({
 
 The lit fog takes the fog's `density` and `heightFalloff`, so it lights the same air that dims the objects. It takes `density` with every curve, the linear one too. While it draws, its own light of the sun replaces `sunGlow`, with the shadows. Past its `distance`, the fog still scatters the sun's light, without shadows, so no edge shows.
 
-The lit fog needs HDR color. In WebGPU's compatibility mode with MSAA, turning it on moves the engine to HDR color with FXAA, as bloom does, once `fogSlices` is above 0. On a device with no HDR target, the fog keeps its sun glow. The quality setting `fogSlices` sets its detail: 32 slices on Medium, 64 on High and 96 on Ultra. On Low it is 0, so phones draw the fog with its sun glow at no cost. Surfaces that blend or let light through, such as water and glass, take the lit fog of the whole line of sight to the opaque surface behind them. [Lighting and environment](../concepts/lighting.md#volumetric-fog) says how it works and what it costs.
+The lit fog needs HDR color. In WebGPU's compatibility mode with MSAA, turning it on moves the engine to HDR color with FXAA, as bloom does, once `fogSlices` is above 0. On a device with no HDR target, the fog keeps its sun glow. The quality setting `fogSlices` sets its detail: 32 slices on Medium, 64 on High and 96 on Ultra. On Low it is 0, so phones draw the fog with its sun glow at no cost.
+
+Surfaces that blend or let light through, such as water and glass, take the lit fog of the whole line of sight to the opaque surface behind them. [Lighting and environment](../concepts/lighting.md#volumetric-fog) says how it works and what it costs.
 
 ## Time of day
 
-`timeOfDay(hours)` works out the settings of a time of day. They are the sky, the main light (the sun, or the moon at night), the fog's color and glow, an ambient light, the sky's intensity and the exposure. It takes an hour from 0 to 24, or a preset: `'afternoon'`, `'goldenHour'`, `'blueHour'` or `'night'`. It returns plain values, which the sketch applies to its own objects. Pass its exposure to `post.set({ exposure })`, or set one of your own. At dusk and at night the default exposure shows the scene several times too dark. A second argument takes `heading` and `noonElevation`. `heading` turns the sun's path about the up axis. `noonElevation` is the noon sun's height in radians, π/3 by default. At night the sky is lit from the moon's place, a navy blue, and the sky's sun disc draws the moon. As night falls the sunset's sky fades straight into the moon's sky.
+`timeOfDay(hours)` works out the settings of a time of day. They are the sky, the main light (the sun, or the moon at night), the fog's color and glow, an ambient light, the sky's intensity and the exposure. It takes an hour from 0 to 24, or a preset: `'afternoon'`, `'goldenHour'`, `'blueHour'` or `'night'`.
+
+It returns plain values, which the sketch applies to its own objects. Pass its exposure to `post.set({ exposure })`, or set one of your own. At dusk and at night the default exposure shows the scene several times too dark.
+
+A second argument takes `heading` and `noonElevation`. `heading` turns the sun's path about the up axis. `noonElevation` is the noon sun's height in radians, π/3 by default.
+
+At night the sky is lit from the moon's place, a navy blue, and the sky's sun disc draws the moon. As night falls the sunset's sky fades straight into the moon's sky.
 
 ```ts
 import { defineSketch, timeOfDay } from '@null3d/engine';
@@ -558,7 +604,9 @@ export default defineSketch(async ({ scene, assets, post }) => {
 });
 ```
 
-A third argument is an object that the call fills, in place of making one: `timeOfDay(hour, {}, day)` writes the new settings into `day`, so a day cycle that moves the time in every frame makes no settings object and no arrays of its own. The browser still makes an object of each fraction that one step of the sky model hands to another step that it has not inlined, as it does in any code of this size. The engine's allocation benchmark measures both. `emptyTimeOfDay()` makes the first such object. The [atmosphere demo](https://github.com/null3d-engine/null3d/tree/main/examples/atmosphere) passes one and moves the hour with the pointer.
+A third argument is an object that the call fills, in place of making one: `timeOfDay(hour, {}, day)` writes the new settings into `day`, so a day cycle that moves the time in every frame makes no settings object and no arrays of its own. The browser still makes an object of each fraction that one step of the sky model hands to another step that it has not inlined, as it does in any code of this size. The engine's allocation benchmark measures both.
+
+`emptyTimeOfDay()` makes the first such object. The [atmosphere demo](https://github.com/null3d-engine/null3d/tree/main/examples/atmosphere) passes one and moves the hour with the pointer.
 
 [Lighting and environment](../concepts/lighting.md#time-of-day) explains each value, the presets and the sun's path. A value that is not a finite number, or an unknown preset, throws a `RangeError`. The [time of day demo](https://github.com/null3d-engine/null3d/tree/main/examples/time-of-day) passes a whole day over a lighthouse in 40 seconds, and lights its windows and its lamp at dusk.
 
@@ -592,7 +640,9 @@ The GPU draws each kind of object with a pipeline, which takes time to build. Th
 
 ## Instance batches
 
-An instance batch is one object that draws many copies of one mesh with one material. Its rows live in typed arrays that sketch code writes directly, with no call per row. A static batch, the default, uploads the rows you mark with `markDirty`. A batch created with `dynamic: true` uploads every row in every frame. Every row of a batch shares the batch's layers, which the `layers` option and `setLayers(mask)` set, as [Render layers](../concepts/render-layers.md) explains. Rows are relative to the batch's `origin`, which keeps rows precise far from the world's origin: [Batch origins](../concepts/large-worlds.md#batch-origins). An add-on whose rows arrive in chunks stores each chunk once with `batch.createChunkRows()`, which packs the chosen rows in the engine's core: [Rows that arrive in chunks](../concepts/instances.md#rows-that-arrive-in-chunks). [Instances and batching](../concepts/instances.md) explains batches in full.
+An instance batch is one object that draws many copies of one mesh with one material. Its rows live in typed arrays that sketch code writes directly, with no call per row. A static batch, the default, uploads the rows you mark with `markDirty`. A batch created with `dynamic: true` uploads every row in every frame.
+
+Every row of a batch shares the batch's layers, which the `layers` option and `setLayers(mask)` set, as [Render layers](../concepts/render-layers.md) explains. Rows are relative to the batch's `origin`, which keeps rows precise far from the world's origin: [Batch origins](../concepts/large-worlds.md#batch-origins). An add-on whose rows arrive in chunks stores each chunk once with `batch.createChunkRows()`, which packs the chosen rows in the engine's core: [Rows that arrive in chunks](../concepts/instances.md#rows-that-arrive-in-chunks). [Instances and batching](../concepts/instances.md) explains batches in full.
 
 ## Limits
 
@@ -601,7 +651,8 @@ An instance batch is one object that draws many copies of one mesh with one mate
 - A scene holds up to 1,048,575 objects, the most that a handle can name. Past that, a create call throws E1102. A growth that the engine's memory cannot hold throws E1109. Each place counts toward the objects and instance rows that the GPU draws (`engine.capabilities.maxInstances`), and a growth past that limit throws E1501.
 - The rows of an instance batch take none of those places. One engine holds up to 512 batches, and `createInstances(prefab, ...)` takes one for each mesh of the model.
 - The queue holds up to 65,536 changes between two frames. One more throws E1102.
-- Each copy of a model with clips or skins takes a place in the animation table, and its joints take places too. The table starts with room for 1,024 animated objects and 65,536 joints. When a copy does not fit, it doubles what it lacks, in one short pause that copies the table. It holds up to 1,048,576 joints in all. That is the most that the joint texture holds on every WebGL2 device: about 24,000 copies of a character of 43 joints. A copy past that throws E1102, and a growth that the engine's memory cannot hold throws E1109. Either way, `instantiate` or `clone` then creates no part of the copy.
+- Each copy of a model with clips or skins takes a place in the animation table, and its joints take places too. The table starts with room for 1,024 animated objects and 65,536 joints. When a copy does not fit, it doubles what it lacks, in one short pause that copies the table. It holds up to 1,048,576 joints in all.
+- That is the most that the joint texture holds on every WebGL2 device: about 24,000 copies of a character of 43 joints. A copy past that throws E1102, and a growth that the engine's memory cannot hold throws E1109. Either way, `instantiate` or `clone` then creates no part of the copy.
 
 ## Errors
 

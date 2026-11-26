@@ -201,7 +201,9 @@ The engine reads the script only in hold mode. A page that you run with Vite nev
 
 ## mcp
 
-`mcp` starts a Model Context Protocol server for the project in the current folder, over stdio. An agent lists and changes the live scene's objects, captures a frame, and reads the frame figures, the errors and the render graph. It can also switch the quality preset or the GPU path. The page needs a development build: a production build leaves the inspection channel out. The page must also start the engine as it loads. A held page and a replay page publish no inspection bridge, so the command cannot drive them.
+`mcp` starts a Model Context Protocol server for the project in the current folder, over stdio. An agent lists and changes the live scene's objects, captures a frame, and reads the frame figures, the errors and the render graph. It can also switch the quality preset or the GPU path.
+
+The page needs a development build: a production build leaves the inspection channel out. The page must also start the engine as it loads. A held page and a replay page publish no inspection bridge, so the command cannot drive them.
 
 ```mermaid
 flowchart LR
@@ -357,7 +359,9 @@ flowchart LR
     measure --> json["bench.json"]
 ```
 
-`bench` measures the engine on your page. It builds your project for production with your Vite config, into a temporary folder, and serves the build. A production build has none of the engine's development checks, so the engine runs as your users get it. Then `bench` opens your page in a headless browser with the `?bench` switch, once for each run. Each run waits for the engine's first frame and for the end of its [preset check](../concepts/quality-presets.md#the-preset-check). It then lets the page play for the warm-up, and measures it with `engine.measure` ([Performance guide](../guides/performance.md#measure)). So a run measures the preset that plays, not the start. Your page needs no benchmark code.
+`bench` measures the engine on your page. It builds your project for production with your Vite config, into a temporary folder, and serves the build. A production build has none of the engine's development checks, so the engine runs as your users get it.
+
+Then `bench` opens your page in a headless browser with the `?bench` switch, once for each run. Each run waits for the engine's first frame and for the end of its [preset check](../concepts/quality-presets.md#the-preset-check). It then lets the page play for the warm-up, and measures it with `engine.measure` ([Performance guide](../guides/performance.md#measure)). So a run measures the preset that plays, not the start. Your page needs no benchmark code.
 
 ```sh
 bunx @null3d/cli bench --gpu webgpu,webgl2
@@ -452,11 +456,19 @@ The shader and size gates build the add-on with the Vite and the null3D plugin t
 
 Each page gate draws as `bench` does: with Chrome on the computer's GPU, or with Playwright's Chromium on SwiftShader when the CI variable is set. The cost gate measures the production build on each quality preset. Like `bench`, it waits for the first frame and the end of the preset check before it measures. It prints the GPU time per frame where the device times it, and the CPU time otherwise.
 
-The allocation gate samples the heaps of the page's sketch and render workers. It names each function by the source file that the build's map gives it. It prints the bytes per frame that the add-on's own code allocated on each preset, and the page's own figure beside it. A source file counts as the add-on's own when the file is in its folder, or in its copy under `node_modules`. The gate fails when it cannot measure the page, such as on a page that runs no engine worker. It also fails when the page ran none of the add-on's own code, because then it measured other code. It never fails on a figure. The gate holds at most 250,000 sampled objects for each worker in each sample, and samples a page that allocates faster less finely. On the software GPU, the page's animation frames outrun the engine's drawn frames, so the figure there is lower than on a real GPU.
+The allocation gate samples the heaps of the page's sketch and render workers. It names each function by the source file that the build's map gives it. It prints the bytes per frame that the add-on's own code allocated on each preset, and the page's own figure beside it. A source file counts as the add-on's own when the file is in its folder, or in its copy under `node_modules`.
+
+The gate fails when it cannot measure the page, such as on a page that runs no engine worker. It also fails when the page ran none of the add-on's own code, because then it measured other code. It never fails on a figure. The gate holds at most 250,000 sampled objects for each worker in each sample, and samples a page that allocates faster less finely.
+
+On the software GPU, the page's animation frames outrun the engine's drawn frames, so the figure there is lower than on a real GPU.
 
 ## assets
 
-`assets optimize` makes glTF models smaller and faster to load and draw. It merges equal meshes, materials and textures into one copy. It stores each mesh's vertices as 8-bit and 16-bit integers, in the order that the GPU reads them fastest. It stores each animation clip at the rate of keys that the engine keeps, so the engine copies the keys at load. It encodes each texture as a KTX2 file with every mip level. Each model becomes one `.glb` file in the output folder, with its textures in a `textures` folder beside it. It prints a budget report for each model, which ends with the shader features and permutation bits the model needs. The report also gives the pipeline keys they make and each preset whose texture memory budget the model's textures pass. The shader list goes into the model too, so the engine downloads those shader files as it loads the model.
+`assets optimize` makes glTF models smaller and faster to load and draw. It merges equal meshes, materials and textures into one copy. It stores each mesh's vertices as 8-bit and 16-bit integers, in the order that the GPU reads them fastest. It stores each animation clip at the rate of keys that the engine keeps, so the engine copies the keys at load. It encodes each texture as a KTX2 file with every mip level.
+
+Each model becomes one `.glb` file in the output folder, with its textures in a `textures` folder beside it. It prints a budget report for each model, which ends with the shader features and permutation bits the model needs.
+
+The report also gives the pipeline keys they make and each preset whose texture memory budget the model's textures pass. The shader list goes into the model too, so the engine downloads those shader files as it loads the model.
 
 ```sh
 bunx @null3d/cli assets optimize models/ public/models/ --lod --max-texture-size 1024

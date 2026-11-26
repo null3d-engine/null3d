@@ -82,7 +82,9 @@ so the engine plans no levels for it.
 A splat's shader computes the covariance that its spreads and rotation make, projects it to the
 screen once for each corner of its card, and spans a camera-facing card along the ellipse's own
 axes. All three of the splat's spreads add to that ellipse, so a flat splat seen edge on still gets
-a card that covers it. A pixel's place on the card is its distance from the center in standard
+a card that covers it.
+
+A pixel's place on the card is its distance from the center in standard
 deviations, so a fragment fades by it with no math of its own, and the card is a Gaussian, not a
 disc. A pixel too faint to show is dropped before it blends.
 
@@ -105,6 +107,7 @@ writes only the rows that its budget keeps.
 cover the most surface: a splat's opacity times the area of its largest cross-section. A prefix of
 a chunk is a coarser level of it: all of it, a half, a quarter and an eighth. As a chunk is built,
 the add-on measures how much of the chunk's surface each prefix covers, seen from three directions.
+
 A prefix grows the splats that it keeps by what it leaves uncovered, up to three times. So a scan's
 ground of small flat splats draws as the same surface with fewer, larger splats rather than a
 sparse one, and a dense cloud whose splats overlap barely grows.
@@ -113,10 +116,14 @@ sparse one, and a dense cloud whose splats overlap barely grows.
 chunk draws. Every chunk the budget reaches keeps an eighth of itself first. The budget then
 gives the nearest chunks a finer prefix, up to the level that their distance asks for. A chunk's
 level follows its distance measured in the radius of the whole cloud, so a finer cut does not thin
-the view. A budget too small for every level then thins the whole cloud. A chunk nearer the camera
+the view. A budget too small for every level then thins the whole cloud.
+
+A chunk nearer the camera
 still keeps more of its splats than a far one. The budget stops the total. The selection and its
 distance sort run in the add-on's Rust module on the job worker, so a large scene costs the
-sketch's thread nothing. A change of the camera or of the budget starts a new selection. The core
+sketch's thread nothing.
+
+A change of the camera or of the budget starts a new selection. The core
 then packs the chosen rows into the batch in its own memory, so a moved frame copies no rows
 through the sketch's heap.
 
@@ -149,7 +156,9 @@ A whole file appears as its chunks are cut: the first chunks draw while the rest
 large file never holds up a frame. `ready` resolves when every chunk of a file is ready. For a
 stream, it resolves once the nearest chunks have arrived, which takes about a megabyte of files, or
 the nearest chunk alone: the first view draws from those, and the cloud fills in as the rest
-arrive. Call `update` once before you await it. `settle()` resolves once the chosen splats are
+arrive.
+
+Call `update` once before you await it. `settle()` resolves once the chosen splats are
 packed, and for a stream once the chunks that they need have arrived, which a still picture waits
 for.
 
