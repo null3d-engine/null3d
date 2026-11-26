@@ -8,6 +8,21 @@ summary: "post.set for tone mapping, exposure and a camera's EV100, automatic ex
 
 `ctx.post` holds the settings that the engine applies to the scene's color on its way to the canvas. They are the tone mapping, the exposure, automatic exposure, bloom, ambient occlusion, screen-space reflections, depth of field, outlines, a color grading table, the vignette, the sharpening and the sketch's own effects. [Color management](../concepts/color-management.md) explains how the first two fit into the frame. [The post-processing chain](../concepts/post-processing.md) explains how bloom, ambient occlusion, screen-space reflections, depth of field and sharpening do.
 
+Every effect is off until `post.set` turns it on. The tone mapping (AgX punchy) and an exposure of 1 always apply.
+
+| Effect | `post.set` key | [Quality setting that turns it off](../concepts/quality-presets.md) | [Without HDR color](../concepts/post-processing.md#effects-on-devices-without-hdr-color) |
+| --- | --- | --- | --- |
+| Automatic exposure | `autoExposure` | None (`exposureMeter` picks the meter) | Stays off |
+| Bloom | `bloom` | None (`bloomSize` sets the detail) | Stays off |
+| Ambient occlusion | `ao` | `aoScale` 0: Low, Medium | Stays off with no float targets |
+| Screen-space reflections | `ssr` | `ssrScale` 0: Low | Stays off with no float targets |
+| Depth of field | `dof` | `dofSamples` 0: Low | Stays off |
+| Outlines | `outline` | None | Draws |
+| Color grading | `lut`, `grading` | None | Draws |
+| Vignette | `vignette` | None | Draws |
+| Sharpening | `sharpen` | None (adds nothing below a render scale of 1) | Draws |
+| Custom effects and tone curves | `post.addEffect`, `toneMapping` | None | Stay off |
+
 ## Tone mapping and exposure
 
 ```ts
@@ -34,7 +49,16 @@ export default defineSketch(({ post }) => {
 
 ## Lights in real units
 
-Most scenes need no camera setting: their lights have small intensities, such as a sun of 3, and the exposure stays at 1. Lights in real units, such as a sun of 100,000 lux, need `ev100`: the exposure value of a camera at ISO 100. The units are on the [Lights](lights.md#color-intensity-and-units) page. Typical values are 15 for a sunny day, 12 for an overcast day and 7 for a lit room. Each step up is one stop darker. The engine scales the scene by 1 / (1.2 × 2^ev100), the formula of Filament, Bevy and Unity's HDRP. The `exposure` setting then scales that, as exposure compensation does. Setting `ev100: false` turns the camera off again.
+Most scenes need no camera setting: their lights have small intensities, such as a sun of 3, and the exposure stays at 1. Lights in real units, such as a sun of 100,000 lux, need `ev100`: the exposure value of a camera at ISO 100. The units are on the [Lights](lights.md#color-intensity-and-units) page. Typical values are 15 for a sunny day, 12 for an overcast day and 7 for a lit room. Each step up is one stop darker.
+
+The `exposure` setting then scales that, as exposure compensation does. Setting `ev100: false` turns the camera off again.
+
+<details>
+<summary>Technical details: the exposure formula</summary>
+
+The engine scales the scene by 1 / (1.2 × 2^ev100), the formula of Filament, Bevy and Unity's HDRP. [Lighting and environment](../concepts/lighting.md) covers the units in full.
+
+</details>
 
 ```ts
 import { defineSketch } from '@null3d/engine';
@@ -47,11 +71,21 @@ export default defineSketch(({ scene, post }) => {
 });
 ```
 
-The engine multiplies the exposure into each light, the environment's light, the background color and the fog color. The shaders multiply it into emissive light and unlit colors. The tone mapping then works on values near 1, even with a sun of 100,000 lux. Otherwise its highlights would pass the largest value of the 16-bit float scene color. The picture is the one that an exposure at the end gives. Background and unlit colors take the exposure too. At EV100 15 they draw black unless their own values are in real units.
+Background and unlit colors take the exposure too. At EV100 15 they draw black unless their own values are in real units.
 
-## Changing the exposure during play
+<details>
+<summary>Technical details: where the engine applies the exposure</summary>
 
-`post.set` allocates nothing, so a sketch can change the exposure every frame. Keep one settings object and change its field, so your own code allocates nothing either:
+The engine multiplies the exposure into each light, the environment's light, the background color and the fog color. The shaders multiply it into emissive light and unlit colors. The tone mapping then works on values near 1, even with a sun of 100,000 lux. Otherwise its highlights would pass the largest value of the 16-bit float scene color. The picture is the one that an exposure at the end gives.
+
+</details>
+
+## Changing settings during play
+
+`post.set` allocates nothing, so a sketch can change settings every frame. Keep one settings object and change its field, so your own code allocates nothing either.
+
+- A setting that a call leaves out keeps its value, also while its effect is off. `post.set({ effect: {} })` turns an effect on with the values it had.
+- Turning an effect on or off can cost more. Each effect's section says how much.
 
 ```ts
 export default defineSketch(({ post, time }) => {
@@ -102,11 +136,9 @@ export default defineSketch(({ scene, geometry, materials, post }) => {
 - The scene draws at the camera's exposure, the `exposure` and `ev100` settings, and the eye adapts from there. A brightness of 0 stops is a scene that the camera's exposure shows as middle gray. With `ev100: 15`, `minEv: -8` lets the eye adapt down to a scene of about EV100 7.
 - Within one stop of its target, the eye slows down, so it settles smoothly. Eyes adapt to the dark more slowly than to the light, so `speedDown` is lower by default.
 - The first frame that meters takes its target at once, so a scene starts adapted. Hold mode draws one frame, so its image is the adapted image, the same in every run.
-- The final pass multiplies the scene's color, bloom's glow and folded effects by the adapted exposure, before FXAA, the vignette and the tone curve. Custom effects and depth of field see the camera's exposure. Bloom's `threshold` keeps its meaning in the scene's units.
+- The final pass multiplies the color it reads by the adapted exposure: the scene's color, with the result of any custom effects, and bloom's glow. It does this before FXAA, the vignette and the tone curve. Custom effects and depth of field read the color at the camera's exposure. This is also true when the engine joins an effect into the final pass. Bloom's `threshold` keeps its meaning in the scene's units.
 - The quality setting `exposureMeter` picks the meter. `'histogram'` bins a grid of samples in compute shaders on WebGPU, on Medium and above. `'downsample'` averages 16 x 16 cells of the image, on Low and on WebGL2. Both take the same settings.
 - It needs HDR color, as bloom does. In WebGPU's compatibility mode with MSAA, turning it on moves the engine to HDR color with FXAA. On a device with no HDR target it stays off, and development builds warn once.
-- A setting that a call leaves out keeps its value, also while it is off. `post.set({ autoExposure: {} })` turns it on with the values it had.
-- `post.set` allocates nothing, and a meter costs nothing while it is off. Its shaders download the first time it turns on.
 
 ## Bloom
 
@@ -321,15 +353,11 @@ export default defineSketch(async ({ assets, post }) => {
 - The table grades each pixel after the tone mapping and the sRGB encoding. Tables made for sRGB display color, as most are, look as their authors made them.
 - The final pass reads the table with a linear filter between its texel centers. It maps the colors of a `.cube` file's domain onto the table.
 - The table grades the picture from the first frame after its texels reach the GPU, usually the next one.
-- `lutIntensity` keeps its value while the table is off, and `post.set` allocates nothing, so a sketch can fade a grade in every frame.
+- `lutIntensity` keeps its value while the table is off.
 
 ### Grading controls
 
-The grading controls set a look from a few numbers, without a table file. A job worker bakes them
-into a table of its own. The final pass applies that table to the display color that the tone curve
-leaves, before a `lut`. A change stalls no frame. The picture shows the new grade once the
-worker's bake reaches the GPU, usually within a few frames. The frame that lands a bake uploads the
-table, 256 KB.
+The grading controls set a look from a few numbers, without a table file. A [job worker](../concepts/architecture.md#the-kinds-of-thread) bakes them into a table of its own, so a change stalls no frame. The final pass applies that table to the display color that the tone curve leaves. The picture shows the new grade once the bake reaches the GPU, usually within a few frames.
 
 ```ts
 post.set({
@@ -364,8 +392,15 @@ post.set({
 - The table holds the grade alone, and the tone curve stays a calculation in the pass. A custom tone curve therefore still works with the controls.
 - The final pass applies the built-in grade first and a `lut` after it, so a look from a file can sit over a grade from the controls.
 - The final pass draws on every GPU path, with HDR color or without it, so both paths grade alike.
-- The bake runs in a job worker, so a value that changes in a frame loop does not stall the frames. The frame that lands a bake uploads the table, 256 KB. Where no worker can run tasks, the picture keeps its colors and development builds warn once.
+- The bake runs in a job worker, so a value that changes in a frame loop does not stall the frames. Where no worker can run tasks, the picture keeps its colors and development builds warn once.
 - The values are designed for the null3D grading controls. To match a grade that a colorist made in another tool, load its `.cube` file instead.
+
+<details>
+<summary>Technical details: the grading table</summary>
+
+Each table costs the final pass a few operations per pixel and one texture read. On a device that resolves its multisampled picture straight into the canvas, the table makes the final pass run, which reads the picture once more. The frame that lands a bake uploads the table, 256 KB.
+
+</details>
 
 ## Vignette
 
@@ -385,9 +420,8 @@ post.set({ vignette: { intensity: 0.8, size: 1.2 } });
 
 - The vignette multiplies each pixel's light before the tone mapping. [The post-processing chain](../concepts/post-processing.md#color-grading-and-the-vignette) gives the rule and the engines it follows.
 - At a distance `d` from the center, in canvas widths and heights times `size`, the light is multiplied by `1 - intensity × (1 - (1 - d²)^falloff)`, and never by less than 0.
-- A setting that a call leaves out keeps its value, also while the vignette is off. `post.set({ vignette: {} })` turns it on with the values it had.
 
-Grading and the vignette draw on every GPU path, with HDR color or without it. Without HDR color, the scene's shaders darken their light by the vignette before their tone mapping. A plain background color then draws as a background, so the vignette darkens it too. Each table costs the final pass a few operations per pixel and one texture read. On a device that resolves its multisampled picture straight into the canvas, the table makes the final pass run, which reads the picture once more.
+Grading and the vignette draw on every GPU path, with HDR color or without it. Without HDR color, the vignette still draws: the scene's shaders darken their light before their tone mapping, and a plain background color darkens too.
 
 The final pass dithers last, after the table and the vignette. It adds noise of up to one step of the 8-bit canvas, so smooth gradients show no bands. The noise is the same in every frame.
 
@@ -408,7 +442,7 @@ post.set({ sharpen: 0.5 });
 - It draws at the whole canvas's render scale. A render scale below 1 sharpens its own upscale, so the value adds nothing there ([quality presets](../concepts/quality-presets.md#dynamic-resolution)).
 - While it is on, the frame draws in two steps at the whole render scale. The first step tone maps the scene into an 8-bit target, and the second sharpens that display color. A sketch whose render scale can drop already keeps that target, so sharpening adds no memory there. One that holds the render scale at 1 keeps a target of the canvas's size while sharpening is on.
 - While it is on, a still view keeps drawing instead of blending its frames and resting, because the sharpening draws in the moving frame's second step. [The post-processing chain](../concepts/post-processing.md#still-camera-accumulation) says what a still view does.
-- A setting that a call leaves out keeps its value. `post.set({ sharpen: false })` turns it off, and 0 does the same.
+- `post.set({ sharpen: false })` turns it off, and 0 does the same.
 
 ## Custom effects
 
@@ -459,13 +493,13 @@ post.set({ toneMapping: reinhard });
 
 ## Still views
 
-A view that holds still blends its frames into a sharper picture, then stops drawing until something changes. It needs no setting: `post.set` turns nothing on for it. Bloom, outlines and automatic exposure keep a view drawing every frame, as [the post-processing chain](../concepts/post-processing.md#still-camera-accumulation) explains. `createEngine({ still: false })` and the page switch `?still-camera=off` turn it off.
+A view that holds still blends its frames into a sharper picture, then stops drawing until something changes. It needs no setting: `post.set` turns nothing on for it. Bloom, outlines, automatic exposure, screen-space reflections, sharpening and custom effects keep a view drawing every frame. [The post-processing chain](../concepts/post-processing.md#still-camera-accumulation) lists every feature that does. `createEngine({ still: false })` and the page switch `?still-camera=off` turn it off.
 
 ## Errors
 
 | Code | Cause |
 | --- | --- |
-| [E1213](../errors/E1213.md) | A ninth effect. A setting that this version does not have, a tone mapping that the engine does not know, or a bloom, ambient occlusion, depth of field, automatic exposure, outline, vignette or sharpening value other than settings, a number or `false`, or an `ssr` value other than settings or `false`. An automatic exposure `metering` other than `'mean'` or `'percentile'`, `percentiles` that are not two numbers from 0 to 1 with the lower first, a `centerWeight` outside 0 to 1, a speed below 0, a `minEv`, `maxEv` or `compensation` outside -20 to 20, or a `minEv` above `maxEv`. A depth of field `focusDistance`, `aperture` or `focalLength` that is not above 0, a `maxBlur` outside 0 to 0.1, `blades` other than 0 or a whole number from 3 to 12, or a `focusPoint` that is not three finite numbers or `false`. Also a `lut` that is not a table from `assets.loadLut` or `assets.lutFromData`, a `grading` value out of its range, such as a white balance outside 1667 to 25000 kelvin, a lift channel outside -1 to 1, a gamma channel of 0 or below, a negative gain or saturation, or a split toning balance outside -1 to 1 or strength outside 0 to 1, or a value out of its range. These are an exposure, bloom intensity, threshold or knee, vignette intensity or size, or outline width below 0, a vignette falloff of 0 or below or a roundness above 1, a bloom blend other than `'mix'`, `'add'` or `'screen'`, bloom weights that are not 1 to 10 numbers of 0 or more, or that are all 0, a `lutIntensity` outside 0 to 1, a sharpening strength outside 0 to 1, an ambient occlusion value below 0 or its `distanceFalloff` or `intensity` above 1, a `distanceExponent` of 0, `samples` that are not a whole number from 1 to 64, a screen-space reflection value below 0 or its `intensity` or `maxRoughness` above 1, an `ssr.maxDistance` of 0, or an `ev100` outside -20 to 30. |
+| [E1213](../errors/E1213.md) | A ninth effect, because at most 8 run at once. A setting that this version does not have, or a value that a setting does not take, such as a tone mapping that the engine does not know or a number outside its range. Each section's settings table gives the values that a setting takes. |
 | [E1203](../errors/E1203.md) | A value that is not a finite number, such as NaN, or an effect's `order` that is not one. |
 | [E1204](../errors/E1204.md) | An outline color that is not a hex string, a hex number or three linear components from 0 to 1. |
 | [E1215](../errors/E1215.md) | An effect or a tone curve as WGSL that the null3D Vite plugin did not compile, or compiled WGSL of another kind. |
