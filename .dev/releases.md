@@ -46,8 +46,8 @@ The note under a page's title opens with its page's step and release, such as "R
 
 ## One-time setup
 
-- The release GitHub App. Main's rule, "main: CI must pass", refuses a commit that has not passed the `ci-passed` and `squash-title` checks, and only the accounts on its bypass list may skip it. The default token is not on that list, and GitHub does not let a rule list GitHub Actions itself, so the first release run failed at the push to main (run 45741994009). The App lands the version commit instead:
-  - The App belongs to the `null3d-engine` organization. Its only permission is Contents: read and write, it has no webhook, and it is installed on this repository alone.
+- The release GitHub App. Main's rule, "main: CI must pass", refuses a commit that has not passed the `ci-passed` and `squash-title` checks. Only the accounts on its bypass list may skip it. The default token is not on that list, so the first release run failed at the push to main (run 45741994009). GitHub does not let a rule list GitHub Actions itself. So the App lands the version commit instead:
+  - The App, `null3d-release`, belongs to the `null3d-engine` organization. Its only permission is Contents: read and write, and it has no webhook. It is installed on every repository of the organization, so a release can also start a workflow in the website's repository.
   - Main's rule lists the App on its bypass list, as "always".
   - The `release` environment holds the App's client ID as the variable `RELEASE_APP_CLIENT_ID` and its private key as the secret `RELEASE_APP_PRIVATE_KEY`. Only main may deploy to that environment, so a workflow on another branch cannot read the key.
   - An App token lasts an hour, so the job makes it just before the push. The default token's own `permissions: contents: write` still pushes the tag and publishes the GitHub Release, which the rule does not cover.
