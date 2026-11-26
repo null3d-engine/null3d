@@ -93,7 +93,9 @@ A `Surface` holds the values that the engine lights. Colors are linear, as the e
 | `iridescenceIor` | `f32` | The film's index of refraction, 1 or more |
 | `iridescenceThickness` | `f32` | The film's thickness in nanometers |
 
-`defaultSurface(input)` returns the surface that the material's own options make. The base color is `color` times the vertex color. `metalness`, `roughness` and the emissive light come from the options too. The normal, the diffuse normal and the sky's normal are the input's normal. The occlusion is 1, and it multiplies screen-space occlusion. The irradiance and the reflection are zero. The transmission, the thickness, the diffuse transmission and its color, and the layers' values are the material's, and the coat's normal is the input's. Start from it, and change only the fields that your look needs:
+`defaultSurface(input)` returns the surface that the material's own options make. The base color is `color` times the vertex color. `metalness`, `roughness` and the emissive light come from the options too. The normal, the diffuse normal and the sky's normal are the input's normal.
+
+The occlusion is 1, and it multiplies screen-space occlusion. The irradiance and the reflection are zero. The transmission, the thickness, the diffuse transmission and its color, and the layers' values are the material's, and the coat's normal is the input's. Start from it, and change only the fields that your look needs:
 
 ```wgsl
 fn surface(input: SurfaceInput) -> Surface {
@@ -143,7 +145,9 @@ fn surface(input: SurfaceInput) -> Surface {
 
 ## A normal for the sky's light
 
-A surface can light the sky's light by a normal of its own, and keep its other normals for the sun. The sky's light is the ambient and hemisphere lights and the environment's diffuse light. It also takes in the diffuse light of the reflection probes and the probe grid. A crown of leaves uses this with a bent normal, the mean open direction from each point toward the sky. A leaf deep in the crown then takes its sky light from the gaps above it. The sun still lights it by its own normal.
+A surface can light the sky's light by a normal of its own, and keep its other normals for the sun. The sky's light is the ambient and hemisphere lights and the environment's diffuse light. It also takes in the diffuse light of the reflection probes and the probe grid.
+
+A crown of leaves uses this with a bent normal, the mean open direction from each point toward the sky. A leaf deep in the crown then takes its sky light from the gaps above it. The sun still lights it by its own normal.
 
 ```wgsl
 fn surface(input: SurfaceInput) -> Surface {
@@ -161,7 +165,9 @@ fn surface(input: SurfaceInput) -> Surface {
 
 ## Occlusion counted once
 
-`s.occlusion` darkens the light that reaches the point from all directions: the ambient and hemisphere lights, the environment's light and the probes' light. Where [ambient occlusion](../concepts/post-processing.md#ambient-occlusion) draws, the engine multiplies `s.occlusion` by the screen's occlusion. That suits an occlusion map, which holds creases too small for the screen to see. An occlusion that a bake took from the same shapes that ambient occlusion sees darkens twice instead. A crown's occlusion, baked from its own leaves, is such an occlusion. Set `s.occlusionByMinimum` to `true`, and the engine takes the smaller of the two, so the shade counts once:
+`s.occlusion` darkens the light that reaches the point from all directions: the ambient and hemisphere lights, the environment's light and the probes' light. Where [ambient occlusion](../concepts/post-processing.md#ambient-occlusion) draws, the engine multiplies `s.occlusion` by the screen's occlusion. That suits an occlusion map, which holds creases too small for the screen to see.
+
+An occlusion that a bake took from the same shapes that ambient occlusion sees darkens twice instead. A crown's occlusion, baked from its own leaves, is such an occlusion. Set `s.occlusionByMinimum` to `true`, and the engine takes the smaller of the two, so the shade counts once:
 
 ```wgsl
 fn surface(input: SurfaceInput) -> Surface {
@@ -272,7 +278,8 @@ const metal = materials.shader({ wgsl: worn, color: '#b0b4b8', textures: { detai
 
 - Sample a texture with the WGSL texture functions: `textureSample`, `textureSampleLevel`, `textureSampleBias`, `textureSampleGrad`, `textureGather` and `textureLoad`. `textureDimensions` and `textureNumLevels` work too. Pass the texture straight to the function. The engine keeps each texture as a layer of a texture array, so it adds the layer to each such call. A texture cannot go to a function of your own, so sample it where you need it.
 - `textureGather` draws on WebGPU alone: WebGL2's shader language has no gather, so a material that uses it fails to link there. Read the four texels with `textureLoad` where a material draws on both paths.
-- A texture array declares `var name: texture_2d_array<f32>;` instead, and the surface function picks the layer. Give the slot a texture of several layers, and each texture function takes the layer after the coordinates: `textureSampleLevel(facades, facadesSampler, uv, layer, 0.0)`. The layer is the texture's own, from 0 to its depth less 1, so one array serves every facade or window in a set and the shader chooses one for each pixel. `textureNumLayers(name)` gives the number of layers. A texture array takes one map slot and one number of the uniforms, as a 2D texture does.
+- A texture array declares `var name: texture_2d_array<f32>;` instead, and the surface function picks the layer. Give the slot a texture of several layers, and each texture function takes the layer after the coordinates: `textureSampleLevel(facades, facadesSampler, uv, layer, 0.0)`.
+- The layer is the texture's own, from 0 to its depth less 1, so one array serves every facade or window in a set and the shader chooses one for each pixel. `textureNumLayers(name)` gives the number of layers. A texture array takes one map slot and one number of the uniforms, as a 2D texture does.
 - A vertex offset samples textures too, with `textureSampleLevel` or `textureLoad`, as WGSL allows in a vertex shader. A height map then moves each vertex.
 - Each texture's sampler takes the `wrap` and `filter` options of the texture. The `colorSpace` option says whether sampling turns sRGB colors into linear ones, as for the maps of a standard material.
 - Until a texture's image is on the GPU, sampling it gives white: `vec4f(1.0)`. So does a texture that the WGSL declares and the `textures` option does not give. Multiply by a texture, and the material draws with its own values until the image arrives.
@@ -592,7 +599,9 @@ A custom material's levels of detail fade, and so do the edges of its distance b
 
 ## Built-in values
 
-Besides its inputs, a custom material reads the built-in values `frame`, `camera`, `object` and `material` anywhere in its WGSL. The sketch time, `frame.time`, animates a look. The origin of each object, `object.position`, gives each object its own look from one material. On the rows of a batch made with `values: true`, `object.values` holds the row's four numbers, such as a phase or a tint ([Instances and batching](../concepts/instances.md#per-row-values)). The material also reads the camera's `view`, `projection`, `near` and `far`, and the object's `worldMatrix`, `normalMatrix` and `id`. [Built-in shader inputs](builtins.md) lists every field.
+Besides its inputs, a custom material reads the built-in values `frame`, `camera`, `object` and `material` anywhere in its WGSL. The sketch time, `frame.time`, animates a look. The origin of each object, `object.position`, gives each object its own look from one material. On the rows of a batch made with `values: true`, `object.values` holds the row's four numbers, such as a phase or a tint ([Instances and batching](../concepts/instances.md#per-row-values)).
+
+The material also reads the camera's `view`, `projection`, `near` and `far`, and the object's `worldMatrix`, `normalMatrix` and `id`. [Built-in shader inputs](builtins.md) lists every field.
 
 ## Library functions
 
