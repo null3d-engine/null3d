@@ -29,7 +29,11 @@ try {
 
 ## The start
 
-`createEngine` tests what the browser offers, and picks the build and the GPU path from those tests, never from browser or GPU names. It starts the engine's threads, loads the sketch module and runs the sketch's setup. It resolves once the setup has run, and `engine.firstFrame` resolves once the GPU has finished the first frame. The engine can stop drawing before that frame. Then `engine.firstFrame` rejects with the failure that ended its frames, such as [E1404](../errors/E1404.md) when the thread that draws fails. A destroy before the first frame rejects it with [E1420](../errors/E1420.md). When the engine chose the preset itself, its [preset check](../concepts/quality-presets.md#the-preset-check) measures the first frames of play, and `engine.presetChecked` resolves once the check has ended. With the `presetCheck` option's `before-play`, the check runs before play, and `createEngine` waits for it. The first frame is then on the screen before `createEngine` resolves. On a repeat visit, the engine takes the check's stored result instead, and runs no check.
+`createEngine` tests what the browser offers, and picks the build and the GPU path (tier) from those tests, not from browser or GPU names. One later choice on WebGPU does read names: a start-up measurement of the draw path runs only on an Apple GPU in WebKit ([Never branch on GPU names](../concepts/backends.md#never-branch-on-gpu-names)). It starts the engine's threads, loads the sketch module and runs the sketch's setup. It resolves once the setup has run.
+
+`engine.firstFrame` resolves once the GPU has finished the first frame. If the engine stops drawing before that frame, `engine.firstFrame` rejects with the failure that ended its frames, such as [E1404](../errors/E1404.md) when the thread that draws fails. A destroy before the first frame rejects it with [E1420](../errors/E1420.md).
+
+When the engine chose the preset itself, its [preset check](../concepts/quality-presets.md#the-preset-check) measures the first frames of play, and `engine.presetChecked` resolves once the check has ended. With the `presetCheck` option's `before-play`, the check runs before play, and `createEngine` waits for it. The first frame is then on the screen before `createEngine` resolves. On a repeat visit, the engine takes the check's stored result instead, and runs no check.
 
 `onProgress` reports each stage of the start, in this order:
 
@@ -63,7 +67,7 @@ An `AbortSignal` in `signal` cancels a start in progress. Then `createEngine` st
 | [E1406](../errors/E1406.md) | The engine core's WebAssembly file did not download. |
 | [E1418](../errors/E1418.md) | The page's Content-Security-Policy blocks WebAssembly: its `script-src` lacks `'wasm-unsafe-eval'`. |
 | [E1109](../errors/E1109.md) | The browser refused the engine's memory, even after about 45 seconds of tries. |
-| [E1402](../errors/E1402.md) | The engine core's file comes from another build than the engine's JavaScript. Every build checks that the threaded core imports shared memory, and development builds also check each function. On null3D's own dev server, they also check that the core was built from the checkout's Rust sources. |
+| [E1402](../errors/E1402.md) | The engine core's file comes from another build than the engine's JavaScript. Every build checks that the threaded core imports shared memory, and development builds also check each function. |
 | [E1410](../errors/E1410.md) | The sketch module did not load, at the first import or the second: it did not download, or its code threw an error while it loaded. |
 | [E1401](../errors/E1401.md) | The sketch module's default export is not `defineSketch(...)`. |
 | [E1214](../errors/E1214.md) | An option of `defineSketch` is out of its range. |
@@ -145,14 +149,23 @@ const engine = await createEngine({ canvas, sketch, memory: { maximumMiB: 2048 }
 
 The browser reserves address space for the whole maximum when the engine starts, and the memory grows into it as the scene needs. Every other engine and WebAssembly module on the page, such as a physics engine, shares the address space that is left. So a larger maximum leaves less room for them. In Safari on an iPad Pro, a page holds the memories of 6 engines at 1024 MiB, and of 3 at 4096 MiB.
 
-Ask for more only when a scene needs it. Each instance row takes about 210 bytes of engine memory, so 1024 MiB holds about 5 million rows with the rest of the scene. Each place for an object takes about 267 bytes in the scene's tables. While the tables grow, the old and the new ones both take memory for a moment. A scene that needs more memory than the maximum fails with [E1109](../errors/E1109.md). A maximum that is not a whole number of MiB from 256 to 4096 fails the start with [E1409](../errors/E1409.md).
+Ask for more only when a scene needs it. A scene that needs more memory than the maximum fails with [E1109](../errors/E1109.md). A maximum that is not a whole number of MiB from 256 to 4096 fails the start with [E1409](../errors/E1409.md).
+
+<details>
+<summary>Technical details: how much memory a scene takes</summary>
+
+- Each instance row takes about 210 bytes of engine memory, so rows alone fill 1024 MiB at about 5 million. Leave room for the meshes and the rest of the scene, or ask for a larger maximum.
+- Each place for an object takes about 267 bytes in the scene's tables.
+- While the tables grow, the old and the new tables both take memory for a moment.
+
+</details>
 
 The single-threaded build's memory is not shared. It grows as the scene needs, so the option does not change it. The `?memory=<MiB>` switch in the page's address wins over the option, for tests.
 
 ## What the engine reports
 
-- `engine.capabilities` gives the GPU path (`tier`), whether the engine runs threaded, and the optional features and limits of the GPU path. It also gives whether the scene draws HDR color (`hdr`), the depth mode, and the most objects and instance rows that the device draws (`maxInstances`). The `directDraws` field says whether the device draws buckets directly. A start-up measurement picks that path only on an Apple GPU in Safari, or in any browser on iPhone and iPad. The `drawPath` field says why the engine took its path, such as `not-apple-gpu-in-webkit`. The `halfPrecision` field says whether the scene shaders do their color math at half precision, which only the `?half=on` switch turns on. [GPU tiers and backends](../concepts/backends.md) explains each.
-- `engine.mode` gives the build, the latency mode, the thread that runs the sketch and the thread that draws. It also gives the most job workers that the engine may start, and the held time in hold mode. The job workers start as the work grows ([Architecture](../concepts/architecture.md#when-the-job-workers-start)). It gives the quality preset that runs now and what the preset check measured. It also gives the starts that crashed the tab before this one, and the memory maximum. While a check runs during play, `presetCheck` is null and the preset can still drop. `engine.presetChecked` resolves once both hold the check's choice. The `keepTextureCopies` field says whether the engine keeps each texture's copy. It restores a map after a GPU loss ([When the GPU goes away](../concepts/backends.md#when-the-gpu-goes-away)). The `renderFallback` field says why the page draws where a worker was meant to, or is null.
+- `engine.capabilities` gives the GPU path that the engine chose and what that path offers: its tier, its features and limits, HDR, depth, and the most objects it draws. [EngineCapabilities](reference/engine.md#enginecapabilities) lists every field. [GPU tiers and backends](../concepts/backends.md) explains each.
+- `engine.mode` gives how the engine runs on this device: its build, its threads, its quality preset and its memory maximum. [EngineMode](reference/engine.md#enginemode) lists every field. `presetCheck` is null while a check runs during play, and `engine.presetChecked` resolves when the check is done. The job workers start as the work grows ([Architecture](../concepts/architecture.md#when-the-job-workers-start)).
 - `engine.report` holds every result of the start's tests, as plain JSON.
 
 ## The running engine
