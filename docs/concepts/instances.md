@@ -128,7 +128,7 @@ trees.rotations.set(q, 42 * 4);
 trees.markDirty(42, 1); // recompute and upload row 42 only
 ```
 
-A mark past the batch's capacity throws [E1108](../errors/E1108.md). Development builds also find rows that changed without a mark and raise [E1110](../errors/E1110.md), which names the row. Sprite and point batches get the same check, and release builds leave it out. A dynamic batch needs no marks, because it recomputes every row in use in every frame. [Static and dynamic objects](static-dynamic.md) compares what each kind uploads.
+A mark past the batch's capacity throws [E1108](../errors/E1108.md). Development builds also find rows that changed without a mark and raise [E1110](../errors/E1110.md), which names the row. Sprite and point batches get the same check, and release builds leave it out. A dynamic batch needs no marks, because it recomputes every row in use in every frame. [Static and dynamic objects](static-dynamic.md) compares what each kind uploads. The [terrain demo](https://github.com/null3d-engine/null3d/tree/main/examples/terrain) writes its boulders into a static batch and marks them once. The [custom shader inputs demo](https://github.com/null3d-engine/null3d/tree/main/examples/shader-inputs) does the same for its crystal spiral.
 
 <details>
 <summary>Technical details: how the unmarked-write check works</summary>
@@ -167,7 +167,7 @@ function remove(row: number): void {
 }
 ```
 
-Keep each row's own data, such as a velocity, in your own typed arrays in the same row order, and move it the same way. An active count past the capacity throws [E1108](../errors/E1108.md).
+Keep each row's own data, such as a velocity, in your own typed arrays in the same row order, and move it the same way. An active count past the capacity throws [E1108](../errors/E1108.md). The [instancing demo](https://github.com/null3d-engine/null3d/tree/main/examples/instances) sets its active count from the quality preset and fills the rows from the middle out.
 
 `destroy()` removes a batch at once and frees its rows. After it, stop using the batch and every array that you read from it. Its calls throw [E1101](../errors/E1101.md), and so do its array getters, such as `positions`, in every build. An array that you read before the destroy can point at memory that the engine gives to another batch.
 
@@ -196,7 +196,7 @@ The engine groups what it draws by mesh and material. Objects from `scene.create
 - Objects and rows that receive shadows draw with other pipelines than those that do not, so they draw apart from them.
 - On WebGL2, the rows of a dynamic batch and of a static batch at rest draw apart from objects with the same mesh and material.
 
-Blended objects and rows draw in the transparent pass, sorted back to front.
+Blended objects and rows draw in the transparent pass, sorted back to front. The [factory comparison](https://github.com/null3d-engine/null3d/tree/main/examples/compare/factory) builds each robot arm from separate meshes, and tells how null3D draws parts that share a mesh and a material together.
 
 The difference is the sketch's own work on the CPU:
 
@@ -259,7 +259,7 @@ A static batch draws a new color after `markDirty`, as it draws a new position. 
 
 ## Per-row values
 
-`values: true` adds a `values` array, with four numbers for each row, 0 at first. A [custom material](../guides/custom-shaders.md) reads its row's numbers as `object.values`, a `vec4f`, in its `vertexOffset` and `surface` functions. Use them for whatever changes from row to row: a phase of the wind, an age, a tint or a size. Objects from `scene.createMesh`, and batches without values, read zeros.
+`values: true` adds a `values` array, with four numbers for each row, 0 at first. A [custom material](../guides/custom-shaders.md) reads its row's numbers as `object.values`, a `vec4f`, in its `vertexOffset` and `surface` functions. Use them for whatever changes from row to row: a phase of the wind, an age, a tint or a size. Objects from `scene.createMesh`, and batches without values, read zeros. The [instancing demo](https://github.com/null3d-engine/null3d/tree/main/examples/instances) draws its hover cars with the traffic lanes add-on, whose batches use values and whose shader moves each car.
 
 ```ts
 import { defineSketch } from '@null3d/engine';

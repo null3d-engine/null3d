@@ -130,7 +130,7 @@ Punchy AgX suits most scenes: bright lights and colors keep their hue, and the p
 
 The exposure multiplies the scene's color before the tone mapping. An exposure of 2 is one stop brighter, and 0.5 is one stop darker. The engine applies it to each light and each color as they enter the scene. That gives the same picture as scaling the finished color, and keeps scenes in real units inside the range of the HDR target. [Lighting and environment](lighting.md#units-and-exposure) explains it.
 
-Automatic exposure adapts the picture to the scene's brightness over time, as an eye does. The scene still draws at the exposure that `exposure` and `ev100` set. A meter on the GPU then reads each frame, and the final pass multiplies the HDR color by the adapted exposure before the tone mapping. [The post-processing chain](post-processing.md#automatic-exposure) explains the meter.
+Automatic exposure adapts the picture to the scene's brightness over time, as an eye does. The scene still draws at the exposure that `exposure` and `ev100` set. A meter on the GPU then reads each frame, and the final pass multiplies the HDR color by the adapted exposure before the tone mapping. [The post-processing chain](post-processing.md#automatic-exposure) explains the meter. The [automatic exposure demo](https://github.com/null3d-engine/null3d/tree/main/examples/auto-exposure) walks from a sunny courtyard into a dark hall, so the eye opens and closes.
 
 ## The background
 
@@ -138,7 +138,7 @@ The background color and a [background texture](../api/scene.md#the-camera-and-t
 
 ## Transparent canvases
 
-`createEngine({ transparent: true })` makes a see-through canvas. The page shows through wherever no object draws, until the sketch calls `scene.setBackground`. The canvas holds premultiplied alpha, the form that browsers composite, so a partly covered edge pixel keeps its color scaled by its coverage.
+`createEngine({ transparent: true })` makes a see-through canvas. The page shows through wherever no object draws, until the sketch calls `scene.setBackground`. The canvas holds premultiplied alpha, the form that browsers composite, so a partly covered edge pixel keeps its color scaled by its coverage. The [depth-only holdout demo](https://github.com/null3d-engine/null3d/tree/main/examples/depth-only) starts on a see-through canvas over a page backdrop.
 
 ```ts
 const engine = await createEngine({

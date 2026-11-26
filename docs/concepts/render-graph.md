@@ -254,3 +254,4 @@ digraph "render graph" {
 - [Shadows](shadows.md): the shadow cascades.
 - [Render graph API](../api/render.md): adding passes and printing the graph.
 - [The security camera demo](https://github.com/null3d-engine/null3d/tree/main/examples/security-camera): a scene pass that draws a second camera's view for a monitor.
+- [Multiple views](https://github.com/null3d-engine/null3d/tree/main/examples/multiple-views): one scene drawn from two cameras in the same frame, split across the canvas or in an inset.

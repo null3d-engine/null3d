@@ -38,7 +38,7 @@ Each frame draws the scene into a linear HDR target, runs the effects that need 
 
 1. Before the opaque objects shade, the depth prepass draws depth. Ambient occlusion and screen-space reflections read it.
 2. The scene passes draw linear color with no upper limit into a float target, the scene color. The exposure scales each light and color as it enters, so the scene color holds exposed color. The opaque pass darkens its ambient light with the occlusion and reflects the frame before's colors where the reflections' rays hit.
-3. The HDR effects read the scene color in this order: the volumetric fog's light ([Lighting and environment](lighting.md#volumetric-fog)), custom effects, depth of field, then bloom.
+3. The HDR effects read the scene color in this order: the volumetric fog's light ([Lighting and environment](lighting.md#volumetric-fog)), custom effects, depth of field, then bloom. The [light shafts demo](https://github.com/null3d-engine/null3d/tree/main/examples/light-shafts) shows that stage at dusk, with sun rays between the trunks.
 4. The final pass smooths edges with FXAA, adds the effects' results, darkens the edges with the vignette and applies the tone curve: AgX with a punchy look by default, which keeps the hues of bright colors ([Color management](color-management.md#exposure-and-tone-mapping)). Then it encodes sRGB.
 5. In the same pass, it draws the outline's line, applies the color grading table when the sketch sets one, and dithers last.
 
@@ -450,3 +450,10 @@ The devices that the engine was tested on all draw HDR color with WebGL2, and wi
 - [Color management](color-management.md): HDR color, the final pass and the 8-bit path.
 - [The render graph](render-graph.md): how the passes of a frame are declared and ordered.
 - [Quality presets](quality-presets.md): `bloomSize`, `aoScale`, `dofSamples`, the depth prepass and the frame-budget governor.
+- [The whole chain](https://github.com/null3d-engine/null3d/tree/main/examples/post-effects): bloom, ambient occlusion, an outline, depth of field, a vignette, sharpening and color grading in one neon alley.
+- [Depth of field](https://github.com/null3d-engine/null3d/tree/main/examples/camera-lens): the focus racks across a chess board during a dolly zoom.
+- [Automatic exposure](https://github.com/null3d-engine/null3d/tree/main/examples/auto-exposure): a walk from a sunny courtyard into a dark hall.
+- [Screen-space reflections](https://github.com/null3d-engine/null3d/tree/main/examples/wet-street): puddles that mirror the lit windows, the neon signs and a passing taxi.
+- [Screen-space bounce light](https://github.com/null3d-engine/null3d/tree/main/examples/bounce-light): red and green walls that tint a gray floor and back wall.
+- [Outlines](https://github.com/null3d-engine/null3d/tree/main/examples/picking): a click outlines the selected piece, and the hidden parts keep their own line.
+- [Color grading tables](https://github.com/null3d-engine/null3d/tree/main/examples/compare/night-town): a city block whose color grade comes from a table, in both engines.

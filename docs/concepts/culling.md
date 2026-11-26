@@ -240,3 +240,5 @@ scene.createMesh({ mesh: geometry.box(), material: stone, position: base });
 - [Static and dynamic objects](static-dynamic.md): which objects upload their data each frame.
 - [Large worlds and precision](large-worlds.md): `largeWorld` mode and batch origins.
 - [The demo far from the origin](https://github.com/null3d-engine/null3d/tree/main/examples/far-from-origin): keys 2 cm wide, 1,000 km from the origin, seen from 40 cm.
+- [Row-by-row culling of a large batch](https://github.com/null3d-engine/null3d/tree/main/examples/instances): a dynamic batch of 100,000 rows, each culled on its own.
+- [Bounds that follow the waves](https://github.com/null3d-engine/null3d/tree/main/examples/vertex-updates): `setBounds` on a pool whose waves lift its corners past the flat mesh's sphere.

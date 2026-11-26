@@ -32,7 +32,7 @@ const second = scene.instantiate(ship, { position: [8, 0, 0] });
 const many = scene.createInstances(ship, 200); // one row places a whole ship
 ```
 
-For hundreds or thousands of copies, `scene.createInstances(prefab, count)` draws them with instance batches instead of objects, one batch for each mesh of the model. The batches share their rows, so one write to a row moves every part of that copy. [Scene](../api/scene.md#models-and-copies) covers the three ways to copy, and [Assets](../api/assets.md#gltf-models) lists what each part of a file becomes.
+For hundreds or thousands of copies, `scene.createInstances(prefab, count)` draws them with instance batches instead of objects, one batch for each mesh of the model. The batches share their rows, so one write to a row moves every part of that copy. [Scene](../api/scene.md#models-and-copies) covers the three ways to copy, and [Assets](../api/assets.md#gltf-models) lists what each part of a file becomes. The [glTF models demo](https://github.com/null3d-engine/null3d/tree/main/examples/gltf-model) loads a model into a prefab.
 
 Before you publish a model, run it through `bunx @null3d/cli assets optimize`. The command stores its meshes as integers compressed with meshopt, and its textures as KTX2 files. The model then downloads less and takes less GPU memory. [The asset pipeline](../guides/assets-pipeline.md) covers it.
 
@@ -85,7 +85,7 @@ Convert Draco files to meshopt with `bunx @null3d/cli assets optimize` when you 
 
 `assets.loadTexture` loads PNG, JPEG, WebP and AVIF images, and KTX2 files of Basis Universal data. The browser decodes images off the main thread. Every browser that runs null3D decodes WebP and AVIF, so the engine ships no decoder for them. An image that does not decode fails with [E1412](../errors/E1412.md).
 
-Workers transcode KTX2 data into the compressed format that the device supports. A frame never waits for them. The GPU then keeps it at a quarter or an eighth of the memory of plain RGBA.
+Workers transcode KTX2 data into the compressed format that the device supports. A frame never waits for them. The GPU then keeps it at a quarter or an eighth of the memory of plain RGBA. The [Island showcase](https://github.com/null3d-engine/null3d/tree/main/examples/showcase/island) loads models whose textures the asset tool stored as KTX2 files.
 
 <details>
 <summary>Technical details: which workers transcode KTX2 data</summary>
@@ -122,7 +122,7 @@ const tile = geometry.fromArrays({
 scene.createMesh({ mesh: tile, material: materials.standard(), scale: [0.001, 0.001, 0.001] });
 ```
 
-Integer positions keep their own units. The object's transform turns them into meters, as a glTF node's transform does for a quantized mesh. So the bounds that culling tests are in meters, and the scene draws as the file intends. [Geometry](../api/geometry.md#integer-attributes) lists the types that each attribute takes.
+Integer positions keep their own units. The object's transform turns them into meters, as a glTF node's transform does for a quantized mesh. So the bounds that culling tests are in meters, and the scene draws as the file intends. [Geometry](../api/geometry.md#integer-attributes) lists the types that each attribute takes. The [meshes from arrays demo](https://github.com/null3d-engine/null3d/tree/main/examples/mesh-arrays) builds an island and a crystal with `geometry.fromArrays`. The [Island showcase](https://github.com/null3d-engine/null3d/tree/main/examples/showcase/island) draws models whose meshes the asset tool stored as quantized integers.
 
 Meshes whose attributes have the same types share GPU buffers, and they draw with few changes of GPU state. Keep the meshes of a scene in few such formats.
 

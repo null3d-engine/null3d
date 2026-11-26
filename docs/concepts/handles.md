@@ -98,3 +98,5 @@ Your loops then read your arrays and write the engine's arrays, and neither side
 - [Static and dynamic objects](static-dynamic.md): when a write reaches the GPU.
 - [Instances and batching](instances.md): rows instead of handles, for many copies of one mesh.
 - [Architecture: threads and the frame](architecture.md): where the shared arrays live.
+- [Wrapper objects and setters](https://github.com/null3d-engine/null3d/tree/main/examples/objects): crates move with setters between a turntable and the stage.
+- [Per-object data in your own arrays](https://github.com/null3d-engine/null3d/tree/main/examples/math): a drone swarm keeps a weight for each of its 300 rows.

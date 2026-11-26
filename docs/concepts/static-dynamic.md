@@ -109,7 +109,7 @@ trees.positions[42 * 3 + 1] = 3; // move row 42
 trees.markDirty(42, 1); // upload one row, starting at row 42
 ```
 
-Each row has its own bounds, so culling works per instance. A batch whose rows you mark in most frames loses the WebGL2 savings, because a marked frame tests it row by row ([Culling](culling.md#how-each-path-culls) explains).
+Each row has its own bounds, so culling works per instance. A batch whose rows you mark in most frames loses the WebGL2 savings, because a marked frame tests it row by row ([Culling](culling.md#how-each-path-culls) explains). The [terrain demo](https://github.com/null3d-engine/null3d/tree/main/examples/terrain) marks its boulders this way: it writes them into a static batch and calls `markDirty`.
 
 On WebGPU, each moving row uploads its 48-byte world matrix in every frame, so 100,000 moving boxes upload 4.8 MB per frame. The same boxes standing still in a static batch upload no matrices after the first frame.
 
@@ -123,5 +123,6 @@ The list has a 4-byte entry for each visible object or batch row, where a full m
 
 - [Handles and objects](handles.md): what a setter writes to.
 - [Instances and batching](instances.md): instance batches in full.
+- [Dynamic and static instance batches](https://github.com/null3d-engine/null3d/tree/main/examples/instances): 100,000 columns whose heights the sketch rewrites every frame.
 - [Architecture: threads and the frame](architecture.md): where in the frame the engine recomputes objects.
 - [GPU tiers and backends](backends.md): how each GPU path draws.

@@ -139,7 +139,7 @@ The engine shades each surface in the pass that draws it. A deferred renderer wo
 - Forward shading works with MSAA directly, where deferred shading needs extra passes.
 - Transparent surfaces use the same lighting code as opaque ones.
 
-Both GPU paths light a scene the same way. WebGPU reads the lists from storage buffers, and WebGL2 from small data textures. The camera lists up to 1,024 lights in a frame, the ones nearest to it. Each cluster lists up to 128. Of those, the quality preset's `areaLights` caps the rectangle and tube lights, which cost more per pixel. [Performance guide](../guides/performance.md#point-and-spot-lights) gives the cost of lights.
+Both GPU paths light a scene the same way. WebGPU reads the lists from storage buffers, and WebGL2 from small data textures. The camera lists up to 1,024 lights in a frame, the ones nearest to it. Each cluster lists up to 128. Of those, the quality preset's `areaLights` caps the rectangle and tube lights, which cost more per pixel. [Performance guide](../guides/performance.md#point-and-spot-lights) gives the cost of lights. The [300 drones, each with its own point light](https://github.com/null3d-engine/null3d/tree/main/examples/math) fly over a landing pad at dusk.
 
 ## Lights as objects
 
@@ -170,7 +170,7 @@ Both lights are diffuse only: they light a surface's color and give no highlight
 
 A light that stands for the sky must follow the hour. An ambient or hemisphere light with a fixed color and intensity is a day light. Under a night sky it lights sand, wall and road as brightly as at noon. The scene then reads as a dark sky over a lit town.
 
-Scale the light with the hour, shifting its colors cool at night. The island showcase holds its hemisphere light at 0.8 with warm sky and ground colors by day. By night it takes it to a cool 0.06, driven by the share of a town's lamps that are lit. The moon's directional light and the lamps then carry the night, and a faint ambient keeps the dark from going black.
+Scale the light with the hour, shifting its colors cool at night. The [Island showcase](https://github.com/null3d-engine/null3d/tree/main/examples/showcase/island) holds its hemisphere light at 0.8 with warm sky and ground colors by day. By night it takes it to a cool 0.06, driven by the share of a town's lamps that are lit. The moon's directional light and the lamps then carry the night, and a faint ambient keeps the dark from going black.
 
 Exposure is one value for the whole scene. An exposure high enough for a bright day lifts a moonlit scene by the same factor, so choose it at the hour the scene shows longest. Drive the light from a value of your own that follows the sun's height, from 0 by day to 1 at night. The showcase uses the share of the town's lamps that are lit as that value.
 
@@ -213,7 +213,7 @@ The fog of the section above stays as it is: it dims each surface and mixes in t
 
 The quality setting `fogSlices` sets the grid: 32 slices with 64 cells on the canvas's short side on Medium, 64 slices with 96 on High, and 96 slices with 128 on Ultra. On Low it is 0, and the fog keeps its sun glow, at no cost. The frame-budget governor's last step halves the slices that each frame draws. While the fog is not volumetric, nothing of it runs or downloads.
 
-Surfaces that blend or let light through, such as water and glass, draw before the apply step. They take the lit fog of the whole line of sight to the opaque surface behind them.
+Surfaces that blend or let light through, such as water and glass, draw before the apply step. They take the lit fog of the whole line of sight to the opaque surface behind them. The [light shafts demo](https://github.com/null3d-engine/null3d/tree/main/examples/light-shafts) shows volumetric fog at dusk, with sun rays between the trunks and a glowing cone from each lantern.
 
 ## Environment maps
 
@@ -310,7 +310,7 @@ These times come from Chrome. The phones loaded a page with no shader cache. On 
 
 ## Reflection probes
 
-An environment map holds light from infinitely far away. In a room, a polished floor then reflects the sky, not the walls. A reflection probe holds the light around one point of the scene, and lights the surfaces inside its box in place of the environment:
+An environment map holds light from infinitely far away. In a room, a polished floor then reflects the sky, not the walls. A reflection probe holds the light around one point of the scene, and lights the surfaces inside its box in place of the environment. The [reflection probes demo](https://github.com/null3d-engine/null3d/tree/main/examples/reflection-probes) puts a probe in each of two rooms, and B toggles box projection:
 
 ```mermaid
 flowchart LR
@@ -550,7 +550,7 @@ The aerial perspective needs no table. Over a scene's distances, the air's densi
 
 At night the moon is a second light of the air: it lights the sky as the sun does, a little bluer at the scene's exposure. The moon's disc shows its phase, lit from the sun's side. The stars add their light to the sky's, so they show only where the sky is dark enough, and the air dims them toward the horizon.
 
-The sky's environment shows the physical sky too. When a refresh starts, the engine draws the sky with its clouds into a panorama, and the map's steps read it. So every face of the map shows the same sky while the sun moves. The diffuse light comes from a CPU copy of the same model.
+The sky's environment shows the physical sky too. When a refresh starts, the engine draws the sky with its clouds into a panorama, and the map's steps read it. So every face of the map shows the same sky while the sun moves. The diffuse light comes from a CPU copy of the same model. The [atmosphere demo](https://github.com/null3d-engine/null3d/tree/main/examples/atmosphere) shows a day over a valley of ridges, with the moon and stars at night.
 
 ### Background cost
 
@@ -636,3 +636,5 @@ A [scene pass](../api/render.md) draws the scene from another camera into a text
 - [Assets](../api/assets.md#environments): the calls that load environments and cube maps.
 - [The environment light demo](https://github.com/null3d-engine/null3d/tree/main/examples/environment): rough and smooth spheres in an HDR file's light, an EXR file's light and the built-in room.
 - [The time of day demo](https://github.com/null3d-engine/null3d/tree/main/examples/time-of-day): a day passes over a lighthouse in 40 seconds. The sketch calls `timeOfDay` each time the hour moves on by three minutes, and the sky's light follows the sun.
+- [The area lights demo](https://github.com/null3d-engine/null3d/tree/main/examples/area-lights): rectangle windows and tube-light neon, whose whole shapes show in the wet street.
+- [The night town comparison](https://github.com/null3d-engine/null3d/tree/main/examples/compare/night-town): a city block in both engines, where each click adds 12 lights and a slider raises the count.

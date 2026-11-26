@@ -348,6 +348,8 @@ ${presetCheckTable()}
 ## Settings of each preset
 
 ${presetSettingsTable()}
+
+The [Skyway showcase](https://github.com/null3d-engine/null3d/tree/main/examples/showcase/skyway) runs each preset on a real scene. The Island showcase overrides the presets, so it does not show these settings.
 `;
 }
 

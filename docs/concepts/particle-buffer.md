@@ -201,13 +201,14 @@ A frame's upload therefore grows with the births it writes. The number of partic
 - The lifetime is a 16-bit float with about three digits of precision, rounded down. One above 65,504 seconds stores as 65,504. One below about 0.00003 seconds stores as zero, so the particle never draws.
 - Birth times are 32-bit floats, so their precision falls as the buffer's clock grows. A buffer that runs for hours moves its time base ([technical details](#what-the-buffer-holds)).
 - A buffer with a map draws nothing in a frame where the map's image is not yet on the GPU.
-- The `softness` value fades particles out over that distance, in meters, where they near the surfaces behind them ([Soft particles](../api/particles.md#soft-particles)). A value above 0 makes the camera copy its opaque depth in each frame, which is one full-screen pass. The Low preset turns soft particles off.
+- The `softness` value fades particles out over that distance, in meters, where they near the surfaces behind them ([Soft particles](../api/particles.md#soft-particles)). A value above 0 makes the camera copy its opaque depth in each frame, which is one full-screen pass. The Low preset turns soft particles off. The [particles demo](https://github.com/null3d-engine/null3d/tree/main/examples/particles) sets a softness of 0.25 on its campfire flames, so they meet the ground softly.
 - The particles cast no shadow and lights do not light them. A raycast against the object tests its one triangle at the origin, which has no area, so it never hits a particle.
 - After `destroy()`, the buffer's calls and arrays throw.
 
 ## Related pages
 
 - [Particles](../api/particles.md): the add-on that makes systems from this buffer, with emitters and sub-emitters.
+- [The particles demo](https://github.com/null3d-engine/null3d/tree/main/examples/particles): the campfire glade draws its flames, embers and smoke from particle buffers.
 - [Instances and batching](instances.md): typed arrays that sketch code writes, row by row.
 - [Culling](culling.md): how the engine culls the buffer by its object's bounds.
 - [GPU tiers and backends](backends.md): the two paths that draw the same particles.

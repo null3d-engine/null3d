@@ -36,7 +36,7 @@ The standard material lights a surface with Lambert diffuse light and a GGX high
 
 ## Values cost almost nothing
 
-`set()` writes a material's values into its row, and the next frame uploads the rows that changed. No pipeline changes, so no shader compiles, and every object that uses the material changes with it.
+`set()` writes a material's values into its row, and the next frame uploads the rows that changed. No pipeline changes, so no shader compiles, and every object that uses the material changes with it. The [animated values demo](https://github.com/null3d-engine/null3d/tree/main/examples/property-animation) changes a lamp, a material and a camera every frame at no cost.
 
 ```ts
 // sketch.ts
@@ -115,7 +115,7 @@ Sorting by object has these limits:
 
 ### Blending without a sort
 
-Surfaces of the `weighted` blending need no sort. In the camera's view they leave the transparent pass and draw after it, in any order, into two targets of their own. A last step blends their weighted average over the scene, as far as they cover it together ([Weighted blending](../api/materials.md#weighted-blending)). Use it where the limits above make smoke, particles or crossing panes pop.
+Surfaces of the `weighted` blending need no sort. In the camera's view they leave the transparent pass and draw after it, in any order, into two targets of their own. A last step blends their weighted average over the scene, as far as they cover it together ([Weighted blending](../api/materials.md#weighted-blending)). Use it where the limits above make smoke, particles or crossing panes pop. The demo of [weighted blending](https://github.com/null3d-engine/null3d/tree/main/examples/weighted-transparency) blends eight crossing glass panes and 600 smoke puffs in any order.
 
 ### Moment transparency
 
@@ -146,3 +146,10 @@ Create every material in the setup and `await scene.warmUp()` before play starts
 - [Lights](../api/lights.md): what lights a standard material.
 - [Color management](color-management.md): how colors turn into linear values.
 - [Loading screens and warm-up](../guides/loading-screens.md): build pipelines before play, and load feature shaders up front.
+- [Clear coat and sheen variants](https://github.com/null3d-engine/null3d/tree/main/examples/coat-and-sheen): candy paint and carbon fiber under a clear coat, and velvet that glows at its edges.
+- [Iridescence and anisotropy variants](https://github.com/null3d-engine/null3d/tree/main/examples/iridescence-and-anisotropy): a beetle's shell, soap bubbles and an oil slick.
+- [Diffuse transmission](https://github.com/null3d-engine/null3d/tree/main/examples/translucency): broad leaves and coral petals let the low sun through.
+- [Subsurface light and the skin pass](https://github.com/null3d-engine/null3d/tree/main/examples/subsurface): wax, jade and soap glow under the surface.
+- [Custom material WGSL and uniforms](https://github.com/null3d-engine/null3d/tree/main/examples/shader-inputs): 900 crystals take their color and their wave from their row.
+- [Decal material](https://github.com/null3d-engine/null3d/tree/main/examples/decals): road paint, puddles, cracks and posters project onto a street.
+- [Invisible surfaces that hide](https://github.com/null3d-engine/null3d/tree/main/examples/depth-only): a plane with `colorWrite: false` holds back the hall behind it.

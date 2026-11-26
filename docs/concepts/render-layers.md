@@ -63,6 +63,8 @@ export default defineSketch(({ scene, geometry, materials, input }) => {
 - A mask of 0 puts an object on no layer, so no camera draws it. A mask of `0xffffffff` puts it on all 32 layers.
 - In development builds, a mask must be a whole number from `-(2 ** 31)` to `0xffffffff`, or the call throws [E1207](../errors/E1207.md). Negative masks are allowed so that `1 << 31`, which JavaScript makes negative, names layer 31.
 
+[Camera layer masks](https://github.com/null3d-engine/null3d/tree/main/examples/layers) shows a camera that changes its layers every 2 seconds, to show or hide roofs and map pins.
+
 ## Layers and visibility
 
 `setVisible(false)` hides an object and everything under it from every camera. Layers choose which cameras draw one object, and they belong to that object alone: its children keep their own layers. A parent on a layer that the camera leaves out does not hide its children.
@@ -106,4 +108,4 @@ A new mask rebuilds none of the engine's tables of what it draws. On WebGPU it r
 - [Cameras](../api/cameras.md): the camera's layers.
 - [Scene](../api/scene.md): the `layers` option, and when changes take effect.
 - [Culling](culling.md): the test that masks join.
-- [The render layers demo](https://github.com/null3d-engine/null3d/tree/main/examples/layers): a camera that changes its layers every 2 seconds, to show or hide roofs and map pins.
+- [Camera layer masks](https://github.com/null3d-engine/null3d/tree/main/examples/layers): a camera that changes its layers every 2 seconds, to show or hide roofs and map pins.
