@@ -528,7 +528,9 @@ The list belongs to one set of pages. A project that adds a scene records again,
 
 ### When to ship the full set
 
-A list holds only the words that a recording saw. An app whose content arrives while it runs cannot record its words, because nobody knows that content at build time. Examples are models that users upload, a catalogue from a CMS, and glTF files from another server. A new model can need a word that no recording saw, and the page that draws it then stops. Build such an app without a list. The build copies the whole set, and each page still downloads only the files that its device needs.
+A list holds only the words that a recording saw. An app whose content arrives while it runs cannot record its words, because nobody knows that content at build time. Examples are models that users upload, a catalogue from a CMS, and glTF files from another server. A new model can need a word that no recording saw, and the page that draws it then stops.
+
+Build such an app without a list. The build copies the whole set, and each page still downloads only the files that its device needs.
 
 An app whose content is all in the build can ship a list. Keep the list complete:
 
@@ -610,7 +612,9 @@ export default defineConfig({
 });
 ```
 
-A production build then copies only the builds of the listed words. A shader file whose builds the list leaves out gives way to one small module that holds no build. A table of shared paragraphs keeps only the paragraphs that the kept builds read. The build compiles no shader. It takes the engine's set from the same place as before: the release asset, or the folder that `NULL3D_ENGINE_SHADERS` names. The dev server serves the whole set, so a recording sees every word. It compares each word that a page draws with against the list, as [When the list lacks a word](#when-the-list-lacks-a-word) says.
+A production build then copies only the builds of the listed words. A shader file whose builds the list leaves out gives way to one small module that holds no build. A table of shared paragraphs keeps only the paragraphs that the kept builds read. The build compiles no shader. It takes the engine's set from the same place as before: the release asset, or the folder that `NULL3D_ENGINE_SHADERS` names.
+
+The dev server serves the whole set, so a recording sees every word. It compares each word that a page draws with against the list, as [When the list lacks a word](#when-the-list-lacks-a-word) says.
 
 The build prints what it copied, such as:
 

@@ -599,7 +599,9 @@ bunx @null3d/cli shaders record --manual --gpu webgl2 --preset low
 | `--gpu <path>` | With `--manual`: `webgpu` or `webgl2` | The engine picks the GPU path |
 | `--preset <name>` | With `--manual`: `low`, `medium`, `high` or `ultra` | The engine picks the preset |
 
-The command loads up to four pages at once in a headless browser, each with the engine's recording switch, `?permutations=record`. A held page publishes its words once its held frame has drawn. The recorder stops a live page once it has driven it through its states, and then the page publishes its words. A page that fails gets a second try. A second failure stops the run with the page's errors, so no list leaves out a page's words. The run's words join those that the list holds already. So each level or mode can be recorded in a run of its own into one list. The list holds each word once, in order:
+The command loads up to four pages at once in a headless browser, each with the engine's recording switch, `?permutations=record`. A held page publishes its words once its held frame has drawn. The recorder stops a live page once it has driven it through its states, and then the page publishes its words.
+
+A page that fails gets a second try. A second failure stops the run with the page's errors, so no list leaves out a page's words. The run's words join those that the list holds already. So each level or mode can be recorded in a run of its own into one list. The list holds each word once, in order:
 
 ```text
 # The permutation words that this project draws with, one hexadecimal word on each line.
