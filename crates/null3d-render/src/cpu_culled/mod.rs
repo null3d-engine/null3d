@@ -2014,8 +2014,10 @@ impl CpuCulledRenderer {
             self.settings.particles().wants_depth() || materials_read_depth,
             materials_read_depth,
         );
-        // The render scale's range decides which of the final pass's pipelines the frame asks for.
-        self.graph.set_scaling(self.settings.render_scaling());
+        // The render scale's range, and the scale that the frame asks for, decide which of the final
+        // pass's pipelines the frame asks for.
+        self.graph
+            .set_scaling(self.settings.render_scaling(), input.render_scale);
         self.graph
             .request_pipelines(&mut self.pipelines, input.pipelines_built);
         self.graph.request_fullscreen_pipelines(

@@ -1,7 +1,8 @@
-// Pipelines build before the first frame and never during play: a scene of ten pipelines warms up
-// in its setup, and an object added during play waits for its warm-up before it shows. On every
-// GPU tier and in every thread mode, and on WebGL2 without background compiles and without
-// Atomics.waitAsync too.
+// Pipelines build before play and never during it: a scene of ten pipelines warms up in its setup,
+// and an object added during play waits for its warm-up before it shows. The first frame builds the
+// pipelines that it draws with; the engine's others build behind it, before play. On every GPU tier
+// and in every thread mode, and on WebGL2 without background compiles and without Atomics.waitAsync
+// too.
 import { expect, test } from '@playwright/test';
 import { ENGINE_MODES, THREADED_MODES } from '../lib/engine-checks.ts';
 import { pageResult } from '../lib/page-result.ts';
@@ -22,7 +23,7 @@ const TIERS = [
 
 for (const { name, tier, gpu, query } of TIERS)
 	for (const mode of ENGINE_MODES)
-		test(`the first frame builds every pipeline and play builds none on ${name}, ${mode.name}`, async ({
+		test(`the first frame builds its own pipelines and play builds none on ${name}, ${mode.name}`, async ({
 			page,
 		}) => {
 			await page.goto(`warm-up.html?${query}&${mode.query}`);

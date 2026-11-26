@@ -24,7 +24,7 @@ const MOST_LATE = 0.25;
  */
 const WANTED_FRAMES = 40;
 const CAPTURE_MS = 360_000;
-/** The longest that the page may take to start, which on a software GPU builds every pipeline first. */
+/** The longest that the page may take to start, which on a software GPU builds its pipelines first. */
 const READY_MS = 180_000;
 
 /** The browser's screencast frames of the live page, until it holds the drawn frames the measure needs. */

@@ -22,6 +22,8 @@ export interface StartupResult {
 			/** Times from navigation start. */
 			firstFrameMs: number | null;
 			firstFrameDoneMs: number | null;
+			/** The pipelines that the first frame built. */
+			firstFramePipelines?: number | null;
 			/** The steps of the start of the thread that draws, from navigation start. */
 			drawingStart?: {
 				deviceMs: number | null;
@@ -55,6 +57,8 @@ export interface LoadSample {
 	frameMs: number;
 	/** The GPU finished the first frame. */
 	frameDoneMs: number;
+	/** The pipelines that the first frame built, or null where the page reported none. */
+	pipelines: number | null;
 	requests: number;
 	bytes: number;
 }
@@ -116,6 +120,7 @@ export function loadSample(result: StartupResult): LoadSample | undefined {
 		readyMs: start + load.engineStartMs,
 		frameMs: load.firstFrameMs,
 		frameDoneMs: load.firstFrameDoneMs,
+		pipelines: load.firstFramePipelines ?? null,
 		requests: downloads.requests,
 		bytes: downloads.bytes,
 	};
@@ -158,8 +163,8 @@ const count = (value: number) => (Number.isInteger(value) ? String(value) : valu
 
 /**
  * The medians of each group of loads as a Markdown table: the labels under `heads`, the GPU path,
- * the number of loads, the points in milliseconds from navigation start, and the requests and
- * kilobytes that the server sent.
+ * the number of loads, the points in milliseconds from navigation start, the first frame's
+ * pipelines, and the requests and kilobytes that the server sent.
  */
 export function startupTable(heads: readonly string[], groups: readonly SampleGroup[]): string[] {
 	const columns = [
@@ -167,6 +172,7 @@ export function startupTable(heads: readonly string[], groups: readonly SampleGr
 		'GPU',
 		'Loads',
 		...POINTS.map(([name]) => `${name}, ms`),
+		'Pipelines',
 		'Requests',
 		'KB',
 	];
@@ -178,13 +184,15 @@ export function startupTable(heads: readonly string[], groups: readonly SampleGr
 			return values.length > 0 ? median(values) : Number.NaN;
 		};
 		const ms = (value: number) => (Number.isNaN(value) ? '-' : value.toFixed(0));
+		const pipelines = pick('pipelines');
 		const values =
 			samples.length === 0
-				? ['-', '0', ...POINTS.map(() => '-'), '-', '-']
+				? ['-', '0', ...POINTS.map(() => '-'), '-', '-', '-']
 				: [
 						[...new Set(samples.map((s) => s.tier))].join(', '),
 						String(samples.length),
 						...POINTS.map(([, key]) => ms(pick(key))),
+						Number.isNaN(pipelines) ? '-' : count(pipelines),
 						count(pick('requests')),
 						(pick('bytes') / 1024).toFixed(1),
 					];
@@ -205,5 +213,6 @@ export const STARTUP_LEGEND: readonly string[] = [
 	'- Ready: the engine had started and run the sketch setup.',
 	'- Frame: the engine submitted the first frame.',
 	'- Frame done: the GPU finished the first frame.',
+	'Pipelines counts the pipelines that the first frame built, as engine.measure() reports it.',
 	'Requests and KB count what the server sent for the load, with KB as sent after compression.',
 ];

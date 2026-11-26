@@ -10,7 +10,7 @@ use common::World;
 use null3d_core::handle::Handle;
 use null3d_core::lights::{LightTable, color, kind, value};
 use null3d_core::scene::{Command, flags};
-use null3d_gpu::drawlist::{Op, format, layout, sizes};
+use null3d_gpu::drawlist::{Op, format, layout, sizes, template};
 use null3d_render::cpu_culled::{CpuCulledConfig, CpuCulledRenderer};
 use null3d_render::debug_view::DebugView;
 use null3d_render::fog::{self, Fog};
@@ -602,4 +602,85 @@ fn a_finished_pixel_image_shows_after_a_gpu_reset() {
         tables.image_records(0).collect::<Vec<_>>(),
         vec![(6, record)]
     );
+}
+
+/// The compute pipelines of the light clustering pass and of its depth reduction.
+const CLUSTER_TEMPLATES: [u32; 4] = [
+    template::LIGHT_FIT,
+    template::LIGHT_COUNT,
+    template::LIGHT_PLACE,
+    template::LIGHT_WRITE,
+];
+const DEPTH_TEMPLATES: [u32; 4] = [
+    template::LIGHT_DEPTH_CLEAR,
+    template::LIGHT_DEPTH_CLEAR_MS,
+    template::LIGHT_DEPTH,
+    template::LIGHT_DEPTH_MS,
+];
+
+/// The templates of the compute pipelines that a frame's list creates.
+fn compute_templates(commands: &[(Op, Vec<u32>)]) -> Vec<u32> {
+    operands(commands, Op::CreateComputePipeline)
+        .into_iter()
+        .map(|o| o[1])
+        .collect()
+}
+
+/// A first frame whose scene holds no point, spot or area light dispatches no light clustering, so
+/// it creates none of its pipelines and never waits for them. They come in the first frame after
+/// the thread that draws has drawn one, so a light that comes later finds them built.
+#[test]
+fn a_first_frame_without_local_lights_leaves_the_clustering_pipelines_behind_it() {
+    let mut world = World::new();
+    world.add_sun(1);
+    world.pipelines_built = 0;
+    let first = compute_templates(&record_commands(&mut world, true));
+    assert!(first.contains(&template::CULL), "{first:?}");
+    for template in CLUSTER_TEMPLATES.iter().chain(&DEPTH_TEMPLATES) {
+        assert!(!first.contains(template), "{template} in {first:?}");
+    }
+    // The thread that draws has not drawn yet: the next frame waits as the first does.
+    let waiting = compute_templates(&record_commands(&mut world, false));
+    assert!(waiting.is_empty(), "{waiting:?}");
+    world.pipelines_built = 1;
+    let behind = compute_templates(&record_commands(&mut world, false));
+    for template in CLUSTER_TEMPLATES.iter().chain(&DEPTH_TEMPLATES) {
+        assert!(behind.contains(template), "{template} in {behind:?}");
+    }
+    // A point light that comes later creates no pipeline: its frame finds them made.
+    world.add_point([0.0, 2.0, 0.0], 10.0);
+    world.pipelines_built = 3;
+    let later = compute_templates(&record_commands(&mut world, true));
+    assert!(
+        later
+            .iter()
+            .all(|t| !CLUSTER_TEMPLATES.contains(t) && !DEPTH_TEMPLATES.contains(t)),
+        "{later:?}"
+    );
+}
+
+/// A first frame with a point light creates the clustering pipelines, and those of the depth
+/// reduction only while the GPU fits the clusters' slices to the measured depth.
+#[test]
+fn a_first_frame_with_a_point_light_creates_what_it_dispatches() {
+    for fit in [false, true] {
+        let mut world = World::new();
+        world.renderer.settings_mut().set_light_fit(fit);
+        world.add_point([0.0, 2.0, 0.0], 10.0);
+        world.pipelines_built = 0;
+        let first = compute_templates(&record_commands(&mut world, true));
+        for template in CLUSTER_TEMPLATES {
+            assert!(
+                first.contains(&template),
+                "fit {fit}: {template} in {first:?}"
+            );
+        }
+        for template in DEPTH_TEMPLATES {
+            assert_eq!(
+                first.contains(&template),
+                fit,
+                "fit {fit}: {template} in {first:?}"
+            );
+        }
+    }
 }

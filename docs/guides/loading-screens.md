@@ -144,7 +144,7 @@ The engine builds pipelines without blocking any thread:
 - On WebGPU, the browser builds each pipeline in the background.
 - On WebGL2, the browser compiles each program in the background where it has the `KHR_parallel_shader_compile` extension. Chrome, Safari and Brave have it on the Mac, and Safari and Brave have it on the iPad. Firefox does not, and neither does Chrome on some Android phones, such as the Galaxy S24+. There, the first draw with a program waits for its compile.
 
-The first frame waits until every pipeline that it needs is built, so it shows the whole scene. After the first frame, the engine draws each frame at once. An object whose pipeline is still building draws nothing until the pipeline is built, and the rest of the scene draws as usual.
+The first frame waits until every pipeline that it needs is built, so it shows the whole scene. After the first frame, the engine draws each frame at once. An object whose pipeline is still building draws nothing until the pipeline is built, and the rest of the scene draws as usual. The engine's own passes give the first frame only the pipelines that it draws with. Their other pipelines build in the background once the first frame shows. An example is the light clustering of a scene without point, spot or area lights ([A fast start](start-time.md#pipelines-on-phones)). A `scene.warmUp()` after the first frame waits for them too.
 
 ### Repeat visits
 

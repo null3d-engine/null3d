@@ -219,6 +219,8 @@ Other material values never do: materials are rows in one shared table. So a tho
 
 In the background, from the first frame that draws a shading model with a vertex format, and again after the browser replaces the GPU. The first frame waits for its pipelines, and so does the first frame after `quality.setPreset`. After that, an object whose pipeline is still building draws nothing until it is built. `scene.warmUp()` resolves once every pipeline is built. `measure` counts builds in `pipelines`, and the draws that a building pipeline kept from drawing in `skippedDraws`.
 
+The engine's own passes build for the first frame only what it draws with. Their other pipelines build in the background once the first frame shows, as [A fast start](start-time.md#pipelines-on-phones) lists.
+
 ### What does the engine batch by itself?
 
 Every object and instance row with the same shading model, mesh and material goes into one bucket, which one draw call draws. Separate objects from `createMesh` batch the same way as the rows of an instance batch.
@@ -341,7 +343,7 @@ The engine lights each pixel with the point and spot lights of its cluster only,
 
 - A pixel's cost grows with the lights whose ranges reach its cluster. Give each light the shortest range that keeps its look, because a longer range reaches more clusters.
 - A light near the camera covers much of the screen, and its range reaches many clusters. Many large lights near the camera cost the most.
-- Each frame the engine lists the lights of each cluster. On WebGPU a compute pass does it on the GPU, and the CPU only uploads the light list. On WebGL2 the job workers do it on the CPU. There, a few hundred small lights take a fraction of a millisecond, on the sketch thread alone when the work is small.
+- Each frame the engine lists the lights of each cluster. On WebGPU a compute pass does it on the GPU, and the CPU only uploads the light list. Its pipelines come with the first frame only when the scene holds a point, spot or area light. Otherwise they build once the first frame shows, and a light that comes in the first frames after it lights nothing until they are built. On WebGL2 the job workers do it on the CPU. There, a few hundred small lights take a fraction of a millisecond, on the sketch thread alone when the work is small.
 - A frame uploads its lights when the lights or the camera moved: 80 bytes for each light. On WebGL2 it also uploads the lists: 14 KB for the clusters, and 4 bytes for each light in each cluster. A still scene seen from a still camera uploads nothing.
 
 The camera lists up to 1,024 point and spot lights in a frame, the ones nearest to it, and up to 128 in each cluster.
