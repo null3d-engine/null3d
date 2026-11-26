@@ -25,15 +25,32 @@ flowchart LR
     occlude --> draw["Draw the visible<br/>objects and rows"]
 ```
 
-Culling finds the objects and instance rows in the camera's view, so the GPU draws only those. Occlusion culling also skips the objects that others hide. The engine tests each bounding sphere against the six planes of the view. Every position in the test is relative to the camera, so a scene far from the origin culls and draws as it does near it. When a scene spreads over several grid cells, the engine first skips every still object of the cells out of view. The engine culls each [view](render-graph.md) separately, against that view's camera. A view is the camera's, a shadow cascade's, a shadow tile's, a [scene pass](../api/render.md)'s, or one that [`scene.createView`](../api/scene.md#multiple-views) draws into a rectangle of the canvas.
+Culling finds the objects and instance rows in the camera's view, so the GPU draws only those. Occlusion culling also skips the objects that others hide. The engine tests each bounding sphere against the six planes of the view. The engine culls each [view](render-graph.md) separately, against that view's camera. A view is one of:
+
+- the camera's view
+- a shadow cascade's
+- a shadow tile's
+- a [scene pass](../api/render.md)'s
+- one that [`scene.createView`](../api/scene.md#multiple-views) draws into a rectangle of the canvas
 
 ## How each path culls
 
-On WebGPU the GPU culls the scene itself. A compute pass runs one GPU thread per object or instance row. Each thread adds its cell's offset to its bounding sphere and tests the sphere. An object in view joins its group: the objects that share a mesh and a material. The prerecorded draws read how many each group holds. The CPU's cost per frame stays almost flat as the scene grows. When the scene spreads over several grid cells, the pass runs only over the objects of the cells in view and over the moving objects.
+On WebGPU the GPU culls the scene itself. A compute pass runs one GPU thread per object or instance row. Each thread adds its cell's offset to its bounding sphere and tests the sphere.
 
-On an Apple GPU in Safari, or in any browser on iPhone and iPad, a start-up measurement can find direct draws clearly faster. The job workers then cull on the CPU instead. They use the WebGL2 culling on the WebGPU layout's own buckets. Each bucket then draws with its known count. The probe takes the direct path only when that path measures at least 25% faster and at least 0.15 ms a frame faster. Other devices skip the measurement and cull on the GPU. `engine.capabilities.directDraws` says which path the device took, and `engine.capabilities.drawPath` says why. The [Performance guide](../guides/performance.md#how-the-engine-batches-builds-pipelines-and-times-frames) explains how the engine batches.
+An object in view joins its group: the objects that share a mesh and a material. The prerecorded draws read how many each group holds. The CPU's cost per frame stays almost flat as the scene grows. When the scene spreads over several grid cells, the pass runs only over the objects of the cells in view and over the moving objects.
 
-On WebGL2 there are no compute shaders, so the job workers cull on the CPU. They test four spheres per SIMD instruction and list the visible objects, 4 bytes each. They test a static instance batch that has stopped changing in groups of 64 nearby rows, one test per group. Each group lies inside one grid cell. The job workers skip the objects and groups of the cells out of view.
+On an Apple GPU in Safari, or in any browser on iPhone and iPad, a start-up measurement can find direct draws clearly faster. The job workers then cull on the CPU instead. They use the WebGL2 culling on the WebGPU path's own groups. Each group then draws with its known count. `engine.capabilities.directDraws` says which path the device took, and `engine.capabilities.drawPath` says why. The [Performance guide](../guides/performance.md#how-the-engine-batches-builds-pipelines-and-times-frames) explains how the engine batches.
+
+<details>
+<summary>Technical details: how the device picks a path</summary>
+
+The start-up measurement takes the direct path only when that path measures at least 25% faster and at least 0.15 ms a frame faster. Other devices skip the measurement and cull on the GPU.
+
+</details>
+
+On WebGL2 there are no compute shaders, so the job workers cull on the CPU. They test four spheres per SIMD instruction and list the visible objects, 4 bytes each.
+
+They test a static instance batch that has stopped changing in groups of 64 nearby rows, one test per group. Each group lies inside one grid cell. A group that is partly in view draws whole, and the GPU clips the rows outside. The job workers skip the objects and groups of the cells out of view.
 
 [GPU tiers and backends](backends.md) describes each path's draw calls and uploads.
 
@@ -43,6 +60,24 @@ On WebGL2 there are no compute shaders, so the job workers cull on the CPU. They
 - A skinned mesh culls with bounds that follow its pose, so a character's raised arm stays in view.
 - A morphed mesh culls with a sphere that its weights grow: each target's longest move, times its weight.
 - Sprites, points and line segments cull as instance rows do, one sphere each. Sprites and points sized in CSS pixels, with `sizeAttenuation: false`, never cull, because their size in the world grows with their distance.
+
+## Bounds that you set
+
+By default, culling tests an object's mesh sphere. That sphere is around the center of the box that holds every vertex of its mesh. `mesh.center` and `mesh.radius` give it in the mesh's own space. The object's scale grows it, and its rotation turns it.
+
+A shader that moves vertices, such as waves on water, can move them outside that sphere. Culling then hides the object while parts of it are still in view. Two mesh calls change what culling tests:
+
+- `setBounds(center, radius)` gives the object a sphere of its own, with its center relative to the object's origin. Bounds that cover the moved vertices keep culling at work.
+- `setFrustumCulled(false)` turns culling off for the object, so the engine draws it wherever it is.
+
+```ts
+// Waves lift the water's vertices by up to 2 m. A sphere 1 m higher and 1 m wider than the
+// mesh's sphere holds every lifted vertex.
+const [x, y, z] = waterMesh.center;
+water.setBounds([x, y + 1, z], waterMesh.radius + 1);
+```
+
+Both calls rebuild the draw tables, so make them at setup. On WebGPU, each object with a sphere of its own draws from a group of its own, as the GPU tests one sphere per group. Skinned objects without morph targets are the exception: copies of one mesh and material share a group, whose sphere holds every copy's. On WebGL2, the job workers test each object's own sphere and the cost stays the same.
 
 ## GPU occlusion culling on WebGPU
 
@@ -72,15 +107,20 @@ The pyramid holds the depth of objects drawn in this frame, at the detail that t
 
 ### The check during play
 
-The extra passes cost GPU time: a depth draw of the occluders, a depth pyramid and a second culling pass. Another program's work on the GPU can also run in the gaps between them, so a frame with them can take longer although it draws less. So the engine checks during play whether they pay:
+The extra passes cost GPU time: a depth draw of the occluders, a depth pyramid and a second culling pass. So the engine checks during play whether they pay. About every 120 frames it runs a few frames the other way and compares. The passes stay on while they hide at least a tenth of the objects that would draw. The frame must also take no longer with them, within 2%. Otherwise they stay off until a later check finds that they pay. While the view holds still, the check pauses, so the still-camera accumulation can finish.
 
+`engine.measure` reports the objects that the culling hid as `occludedEntries`. That is the count of the newest frame whose counts came back, and 0 while the check keeps the passes off. The `?occlusion-check=off` switch keeps the passes on in every frame, for a test that compares the image with culling and without it.
+
+<details>
+<summary>Technical details: how the engine checks that occlusion culling pays</summary>
+
+- Another program's work on the GPU can run in the gaps between the extra passes. So a frame with them can take longer although it draws less.
 - The second phase counts the objects in view that would draw and those that the pyramid hid. A frame copies the counts, and the GPU sends them back a few frames later. Nothing waits for them.
-- About every 120 frames, the engine runs a few frames the other way: without the passes while they run, or with them while they do not. It compares the GPU's frame times, from each frame's submit to its completion, with the frames just before.
-- The passes stay on while they hide at least a tenth of the objects that would draw, and a frame with them takes no longer than one without, within 2%. Otherwise they stay off until a later check finds that they pay.
+- A trial runs without the passes while they run, or with them while they do not. It compares the GPU's frame times, from each frame's submit to its completion, with the frames just before.
 - The occluders' pass draws only the groups of objects that held occluders in the last few checks, so it draws nothing for the rest.
-- While the view holds still, the check pauses: the passes stay as they are and nothing is copied, so the still-camera accumulation finishes and the view rests. It starts again a little after the view moves.
+- While the view holds still, nothing is copied and the passes stay as they are. The check starts again a little after the view moves.
 
-`engine.measure` reports the objects that the culling hid as `occludedEntries`: the count of the newest frame whose counts came back, and 0 while the check keeps the passes off. The `?occlusion-check=off` switch keeps the passes on in every frame, for a test that compares the image with culling and without it.
+</details>
 
 ### Where it runs
 
@@ -95,22 +135,6 @@ The extra passes cost GPU time: a depth draw of the occluders, a depth pyramid a
 // occluders, as its depth costs more than it hides.
 scene.createMesh({ mesh: sculpture, material: bronze, position: [0, 0, -8], occluder: false });
 ```
-
-## Bounds that you set
-
-By default, culling tests an object's mesh sphere: the sphere around the center of the box that holds every vertex of its mesh. `mesh.center` and `mesh.radius` give it in the mesh's own space. The object's scale grows it, and its rotation turns it. A shader that moves vertices, such as waves on water, can move them outside that sphere. Culling then hides the object while parts of it are still in view. Two mesh calls change what culling tests:
-
-- `setBounds(center, radius)` gives the object a sphere of its own, with its center relative to the object's origin. Bounds that cover the moved vertices keep culling at work.
-- `setFrustumCulled(false)` turns culling off for the object, so the engine draws it wherever it is.
-
-```ts
-// Waves lift the water's vertices by up to 2 m. A sphere 1 m higher and 1 m wider than the
-// mesh's sphere holds every lifted vertex.
-const [x, y, z] = waterMesh.center;
-water.setBounds([x, y + 1, z], waterMesh.radius + 1);
-```
-
-Both calls rebuild the draw tables, so make them at setup. On WebGPU, each object with a sphere of its own draws from a group of its own, as the GPU tests one sphere per group. Skinned objects without morph targets are the exception: copies of one mesh and material share a group, whose sphere holds every copy's. On WebGL2, the job workers test each object's own sphere and the cost stays the same.
 
 ## Software occlusion culling on WebGL2
 
@@ -152,7 +176,14 @@ scene.instantiate(city, { occluder: false });
 
 ### Turn it on where it pays
 
-Every quality preset leaves software occlusion culling off. The engine measured it in S6, its benchmark city, on three Android phones and an iPad, all on WebGL2. It hid 23% to 39% of the entries in view, but removed fewer than 3% of the draw calls. Most hidden entries were rows of instance batches whose other rows still showed, so the batch still drew. The job workers spent 7 to 22 ms more per frame, and the render worker saved 2.3 ms at most. On every device, it cost at least 3.5 times what it saved.
+Every quality preset leaves software occlusion culling off. In S6, the engine's benchmark city, on three Android phones and an iPad, all on WebGL2, it cost at least 3.5 times what it saved. Most hidden entries were rows of instance batches whose other rows still showed, so the batch still drew.
+
+<details>
+<summary>Technical details: the S6 measurements</summary>
+
+It hid 23% to 39% of the entries in view, but removed fewer than 3% of the draw calls. The job workers spent 7 to 22 ms more per frame, and the render worker saved 2.3 ms at most.
+
+</details>
 
 A scene whose few large blockers hide many separate meshes, each its own draw call, can gain where the city lost. So turn it on only when your scene measures a gain:
 
@@ -169,14 +200,7 @@ WebGPU picks its occluders itself for its own [occlusion culling on the GPU](#gp
 
 ## Grid cells
 
-The engine divides space into cells 1,024 m wide. The origin cell spans 512 m on each side of the origin, so a scene within 512 m of it uses one cell.
-
-- A root object takes the cell that holds its position. Its children take its cell.
-- An instance row takes the cell that holds its position.
-
-The engine keeps each world matrix relative to its cell's center, where 32-bit floats are precise to a fraction of a millimeter. Each frame it computes the offset from the camera to each cell in use, in 64-bit floats, and uploads one vector per cell. Each view gets the offsets from its own camera. The GPU adds an object's offset to its position, so every position it sees is relative to the camera. Positions near the camera keep the most precision.
-
-When only the camera moves, static objects keep their data on the GPU, and only the offsets change. A scene inside one cell uploads one vector per frame.
+The engine divides space into cells, cubes 1,024 m wide. A root object takes the cell that holds its position, and its children share it. An instance row takes the cell that holds its own position. [Large worlds and precision](large-worlds.md#grid-cells) explains how the cells keep positions precise.
 
 ## Skipping cells out of view
 
@@ -189,7 +213,7 @@ Most frames of a large world show a few of its cells. The engine then tests each
 - A still object that changes grows its cell's box. One that moves into another cell rebuilds the cell order, as creating or destroying an object does. Keep objects that cross cells often dynamic.
 - On WebGL2, a static batch whose rows change is tested row by row until it rests again. So is a static batch whose rows are spread so thinly over cells that its groups of 64 rows would be mostly empty.
 
-A scene inside one cell has nothing to skip, and culls as it would without cells. The benchmark scene S1-cells spreads 100,000 still boxes over 8 x 8 cells and flies the camera low over them.
+A scene inside one cell has nothing to skip, and culls as it would without cells. The benchmark scene S1-cells spreads 100,000 still boxes over 8 x 8 cells and flies the camera low over them. The [Performance guide](../guides/performance.md#large-worlds) gives what the cells saved in it.
 
 ## What this means for your sketch
 
@@ -205,14 +229,7 @@ scene.setActiveCamera(camera);
 scene.createMesh({ mesh: geometry.box(), material: stone, position: base });
 ```
 
-The cells have these limits:
-
-- The engine stores positions as 32-bit floats. It places an object 100 km from the origin to within about 4 mm, and 1,000 km out to within about 3 cm. What it computes from those positions, such as a child's place under its parent, keeps its precision.
-- A mesh's vertices are offsets from its object's origin, and they stay 32-bit. Put large coordinates in object positions, never in vertices.
-- `getWorldPosition` and `getWorldMatrix` give 64-bit positions. Pass them a plain array or a `Float64Array`, because a `Float32Array` rounds them to 32 bits.
-- At most 512 cells hold objects at once. An object in a cell past that stays in the origin cell, where its position keeps only 32-bit precision. The engine then warns once in the console.
-
-For a world the size of a planet, `createEngine`'s `largeWorld` option keeps every position that you set exact. A batch's `origin` option keeps its rows precise far from the origin. [Large worlds and precision](large-worlds.md) explains both.
+[Large worlds and precision](large-worlds.md) gives the precision figures and the limits, including the 512-cell cap. [Floating-origin geometry](large-worlds.md#floating-origin-geometry) says why vertices stay 32-bit, and [Objects and transforms](../api/objects.md) covers the world getters. For a world the size of a planet, `createEngine`'s `largeWorld` option keeps every position that you set exact, and a batch's `origin` option keeps its rows precise.
 
 ## Related pages
 

@@ -61,7 +61,7 @@ export default defineSketch(({ scene, geometry, materials, input }) => {
 - `obj.setLayers(mask)` changes an object's layers, and `batch.setLayers(mask)` changes the layers of every row of a batch.
 - `camera.setLayers(mask)` changes the layers that the camera draws.
 - A mask of 0 puts an object on no layer, so no camera draws it. A mask of `0xffffffff` puts it on all 32 layers.
-- In development builds, a mask that is not a whole number of 32 bits throws E1207. Negative numbers down to `-(2 ** 31)` work too, so `1 << 31`, which JavaScript makes negative, is layer 31.
+- In development builds, a mask must be a whole number from `-(2 ** 31)` to `0xffffffff`, or the call throws [E1207](../errors/E1207.md). Negative masks are allowed so that `1 << 31`, which JavaScript makes negative, names layer 31.
 
 ## Layers and visibility
 
