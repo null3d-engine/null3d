@@ -193,6 +193,11 @@ export type WorkerReply =
 	 * asked for. A thread that does not draw never answers.
 	 */
 	| { type: 'recorded'; role: 'sketch' | 'render'; permutations: number[] }
+	/**
+	 * In a development build, a permutation word that the drawing thread's pipelines found for the
+	 * first time, which the page hands to the dev server to compare with the project's shader list.
+	 */
+	| { type: 'permutation'; word: number }
 	| { type: 'error'; role: 'sketch' | 'render' | 'job'; message: string }
 	/**
 	 * A thread's loop failed after the start, such as the sketch's frame loop, the render loop or a

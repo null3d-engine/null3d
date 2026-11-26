@@ -4,7 +4,7 @@ The command-line tool for [null3D](https://github.com/null3d-engine/null3d), a h
 
 You do not need this tool to use the engine. Install `@null3d/engine` from npm, add `@null3d/vite-plugin` to your Vite config, and run Vite. This tool adds jobs that a bundler does not do, such as headless tests, screenshots and benchmarks.
 
-The tool has eight commands:
+The tool has nine commands:
 
 - `create` writes a new project from a template. The project holds an `AGENTS.md` for AI agents and one hook that Claude Code and Codex both run. Its templates are `empty`, a turning cube, `product`, a product viewer, and `game`, a small game.
 - `shot` draws one frame of your project's page in a headless browser and saves it as a PNG file.
@@ -14,6 +14,7 @@ The tool has eight commands:
 - `assets` prepares models and textures. `optimize` quantizes glTF meshes and encodes KTX2 textures. `convert` turns FBX, OBJ, STL and PLY files into glTF. The `pack-orm` and `normal-from-bump` commands make material maps, and `env` makes environment maps from HDR images. The `impostor` command bakes the atlases of `@null3d/impostors` cards from a model.
 - `mcp` runs a Model Context Protocol server for your running scene. A coding agent lists and changes its objects, captures a frame, and reads its frame figures, errors and render graph.
 - `upgrade` moves every null3D package in your `package.json` to one version, so that an add-on and the engine never mix two versions.
+- `shaders record` writes the list of the shader permutation words that your pages draw with. The Vite plugin's `shaders.list` option names it, and a production build then copies only those words' shader builds, not the engine's whole set. Each run adds to the list. The `--manual` option opens a page for you to play through by hand. Your own browser tests can add the words that they reach with `@null3d/cli/shaders`.
 
 ```sh
 bunx @null3d/cli create my-game
@@ -23,9 +24,10 @@ bunx @null3d/cli bench --gpu webgpu,webgl2
 bunx @null3d/cli check-addon packages/my-addon
 bunx @null3d/cli mcp
 bunx @null3d/cli upgrade
+bunx @null3d/cli shaders record --page / --live /
 ```
 
-Run `create` where the project should go. Run the other commands in your project's folder. `shot` and `test` start your project's own Vite dev server, and `bench` builds your project with its own Vite config. The `check-addon` command builds the add-on in the folder that you name, or in the current folder. The `mcp` command starts your project's Vite dev server too, unless you give it a server or a Chrome that already runs. `shot` and `bench` save a JSON file with their figures and the page's errors, and `test` and `check-addon` print one line for each result. `upgrade` writes `package.json` alone, and you run `bun install` after it. `bunx @null3d/cli <command> --help` lists a command's options.
+Run `create` where the project should go. Run the other commands in your project's folder. `shot` and `test` start your project's own Vite dev server, and `bench` builds your project with its own Vite config. The `check-addon` command builds the add-on in the folder that you name, or in the current folder. The `mcp` command starts your project's Vite dev server too, unless you give it a server or a Chrome that already runs. `shot` and `bench` save a JSON file with their figures and the page's errors, and `test` and `check-addon` print one line for each result. `upgrade` writes `package.json` alone, and you run `bun install` after it. The `shaders record` command starts your project's Vite dev server, unless `--base` names a server. It writes `shader-permutations.txt`. `bunx @null3d/cli <command> --help` lists a command's options.
 
 ## License
 

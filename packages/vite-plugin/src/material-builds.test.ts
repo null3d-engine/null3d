@@ -6,6 +6,7 @@ import * as gpu from '../../engine/src/generated/gpu';
 import {
 	buildsOfSet,
 	DRAW_INDEX,
+	HALF,
 	MATERIAL_BUILDS,
 	MATERIAL_BUILDS_ADDRESS,
 	MaterialBuilds,
@@ -109,10 +110,11 @@ afterAll(() => {
 
 describe('the sets of a custom material', () => {
 	it("use the engine's permutation bits", () => {
-		expect([DRAW_INDEX, TONE_MAP, SKIN]).toEqual([
+		expect([DRAW_INDEX, TONE_MAP, SKIN, HALF]).toEqual([
 			gpu.PERMUTATION_DRAW_INDEX,
 			gpu.PERMUTATION_TONE_MAP,
 			gpu.PERMUTATION_SKIN,
+			gpu.PERMUTATION_HALF,
 		]);
 	});
 

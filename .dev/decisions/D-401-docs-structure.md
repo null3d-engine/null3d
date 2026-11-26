@@ -1,4 +1,4 @@
-# D-400: Docs structure: areas, groups, stable page IDs and technical details blocks
+# D-401: Docs structure: areas, groups, stable page IDs and technical details blocks
 
 Status: decided by the owner. Built: the area order, the groups and the inventory of every page in the navigation. Also built: the generated navigation, the moves file, and the rule and check for technical details blocks. Pending: the blocks themselves and the page splits, one area at a time.
 

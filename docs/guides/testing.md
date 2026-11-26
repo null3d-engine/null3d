@@ -195,6 +195,10 @@ Image tests check pictures. A game or an app also needs a suite that opens its r
 - Give each copy of the project its own port, fail a test on any console error, and record a trace on the first retry.
 - Keep real phones and tablets, and frame-rate timing, out of CI.
 
+### Record the shader words that a test reaches
+
+A suite that drives the game's states can also write the list of shader permutation words that a production build copies. Open the page with `withRecordingSwitch(address)` from `@null3d/cli/shaders`, drive it, then call `saveRecordedWords(page, 'shader-permutations.txt')`. It ends the page's recording and adds the words to the list. [Record from your browser tests](assets-pipeline.md#record-from-your-browser-tests) shows a spec.
+
 ## Check every rendering mode
 
 A scene that looks right and runs well in one setup can fail in another. Before you call a scene done, check frame rate, memory and looks in each of these:

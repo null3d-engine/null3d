@@ -3,6 +3,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync }
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { brotliDecompressSync } from 'node:zlib';
+import { tarEntries } from '../../packages/vite-plugin/src/engine-shaders';
 import {
 	createShaderArchive,
 	hashFile,
@@ -29,29 +30,15 @@ function fixture(files: Readonly<Record<string, string>>): string {
 	return root;
 }
 
-const BLOCK = 512;
-
-/** The files of a tar, by their path at the archive root, read through GNU long-name entries. */
+/**
+ * The files of a tar, by their path at the archive root, as the Vite plugin reads them when it
+ * unpacks a release's set. Reading with the plugin's own reader holds the writer and the reader to
+ * one form, long names included.
+ */
 function tarFiles(bytes: Buffer): Map<string, Buffer> {
 	const files = new Map<string, Buffer>();
-	let long: string | null = null;
-	for (let at = 0; at + BLOCK <= bytes.length; ) {
-		const header = bytes.subarray(at, at + BLOCK);
-		if (header.every((byte) => byte === 0)) break;
-		const field = (start: number, length: number) =>
-			header.toString('utf8', start, start + length).replace(/\0.*$/, '');
-		const size = Number.parseInt(field(124, 12) || '0', 8);
-		const type = String.fromCharCode(header[156] as number);
-		const data = bytes.subarray(at + BLOCK, at + BLOCK + size);
-		const prefix = field(345, 155);
-		const name = prefix ? `${prefix}/${field(0, 100)}` : field(0, 100);
-		if (type === 'L') long = data.toString('utf8').replace(/\0$/, '');
-		else if (type === '0') {
-			files.set(long ?? name, Buffer.from(data));
-			long = null;
-		}
-		at += BLOCK + Math.ceil(size / BLOCK) * BLOCK;
-	}
+	for (const entry of tarEntries(bytes))
+		if (!entry.directory) files.set(entry.name, Buffer.from(entry.bytes));
 	return files;
 }
 

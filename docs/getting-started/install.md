@@ -52,6 +52,7 @@ Every Vite build of a null3D project needs the plugin, for the dev server and fo
 - Starts each worker's on-demand imports together with the file that imports them, so a worker does not wait one round trip for each file.
 - Writes the notices of the third-party code that the engine and the add-ons ship beside the page in each production build. [Hosting](hosting.md#publish-the-third-party-notices) says what to do with them.
 - Writes the list of the build's files, `null3d-files.json`, beside the page in each production build. A game's service worker caches the files of that list for offline play, as [Hosting](hosting.md#offline-play) shows.
+- Copies the engine's compiled shader files into a production build, each as a file of its own. Its `shaders.list` option names a list of the permutation words that your pages draw with. The build then copies only their builds ([Build only the shader permutations you draw with](../guides/assets-pipeline.md#build-only-the-shader-permutations-you-draw-with)).
 - Keeps each of the engine's files a file of its own, so a strict Content-Security-Policy does not block them. Vite still turns your own small files into `data:` addresses, which such a policy blocks.
 
 <details>

@@ -5,6 +5,7 @@
 import { PERMUTATION_DRAW_INDEX, PERMUTATION_HALF, PERMUTATION_TONE_MAP } from '../generated/gpu';
 import { LISTED_PERMUTATIONS } from '../generated/shader-permutations';
 import type { ShaderVariant, ShaderVariants } from '../generated/shaders';
+import { DEV } from '../shared/dev';
 
 /** The variant built with exactly the bits of `permutation`, with output for `target`. */
 function exactly<Pipeline extends string>(
@@ -48,6 +49,21 @@ export function stopRecordingPermutations(): number[] {
 }
 
 /**
+ * In a development build, the words that this thread has reported, and where it reports each new
+ * one. The dev server compares them with the project's shader list, so a word that a production
+ * build with the list lacks shows while the page runs, not first in the built page.
+ */
+let reporting: { readonly words: Set<number>; readonly report: (word: number) => void } | undefined;
+
+/**
+ * @internal In a development build, hands `report` each permutation word that a pipeline finds
+ * from now on, once per word, as a recording lists it. A production build reports nothing.
+ */
+export function reportPermutations(report: (word: number) => void): void {
+	if (DEV) reporting = { words: new Set(), report };
+}
+
+/**
  * The variant of a shader for a pipeline's permutation word, with output for `target`, or
  * undefined when the shader has none. The word never holds the half precision bit, which the
  * device fixes by the shader module it loads: only the module of a device that draws at half
@@ -64,19 +80,42 @@ export function variantFor<Pipeline extends string>(
 	const found = exactly(shader, half, target) ?? exactly(shader, permutation, target);
 	// A recording lists the words that the scene draws with, so a narrowed build builds them. The
 	// bits a device fixes are left out, so one list holds the words of every device module.
-	if (found !== undefined) recorded?.add((permutation & ~DEVICE_BITS) >>> 0);
+	// A development build reports the same words to the dev server.
+	if (found !== undefined) {
+		const word = (permutation & ~DEVICE_BITS) >>> 0;
+		recorded?.add(word);
+		if (DEV && reporting !== undefined && !reporting.words.has(word)) {
+			reporting.words.add(word);
+			reporting.report(word);
+		}
+	}
 	return found;
 }
 
 /**
  * The message for a pipeline whose variant no loaded module holds. A variant that loads on first
  * use is absent until its module arrives, so only a caller that has waited for every module calls
- * this. A set narrowed to a recorded list names the word to add, and a full set names the word
- * that its manifest cannot make.
+ * this. A set narrowed to a project's list names the word to add, as the list writes it, without
+ * the bits that a device fixes. A full set names the word that its manifest cannot make.
  */
 export function missingVariant(permutation: number, listed = LISTED_PERMUTATIONS !== null): string {
-	const word = `0x${(permutation >>> 0).toString(16)}`;
+	if (!listed)
+		return `the shader set has no variant for the permutation word 0x${(permutation >>> 0).toString(16)}.`;
+	const word = `0x${((permutation & ~DEVICE_BITS) >>> 0).toString(16).padStart(8, '0')}`;
+	return `the shader set holds only the permutation words of the project's shader list, and this pipeline asks for ${word}, which the list lacks. Record the pages again with bunx @null3d/cli shaders record so that the word reaches the list, or add ${word} to the list by hand, and build again.`;
+}
+
+/**
+ * The message for an engine pass whose shader, which the device's modules hold from the start, no
+ * module holds with the word `permutation`. A set narrowed to a project's list names the word
+ * that the list lacks, as `missingVariant` does.
+ */
+export function missingShader(
+	name: string,
+	permutation: number,
+	listed = LISTED_PERMUTATIONS !== null,
+): string {
 	return listed
-		? `the shader set holds only the permutation words that its recording listed, and this pipeline asks for ${word}, which it lacks. Record the scene again so that the word reaches the list, or add the word to the file by hand.`
-		: `the shader set has no variant for the permutation word ${word}.`;
+		? `the ${name} shader is missing: ${missingVariant(permutation, true)}`
+		: `the device's shader modules have no ${name} shader`;
 }

@@ -235,7 +235,7 @@ import type { CustomShader } from '../../shared/images';
 import { LINE_VERTICES } from '../line-vertices';
 import { PARTICLE_RECORDS } from '../particle-records';
 import { pipelineName } from '../pipeline-name';
-import { missingVariant, variantFor } from '../variants';
+import { missingShader, missingVariant, variantFor } from '../variants';
 import {
 	plainScale,
 	type VertexAttribute,
@@ -2134,7 +2134,7 @@ export class Pipelines {
 		const build =
 			ownPrepass && !cutoutPrepass ? (permutation & ~PERMUTATION_PREPASS) >>> 0 : permutation;
 		const shader = variantFor(t.shader, build, 'wgsl')?.wgsl;
-		if (!shader) throw new Error(`render template ${template}: ${missingVariant(permutation)}`);
+		if (!shader) throw new Error(`render template ${template}: ${missingVariant(build)}`);
 		const module = this.module(t.label, shader);
 		const entryPoints = shader.pipelines[t.pipeline];
 		const skins = (permutation & PERMUTATION_SKIN) !== 0;
@@ -2299,7 +2299,7 @@ export class Pipelines {
 		entry: 'main' | 'scale',
 	): GPURenderPipelineDescriptor {
 		const shader = this.mipmap;
-		if (!shader) throw new Error("the device's shader module has no mip level shader");
+		if (!shader) throw new Error(missingShader('mip level', 0));
 		const module = this.module('mipmaps', shader);
 		const entryPoints = shader.pipelines[entry];
 		return {
@@ -2350,7 +2350,7 @@ export class Pipelines {
 			const tangent = (permutation & PERMUTATION_VERTEX_TANGENT) !== 0 ? ' tangent' : '';
 			const color = (permutation & PERMUTATION_VERTEX_COLOR) !== 0 ? ' color' : '';
 			const shader = variantFor(this.skin, permutation, 'wgsl')?.wgsl;
-			if (!shader) throw new Error("the device's shader modules have no skinning shader");
+			if (!shader) throw new Error(missingShader('skinning', permutation));
 			const constants = this.floatSkinnedDirections ? { [NARROW_DIRECTIONS_ID]: 0 } : undefined;
 			return {
 				label: `skin${tangent}${color}`,
@@ -2360,7 +2360,7 @@ export class Pipelines {
 		}
 		if (template === TEMPLATE_CULL && permutation & PERMUTATION_MOTION) {
 			const shader = variantFor(this.cullMotion, permutation, 'wgsl')?.wgsl;
-			if (!shader) throw new Error("the device's shader modules have no motion culling shader");
+			if (!shader) throw new Error(missingShader('motion culling', permutation));
 			return {
 				label: 'cull motion',
 				layout: this.cullLayout,
@@ -2368,7 +2368,7 @@ export class Pipelines {
 			};
 		}
 		if (template === TEMPLATE_CULL) {
-			if (!this.cull) throw new Error("the device's shader module has no culling shader");
+			if (!this.cull) throw new Error(missingShader('culling', 0));
 			return {
 				label: 'cull',
 				layout: this.cullLayout,
@@ -2378,7 +2378,7 @@ export class Pipelines {
 		const phase = OCCLUSION_ENTRY_POINTS[template];
 		if (phase) {
 			const shader = variantFor(this.occlusion, 0, 'wgsl')?.wgsl;
-			if (!shader) throw new Error("the device's shader modules have no occlusion culling shader");
+			if (!shader) throw new Error(missingShader('occlusion culling', 0));
 			return {
 				label: `occlusion ${phase}`,
 				layout: this.cullLayout,
@@ -2387,7 +2387,7 @@ export class Pipelines {
 		}
 		if (template === TEMPLATE_CLUSTER) {
 			const shader = this.cluster ? variantFor(this.cluster, 0, 'wgsl')?.wgsl : undefined;
-			if (!shader) throw new Error("the device's shader modules have no cluster shader");
+			if (!shader) throw new Error(missingShader('cluster', 0));
 			return {
 				label: 'cluster cull',
 				layout: this.clusterLayout,
@@ -2396,7 +2396,7 @@ export class Pipelines {
 		}
 		if (template === TEMPLATE_DEPTH_PYRAMID) {
 			const shader = variantFor(this.pyramid, 0, 'wgsl')?.wgsl;
-			if (!shader) throw new Error("the device's shader modules have no depth pyramid shader");
+			if (!shader) throw new Error(missingShader('depth pyramid', 0));
 			return {
 				label: 'depth pyramid',
 				layout: this.pyramidLayout,
@@ -2405,7 +2405,7 @@ export class Pipelines {
 		}
 		if (template === TEMPLATE_FEATURE_ROWS) {
 			const shader = variantFor(this.featureRows, 0, 'wgsl')?.wgsl;
-			if (!shader) throw new Error("the device's shader modules have no feature rows shader");
+			if (!shader) throw new Error(missingShader('feature rows', 0));
 			this.featureRowsLayout ??= this.device.createPipelineLayout({
 				bindGroupLayouts: [this.layout(LAYOUT_FEATURE_ROWS)],
 			});
@@ -2418,7 +2418,7 @@ export class Pipelines {
 		const exposureEntry = EXPOSURE_ENTRY_POINTS[template];
 		if (exposureEntry) {
 			const shader = variantFor(this.exposureHistogram, 0, 'wgsl')?.wgsl;
-			if (!shader) throw new Error("the device's shader modules have no exposure histogram shader");
+			if (!shader) throw new Error(missingShader('exposure histogram', 0));
 			this.exposureLayout ??= this.device.createPipelineLayout({
 				bindGroupLayouts: [this.layout(LAYOUT_EXPOSURE)],
 			});
@@ -2439,7 +2439,7 @@ export class Pipelines {
 			const clear =
 				template === TEMPLATE_LIGHT_DEPTH_CLEAR || template === TEMPLATE_LIGHT_DEPTH_CLEAR_MS;
 			const shader = multisampled ? this.lightDepthMs : this.lightDepth;
-			if (!shader) throw new Error("the device's shader modules have no light depth shader");
+			if (!shader) throw new Error(missingShader('light depth', 0));
 			return {
 				label: clear ? 'light depth clear' : 'light depth',
 				layout: multisampled ? this.lightDepthMsLayout : this.lightDepthLayout,
@@ -2452,7 +2452,7 @@ export class Pipelines {
 		const entryPoint = LIGHT_ENTRY_POINTS[template];
 		if (!entryPoint) throw new Error(`unknown compute template ${template}`);
 		const shader = this.lightClusters;
-		if (!shader) throw new Error("the device's shader module has no light clustering shader");
+		if (!shader) throw new Error(missingShader('light clustering', 0));
 		return {
 			label: entryPoint,
 			layout: this.lightLayout,

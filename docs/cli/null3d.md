@@ -1,7 +1,7 @@
 ---
 id: cli/null3d
 title: "The `null3d` command"
-summary: "create, test, bench, check-addon, shot, upgrade, assets, mcp."
+summary: "create, test, bench, check-addon, shot, upgrade, assets, mcp, shaders record."
 ---
 
 # The `null3d` command
@@ -565,6 +565,54 @@ It writes three files, named after the model. `pine-impostor.json` describes the
 
 The bake reads each material's base color factor and texture, its alpha mode and cutoff, and whether it draws both sides. A base color texture must be a PNG or JPEG image. So bake the source model, not a model that `assets optimize` wrote with KTX2 textures. The command draws triangle lists alone, and leaves out points and lines. An atlas holds at most 4,096 texels on a side. It exits with 1 when the model cannot be read or baked.
 
+## shaders record
+
+```mermaid
+flowchart LR
+    record["bunx @null3d/cli<br/>shaders record"] --> pages["Each page with<br/>?permutations=record:<br/>held at low and high,<br/>and live, on both GPU paths"]
+    pages --> list["shader-permutations.txt:<br/>one word on each line"]
+    list --> plugin["null3d({ shaders:<br/>{ list } })"]
+    plugin --> build["A production build that<br/>copies only those builds"]
+```
+
+`shaders record` writes the list of the shader permutation words that your pages draw with. The Vite plugin's `shaders.list` option names the list, and a production build then copies only the builds of those words. Without a list, a build copies the engine's whole shader set: thousands of files and gigabytes, although a page downloads a few of them. [Build only the shader permutations you draw with](../guides/assets-pipeline.md#build-only-the-shader-permutations-you-draw-with) explains the list.
+
+```sh
+bunx @null3d/cli shaders record
+bunx @null3d/cli shaders record --page / --page /level-2.html --live /
+bunx @null3d/cli shaders record --live / --scroll
+bunx @null3d/cli shaders record --base http://localhost:8080 --live /game.html --click "#play"
+bunx @null3d/cli shaders record --manual --gpu webgl2 --preset low
+```
+
+| Option | Effect | Without it |
+| --- | --- | --- |
+| `--base <url>` | The address of a server that serves the pages with a development build of the engine | The command starts the project's own Vite dev server in the current folder |
+| `--page <path>` | A page to record in hold mode, at the low and high presets on WebGPU and on WebGL2. Repeat it for each page. A path that names its own `hold=` time keeps it | `/`, when no `--live` page is named either |
+| `--live <path>` | A page to record live on both GPU paths. It draws for five seconds, and the recorder presses every button of its controls HUD. Repeat it for each page | `/`, when no `--page` is named either |
+| `--scroll` | Scrolls each live page down to its end, one window's height at a time. After each step it waits until the page has asked for nothing for half a second, at least one second and at most fifteen | The live pages stay at their top |
+| `--click <selector>` | An element to press after each page loads, for a page whose engine starts on a click | No element is pressed |
+| `--extra <words>` | Words to add by hand, as hexadecimal numbers joined by commas, such as `0x10,0x14` | Only the recorded words |
+| `--out <file>` | The list to write | `shader-permutations.txt` |
+| `--replace` | Writes the run's words alone | The words join those that the list holds |
+| `--manual` | Opens the `--live` page, or `/`, in a browser window for you to play through. Enter saves its words, and Ctrl-C asks before it discards them | The pages load headless and the recorder drives them |
+| `--gpu <path>` | With `--manual`: `webgpu` or `webgl2` | The engine picks the GPU path |
+| `--preset <name>` | With `--manual`: `low`, `medium`, `high` or `ultra` | The engine picks the preset |
+
+The command loads up to four pages at once in a headless browser, each with the engine's recording switch, `?permutations=record`. A held page publishes its words once its held frame has drawn. The recorder stops a live page once it has driven it through its states, and then the page publishes its words. A page that fails gets a second try. A second failure stops the run with the page's errors, so no list leaves out a page's words. The run's words join those that the list holds already. So each level or mode can be recorded in a run of its own into one list. The list holds each word once, in order:
+
+```text
+# The permutation words that this project draws with, one hexadecimal word on each line.
+# Written by bunx @null3d/cli shaders record. A word added by hand keeps the run working
+# where a path cannot be recorded.
+0x00000000
+0x00000020
+```
+
+With `--manual`, the command opens one page in a window on your screen. Play through its menus, settings and levels, then press Enter in the terminal. Run it on both GPU paths at the low and high presets, as the automatic run records them. A reload starts a new recording, so record each page in a run of its own. A project's browser tests can write the list too, with `saveRecordedWords` from `@null3d/cli/shaders`, as [Record from your browser tests](../guides/assets-pipeline.md#record-from-your-browser-tests) shows.
+
+A production build ignores the recording switch, so a page that `--base` names must come from a development build: the dev server, or `vite build --mode development`. The plugin's `urlSwitches` option also lets a production build read it. Record again after the project gains a feature that draws with a new word. A build whose list lacks a word stops the pipeline that needs it, with a message that names the word.
+
 ## upgrade
 
 ```mermaid
@@ -603,7 +651,7 @@ Run it after you upgrade the engine alone, or when a page stops with [E1432](../
 
 ## Where the commands draw
 
-`shot`, `test`, `bench` and `check-addon` draw with Chrome for Testing on your computer's GPU. So does `mcp`, unless `--connect` drives your own Chrome. When the `CI` variable is set, they draw with Playwright's Chromium on SwiftShader, a GPU in software. Most CI machines have no GPU. Set `CI=1` to draw the software GPU's images on your own computer:
+`shot`, `test`, `bench`, `check-addon` and `shaders record` draw with Chrome for Testing on your computer's GPU. So does `mcp`, unless `--connect` drives your own Chrome. When the `CI` variable is set, they draw with Playwright's Chromium on SwiftShader, a GPU in software. Most CI machines have no GPU. Set `CI=1` to draw the software GPU's images on your own computer:
 
 ```sh
 CI=1 bunx @null3d/cli shot --out ci-shot.png
