@@ -3,7 +3,7 @@
 // tests share them. Reading git's log, the version copies and the docs pages is the only outside
 // access.
 import { spawn } from 'node:child_process';
-import { existsSync, readdirSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { PAGES, pagePath } from './docs';
 import { checkDocsStyle, DECISION_RECORD_SOURCE, INTERNAL_REFERENCE_SOURCE } from './docs-style';
@@ -541,4 +541,16 @@ export function writeVersion(text: string, copy: VersionCopy, version: string): 
 	if (!copy.pattern.test(text))
 		throw new Error(`${copy.path} has no version where the release expects one (${copy.pattern})`);
 	return text.replace(copy.pattern, `$1${version}$3`);
+}
+
+/**
+ * Writes `version` into every copy of the release version under `root`, and changes nothing else
+ * in those files. The release lands its version on a main that moved while it ran this way, so a
+ * dependency that another pull request changed meanwhile, in a manifest or a lockfile, stays.
+ */
+export function writeVersionCopies(root: string, version: string): void {
+	for (const copy of versionCopies(root)) {
+		const path = join(root, copy.path);
+		writeFileSync(path, writeVersion(readFileSync(path, 'utf8'), copy, version));
+	}
 }
