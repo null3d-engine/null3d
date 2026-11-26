@@ -6,7 +6,7 @@ summary: "What a particle buffer holds: its 32-byte records, its values and its 
 
 # The particle buffer
 
-> Use the [particles add-on](../api/particles.md), which fills this buffer for you, unless you write your own emitter. Coding agents must not use these calls.
+> This is a low-level API. The [particles add-on](../api/particles.md) fills this buffer for you, and the null3D agent skills always use the add-on. Write records yourself only for an emitter that the add-on does not fit.
 
 ```mermaid
 flowchart LR
@@ -19,7 +19,7 @@ flowchart LR
 
 A particle buffer is a scene object and a flat table of particle records. A record is written once, when a particle is born. The GPU then works out where that particle is and how it looks at its age, in closed form. No pass moves the particles, so a frame at a given time looks the same whatever frames came before it, on WebGPU and on WebGL2.
 
-The `@null3d/particles` add-on builds its systems from buffers. Its emitters, bursts and sub-emitters decide where and when particles are born, then write the records in the engine's core. Use the add-on for most work. This page covers the buffer itself, for an emitter that the add-on does not fit.
+The `@null3d/particles` add-on builds its systems from buffers. Its emitters, bursts and sub-emitters decide where and when particles are born, then write the records in the engine's core ([Architecture](architecture.md)). Use the add-on for most work. This page covers the buffer itself, for an emitter that the add-on does not fit.
 
 ## What the buffer holds
 
@@ -28,8 +28,25 @@ The `@null3d/particles` add-on builds its systems from buffers. Its emitters, bu
 | The object | one scene object | Its place, turn, scale, layers, visibility and bounds. Birth places are in its space, so moving the object moves every particle. |
 | The records | 32 bytes for each of `capacity` | One record for each particle that the buffer holds at once. |
 | The values | 608 bytes | The motion and the look of every particle of the buffer, and the wind field when it names one. It uploads when `set` or `setWind` changes it. |
-| The frame's values | 20 bytes | The time, the record count, the time shift and the wind texture's number. The sketch writes them, or the core's emitter does. |
+| The frame's values | 20 bytes | The time, the record count, the time shift and the wind texture's number. The sketch or the core's emitter writes the time and count; `setWind` writes the wind texture's number. |
 | The emitter | a block of numbers | The settings and the frame's numbers of an emitter in the core, when the buffer has one. |
+
+Each frame's values have a slot of their own. `buffer.frame` is a view of these five numbers.
+
+| Slot | Meaning | Who writes it |
+| --- | --- | --- |
+| 0 | The buffer's time in seconds. | The sketch, or the core's emitter. |
+| 1 | How many records from the first the draw reads. | The sketch, or the core's emitter. |
+| 2 | The first record that still counts from the old time base. | The core's emitter, when it moves the time base. |
+| 3 | The seconds to take off the birth times of those records. | The core's emitter, when it moves the time base. |
+| 4 | The wind texture's number. | `setWind`. |
+
+<details>
+<summary>Technical details: how the time base moves</summary>
+
+Birth times are 32-bit floats, so their precision falls as the buffer's clock grows. A buffer that runs for hours moves its time base. It rewrites the birth times at their new times and tells the shader how far that move has reached. The call `shiftRecords(from, to, seconds)` takes whole seconds off the birth times of rows `from` to `to`. That moves the time that they count from. An emitter does this after 1,024 seconds.
+
+</details>
 
 The engine gives the object one material, with the particle shading. It blends and writes no depth. The material takes a `map` for the particles' texture, and without one each particle is a soft round dot. The `blending` option is additive or normal, and it defaults to additive. `layers` chooses the layers that the buffer draws on.
 
@@ -46,25 +63,6 @@ A record is eight 32-bit numbers, or 32 bytes.
 | 30 to 31 | A 16-bit seed, from 0 to 65,535. |
 
 The seed picks the particle's random size, turn, spin, color and first flipbook frame. Two particles of one buffer get their own values from their own seeds. Call `write(index, record, seed)` with the eight numbers in that order: place, birth time, velocity, lifetime. The seed is the third argument.
-
-Call `writeRecords(block, count, first)` to write many births in one call. The block holds nine numbers for each birth: the eight above and the seed. Row `first` takes the first birth, and the rest follow, wrapping at the capacity. The engine packs the records and marks them, so the sketch's loop fills the block and the call writes it. Pass a block that stays the same size from frame to frame, which keeps the engine's room for it. Call `shiftRecords(from, to, seconds)` to take whole seconds off the birth times of rows `from` to `to`, which moves the time that they count from.
-
-## Layout in practice
-
-The records are one table, with a row for each particle that the buffer holds at once. An index from 0 to `capacity - 1` names a row. The buffer keeps no list of live particles. The shader reads each record's birth time and lifetime, so a particle draws nothing before its birth and nothing after its death.
-
-`frame[1]` says how many records from the first the draw reads, at most the capacity. Set it to the number of rows that hold a record, so rows that the sketch never wrote do not draw. Rows past the count draw nothing even when they hold a live particle. Once the count reaches the capacity, every row runs the vertex shader in every frame. A record past its life leaves before it makes a quad.
-
-An emitter usually fills the table in order and then writes over the oldest rows:
-
-```ts
-// The n-th birth goes into row n. After a full table, the rows start again.
-buffer.write(born % buffer.capacity, record, born & 0xffff);
-```
-
-A capacity that fits the rate over the longest lifetime keeps that safe. A write over a row whose particle is still alive ends that particle early.
-
-A buffer draws as one blended object. Its particles keep the order of their records, and the engine does not sort them among themselves. Additive blending needs no order, which suits most effects. With normal blending, keep the particles faint and soft, as smoke is.
 
 ## Write into the buffer
 
@@ -121,7 +119,7 @@ export default defineSketch(async ({ scene, time }) => {
 
 Await the creation in the setup, because the first call downloads the particle code. If the code does not download, the promise rejects with [E1406](../errors/E1406.md).
 
-Make the record array once. Every birth is then a write into engine memory, so a frame allocates nothing. The frame array is a view into that memory: take it once and assign its numbers.
+Make the record array once. Every birth is then a write into engine memory, so a frame allocates nothing. The frame array is a view into that memory: take it once and assign its numbers. The count in `frame[1]` stops the draw at the rows that hold a record ([Layout in practice](#layout-in-practice) explains).
 
 `commit()` marks the records written since the last call for the next frame's upload. A call in every frame is enough: writes that continue the run are marked there, and a write elsewhere marks its range at once.
 
@@ -132,6 +130,22 @@ The birth time counts from `frame[0]`, which must rise with the frame's time. Ke
 `buffer.object` gives the object for every other object call. Move it, turn it, scale it, set its layers and visibility, or give it bounds. The bounds must cover the particles. Without bounds of your own, the object keeps a point at its origin, and a view that loses that point loses the whole buffer.
 
 `buffer.destroy()` frees the records, the GPU buffers and the object.
+
+### Write many births in one call
+
+Call `writeRecords(block, count, first)` to write many births in one call. The block holds nine numbers for each birth: the eight above and the seed. Row `first` takes the first birth, and the rest follow, wrapping at the capacity.
+
+The engine packs the records and marks them, so the sketch's loop fills the block and the call writes it. Pass a block that stays the same size from frame to frame, which keeps the engine's room for it.
+
+## Layout in practice
+
+The records are one table, with a row for each particle that the buffer holds at once. An index from 0 to `capacity - 1` names a row. The buffer keeps no list of live particles. The shader reads each record's birth time and lifetime, so a particle draws nothing before its birth and nothing after its death.
+
+`frame[1]` says how many records from the first the draw reads, at most the capacity. Set it to the number of rows that hold a record, so rows that the sketch never wrote do not draw. Rows past the count draw nothing even when they hold a live particle. Once the count reaches the capacity, every row runs the vertex shader in every frame. A record past its life leaves before it makes a quad.
+
+An emitter usually fills the table in order, as the fountain example does, and then writes over the oldest rows. A capacity that fits the rate over the longest lifetime keeps that safe. A write over a row whose particle is still alive ends that particle early.
+
+A buffer draws as one blended object. Its particles keep the order of their records, and the engine does not sort them among themselves. Additive blending needs no order, which suits most effects. With normal blending, keep the particles faint and soft, as smoke is.
 
 ## An emitter in the core
 
@@ -150,14 +164,14 @@ buffer.configureEmitter({
 // In each frame, after the objects have their world places. The five numbers are the frame's
 // start and end, its rate, and 1 or 0 for whether it emits and whether it is a prewarmed first
 // frame. Make the array once: a fraction passed as a call argument is boxed.
-const frame = new Float64Array(5);
+const emitNumbers = new Float64Array(5);
 
-frame[0] = time.now - dt;
-frame[1] = time.now;
-frame[2] = 200;
-frame[3] = 1;
-frame[4] = 0;
-buffer.emitFrame(frame);
+emitNumbers[0] = time.now - dt;
+emitNumbers[1] = time.now;
+emitNumbers[2] = 200;
+emitNumbers[3] = 1;
+emitNumbers[4] = 0;
+buffer.emitFrame(emitNumbers);
 ```
 
 `configureEmitter` takes the seed and the shape: point, sphere, cone, box or disc. It also takes the direction and its spread, with the speed and lifetime ranges. A velocity, the bursts, the duration, the loop, the followed object and the sub-emitters follow. The engine keeps the motion and the values, so the core's events follow the same closed form as the shader.
@@ -185,9 +199,9 @@ A frame's upload therefore grows with the births it writes. The number of partic
 - The engine's memory holds 32 bytes for each record, and the GPU holds a copy of the same bytes. A buffer that cannot get its memory throws [E1109](../errors/E1109.md).
 - The count is rounded down to a whole number, at most the capacity. A count that is not finite, or that is 0 or less, draws nothing.
 - The lifetime is a 16-bit float with about three digits of precision, rounded down. One above 65,504 seconds stores as 65,504. One below about 0.00003 seconds stores as zero, so the particle never draws.
-- Birth times are 32-bit floats, so their precision falls as the buffer's clock grows. A buffer that runs for hours moves its time base. It rewrites the birth times at their new times and tells the shader how far that move has reached. The value in `frame[2]` is the first record that still counts from the old base, and `frame[3]` holds the seconds to take off it. An emitter does this after 1,024 seconds.
+- Birth times are 32-bit floats, so their precision falls as the buffer's clock grows. A buffer that runs for hours moves its time base ([technical details](#what-the-buffer-holds)).
 - A buffer with a map draws nothing in a frame where the map's image is not yet on the GPU.
-- A softness above 0 makes the camera copy its opaque depth in each frame, which is one full-screen pass. The Low preset turns soft particles off.
+- The `softness` value fades particles out over that distance, in meters, where they near the surfaces behind them ([Soft particles](../api/particles.md#soft-particles)). A value above 0 makes the camera copy its opaque depth in each frame, which is one full-screen pass. The Low preset turns soft particles off.
 - The particles cast no shadow and lights do not light them. A raycast against the object tests its one triangle at the origin, which has no area, so it never hits a particle.
 - After `destroy()`, the buffer's calls and arrays throw.
 
