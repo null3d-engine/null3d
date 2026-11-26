@@ -96,8 +96,9 @@ const DOCS = {
 	E1110: {
 		title: 'Unmarked write to a static object',
 		cause:
-			"A static object's position, rotation, scale or bounding sphere changed without a setter. The engine recomputes a static object only in a frame where a setter marks it or its parent moves. So such a change can show late, or never. Development builds check these values of every static object before each transform update. Each frame has one transform update, and a sketch with onLateUpdate gets a second one after that callback. A row of a static instance, sprite or point batch that changed without markDirty() raises it too: the engine updates only the marked rows, and development builds check the drawn rows before each batch update, a share of a large batch in each frame. Release builds leave the check out.",
+			"A static object's position, rotation, scale or bounding sphere changed without a setter. The engine recomputes a static object only in a frame where a setter marks it or its parent moves. The change can then show late, or never. A row of a static instance, sprite or point batch that changed without markDirty() raises it too. Development builds check for these writes in every frame; release builds leave the check out.",
 		example: 'E1110: the position of "Crate" (slot 7) changed without a setter.',
+		see: ['concepts/static-dynamic'],
 	},
 	E1111: {
 		title: 'Mesh or model still in use',
@@ -190,7 +191,8 @@ const DOCS = {
 	E1217: {
 		title: 'Invalid material option',
 		cause:
-			"A material factory or scene.createLines() received an option value that it does not take, such as an unknown alpha mode, blending or line mode. Custom materials refuse the 'weighted' blending, and take alpha to coverage or the hash mode only where their WGSL sets or reads the surface's alpha. A material that lets light through refuses the hash alpha mode and the weighted blending. A layered material, with a clear coat, a sheen, iridescence or anisotropy, refuses a light map, specular maps, and two textures for a pair of layer maps that glTF packs into one. It refuses a transmission or a thickness map only where one of its layer maps fills the array that the map samples: the clear coat's normal map and iridescence's thickness map fill the array that the transmission map samples, and the sheen's maps and the anisotropy map fill the array that the thickness map samples. A material with transmission refuses a thickness map beside a specular color map, whose sRGB texture never shares the thickness map's array, and other materials refuse those two maps. A material that lets light through to its other side refuses the specular maps, whose places its diffuse transmission maps take, a clear coat, a sheen and the weighted blending, and other materials refuse the diffuse transmission maps. A custom material refuses subsurfaceRadius, which only a standard material takes. A custom material whose WGSL declares a coverage function takes the mask mode, or the blend mode with the cutoff that its shadow caster tests.",
+			'A material factory or scene.createLines() got an option value that it does not take, or two options that cannot go together. The message names the option and the rule it breaks.',
+		see: ['api/materials', 'api/lines'],
 		example: `E1217: materials.standard() got the alpha mode "cutout"; it takes 'opaque', 'mask' or 'blend'.`,
 	},
 	E1218: {
@@ -393,9 +395,12 @@ const DOCS = {
 	E1416: {
 		title: 'glTF file not read',
 		cause:
-			"assets.loadGltf() downloaded a file that is not a glTF 2.0 model it can read. Its JSON or binary chunk may be broken, or an offset or a count may point past the data. A buffer or an image may be missing, or its nodes may form a loop. A skin or a clip may break glTF's rules, such as key times that fall back. Draco data may not decode, or decode to other counts than its accessors give. Or its skins and clips may move more than 1,024 nodes, which is more than one skeleton holds. Or the file would decode to more than the engine allows one file. That is 64 MiB, plus 32 bytes for each byte of the file and its buffers, up to 1 GiB. A block of meshopt data counts against that total. One array may hold at most 256 MiB. Or a clip would hold more than 4,194,304 keys, its frames times its tracks. A PNG or JPEG image inside the file may claim sides past 4,096, or its images may decode to more than 1 GiB. Or the rewriteUrl option refused an address that the file names.",
+			'assets.loadGltf() could not read a file as a glTF 2.0 model. The file is broken, it goes past a limit of the engine, or the rewriteUrl option refused an address that it names. The message names the part that failed.',
 		example:
 			'E1416: assets.loadGltf() could not read https://example.com/ship.glb: accessor 3 reads 4800 bytes from bufferView 1, which holds 2400.',
+		details:
+			"- A broken file: a broken JSON or binary chunk, an offset or count past the data, a missing buffer or image, a node loop, a skin or clip that breaks glTF's rules, or Draco data that does not decode to the counts its accessors give.\n- Decoded data for one file: 64 MiB, plus 32 bytes for each byte of the file and its buffers, up to 1 GiB. A block of meshopt data counts too.\n- One array: 256 MiB.\n- Nodes moved by skins and clips: 1,024.\n- Keys in one clip, its frames times its tracks: 4,194,304.\n- Sides of one PNG or JPEG image: 4,096. Decoded images: 1 GiB.",
+		see: ['api/assets'],
 	},
 	E1417: {
 		title: 'glTF feature not supported',
@@ -499,7 +504,7 @@ const DOCS = {
 	E1434: {
 		title: 'Baked light file not read',
 		cause:
-			"assets.loadLightProbeGrid() or assets.loadLightMap() downloaded a file that is not a baked light file that this engine reads. The file may not be JSON, or its format marker may be missing. Its version may not be the one that this engine reads, or its kind may not be the one that the call takes. A probe grid may have counts or spacing that a grid cannot take. Its coefficients may not hold 12 floats for each probe in the counts' product, or its validity or skyVisibility may not hold one float from 0 to 1 for each probe. A light map may have a width or height that a texture cannot take, or an encoding other than rgb8 or rgba16float. Its radiance or its direction may not hold the bytes that its size needs, which a cut-short file shows. The message names the fault.",
+			'assets.loadLightProbeGrid() or assets.loadLightMap() downloaded a file that this engine cannot read as baked light data. The file may not be JSON, may have the wrong format marker, version or kind, or may have a field whose size does not match the counts or size that the file gives. The message names the fault.',
 		example:
 			'E1434: assets.loadLightProbeGrid() could not read https://example.com/light/grid.json: its version is 2, and this engine reads version 1.',
 		see: ['guides/baked-light-data'],
@@ -520,7 +525,7 @@ const DOCS = {
 	E1437: {
 		title: 'Chrome for Testing refused',
 		cause:
-			"The null3D command-line tool did not install Chrome for Testing, the browser that draws on the computer's GPU. The archive it downloaded does not have the SHA-256 hash that the tool records for the pinned version on this platform. Or the tool has no build, and so no hash, for this platform. The tool deletes a refused archive before it unpacks it, and never runs it.",
+			"The null3D command-line tool did not install Chrome for Testing, the browser that draws on the computer's GPU. The archive it downloaded does not have the SHA-256 hash that the tool records for the pinned version on this platform. Or the tool has no build, and so no hash, for this platform. The tool deletes a refused archive before it unpacks it, and never runs it. By default the command goes on: it prints this message as a warning and draws with the installed Google Chrome. The error stops the command only when NULL3D_CHROME=testing asks for Chrome for Testing alone.",
 		example:
 			'E1437: the Chrome for Testing 156.0.8078.80 archive for mac-arm64 has the SHA-256 hash 5d41402abc4b2a76b9719d911017c592ae2f4d3c1a0d9b7e6c9a3f5b8e7d2c10, not 8bc590d1b1acac042a000234c768f31830f25a3983a83ed5e067114c87c4cad1, so the tool deleted it.',
 	},

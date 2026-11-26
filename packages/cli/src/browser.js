@@ -94,7 +94,7 @@ export const CHROME_REFUSED = 'E1437';
 
 /** The fix that ends the refusal's message, which a unit test keeps equal to the engine's table. */
 export const CHROME_REFUSED_FIX =
-	"Run the command again. A download that broke off, or that something changed on the way, fails the check. If the check fails again, a proxy or a mirror between this computer and Google's storage changes the file, so download without it. On a platform that has no Chrome for Testing build, set CI=1 to draw with Playwright's Chromium on the software GPU, or NULL3D_CHROME=installed to draw with the installed Google Chrome.";
+	"Run the command again. A download that broke off, or that something changed on the way, fails the check. If the check fails again, a proxy or a mirror between this computer and Google's storage changes the file, so download without it. On a platform that has no Chrome for Testing build, the command draws with the installed Google Chrome, or set CI=1 to draw with Playwright's Chromium on the software GPU. docs/cli/null3d.md, under Chrome for Testing, describes the fallback.";
 
 /**
  * A refusal to install Chrome for Testing, worded as the engine words its errors: the code, what

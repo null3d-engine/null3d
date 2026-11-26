@@ -1,7 +1,7 @@
 // Each error code's fix: the text that ends every EngineError message, and the only part of the
-// error table that runtime code needs. The page imports this table and hands it to each worker it
-// starts, so the text downloads once, with the page. The rest of each code's docs text is in
-// codes.ts, which only the docs generator and the tests import. Codes group by area: 11xx objects
+// error table that runtime code needs. A thread loads the table when it first reports an error, so
+// the text does not weigh on a page's start. The rest of each code's docs text is in codes.ts,
+// which only the docs generator and the tests import. Codes group by area: 11xx objects
 // and handles, 12xx values, 13xx browsers and GPUs, 14xx setup and loading, 15xx rendering.
 
 export const ERROR_FIXES = {
@@ -29,7 +29,7 @@ export const ERROR_FIXES = {
 	E1112:
 		'Give a still 2D texture, such as one that assets.loadTexture, textures.fromImageBitmap or textures.fromData makes. A texture that changes every frame needs a cookie of its own, copied in each frame.',
 	E1203:
-		'Check the value computed before this call. NaN often comes from dividing zero by zero, or from normalizing a zero-length vector.',
+		'Check the value computed before this call. NaN often comes from dividing zero by zero, or from normalizing a zero-length vector. Most calls check their numbers only in development builds. A release build leaves the check out, so the bad value reaches the scene, and the frame draws wrong, or not at all, with no error. Scene queries such as raycasts check in every build.',
 	E1204:
 		"Pass a hex string such as '#4a8cff', a number such as 0x4a8cff, or three linear components from 0 to 1, such as [0.07, 0.26, 1].",
 	E1205:
@@ -51,7 +51,7 @@ export const ERROR_FIXES = {
 	E1216:
 		'Use the names of the fields of struct Uniforms in the WGSL. Give an f32 a number, and an i32 or a u32 a whole number. Give a vec2f, vec3f or vec4f an array of 2, 3 or 4 numbers. A vec3f also takes a color. Rename a field that has the name of a standard value, such as color. Give a slot that the WGSL declares as a texture_2d<f32> a texture of one layer, and a slot that it declares as a texture_2d_array<f32> a texture of several layers, from textures.fromData with a depth or a KTX2 file of layers. Give post.setEffectUniform() an effect that post.addEffect() returned.',
 	E1217:
-		"Give alphaMode 'opaque', 'mask', 'hash' or 'blend', and blending 'normal', 'additive', 'multiply' or 'weighted'. three.js's transparent: true is alphaMode: 'blend', and its alphaTest is alphaMode: 'mask' with alphaCutoff. A custom material takes 'opaque', 'mask', 'hash' or 'blend', and no 'weighted' blending. It takes alphaToCoverage or the hash mode only where its WGSL sets or reads the surface's alpha, such as s.alpha = texel.a in fn surface. A draw that makes its own vertices blends, and its WGSL declares no texture. A material with transmission takes 'opaque', 'mask' or 'blend', not the 'weighted' blending, and a custom one needs WGSL that sets the surface's transmission. A layered material takes no lightMap or specular maps: give clearcoatMap with clearcoatRoughnessMap as one texture, and sheenColorMap with sheenRoughnessMap as one. Give diffuseTransmissionMap and diffuseTransmissionColorMap only with diffuseTransmission, and no specular maps beside them. Give transmissionMap and thicknessMap only with transmission. Each samples a specular slot's texture array at a layer of its own, so a specular map may draw beside them when the two textures share an array, and a thicknessMap refuses a specularColorMap, whose sRGB texture never shares its array. A layered material keeps them beside the layer map of the light map's slot, but not beside a layer map of the array that one of them samples: transmissionMap samples the specular intensity slot's array, and thicknessMap the specular color slot's. Give diffuseTransmission without a clear coat, a sheen or the 'weighted' blending. A material's layer maps come from one family: the coat's and the sheen's, or iridescence's and the anisotropy's, since they take the same slots. Give an anisotropy map, and another map that gives the surface's texture coordinates. A custom material with diffuseTransmission needs WGSL that sets the surface's diffuseTransmission. Give subsurfaceRadius to materials.standard: a custom material draws no subsurface blur. Give a custom material that declares a coverage function alphaMode 'mask', or 'blend' with the alphaCutoff that its caster tests.",
+		"Give alphaMode 'opaque', 'mask', 'hash' or 'blend', and blending 'normal', 'additive', 'multiply' or 'weighted'. three.js's transparent: true is alphaMode: 'blend', and its alphaTest is alphaMode: 'mask' with alphaCutoff. For a conflict between two options, follow the message, or read the rule for each kind of material on the E1217 docs page.",
 	E1218:
 		"Use the names in animator.clips, and the joint names of the model's skeleton. Give layers whole numbers from 0 to 3, weights from 0 to 1, and fades of 0 or more seconds. Call animator() only on an object that a glTF file with animations created. Name your clip events anything but 'loop' and 'finished', which the animator reports itself. Give setMorphWeight a target number below its geometry's morphTargets, or a name in its morphTargetNames. Trim a clip that holds keys hours apart, or split a long clip into shorter ones.",
 	E1219:
@@ -113,7 +113,7 @@ export const ERROR_FIXES = {
 	E1415:
 		"Stop the other engine with destroy() and wait for its promise before you start this one. To run both at once, leave out sketchThread: 'main' on one of them, so that its sketch runs in a worker.",
 	E1416:
-		'Check that the file is a glTF 2.0 model, as a .glb file or a .gltf file with its buffers and images beside it. Open it in the Khronos glTF Validator, which names the broken part, and export it again from your modelling tool. For a model whose skeleton is too large, export each character to a file of its own. A file that passes a limit on what it decodes to is broken, or holds more than a scene can use. Split it into several files, or simplify its meshes.',
+		'Check that the file is a glTF 2.0 model: a .glb file, or a .gltf file with its buffers and images beside it. For a broken file, open it in the Khronos glTF Validator and export it again. For a skeleton that is too large, export each character to its own file. For a file over a size limit, split it or simplify its meshes.',
 	E1417:
 		'Export the model again without the extension that the message names, or import the add-on that the message names and register its handler on assets. Call createInstances with a model that has meshes and no instancing of its own, or with one of its meshes and a material.',
 	E1418:
@@ -143,13 +143,13 @@ export const ERROR_FIXES = {
 	E1433:
 		"Install the release of the add-on that matches this engine's plugin interface, or run the project on an engine whose plugin interface the add-on declares. The engine's own add-ons need no range: run bunx @null3d/cli upgrade, then bun install, so that each one takes the engine's version.",
 	E1434:
-		"Read the fault that the message names in the baked light file. Write version 1 of the format, which docs/guides/baked-light-data.md describes: a JSON object with the marker null3d.baked-light, the version, the kind, and the base64 payloads that its kind needs. Make each payload's length match the counts or the size that the same file gives. Read the file to its end, since a file cut short has no complete JSON.",
+		"Read the fault that the message names in the baked light file. Write version 1 of the format, which https://github.com/null3d-engine/null3d/blob/generated/docs/guides/baked-light-data.md describes: a JSON object with the marker null3d.baked-light, the version, the kind, and the base64 payloads that its kind needs. Make each payload's length match the counts or the size that the same file gives. Read the file to its end, since a file cut short has no complete JSON.",
 	E1435:
 		"Record the session again with the engine that recorded it, or update the engine that reads the file. When the message names a sketch, open the page with that sketch: a replay runs the file's frames on the scene that recorded them. When it names a key or a fixed step rate, the recording came from a sketch that this engine cannot run as it ran. A replay starts at the file's first frame, so a file must come from a session that started at the page's first frame.",
 	E1436:
 		'Ask for the pick again: the engine started a new GPU device, which answers a new pick. A pick that waits when the device is lost is rejected rather than repeated, because the frame that recorded it drew on the lost device.',
 	E1437:
-		"Run the command again. A download that broke off, or that something changed on the way, fails the check. If the check fails again, a proxy or a mirror between this computer and Google's storage changes the file, so download without it. On a platform that has no Chrome for Testing build, set CI=1 to draw with Playwright's Chromium on the software GPU, or NULL3D_CHROME=installed to draw with the installed Google Chrome.",
+		"Run the command again. A download that broke off, or that something changed on the way, fails the check. If the check fails again, a proxy or a mirror between this computer and Google's storage changes the file, so download without it. On a platform that has no Chrome for Testing build, the command draws with the installed Google Chrome, or set CI=1 to draw with Playwright's Chromium on the software GPU. docs/cli/null3d.md, under Chrome for Testing, describes the fallback.",
 	E1501:
 		'Share meshes and materials between objects instead of creating them per object. Draw many copies of one mesh with an instance batch. Every row of a batch counts toward the culling limit, active or not, so size each batch for the rows it uses. For a large crowd of skinned characters on WebGPU, use models with fewer vertices or fewer copies. Each copy skins its own vertices, even when copies share a mesh. The crowd draws again once it fits.',
 	E1502:
