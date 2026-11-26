@@ -201,14 +201,19 @@ The page reads the gamepads once per display frame while at least one is connect
 
 ## Input off
 
-`createEngine({ input: false })` is for a page whose input another library records. The engine then adds no listener that takes input:
+`createEngine({ input: false })` is for a page whose input another library records. The engine then adds no listener that takes input, and the canvas's context menu stays the browser's.
+
+<details>
+<summary>Technical details: the listeners the engine leaves out and keeps</summary>
+
+The engine leaves out:
 
 - none of its pointer, key, wheel and context menu listeners on the canvas, and no pointer capture;
 - no `pointerup`, `pointercancel`, `keydown`, `keyup` or `blur` listener on the window;
 - no `visibilitychange` or `pointerlockchange` listener of its input on the document;
 - no gamepad listener, and no reading of the gamepads.
 
-The canvas's context menu stays the browser's. The engine keeps the listeners that take no input, and each reads only the page's state:
+It keeps a few listeners that take no input. They only read the page's state:
 
 | Listener | Why the engine keeps it |
 | --- | --- |
@@ -218,14 +223,22 @@ The canvas's context menu stays the browser's. The engine keeps the listeners th
 | `securitypolicyviolation` on the window | It names what a Content-Security-Policy blocked while the engine loads its files, as [E1418](../errors/E1418.md) and [E1422](../errors/E1422.md) say. |
 | `message`, `error` and `abort` on the engine's own objects | Its workers, ports and signals talk to the page. |
 
-A development build also listens for the dev server's shader updates. The input test records the engine's listeners in every thread mode.
+A development build also listens for the dev server's shader updates.
+
+</details>
 
 The sketch's `ctx.input` stays at rest. Every key, button and action is up, `value` gives 0 and `input.touches` is empty. The pointer stays at the canvas's top-left corner, with no movement, wheel or buttons, and objects get no pointer events.
 
 - `engine.requestPointerLock()` fails with [E1426](../errors/E1426.md). The lock is part of the engine's input, since the sketch reads the mouse's movement through the engine's listeners. Lock the canvas with the code that records the input, which reads the movement.
 - Stopping the engine leaves a lock that the page took. It ends only a lock that the engine took or that its input read.
 - A development build warns in the console when the sketch relies on input. It warns once for each kind: a read of `ctx.input`, an object's pointer event handler, and `@null3d/controls`. Each warning names `input: false`. A production build carries none of them.
-- The warning about the controls comes as they load in the sketch's thread. A thread loads a module once, so it misses controls that another sketch in the same worker loaded first. Two engines that run their sketches on the page's thread both hear a load by either one's sketch.
+
+<details>
+<summary>Technical details: when the controls warning comes</summary>
+
+The warning about the controls comes as they load in the sketch's thread. A thread loads a module once, so it misses controls that another sketch in the same worker loaded first. Two engines that run their sketches on the page's thread both hear a load by either one's sketch.
+
+</details>
 
 [Using null3D with a deterministic simulation](../guides/deterministic-simulation.md#input-that-another-library-records) shows the page.
 
