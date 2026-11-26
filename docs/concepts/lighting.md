@@ -262,7 +262,9 @@ The standard material takes the environment's light in these ways:
 
 A small table picks the level that each roughness reads.
 
-`scene.setEnvironment(environment, { intensity, rotation })` sets the scene's environment, and `scene.setEnvironment(null)` removes it. `intensity` scales the light. `rotation` turns the environment by Euler angles in radians, in the order X, Y, Z. The call allocates nothing, so a sketch can turn the environment in every frame. A material's `envIntensity` scales the environment's light on that material alone, and multiplies the scene's `intensity`. A scene has one environment. For the light of one place in the scene, use a [reflection probe](#reflection-probes).
+`scene.setEnvironment(environment, { intensity, rotation })` sets the scene's environment, and `scene.setEnvironment(null)` removes it. `intensity` scales the light. `rotation` turns the environment by Euler angles in radians, in the order X, Y, Z. The call allocates nothing, so a sketch can turn the environment in every frame.
+
+A material's `envIntensity` scales the environment's light on that material alone, and multiplies the scene's `intensity`. A scene has one environment. For the light of one place in the scene, use a [reflection probe](#reflection-probes).
 
 | Call | Gives |
 | --- | --- |
