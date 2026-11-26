@@ -45,8 +45,9 @@ export interface LevelView {
 	 */
 	readonly orthographic?: boolean;
 	/**
-	 * The source's threshold bias, as Godot's `lod_bias`: above 1 switches every level nearer, so
-	 * coarser levels draw, and below 1 keeps its detail. The default is 1.
+	 * The source's threshold bias, as the inverse of Godot's `lod_bias`: a Godot bias of 2 is
+	 * about a null3D bias of 0.5. Above 1 switches every level nearer, so coarser levels draw, and
+	 * below 1 keeps its detail. The default is 1.
 	 */
 	readonly bias?: number;
 }

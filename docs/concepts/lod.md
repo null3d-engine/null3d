@@ -211,7 +211,7 @@ Levels add no second copy of each object's data. Each view keeps about the room 
 
 ## The bias of one object
 
-`setLevelBias` raises or lowers the threshold for one object, as Godot's `lod_bias` does. The bias divides the factor that picks the levels. A bias above 1 draws each switch at a nearer distance, and a bias below 1 keeps the object's detail:
+`setLevelBias` raises or lowers the threshold for one object, as the inverse of Godot's `lod_bias`: a Godot bias of 2 is about a null3D bias of 0.5. The bias divides the factor that picks the levels. A bias above 1 draws each switch at a nearer distance, and a bias below 1 keeps the object's detail:
 
 ```ts
 hero.setLevelBias(0.5); // the hero keeps its detail twice as far out
