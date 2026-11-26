@@ -2,7 +2,8 @@
 // copies by a hash of the file, and the engine's set alone is thousands of files and gigabytes
 // together: on the build's own thread that pass holds up module loading. The pool splits the files
 // across a few workers, each of which reads its file in chunks, so the build hashes many files at
-// once and keeps none of their bytes.
+// once and keeps none of their bytes. A scan gives the permutation words of a file's builds as well,
+// from the same read, for a build that narrows the set to a project's list.
 import { availableParallelism } from 'node:os';
 import { Worker } from 'node:worker_threads';
 
@@ -14,16 +15,23 @@ export function defaultHashWorkers(): number {
 	return Math.max(1, Math.min(MOST_WORKERS, availableParallelism() - 1));
 }
 
+/** What a scan of a file gives: its hash, and the permutation word of each build that it holds. */
+export interface Scanned {
+	readonly hash: string;
+	readonly words: readonly number[];
+}
+
 /** A worker thread and the files that it has not answered yet, by id. */
 interface PoolWorker {
 	readonly thread: Worker;
-	readonly waiting: Map<number, { resolve(hash: string): void; reject(e: Error): void }>;
+	readonly waiting: Map<number, { resolve(answer: Answer): void; reject(e: Error): void }>;
 }
 
-/** A worker's answer: the file's hash, or the failure that reading it raised. */
+/** A worker's answer: the file's hash and, for a scan, its words, or the failure of the read. */
 interface Answer {
 	readonly id: number;
 	readonly hash?: string;
+	readonly words?: readonly number[];
 	readonly error?: { message: string; code?: string };
 }
 
@@ -46,14 +54,28 @@ export class HashPool {
 	 * the whole file's bytes gives. A file that cannot be read rejects with the failure that the
 	 * read raised.
 	 */
-	hash(file: string): Promise<string> {
+	async hash(file: string): Promise<string> {
+		return (await this.read(file, false)).hash;
+	}
+
+	/**
+	 * The file's hash, as `hash` gives it, and the permutation word of each build that the file
+	 * holds, from each line of the form that the shader build writes.
+	 */
+	async scan(file: string): Promise<Scanned> {
+		const { hash, words = [] } = await this.read(file, true);
+		return { hash, words };
+	}
+
+	/** Sends one file to the worker with the fewest files waiting, and gives its answer. */
+	private read(file: string, scan: boolean): Promise<Answer & { hash: string }> {
 		const worker = this.pick();
 		const id = this.nextId++;
 		const { thread, waiting } = worker;
-		const answer = new Promise<string>((resolve, reject) => waiting.set(id, { resolve, reject }));
+		const answer = new Promise<Answer>((resolve, reject) => waiting.set(id, { resolve, reject }));
 		thread.ref();
-		thread.postMessage({ id, file });
-		return answer;
+		thread.postMessage({ id, file, scan });
+		return answer as Promise<Answer & { hash: string }>;
 	}
 
 	/** Stops every worker. A later hash starts them again. */
@@ -82,7 +104,7 @@ export class HashPool {
 			worker.waiting.delete(answer.id);
 			if (answer.hash === undefined) {
 				call.reject(Object.assign(new Error(answer.error?.message ?? ''), answer.error));
-			} else call.resolve(answer.hash);
+			} else call.resolve(answer);
 			if (worker.waiting.size === 0) thread.unref();
 		});
 		// A thread that stops takes every file it held with it, and the build fails rather than

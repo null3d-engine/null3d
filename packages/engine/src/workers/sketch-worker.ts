@@ -10,7 +10,7 @@
 
 import { DEV } from '../errors/checks';
 import { messageOf } from '../errors/message';
-import { recordPermutations, stopRecordingPermutations } from '../gpu/variants';
+import { recordPermutations, reportPermutations, stopRecordingPermutations } from '../gpu/variants';
 import { type DrawModule, loadDrawModule, preloadDrawing } from '../render/load-draw';
 import type { EarlyStart, Tier } from '../render/renderer';
 import { awaitLater } from '../shared/await-later';
@@ -181,6 +181,7 @@ startWorker('sketch', step, async (event: MessageEvent<SketchWorkerMessage>) => 
 				// This thread draws in low-latency mode, so a recording here lists the words that its
 				// pipelines ask for. The page stops it once the held frame has drawn them.
 				if (message.renderer.recordPermutations) recordPermutations();
+				if (DEV) reportPermutations((word) => replyToPage({ type: 'permutation', word }));
 				step('renderer loaded');
 				const started = early;
 				early = undefined;

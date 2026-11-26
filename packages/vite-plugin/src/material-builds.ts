@@ -35,6 +35,8 @@ export const DRAW_INDEX = 1;
 export const TONE_MAP = 2;
 /** The permutation bit of builds that skin in the vertex shader. */
 export const SKIN = 64;
+/** The permutation bit of builds that do their color math at half precision. */
+export const HALF = 8192;
 
 /** A GPU path, as a build's field of its output names it. */
 type Target = 'wgsl' | 'glsl';

@@ -15,6 +15,7 @@ Engine docs: `guides/testing`, `guides/deterministic-simulation`, `api/page`, `a
 7. Runs that hold on any machine
 8. A worked example
 9. What stays out of CI
+10. Record the shader words that the suite reaches
 
 ## 1. Runner and browser
 
@@ -239,3 +240,9 @@ bunx @null3d/cli test
 - Real phones and tablets. Test them by hand on the devices, or on a device cloud such as BrowserStack. An emulated phone shows neither its GPU nor its heat (`guides/phones`).
 - Frame rates and frame times. A headless software GPU in CI says nothing about them. Measure on a real machine with a visible window, or with `bunx @null3d/cli bench` on a production build.
 - Pictures on a real GPU. CI keeps the software GPU's references. Draw the real GPU's references on a developer's machine.
+
+## 10. Record the shader words that the suite reaches
+
+A production build with the Vite plugin's `shaders.list` copies only the shader builds of the listed permutation words. The suite drives the states that the game offers, so it can write that list. Open the page with `withRecordingSwitch('/?gpu=webgl2&preset=low')` from `@null3d/cli/shaders`, drive it, then `await saveRecordedWords(page, 'shader-permutations.txt')`. The call ends the page's recording and adds its words to the list. The page must run a development build, or a production build with `urlSwitches: true`. Run it on both GPU paths at the low and high presets.
+
+Run the suite against the production build with the list too. A page that asks for a word that the list lacks stops with an error that names the word, so the suite fails. Record again after you add a feature, a material or a level. Some apps get their content while they run: models that users upload, a CMS catalogue, glTF files from another server. No recording sees their words, so build them without a list. Docs: `guides/assets-pipeline`, sections "When to ship the full set" and "Record from your browser tests".

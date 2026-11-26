@@ -12,8 +12,17 @@ import { closeSync, existsSync, openSync, readFileSync, readSync, statSync } fro
 import { dirname, isAbsolute, join, posix, resolve } from 'node:path';
 import type { Plugin, Rollup } from 'vite';
 
-/** An import of a table of shared paragraphs, at the top of a device module of its kind. */
-const PARAGRAPH_IMPORT = /from '\.\/(shader-paragraphs-[a-z0-9-]+)\.js';/g;
+/**
+ * An import of a table of shared paragraphs, at the top of a device module of its kind, with the
+ * names it takes from the table.
+ */
+const PARAGRAPH_IMPORT = /import\s*\{([^}]*)\}\s*from '\.\/(shader-paragraphs-[a-z0-9-]+)\.js';/g;
+
+/** One import of a table of shared paragraphs: the table's file name without `.js`, and its names. */
+export interface TableImport {
+	readonly stem: string;
+	readonly names: readonly string[];
+}
 
 /**
  * How much of a copied file this reads at first. The shader build writes the imports among the
@@ -30,11 +39,11 @@ function headOf(source: string | Uint8Array, bytes: number): string {
 }
 
 /**
- * The names of the paragraph tables that a device module imports. A module imports its
- * kind's table and one for each feature family whose paragraphs it holds, so the module of a
- * relief feature imports several. The imports end at the first blank line after them.
+ * The paragraph tables that a device module imports, with the names it takes from each. A module
+ * imports its kind's table and one for each feature family whose paragraphs it holds, so the module
+ * of a relief feature imports several. The imports end at the first blank line after them.
  */
-function tableStems(read: (bytes: number) => string, length: number): string[] {
+function tableImports(read: (bytes: number) => string, length: number): TableImport[] {
 	let window = Math.min(IMPORT_WINDOW, length);
 	for (;;) {
 		const head = read(window);
@@ -43,16 +52,29 @@ function tableStems(read: (bytes: number) => string, length: number): string[] {
 		const first = head.indexOf('import ');
 		if (first < 0) return [];
 		const complete = window >= length || head.indexOf('\n\n', first) >= 0;
-		if (complete) return [...head.matchAll(PARAGRAPH_IMPORT)].map((match) => match[1] as string);
+		if (complete)
+			return [...head.matchAll(PARAGRAPH_IMPORT)].map((match) => ({
+				stem: match[2] as string,
+				names: (match[1] as string)
+					.split(',')
+					.map((name) => name.trim())
+					.filter((name) => name !== ''),
+			}));
 		window = Math.min(window * 2, length);
 	}
 }
 
+/** The names of the paragraph tables that a device module imports. */
+function tableStems(read: (bytes: number) => string, length: number): string[] {
+	return tableImports(read, length).map((entry) => entry.stem);
+}
+
 /**
- * The tables that a device module on disk imports. The file is read from its start only, so a
- * build covers the whole generated set without holding any of it in memory.
+ * The tables that a device module on disk imports, with the names it takes from each. The file is
+ * read from its start only, so a build covers the whole generated set without holding any of it
+ * in memory.
  */
-export function tableStemsOfFile(file: string): string[] {
+export function tableImportsOfFile(file: string): TableImport[] {
 	const fd = openSync(file, 'r');
 	try {
 		const length = statSync(file).size;
@@ -61,7 +83,7 @@ export function tableStemsOfFile(file: string): string[] {
 			const count = readSync(fd, buffer, 0, buffer.length, 0);
 			return buffer.subarray(0, count).toString('utf8');
 		};
-		return tableStems(read, length);
+		return tableImports(read, length);
 	} finally {
 		closeSync(fd);
 	}

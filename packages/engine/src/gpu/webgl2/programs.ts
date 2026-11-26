@@ -504,7 +504,7 @@ export function createProgram(
 	const shading = variantFor(template.shader, build, 'glsl')?.glsl?.[template.pipeline];
 	const source =
 		shading && build !== permutation ? { ...shading, fragment: PREPASS_FRAGMENT } : shading;
-	if (!source) throw new Error(`a render pipeline template: ${missingVariant(permutation)}`);
+	if (!source) throw new Error(`a render pipeline template: ${missingVariant(build)}`);
 	const { program, shaders } = link(gl, source, '');
 	return {
 		program,

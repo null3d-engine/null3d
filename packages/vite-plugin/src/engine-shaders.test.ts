@@ -1,7 +1,7 @@
 // The release asset's tar: the plugin reads it itself, so a header it misreads would leave a
 // project with the wrong shaders or none. These tests build archives by hand and read them back.
 import { afterEach, describe, expect, it } from 'bun:test';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { readArtifact, tarEntries, unpackInto } from './engine-shaders.ts';
@@ -37,14 +37,34 @@ function header(name: string, size: number, type: string): Buffer {
 	return block;
 }
 
-/** A tar holding the given files, each padded to a block, with the ending an archive needs. */
-function tarOf(files: Readonly<Record<string, string>>): Buffer {
+/** One entry's header and data, padded to a block. */
+function entry(name: string, data: Buffer, type: string): Buffer[] {
+	const padding = (512 - (data.length % 512)) % 512;
+	return [header(name, data.length, type), data, Buffer.alloc(padding)];
+}
+
+/**
+ * A tar holding the given files, with the ending an archive needs. A name over 100 bytes goes in
+ * the long-name entry of `long`'s kind before its file, and the file's own header holds it cut
+ * short, as GNU tar and the release's archive write it.
+ */
+function tarOf(files: Readonly<Record<string, string>>, long: 'gnu' | 'pax' = 'gnu'): Buffer {
 	const parts: Buffer[] = [];
 	for (const [name, text] of Object.entries(files)) {
-		const bytes = Buffer.from(text, 'utf8');
-		parts.push(header(name, bytes.length, '0'), bytes);
-		const padding = (512 - (bytes.length % 512)) % 512;
-		if (padding > 0) parts.push(Buffer.alloc(padding));
+		if (Buffer.byteLength(name) > 100) {
+			const record = (body: string) => {
+				// A pax record's length counts its own digits.
+				let length = body.length + 3;
+				while (`${length} ${body}\n`.length !== length) length++;
+				return `${length} ${body}\n`;
+			};
+			parts.push(
+				...(long === 'gnu'
+					? entry('././@LongLink', Buffer.from(`${name}\0`), 'L')
+					: entry('PaxHeader', Buffer.from(record(`path=${name}`)), 'x')),
+			);
+		}
+		parts.push(...entry(name.slice(0, 100), Buffer.from(text, 'utf8'), '0'));
 	}
 	parts.push(Buffer.alloc(1024));
 	return Buffer.concat(parts);
@@ -63,6 +83,18 @@ describe('tarEntries', () => {
 		expect(entry?.bytes.toString('utf8')).toBe(long);
 	});
 
+	it('reads a name over 100 bytes from its long-name entry, GNU or pax', () => {
+		const long = `shaders-${'area-lights-and-'.repeat(8)}glsl.js`;
+		const sibling = `${long.slice(0, 100)}-other.js`;
+		for (const kind of ['gnu', 'pax'] as const) {
+			const entries = [
+				...tarEntries(tarOf({ [long]: 'one', [sibling]: 'two', 'b.js': 'three' }, kind)),
+			];
+			expect(entries.map((entry) => entry.name)).toEqual([long, sibling, 'b.js']);
+			expect(entries.map((entry) => entry.bytes.toString('utf8'))).toEqual(['one', 'two', 'three']);
+		}
+	});
+
 	it('stops at the empty blocks that end an archive', () => {
 		const tar = tarOf({ 'a.ts': 'one' });
 		const withJunk = Buffer.concat([tar, Buffer.from('not a header')]);
@@ -76,6 +108,14 @@ describe('unpackInto', () => {
 		unpackInto(folder, tarOf({ 'shaders.ts': 'main', 'shaders-wgsl.js': 'device' }));
 		expect(readFileSync(join(folder, 'shaders.ts'), 'utf8')).toBe('main');
 		expect(readFileSync(join(folder, 'shaders-wgsl.js'), 'utf8')).toBe('device');
+	});
+
+	it('writes each file with a long name under its whole name, and no long-name entry', () => {
+		const folder = join(scratch(), 'set');
+		const long = `shaders-${'coverage-and-'.repeat(9)}wgsl.js`;
+		unpackInto(folder, tarOf({ [long]: 'device', 'shaders.ts': 'main' }));
+		expect(readFileSync(join(folder, long), 'utf8')).toBe('device');
+		expect(existsSync(join(folder, '@LongLink'))).toBe(false);
 	});
 
 	it('refuses a name that leaves the folder', () => {

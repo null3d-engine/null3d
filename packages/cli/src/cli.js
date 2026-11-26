@@ -33,6 +33,10 @@ const COMMANDS = {
 		summary: 'Runs a Model Context Protocol server for the running scene, for coding agents',
 		load: () => import('./mcp.js'),
 	},
+	shaders: {
+		summary: "Records the shader permutation words of the project's pages, for a smaller build",
+		load: () => import('./shaders.js'),
+	},
 	shot: {
 		summary: "Draws one frame of the project's page headless, and saves it as a PNG file",
 		load: () => import('./shot.js'),
