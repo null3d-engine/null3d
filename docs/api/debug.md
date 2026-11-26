@@ -82,7 +82,7 @@ Debug drawing works in development builds only. In a production build, every dra
 
 ```mermaid
 flowchart LR
-    call["debug.view('normals')"] --> core["Every mesh's pipeline<br/>takes the debug shading"]
+    view["debug.view('normals')"] --> core["Every mesh's pipeline<br/>takes the debug shading"]
     core --> frame["The next frame draws the view,<br/>clears to black, no tone mapping"]
 ```
 

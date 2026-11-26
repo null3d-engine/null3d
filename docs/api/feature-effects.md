@@ -10,10 +10,10 @@ summary: "post.addFeatureEffect turns a full-screen feature description into a p
 
 ```mermaid
 flowchart LR
-    description["defineFeature<br/>frame 'resolve', kind 'fullscreen'"] --> call["post.addFeatureEffect"]
-    shader["Your WGSL"] --> call
-    uniforms["Your uniforms"] --> call
-    call --> chain["The chain of custom effects<br/>HDR color, before bloom"]
+    description["defineFeature<br/>frame 'resolve', kind 'fullscreen'"] --> create["post.addFeatureEffect"]
+    shader["Your WGSL"] --> create
+    uniforms["Your uniforms"] --> create
+    create --> chain["The chain of custom effects<br/>HDR color, before bloom"]
     chain --> gpu["WebGPU or WebGL2"]
 ```
 
