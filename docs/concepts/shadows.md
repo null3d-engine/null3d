@@ -436,7 +436,7 @@ The box holds the object's bounding sphere and fifteen radii of space below it, 
 
 Each cascade that draws in a frame has a render pass that draws its casters' depth. It culls its casters too:
 
-- On WebGPU, a culling pass on the GPU runs before each cascade's render pass. The CPU does the same small amount of work per cascade whatever the number of casters. On a device that draws directly, the job workers test the casters on the CPU, as on WebGL2.
+- On WebGPU, a culling pass on the GPU runs before each cascade's render pass. The CPU does the same small amount of work per cascade whatever the number of casters. On a device that draws directly (an Apple GPU in Safari, or any browser on iPhone and iPad, where a start-up measurement finds direct draws faster: see [Culling](culling.md#how-each-path-culls)), the job workers test the casters on the CPU, as on WebGL2.
 - On WebGL2, the job workers test each caster against each cascade's box, as they test each object against the camera's view. They first skip the still casters of the grid cells out of the box. That CPU work grows with the number of casters.
 
 Each cascade and tile draws its casters at the level of detail that its own texels pick, and a large mesh with a cluster tree draws the patches that they pick ([Levels of detail](lod.md#shadows)). A cascade whose texels are large draws far fewer triangles than the camera's view. The `lodShadowThreshold` quality setting moves that choice: a larger value draws coarser casters, at the cost of the shadow's accuracy.
