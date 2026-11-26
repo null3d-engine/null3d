@@ -17,7 +17,9 @@ flowchart LR
     chain --> gpu["WebGPU or WebGL2"]
 ```
 
-`post.addFeatureEffect` runs an add-on's pass over the whole image. The add-on gives the WGSL, its uniforms and its textures, as it would to [`post.addEffect`](post.md). The description says where the pass records. It says what the pass reads and writes, and whether it draws at all. The engine places it in the chain of custom effects. That chain runs on the scene's high dynamic range color, after the exposure and before bloom and the tone curve. The pass therefore reaches WebGPU and WebGL2, in every thread mode, with the same picture.
+`post.addFeatureEffect` runs an add-on's pass over the whole image. The add-on gives the WGSL, its uniforms and its textures, as it would to [`post.addEffect`](post.md). The description says where the pass records. It says what the pass reads and writes, and whether it draws at all.
+
+The engine places it in the chain of custom effects. That chain runs on the scene's high dynamic range color, after the exposure and before bloom and the tone curve. The pass therefore reaches WebGPU and WebGL2, in every thread mode, with the same picture.
 
 This is the adapter for a [feature description](features.md) with `kind: 'fullscreen'`. The description carries the place, the resources and the readiness; the shader and its values are the pass's own declaration, which this call takes.
 

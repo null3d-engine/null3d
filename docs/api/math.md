@@ -118,7 +118,9 @@ const exact = createMath({ sin, cos, acos, exp }); // once, at load
 const turn = exact.quat.setAxisAngle(quat.create(), [0, 1, 0], 0.5);
 ```
 
-The entry leaves out the helpers that need a sine, a cosine, an arc cosine or an exponential, which `Math` computes differently on different engines. They are `quat.setAxisAngle`, `fromEuler`, `rotateX`, `rotateY`, `rotateZ` and `slerp`, `vec3.angle` and `math.damp`. The call `createMath({ sin, cos, acos, exp })` builds those eight on the functions that you pass, with the main entry's arithmetic. It also leaves out the random helpers, which start from `Math.random`, and `color`. [Using null3D with a deterministic simulation](../guides/deterministic-simulation.md) lists each sub-path's helpers, and says what else stays out of a simulation.
+The entry leaves out the helpers that need a sine, a cosine, an arc cosine or an exponential, which `Math` computes differently on different engines. They are `quat.setAxisAngle`, `fromEuler`, `rotateX`, `rotateY`, `rotateZ` and `slerp`, `vec3.angle` and `math.damp`. The call `createMath({ sin, cos, acos, exp })` builds those eight on the functions that you pass, with the main entry's arithmetic.
+
+It also leaves out the random helpers, which start from `Math.random`, and `color`. [Using null3D with a deterministic simulation](../guides/deterministic-simulation.md) lists each sub-path's helpers, and says what else stays out of a simulation.
 
 ## API reference
 

@@ -117,7 +117,9 @@ What the page does for such a label:
 
 ## Which frame the labels follow
 
-The engine draws a frame on one thread while the sketch computes the next one on another. A label placed from the sketch's current camera would run ahead of the image during a fast camera move. So the sketch places every label with the camera of each frame, as part of the frame's work. The thread that draws keeps the places of the frame it shows, and the page moves the elements to them. Each element therefore sits over its object in the frame on screen, in every thread mode. Where the page itself draws, it moves the elements right after it draws each frame, in the same update of the page.
+The engine draws a frame on one thread while the sketch computes the next one on another. A label placed from the sketch's current camera would run ahead of the image during a fast camera move. So the sketch places every label with the camera of each frame, as part of the frame's work.
+
+The thread that draws keeps the places of the frame it shows, and the page moves the elements to them. Each element therefore sits over its object in the frame on screen, in every thread mode. Where the page itself draws, it moves the elements right after it draws each frame, in the same update of the page.
 
 <details>
 <summary>Technical details: how labels stay in step with the frame</summary>
