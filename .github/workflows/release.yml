@@ -360,11 +360,14 @@ jobs:
           fi
           bun tools/shader-artifact.ts write \
             --tag "$VERSION" --repo "$GITHUB_REPOSITORY" --sha256 "$SHA256"
-      # Bun packs each package: its prepack script builds the JavaScript and declarations, and Bun
-      # writes the real version in place of each workspace: version, which npm cannot install. The
-      # check fails unless each tarball holds every file it needs.
+      # The pack tool builds each package's JavaScript and declarations once, and Bun packs it. Bun
+      # writes each workspace: version, which npm cannot install, as the version that bun.lock
+      # gives the sibling. The check fails unless each tarball holds every file it needs, carries
+      # the tag's version, and pins every sibling at that version, so a lockfile that the release
+      # left behind stops the job before npm. A version npm already has is skipped below, so a
+      # wrong version would otherwise pass without an error.
       - name: Pack and check every public package
-        run: bun tools/pack-packages.ts --out "$RUNNER_TEMP/npm"
+        run: bun tools/pack-packages.ts --out "$RUNNER_TEMP/npm" --version "$VERSION"
       - uses: actions/setup-node@v4
         with:
           node-version: 24
