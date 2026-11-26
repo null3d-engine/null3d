@@ -107,7 +107,7 @@ trees.positions[42 * 3 + 1] = 3; // move row 42
 trees.markDirty(42, 1); // upload one row, starting at row 42
 ```
 
-Each row has its own bounds, so culling works per instance. On WebGL2 the job workers test a static batch at rest in groups of 64 nearby rows. In a frame where you mark rows, and in the frame after it, they test the batch row by row, with no grid cell skipped. So a batch whose rows you mark in most frames gets neither saving.
+Each row has its own bounds, so culling works per instance. A batch whose rows you mark in most frames loses the WebGL2 savings, because a marked frame tests it row by row ([Culling](culling.md#how-each-path-culls) explains).
 
 On WebGPU, each moving row uploads its 48-byte world matrix in every frame, so 100,000 moving boxes upload 4.8 MB per frame. The same boxes standing still in a static batch upload no matrices after the first frame.
 
