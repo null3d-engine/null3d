@@ -49,7 +49,14 @@ export function stepShip(position: number[], heading: number[], thrust: number):
 }
 ```
 
-Never import `@null3d/engine` itself in simulation code. Bun 1.4.3 bundles six helpers from it into 9,133 bytes, against 1,202 bytes from the sub-paths. The rest is engine code that the simulation never calls, with a top-level `FinalizationRegistry`, which a replaying engine's scan refuses. A bundler that keeps each re-exported namespace whole brings far more. Bun 1.3.11 does, and its bundle of the same six takes 87,857 bytes, with `Atomics`, `document`, `navigator`, `requestAnimationFrame`, and helpers that call `Math.sin`, `Math.cos`, `Math.acos`, `Math.exp` and `Math.random`.
+Never import `@null3d/engine` itself in simulation code. A bundler that drops unused code still keeps engine code that runs at load, such as a `FinalizationRegistry`. A replay that checks the simulation's bundle for page-only APIs refuses it. A bundler that keeps whole namespaces also brings page APIs, and helpers that call `Math.sin` and `Math.random`.
+
+<details>
+<summary>Technical details: measured bundle sizes</summary>
+
+Bun 1.4.3 bundles six helpers from the full entry into 9,133 bytes, against 1,202 bytes from the sub-paths. Bun 1.3.11, which keeps whole re-exported namespaces, takes 87,857 bytes for the same six, with `Atomics`, `document`, `navigator`, `requestAnimationFrame`, and helpers that call `Math.sin`, `Math.cos`, `Math.acos`, `Math.exp` and `Math.random`.
+
+</details>
 
 The maths entry leaves out four groups:
 
@@ -60,7 +67,7 @@ The maths entry leaves out four groups:
 
 ## Angles and exponentials: createMath
 
-`createMath({ sin, cos, acos, exp })` returns the eight helpers that the maths entry leaves out, built on the four functions that you pass. Pass an exact math library's functions, which give the same bits on every JavaScript engine. clockwork2's `dmath` is one:
+`createMath({ sin, cos, acos, exp })` returns the eight helpers that the maths entry leaves out, built on the four functions that you pass. Pass an exact math library's functions, which give the same bits on every JavaScript engine. The `dmath` entry of the [@clockwork2/engine](https://www.npmjs.com/package/@clockwork2/engine) package is one, and the [deterministic simulation demo](https://github.com/null3d-engine/null3d/tree/main/examples/replay) uses it:
 
 ```ts
 // sim/turn.ts: simulation code
@@ -103,7 +110,7 @@ The sketch still draws with the main entry's helpers, which use the browser's `M
 
 ## Input that another library records
 
-`createEngine({ input: false })` keeps the engine from listening for input. The engine then adds no listener that takes input: none for pointers, keys, the wheel, focus, the pointer lock or gamepads. It captures no pointer on the canvas, and leaves the canvas's context menu to the browser. It keeps its listeners that take no input, such as the `visibilitychange` that keeps a hidden page's time out of the sketch's steps. [Input off](../api/input.md#input-off) lists them. The library that records the player's input listens alone.
+`createEngine({ input: false })` keeps the engine from listening for input. The engine then adds no listener that takes input: none for pointers, keys, the wheel, focus, the pointer lock or gamepads. [Input off](../api/input.md#input-off) lists them. The library that records the player's input listens alone.
 
 ```ts
 // page.ts
@@ -159,7 +166,9 @@ export function step(state: State, counts: number): void {
 
 ## Sending the state to the sketch
 
-The page sends the simulation's state with `engine.postToSketch`. The sketch takes it with `page.onMessage`, as [Messages between the page and the sketch](../api/page.md) shows, and draws it in `onUpdate`. Send only the numbers that the sketch draws, in a small typed array. Send a new array each time: a sketch on the page's thread gets the very array that the page sent. When the sketch runs in a worker, the browser copies each message's data.
+The page sends the simulation's state with `engine.postToSketch`. The sketch takes it with `page.onMessage`, as [Messages between the page and the sketch](../api/page.md) shows, and draws it in `onUpdate`.
+
+Send only the numbers that the sketch draws, in a small typed array. Send a new array each time: a sketch on the page's thread gets the very array that the page sent. When the sketch runs in a worker, the browser copies each message's data.
 
 Until the first state arrives, as in a held frame, the sketch can draw the run's start. It imports the simulation's start function and builds the first state from the same seed, and it never steps the state.
 
@@ -205,17 +214,30 @@ export default defineConfig({
 
 The game's module then imports `createEngine` and `SKETCH` from the folder's `entry.js`, and passes `SKETCH` as the `sketch` option. The plugin also writes `null3d-files.json`, which lists the files that the start loads and those of each feature, as [Hosting](../getting-started/hosting.md) describes.
 
-The shader modules decide most of the folder's size. Build only the shader permutation words that the game draws with:
+The shader modules decide most of the folder's size. Build only the shader permutation words that the game draws with. You need a clone of the null3D repository at the tag of your installed engine, such as `git checkout 0.1.0`, with the tools that the [README's Development section](../../README.md#development) lists. Modules from another version may not match the engine, and the plugin does not check.
 
 1. Record the words from a run of the game's page, as [Build only the shader permutations you draw with](assets-pipeline.md#build-only-the-shader-permutations-you-draw-with) shows. Name the game's pages with `--page`, or `--live` for a page that the recorder drives through its states. Record on both GPU paths, and at the low and high presets.
 2. In a checkout of null3D, build the shader modules from the list: `NULL3D_SHADER_PERMUTATIONS=<list> bun run shaders`. The checkout's `packages/engine/src/generated` then holds them.
 3. Build the game with `NULL3D_ENGINE_SHADERS` set to that folder, such as `NULL3D_ENGINE_SHADERS=<checkout>/packages/engine/src/generated bunx vite build`. The plugin then takes the narrowed modules in place of the full set.
 
-A game whose page module another build makes records differently from a sketch page. Its engine starts on a click, so name its page with `--live` and give the recorder the start control: `--click "#play"`. Its files folder is a production build, and a production build ignores `?permutations`, `?gpu` and `?preset`. Record against a development build of that folder (`vite build --mode development`). Then build the narrowed set, and rebuild the folder in production. A real game recorded this way drew with 5 words, and its folder held 300 files and 26 MB. The same folder built with the 172-word example list held 762 files and 226 MB.
+Build the set again after each engine upgrade.
 
-The shader modules in a release asset are the full set. A game that builds against that asset and names no list copies every module into its files folder. That can exceed the folder's file and byte limits. Narrow the set first.
+A game whose page module another build makes records differently from a sketch page. Its engine starts on a click, so name its page with `--live` and give the recorder the start control: `--click "#play"`. Its files folder is a production build, and a production build ignores `?permutations`, `?gpu` and `?preset`. Record against a development build of that folder (`vite build --mode development`). Then build the narrowed set, and rebuild the folder in production.
 
-A small game scene with three lanes and a ship drew with 5 words. Its folder held 297 files and 26,057,130 bytes, 4,737,421 after Brotli. The same folder built with the 172 words of null3D's examples held 759 files and 225,683,678 bytes. The full set of shader modules is 4,117,799,356 bytes. Record again after the game gains a feature that turns on a new word. The engine names a word that the set lacks the first time a pipeline needs it.
+The shader modules in a release asset are the full set. A game that builds against that asset and names no list copies every module into its files folder. That can exceed the host's limits on file count or file size. Narrow the set first.
+
+A small game scene with three lanes and a ship drew with 5 words. Its folder was about a ninth the size of one built with the 172 words of null3D's examples. Record again after the game gains a feature that turns on a new word. The engine names a word that the set lacks the first time a pipeline needs it.
+
+<details>
+<summary>Technical details: what a narrowed set saves</summary>
+
+| Shader set | Words | Files in the folder | Bytes | After Brotli |
+| --- | --- | --- | --- | --- |
+| Recorded from the game | 5 | 297 | 26,057,130 | 4,737,421 |
+| null3D's example list | 172 | 759 | 225,683,678 |  |
+| Full set of shader modules | all |  | 4,117,799,356 |  |
+
+</details>
 
 ## API reference
 

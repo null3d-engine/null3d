@@ -6,8 +6,6 @@ summary: "WGSL in sketch code; shader errors; surface functions; full shaders; u
 
 # Custom shaders
 
-> Custom materials with surface functions, vertex offsets, uniforms, textures and full shaders are built, and so is hot reload on the dev server.
-
 ```mermaid
 flowchart LR
     file["A .wgsl file<br/>that a module imports"] --> plugin["The null3D Vite plugin<br/>in vite and vite build"]
@@ -17,7 +15,7 @@ flowchart LR
     plugin -. "a problem" .-> error["An error at the file,<br/>line and column"]
 ```
 
-You write each null3D shader once, in WGSL. The null3D Vite plugin compiles the WGSL in your code while Vite serves or builds the project. Each shader becomes WGSL for WebGPU and GLSL ES 3.00 for WebGL2, so the page never downloads a shader translator.
+You write each null3D shader once, in WGSL. The null3D Vite plugin compiles the WGSL in your code while Vite serves or builds the project. Each shader becomes WGSL for WebGPU and GLSL ES 3.00 for WebGL2, so the page never downloads a shader translator. The examples on this page tag WGSL with a `/* wgsl */` comment. [WGSL in sketch code](#wgsl-in-sketch-code) gives the two forms and the rules of the tag.
 
 ## Custom materials
 
@@ -38,7 +36,7 @@ fn surface(input: SurfaceInput) -> Surface {
 const red = materials.shader({ wgsl: rings, color: '#e04040', roughness: 0.5 });
 ```
 
-The WGSL can declare uniforms as `struct Uniforms`, which `set()` changes at any time. It can declare textures as `var name: texture_2d<f32>;`, or texture arrays whose layers the shader picks as `var name: texture_2d_array<f32>;`, which the `textures` option gives. A vertex offset, `fn vertexOffset`, moves the mesh's vertices. A lobe, `fn lobe`, adds specular beside the base lobe for the main directional light and for each point and spot light. [Surface functions](../shaders/surface-functions.md) describes the surface input, the surface record, `defaultSurface`, uniforms, textures, vertex offsets and lobes. [Built-in shader inputs](../shaders/builtins.md) lists the values that every custom material reads, such as `frame.time`.
+The WGSL can declare uniforms as `struct Uniforms` and read each field as `material.name`, and `set()` changes them at any time. It can declare textures as `var name: texture_2d<f32>;`, or texture arrays whose layers the shader picks as `var name: texture_2d_array<f32>;`, which the `textures` option gives. A vertex offset, `fn vertexOffset`, moves the mesh's vertices. A lobe, `fn lobe`, adds specular beside the base lobe for the main directional light and for each point and spot light. [Surface functions](../shaders/surface-functions.md) describes the surface input, the surface record, `defaultSurface`, uniforms, textures, vertex offsets and lobes. [Built-in shader inputs](../shaders/builtins.md) lists the values that every custom material reads, such as `frame.time`.
 
 ## Full shaders
 
@@ -85,13 +83,26 @@ const ghost = materials.shader({ wgsl: hologram, doubleSided: true });
 The plugin takes WGSL as a full shader when its `@vertex` entry point takes an `InstanceIn`. The shader follows these rules:
 
 - It has one `@vertex` and one `@fragment` entry point.
-- The vertex entry point reads the mesh at the engine's locations. The position is at 0, the normal at 1, the first texture coordinates at 2 and the second at 3. The tangent is at 4, and the color at 5. The joints are at 6, as a `vec4u`, and the weights at 7. A mesh draws only when it has every attribute that the shader reads.
+- The vertex entry point reads the mesh at the engine's locations, in the table below. A mesh draws only when it has every attribute that the shader reads.
 - Pass the position through `mesh_position`, and texture coordinates through `mesh_uv` and `mesh_second_uv`, from `null3d::vertex`. They give the values that the mesh holds on every GPU path. WebGPU reads plain integer attributes as fractions, and these functions scale them back. Floats and normalized integers pass through unchanged.
 - It finds its instance with `InstanceIn` and `find_instance` from `null3d::mesh`. On each GPU path, the engine gives each instance's transform in its own way, and these hide the difference.
 - `null3d::mesh` also gives `clip_position(found, position)`, `relative_position(found, position)` and `world_normal(found, normal)`. Positions are relative to the camera, as in the engine's own shaders.
-- The fragment entry point writes its linear color through `finish(color, clip.xy)` from `null3d::mesh`, which prepares it for the engine's output. `finish` multiplies the color by the exposure, as the engine does with an unlit material's color. The engine exposes the frame's lights already. So a shader that adds their light writes that sum through `finish_exposed` instead.
+- The fragment entry point writes its linear color through `finish(color, clip.xy)` from `null3d::mesh`, which prepares it for the engine's output. `finish` multiplies the color by the exposure, as the engine does with an unlit material's color.
+- For color that the engine already exposed, such as the sum of the frame's lights, write it through `finish_exposed` instead.
 - `fill_builtins(origin)` from `null3d::builtins` fills `frame`, `camera` and `object` in a stage. Pass the object's origin relative to the camera, or zero when the shader does not read `object`.
-- The fixed options for faces and depth apply, such as `doubleSided` and `depthBias`. The standard values, uniforms and textures do not reach a full shader. `vertexColors` and the `mask` alpha mode change nothing. The shader reads the colors and discards pixels itself. The build stops at a texture that a full shader declares.
+- The options for faces and depth apply, such as `doubleSided` and `depthBias`.
+- The standard values, uniforms and textures do not reach a full shader. `vertexColors` and the `mask` alpha mode change nothing. The shader reads the colors and discards pixels itself. The build stops at a texture that a full shader declares.
+
+| Location | Attribute | WGSL type |
+| --- | --- | --- |
+| 0 | Position | `vec3f` |
+| 1 | Normal | `vec3f` |
+| 2 | First texture coordinates | `vec2f` |
+| 3 | Second texture coordinates | `vec2f` |
+| 4 | Tangent | `vec4f` |
+| 5 | Color | `vec4f` |
+| 6 | Joints | `vec4u` |
+| 7 | Weights | `vec4f` |
 
 ## WGSL in sketch code
 
@@ -109,17 +120,11 @@ The second form is a template literal after a `/* wgsl */` comment:
 ```ts
 // sketch.ts
 const glow = /* wgsl */ `
-#import null3d::color
-
-@vertex
-fn vs_main(@builtin(vertex_index) index: u32) -> @builtin(position) vec4f {
-    let corner = vec2f(f32((index << 1u) & 2u), f32(index & 2u));
-    return vec4f(corner * 2.0 - 1.0, 0.0, 1.0);
-}
-
-@fragment
-fn fs_main() -> @location(0) vec4f {
-    return vec4f(null3d::color::linear_to_srgb(vec3f(0.5)), 1.0);
+fn surface(input: SurfaceInput) -> Surface {
+    var s = defaultSurface(input);
+    let pulse = 0.5 + 0.5 * sin(input.uv.x * 12.0);
+    s.baseColor = mix(s.baseColor, vec3f(1.0, 0.6, 0.2), pulse);
+    return s;
 }
 `;
 ```
@@ -145,6 +150,8 @@ The plugin compiles these kinds of WGSL:
 
 WGSL that is neither stops the build with an error that says how to fix it.
 
+A sketch uses a whole shader only as a compute pass's shader ([Compute passes](custom-passes.md#compute-passes)). WGSL with `@vertex` and `@fragment` entry points draws only as a full shader, with an `InstanceIn` vertex input, or as a draw shader, with the vertex and instance indices. Other render pipelines are for the engine's own passes, and no public call takes them.
+
 The plugin compiles each shader once and caches the result, so a later build compiles only what changed. [Install null3D](../getting-started/install.md#shader-compiles-and-the-cache) says where the cache lives and how to ignore it.
 
 A shader can import the engine's library modules, such as `#import null3d::math`. The plugin resolves each import. [Shader library and imports](../shaders/library.md) lists the modules.
@@ -161,28 +168,33 @@ Each shader builds twice. The WebGPU build is WGSL. The WebGL2 build holds one G
 
 Both builds follow the [WGSL rules for portable shaders](../shaders/wgsl-rules.md). The rules page says what the build rejects, and what you must test on each path yourself.
 
-### Where a custom material's builds go
+You can use arrays in every form that WGSL allows; your WGSL does not change.
 
-A custom material has many builds: one for each variant of the standard material, on each GPU path. A device draws with a few of them. So the plugin does not put the builds in your module:
+<details>
+<summary>Technical details: how the WebGL2 build rewrites arrays</summary>
 
-- It puts them in small files of their own, one for each GPU path, each kind of device, and the builds that skin meshes. These are 4 files for WebGPU and 8 for WebGL2, named `material-*.js`. The files of a module hold the builds of all its custom materials, from one `.wgsl` file or from the tagged literals of one script. The text that the builds share is in each file once.
-- The material's value in your module holds only its uniforms, its textures, its vertex inputs and a function that imports a file.
-- When the sketch first uses the material, it downloads its device's file. The first frame waits for that file and for the material's pipelines, as it waits for any pipeline. A device downloads another file only when it needs one: the builds that skin, for the material's first skinned mesh, or the builds without tone mapping, when bloom or depth of field turns on.
-- In `vite build`, the files go into the assets folder with the build's other files. On the dev server, the plugin serves them from memory.
+A function can return an array, and an array can take values that are not constants, such as `array<vec3f, 2>(a, b)`. Some Android GPUs reject these forms in GLSL, so the WebGL2 build rewrites them. A function that returns an array gives it through an extra `out` parameter, and an array built from values fills one element at a time. The WebGPU build keeps it as you wrote it.
 
-For example, the battle comparison's sketch has 5 custom materials, and its module takes 5 KB. With every build in it, the module would take 1,504 KB, or 41 KB with Brotli compression. A device downloads a file of 235 to 346 KB, or 18 to 21 KB with Brotli, and one more for its skinned meshes. The thread that draws keeps 3 to 4 MB of shader text. Every build of the device's GPU path would take 7 MB on WebGPU and 27 MB on WebGL2.
+</details>
 
-### Where a custom effect's and a tone curve's builds go
+### Where the builds go
 
-A custom effect and a custom tone curve build into every variant of their template, on each GPU path. The plugin keeps their builds out of your module in the same way as a material's:
+A custom material, effect or tone curve builds into small files of its own, not your module. The sketch downloads its device's file on first use. The first frame waits for a material's file, and a pass or an effect draws nothing until its file arrives while the rest of the frame draws. Deploy every file that the build writes, or the engine stops with [E1424](../errors/E1424.md).
 
-- An effect or a curve gets one file for each GPU path, named `effect-*.js` or `curve-*.js`. Each holds the text that the builds share once.
-- Its value in your module holds its uniforms, its textures and a function that imports a file.
-- When the sketch first uses the effect or the curve, it downloads its device's file. A pass or an effect whose pipelines wait for it draws nothing until the file arrives, and the rest of the frame keeps drawing.
+For example, the battle comparison's sketch has 5 custom materials, and its module takes 5 KB. A device downloads one file of about 20 KB after Brotli compression, and one more for its skinned meshes.
 
-Deploy every file that the build writes. When a file that a device needs does not download, the engine stops drawing with [E1424](../errors/E1424.md).
+<details>
+<summary>Technical details: the build files and their sizes</summary>
 
-You can use arrays in every form that WGSL allows. A function can return an array, and an array can take values that are not constants, such as `array<vec3f, 2>(a, b)`. Some Android GPUs reject these forms in GLSL, so the WebGL2 build rewrites them. A function that returns an array gives it through an extra `out` parameter, and an array built from values fills one element at a time. Your WGSL does not change, and the WebGPU build keeps it as you wrote it.
+A custom material has many builds: one for each variant of the standard material, on each GPU path. The plugin puts them in files of their own, one for each GPU path, each kind of device, and the builds that skin meshes. These are 4 files for WebGPU and 8 for WebGL2, named `material-*.js`. The files of a module hold the builds of all its custom materials, from one `.wgsl` file or from the tagged literals of one script. The text that the builds share is in each file once.
+
+The material's value in your module holds only its uniforms, its textures, its vertex inputs and a function that imports a file. A device downloads another file only when it needs one: the builds that skin, for the material's first skinned mesh, or the builds without tone mapping, when bloom or depth of field turns on. In `vite build`, the files go into the assets folder with the build's other files. On the dev server, the plugin serves them from memory.
+
+A custom effect and a custom tone curve build into every variant of their template, on each GPU path. An effect or a curve gets one file for each GPU path, named `effect-*.js` or `curve-*.js`, and its value holds its uniforms, its textures and a function that imports a file.
+
+With every build in it, the battle comparison's module would take 1,504 KB, or 41 KB with Brotli compression. The device's file is 235 to 346 KB, or 18 to 21 KB with Brotli. The thread that draws keeps 3 to 4 MB of shader text. Every build of the device's GPU path would take 7 MB on WebGPU and 27 MB on WebGL2.
+
+</details>
 
 ## Shader errors
 
@@ -211,10 +223,17 @@ These rules apply:
 - A change to other code in the script file runs the module again, so Vite reloads the page as it does for any module.
 - WGSL that does not compile shows in Vite's overlay and in the terminal. The page keeps drawing with the last shader that compiled. The overlay closes when your fix compiles.
 - A change to the uniforms, the textures or the vertex attributes of a custom material reloads the page. So does a change between a surface function and a full shader, a vertex offset that you add or remove, and the scene inputs that the WGSL reads. The materials keep their values in a layout that these set, and a vertex offset gives a material the shaders of its shadows.
-- A whole shader reloads the page, because your own code draws it.
+- A compute pass's shader reloads the page.
 - A change to the WGSL of a custom post effect or a custom tone curve reloads the page.
 
-The plugin compiles WGSL on worker threads, so the dev server answers the page's other requests while a shader compiles. It starts one thread for each core but one, at most 8, and each takes about 20 MB. It splits each custom material's variants among the threads.
+The plugin compiles WGSL on worker threads, so the dev server answers the page's other requests while a shader compiles.
+
+<details>
+<summary>Technical details: how the plugin compiles on worker threads</summary>
+
+It starts one thread for each core but one, at most 8, and each takes about 20 MB. It splits each custom material's variants among the threads.
+
+</details>
 
 ## TypeScript
 

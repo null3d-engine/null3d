@@ -22,16 +22,18 @@ Physics in the sketch only moves what the player sees. A game whose server repla
 
 Two libraries work well in a sketch:
 
-| Library | Package | What it is |
-| --- | --- | --- |
-| Rapier | `@dimforge/rapier3d-compat` | A Rust engine compiled to WebAssembly. It is fast with many bodies. |
-| cannon-es | `cannon-es` | A JavaScript engine. It is small and simple to use. |
+| Library | Package | What it is | Download size |
+| --- | --- | --- | --- |
+| Rapier | `@dimforge/rapier3d-compat` | A Rust engine compiled to WebAssembly. It is fast with many bodies. | About 1.2 MB after Brotli compression |
+| cannon-es | `cannon-es` | A JavaScript engine. It is small and simple to use. | About 20 KB for the example on this page |
 
 Install one with Bun, as any other package:
 
 ```sh
 bun add @dimforge/rapier3d-compat@^0.20.0
 ```
+
+The `-compat` package holds Rapier's WebAssembly inside its JavaScript, so it needs no extra Vite setup. That is why it is large.
 
 ## Example: crates that fall on a floor
 
@@ -107,8 +109,6 @@ export default defineSketch(async ({ scene, geometry, materials }) => {
 - Gravity points along -Y, because Y points up in null3D. Rapier stores a rotation as a quaternion (x, y, z, w), as null3D does, so the loop copies the numbers as they are.
 - The rows are views of engine memory, so the copy costs no call to the engine per crate. A dynamic batch recomputes and uploads every row in each frame. [Instances and batching](../concepts/instances.md) explains the rows.
 - The floor never moves, so its mesh is static. A static mesh costs nothing in a frame where it does not change.
-
-The `-compat` package holds Rapier's WebAssembly inside its JavaScript, so it needs no extra Vite setup. That makes it large: it adds about 1.2 MB after Brotli compression to the sketch's download. With cannon-es, the example on this page adds about 20 KB.
 
 ## Step the world at a fixed rate
 

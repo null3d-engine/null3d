@@ -21,8 +21,16 @@ describe('the page of shaders that load on first use', () => {
 
 	it('gives each feature a row with the name that preload takes', () => {
 		const page = firstUsePage(['bloom', 'skinning'], { title: 'First use', summary: 'S' });
-		expect(page).toContain("| `'bloom'` | when `post.set` turns bloom on |");
+		expect(page).toContain("| `'bloom'` | when `post.set` turns bloom on |  |");
 		expect(page).toContain("| `'skinning'` |");
+		expect(page).toContain('## Post-processing');
+		expect(page).toContain('## Meshes and animation');
 		expect(page).toContain('generated: true');
+	});
+
+	it('prints the groups in their fixed order, with the engine tests last', () => {
+		const page = firstUsePage(['texcoords', 'bloom'], { title: 'First use', summary: 'S' });
+		expect(page.indexOf('## Post-processing')).toBeLessThan(page.indexOf('## Engine tests'));
+		expect(page).toContain('A page never needs these features.');
 	});
 });

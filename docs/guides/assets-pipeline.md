@@ -18,6 +18,14 @@ flowchart LR
 
 The `assets optimize` command makes glTF models smaller and faster to load and draw. It stores each mesh's vertices as small integers, in the order that the GPU reads them fastest. It stores each animation clip in the form the engine keeps in memory. It encodes each texture as a KTX2 file, which the GPU keeps compressed. Your files download less, take less GPU memory and upload in fewer frames. The command runs on your computer before you publish, from npm, with nothing else to install. The same files give the same output bytes on every computer.
 
+The command's sub-commands:
+
+- [`optimize`](#optimize-a-model): quantizes a model and encodes its textures.
+- [`convert`](#convert-other-formats): turns another format into glTF.
+- [`pack-orm`](#pack-occlusion-roughness-and-metalness): packs occlusion, roughness and metalness into one texture.
+- [`normal-from-bump`](#normal-maps-from-bump-maps): makes a normal map from a bump map.
+- [`env`](#environment-maps): filters an HDR image into an environment map.
+
 ## Optimize a model
 
 Give the command a model, or a folder of models, and a folder for the output:
@@ -58,10 +66,43 @@ scene.instantiate(ship);
 | `--texture-quality <size\|high>` | `high` encodes color and data maps in UASTC, several times larger than ETC1S, with less loss | `size` |
 | `--no-roughness-bake` | Leaves the roughness levels of metal-rough maps as plain averages, with no detail from the normal maps | [The roughness bake](#the-roughness-bake) |
 | `--compression <none\|meshopt>` | `none` leaves the file's buffers uncompressed | `meshopt` |
-| `--no-blockers` | Gives no mesh a blocker for software occlusion culling | Blockers for meshes that enclose space |
-| `--bvh <triangles>` | Stores the tree that raycasts walk for each mesh part of at least this many triangles, or for none with 0 | 20000 |
+| `--no-blockers` | Gives no mesh a blocker for software occlusion culling ([Blockers](#blockers)) | Blockers for meshes that enclose space |
+| `--bvh <triangles>` | Stores the tree that raycasts walk for each mesh part of at least this many triangles, or for none with 0 ([Stored raycast trees](#stored-raycast-trees)) | 20000 |
 | `--jobs <count>` | The worker threads that encode textures | One per CPU core |
 | `--report <file.json>` | Also writes the budget report as a JSON file | No file |
+
+The command writes no model that the engine would refuse to load. One array may hold at most 256 MiB, and one file may decode to at most 1 GiB ([Limits on each file](../concepts/assets.md#limits-on-each-file)). A model that passes a limit fails with an error that names it. Split such a scene into several files, each with a part of its meshes, and load each one with `assets.loadGltf()`.
+
+## In a Vite project
+
+A Vite project with the null3D plugin can encode a model as a module imports it, with no command of its own. The null3D Vite plugin runs the same steps on a model that a module imports with `?optimized`. The import gives the address of the optimized model:
+
+```ts
+// sketch.ts
+import shipUrl from './models/ship.glb?optimized';
+
+const ship = await assets.loadGltf(shipUrl);
+```
+
+The plugin uses the tool of `@null3d/cli`, so add the command-line tool to your project first. With Bun, use Bun 1.4.3 or newer ([Install null3D](../getting-started/install.md) says why):
+
+```sh
+bun add -d @null3d/cli
+```
+
+The first import of a model encodes it. The plugin keeps the result in `node_modules/.cache/null3d-assets`, keyed by the model's files, the tool's version and the options. Later starts and builds take it from there, until one of those changes. A production build writes the files into its assets folder. The plugin's `assets` option takes the command's options: `lod`, `clusters`, `stages` (the levels and bands as separate downloads, with `lod` or `clusters`), `simplify`, `simplifyError`, `maxTextureSize`, `textureQuality`, `roughnessBake` (false for `--no-roughness-bake`), `meshopt` (false for `--compression none`), `blockers` (false for `--no-blockers`) and `bvh`:
+
+```ts
+// vite.config.ts
+import null3d from '@null3d/vite-plugin';
+import { defineConfig } from 'vite';
+
+export default defineConfig({
+  plugins: [null3d({ assets: { lod: true, maxTextureSize: 1024, bvh: 5000 } })],
+});
+```
+
+For TypeScript, add `@null3d/vite-plugin/client` to the `types` of your `tsconfig.json`, so `?optimized` imports have the type `string`.
 
 ## What it does to meshes
 
@@ -102,6 +143,10 @@ For the Knight and its 76 clips, the file's binary part falls from 838 KB to 405
 
 ## Blockers and stored trees
 
+The file keeps both in extensions of the engine's own, which other loaders ignore: `NULL3D_occluder` and `NULL3D_mesh_bvh`. A file optimized again gets new ones.
+
+### Blockers
+
 On WebGL2, objects that block the view hide the objects behind them from the GPU, as [Culling](../concepts/culling.md#software-occlusion-culling-on-webgl2) explains. The command gives each mesh that encloses space a blocker: one or two boxes that fill its inside, joined into one closed surface. The engine draws the blocker in place of the mesh, for the cost of a few dozen triangles. A copy of the model blocks with those meshes from the start.
 
 A blocker that bulged out of its mesh would hide objects that show. So the command checks each blocker against the mesh's triangles, and drops one that fails:
@@ -121,9 +166,9 @@ The command takes the ground into account. The ground hides a model that stands 
 
 A mesh's glTF extras can override the choice. The extras `"occluder": false` give the mesh no blocker. The extras `"occluder": true` make a mesh without a blocker block with its own triangles, up to 4,096 of them. That suits a mesh that is solid but too thin for a box. In the scene, `scene.instantiate(model, { occluder: false })` keeps a copy's meshes from blocking. Later, `setOccluder` changes an object.
 
-Raycasts walk a tree over each mesh's triangles. The engine builds a mesh's tree on the job workers on the first query, in about 0.2 to 0.3 µs per triangle. The `--bvh` option stores the trees in the file instead, for each mesh part of at least that many triangles. A stored tree takes about 20 bytes per triangle, as much as the mesh's positions and indices together. meshopt compresses it to about 12. So a stored tree pays only for large meshes, whose build would hold up the first raycast. The engine checks each stored tree against the mesh in about a tenth of the time of a build. It builds its own tree where a stored one does not fit.
+### Stored raycast trees
 
-The file keeps both in extensions of the engine's own, which other loaders ignore: `NULL3D_occluder` and `NULL3D_mesh_bvh`. A file optimized again gets new ones.
+Raycasts walk a tree over each mesh's triangles. The engine builds a mesh's tree on the job workers on the first query, in about 0.2 to 0.3 µs per triangle. The `--bvh` option stores the trees in the file instead, for each mesh part of at least that many triangles. A stored tree takes about 20 bytes per triangle, as much as the mesh's positions and indices together. meshopt compresses it to about 12. So a stored tree pays only for large meshes, whose build would hold up the first raycast. The engine checks each stored tree against the mesh in about a tenth of the time of a build. It builds its own tree where a stored one does not fit.
 
 ## Textures
 
@@ -168,6 +213,10 @@ The bake skips a material, and the report says why, when:
 
 `--no-roughness-bake` turns the bake off.
 
+### Encode time
+
+Each texture encodes on its own worker thread, so a set of textures uses every CPU core. The same 40 sets, 144 textures in all, took 18 to 26 seconds on a MacBook Pro with 18 cores. A texture of 2048 x 2048 takes several seconds on its core. The command prints each model's time.
+
 ## Levels of detail
 
 `--lod` adds levels of detail to each mesh of 64 triangles or more. Each level has about half the triangles of the level above, down to about 32 triangles, in up to 15 levels. So a far copy that covers a few pixels draws a few dozen triangles. The levels stop early when a level would keep more than three quarters of the level above. They also stop when a level's error reaches the mesh's size.
@@ -182,7 +231,18 @@ The command plans the levels as follows:
 
 A simplified level shares the mesh's vertices, so only its indices add to the file. The engine loads such a level over the base mesh's own vertices too. The level then costs the GPU its indices alone. A card level stores its own positions, because its kept cards grew. Its position stream adds to the file, and the engine keeps a copy of it.
 
-The levels go into the file with `MSFT_lod`. Each node with levels stores the errors in its extras, as `NULL3D_lod_error`. A level is good enough where its error covers less than one pixel. The engine can then pick the level from the real screen height and the render scale. The loader switches these measured levels at once while the threshold stays small, because their switch does not show; the governor can raise the threshold past about one and a half pixels, where the level fades. The extras also hold `MSFT_screencoverage` for other readers of `MSFT_lod`, made for a screen 1080 pixels high. The loader reads that coverage as the mark of a measured error. A model whose file already has levels keeps them, with or without `--lod`. Their meshes take the steps of their base mesh, so they line up when drawn in its place. Their errors in `NULL3D_lod_error` change to those steps. A file that gives errors alone, without the coverage, holds levels whose author set the switches by hand. The loader fades those levels.
+Each node with levels stores the errors in its extras, as `NULL3D_lod_error`. A level is good enough where its error covers less than one pixel. The engine can then pick the level from the real screen height and the render scale. A file whose levels the command wrote keeps them, with or without `--lod`.
+
+<details>
+<summary>Technical details: how the file stores levels</summary>
+
+The levels go into the file with `MSFT_lod`. The extras also hold `MSFT_screencoverage` for other readers of `MSFT_lod`, made for a screen 1080 pixels high. The loader reads that coverage as the mark of a measured error. The loader switches these measured levels at once while the threshold stays small, because their switch does not show; the governor can raise the threshold past about one and a half pixels, where the level fades.
+
+A model whose file already has levels keeps them. Their meshes take the steps of their base mesh, so they line up when drawn in its place. Their errors in `NULL3D_lod_error` change to those steps. A file that gives errors alone, without the coverage, holds levels whose author set the switches by hand. The loader fades those levels.
+
+</details>
+
+[Fading between levels](../concepts/lod.md#fading-between-levels) explains the switch.
 
 A large mesh also gets pieces: `--lod` sorts each of its levels of 32,768 triangles or more into 8 to 16 runs that each face about one way, and stores each run's bounds in `NULL3D_pieces`. Each copy then skips the pieces of its level that lie outside the view or face away from the camera, as [Levels of detail](../concepts/lod.md#pieces-of-a-large-level) explains. Only the order of the triangles changes, so other viewers draw the same mesh.
 
@@ -200,7 +260,14 @@ The loader sets aside a stage that the camera never shows. The stage after the f
 
 The loader's `maxLevels` option stops the downloads after that many levels, the file's own counted first. A page whose camera never comes close enough to show the finest level sets it to 1, or to the number of levels that show. Other glTF readers draw the coarsest level, since the finer ones are not in the file.
 
-The same stage file layout carries a cluster tree's bands. A kind 1 stage holds one band. Its header comes first, then the patch count, each patch's sphere, run, parent and error, and last the band's indices. The model file holds the tree's first band, and that band draws the first picture. Each later band appends its patches below the patches that arrived before it. Parents come before children across the file and its bands. So the patches that a page holds always form a whole tree from the root. A patch whose children have not arrived draws where the camera is close, so the first picture is coarse. The first picture still covers the whole surface. `maxLevels` counts a band as it counts a level. The loader holds a band until a view draws a patch of the band above it.
+The same stage file layout carries a cluster tree's bands. The model file holds the tree's first band, and that band draws the first picture. Each later band appends its patches below the patches that arrived before it, so the patches that a page holds always form a whole tree from the root. `maxLevels` counts a band as it counts a level. The loader holds a band until a view draws a patch of the band above it.
+
+<details>
+<summary>Technical details: the stage file layout</summary>
+
+A kind 1 stage holds one band. Its header comes first, then the patch count, each patch's sphere, run, parent and error, and last the band's indices. Parents come before children across the file and its bands. A patch whose children have not arrived draws where the camera is close, so the first picture is coarse. The first picture still covers the whole surface.
+
+</details>
 
 ### Cluster levels
 
@@ -250,14 +317,14 @@ The default limit, a hundredth of each mesh's size, changes little that a viewer
 | `shader permutations` | The permutation bits that the model's materials and meshes turn on |
 | `shader files that load on first use` | The shader files that the engine downloads when it loads the model, one per feature it uses |
 | `draw buckets` | Each pipeline key that the model's draws need, with the objects that draw with it. Every object of one key shares one pipeline |
-| `warning` | Each quality preset whose texture memory budget the model's textures pass, with the memory that passes it |
+| `warning` | Each quality preset whose texture memory budget the model's textures pass, with the memory that passes it. Low and Medium count the ETC2 and ASTC bytes, as phones and tablets run them. High and Ultra count the BC7 bytes, as computers run them |
 | `blockers` | The meshes that got blockers, and their triangles |
 | `no blocker` | Each mesh that could block but got no blocker, with the reason |
 | `stored trees` | The mesh parts whose trees the file stores, and their bytes before compression |
 
 `--report` writes the same figures as JSON, with each texture's source size, output size and encode time.
 
-The command writes no model that the engine would refuse to load. One array may hold at most 256 MiB, and one file may decode to at most 1 GiB ([Limits on each file](../concepts/assets.md#limits-on-each-file)). A model that passes a limit fails with an error that names it. Split such a scene into several files, each with a part of its meshes, and load each one with `assets.loadGltf()`.
+The warning is a guide: a scene that loads several models adds their texture memory together.
 
 ## The shader list
 
@@ -269,40 +336,21 @@ The command knows which features and bits each model needs, because it has just 
 "NULL3D_shaders": { "permutations": ["VERTEX_COLOR", "ALPHA_MASK"], "features": ["cutout", "coverage"] }
 ```
 
-The engine reads the list as it loads the file and downloads those shader files beside the textures. It holds back a file that the page's settings cannot use. Alpha to coverage (`coverage`) needs MSAA, and a distance band's fading edges (`lod_fade`) need the `lodFade` setting, which Low turns off. A hand-set level's own fade needs the same shader file, whatever the setting, because its switch would pop without it. The list names `lod_fade` only for levels that fade: a level with a measured error, which comes with its screen coverage, switches at once while the threshold stays small, so a model whose levels the command cut names no fade file. A pipeline that needs a held feature still loads its file on first use, so the fade file downloads once the governor raises the threshold past the point where a measured switch shows. When the settings change to use one, its file downloads then. So `scene.warmUp()` builds only the pipelines that the model's objects need, and nothing new downloads while the game plays at a preset's own threshold. The list names only what the model itself decides. Bits that a device fixes, such as half precision, and bits that the scene decides, such as receiving shadows, are not part of it.
+The engine reads the list as it loads the file and downloads those shader files beside the textures. It holds back a file that the page's settings cannot use, and downloads it later if the settings change to use it. So `scene.warmUp()` builds the pipelines that the model's objects need, and nothing new downloads while the game plays at a preset's own threshold.
 
-The report ends with the list and the pipeline keys it gives. It warns for each quality preset whose texture memory budget the model's textures pass. Phones and tablets run the Low and Medium presets, where the textures take their ETC2 or ASTC bytes. Computers run High and Ultra, where they take their BC7 bytes. The warning is a guide: a scene that loads several models adds their texture memory together.
+<details>
+<summary>Technical details: which listed files the engine holds back</summary>
 
-## In a Vite project
+- Alpha to coverage (`coverage`) needs MSAA.
+- A distance band's fading edges (`lod_fade`) need the `lodFade` setting, which Low turns off.
+- A hand-set level's own fade always needs the `lod_fade` file, whatever the setting, because its switch would pop without it.
+- The list names `lod_fade` only for levels that fade. A level with a measured error switches at once while the threshold stays small, so a model whose levels the command cut names no fade file.
+- A pipeline that needs a held feature still loads its file on first use. So the fade file downloads once the governor raises the threshold past the point where a measured switch shows.
+- The list names only what the model itself decides. Bits that a device fixes, such as half precision, and bits that the scene decides, such as receiving shadows, are not part of it.
 
-The null3D Vite plugin runs the same steps on a model that a module imports with `?optimized`. The import gives the address of the optimized model:
+</details>
 
-```ts
-// sketch.ts
-import shipUrl from './models/ship.glb?optimized';
-
-const ship = await assets.loadGltf(shipUrl);
-```
-
-The plugin uses the tool of `@null3d/cli`, so add the command-line tool to your project first. With Bun, use Bun 1.4.3 or newer ([Install null3D](../getting-started/install.md) says why):
-
-```sh
-bun add -d @null3d/cli
-```
-
-The first import of a model encodes it. The plugin keeps the result in `node_modules/.cache/null3d-assets`, keyed by the model's files, the tool's version and the options. Later starts and builds take it from there, until one of those changes. A production build writes the files into its assets folder. The plugin's `assets` option takes the command's options: `lod`, `clusters`, `stages` (the levels and bands as separate downloads, with `lod` or `clusters`), `simplify`, `simplifyError`, `maxTextureSize`, `textureQuality`, `roughnessBake` (false for `--no-roughness-bake`), `meshopt` (false for `--compression none`), `blockers` (false for `--no-blockers`) and `bvh`:
-
-```ts
-// vite.config.ts
-import null3d from '@null3d/vite-plugin';
-import { defineConfig } from 'vite';
-
-export default defineConfig({
-  plugins: [null3d({ assets: { lod: true, maxTextureSize: 1024, bvh: 5000 } })],
-});
-```
-
-For TypeScript, add `@null3d/vite-plugin/client` to the `types` of your `tsconfig.json`, so `?optimized` imports have the type `string`.
+The report ends with the list and the pipeline keys it gives.
 
 ## Convert other formats
 
@@ -454,15 +502,11 @@ export default defineSketch(async ({ scene, assets }) => {
 
 [Lighting and environment](../concepts/lighting.md#environment-maps) says how the environment lights each surface.
 
-## Encode time
-
-Each texture encodes on its own worker thread, so a set of textures uses every CPU core. On a MacBook Pro with 18 cores, those 40 sets, 144 textures in all, took 18 to 26 seconds. A texture of 2048 x 2048 takes several seconds on its core. The command prints each model's time.
-
 ## Build only the shader permutations you draw with
 
 A production build can compile only the shader permutations that your scenes draw with, instead of every combination of every bit. That shortens the build and shrinks the set it writes. The build reads one file that lists the permutations as hexadecimal words, one on each line.
 
-The list belongs to one set of pages. A project that adds a scene records again, because the build compiles only what the list holds. A build without the list stays a full build, as before.
+The list belongs to one set of pages. A project that adds a scene records again, because the build compiles only what the list holds. `bun run build` without a list is a full build.
 
 A word leaves out the bits that a device fixes when it starts: the draw index, tone mapping in the shader and half precision. One list then serves every device module. A build compiles each word's builds for every value of those bits. Record both GPU paths, because a path's variants list a few bits of their own. WebGL2 has the morph targets, and WebGPU has the instance index.
 
@@ -476,7 +520,7 @@ bun tools/shader-permutations.ts --base https://localhost:5173 --pages demos
 
 The preview serves HTTPS by default. A secure origin is what makes WebGPU, and so the High and Ultra presets, available. `NULL3D_HTTPS=0` opts out to plain HTTP on the loopback. The recorder accepts the local certificate.
 
-The empty variable makes a full set, because the recording reads every word that the pages ask for. Without it, the build narrows to the list that a recorded run wrote.
+The empty variable makes `bun run examples:build` compile the full set, so the recording sees every word that the pages ask for. Without the variable, `examples:build` reads `examples/shader-permutations.txt` when that file exists.
 
 The recorder writes `examples/shader-permutations.txt`, and `bun run examples:build` reads it. Its `--page-root` names the address that the pages sit under. Use `/` for a preview of the built site, or `/examples/` for this repository's own dev server. A demo that draws more in a state its controls cannot reach enters that state through the recorder's own query. The island's pages record with its highest walker count. The recorder runs from a checkout of this repository, because it drives a browser through the repository's own page list and browser launcher. A project outside the repository runs it from such a checkout and names its pages with one `--page <path>` for each, instead of `--pages demos`.
 
@@ -488,7 +532,7 @@ Build with the list:
 NULL3D_SHADER_PERMUTATIONS=examples/shader-permutations.txt bun run build
 ```
 
-Without the variable, the build compiles every permutation, as before. With it, the build's cache keys and its input hash include the list, so a changed list builds again.
+Without the variable, or with it empty, `bun run build` compiles every permutation. With it, the build's cache keys and its input hash include the list, so a changed list builds again.
 
 Record again after a scene gains a feature that turns on a new permutation bit. The build then lacks that word. The engine fails with an error that names the word the first time a pipeline needs it, instead of drawing nothing. A path that a recording cannot reach, such as a feature that a visitor turns on later, goes into the list by hand:
 

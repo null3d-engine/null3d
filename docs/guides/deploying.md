@@ -54,30 +54,11 @@ Serve the page over HTTPS. WebGPU and shared memory need a secure page. Over pla
 
 ## Let browsers keep the files
 
-Vite names the files in `assets/` with a hash of their content, so a file under a given name never changes. Let browsers keep them for a year, and ask browsers to check the HTML page on each visit:
-
-```text
-/assets/*
-  Cache-Control: public, max-age=31536000, immutable
-/*.html
-  Cache-Control: no-cache
-```
-
-That is the `_headers` form for Netlify and Cloudflare Pages. Every engine thread loads its own copy of its scripts, so each copy after the first comes from the cache. Without these headers, each copy waits for a round trip.
-
-Send each `.wasm` file with `Content-Type: application/wasm`, with no parameter after it. Chrome then keeps the machine code that it compiled from the engine core. A repeat visit skips most of the compile ([Let Chrome keep the compiled core](../getting-started/hosting.md#let-chrome-keep-the-compiled-core)).
-
-Send no `Vary: Origin` header with the build's own files. A worker's request carries an `Origin` header that the page's request does not, so `Vary: Origin` makes the browser check the file again.
+Vite names the files in `assets/` with a hash of their content, so a file under a given name never changes. Let browsers keep those files for a year, and have them check the HTML page on each visit. Send `.wasm` files with `Content-Type: application/wasm`, so Chrome keeps the compiled core. [Hosting](../getting-started/hosting.md#let-browsers-keep-the-build-files) gives the headers for each host, and its [compiled core](../getting-started/hosting.md#let-chrome-keep-the-compiled-core) section gives the rule.
 
 ## Compress with Brotli
 
-Brotli shrinks the engine's files more than gzip does, because the engine's shader text repeats far apart. The engine core's WebAssembly file takes 1.9 MB as it is, about 0.8 MB with gzip and about 0.6 MB with Brotli.
-
-- Netlify, Cloudflare Pages and Vercel send Brotli to browsers that accept it.
-- GitHub Pages sends gzip only.
-- With nginx, compress each file in `dist/assets/` once with `brotli -q 11`, the `.wasm` files included. Then send them with the `ngx_brotli` module's `brotli_static on;`.
-
-Many servers compress only text, and send `.wasm` files as they are. Open the browser's network panel, and compare the core's transferred size with its size ([Send the files with Brotli](../getting-started/hosting.md#send-the-files-with-brotli)).
+Brotli shrinks the engine's files more than gzip does, because the engine's shader text repeats far apart. The engine core's WebAssembly file takes about 0.6 MB with Brotli. Compress every file of the build, `.wasm` included: Netlify, Cloudflare Pages and Vercel do it for you, and nginx needs `ngx_brotli`'s `brotli_static`. [Send the files with Brotli](../getting-started/hosting.md#send-the-files-with-brotli) gives each host's settings.
 
 ## Size budgets
 

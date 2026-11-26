@@ -6,7 +6,24 @@ summary: "One package with one entry; claim a namespace and the plugin interface
 
 # Building an add-on
 
-An add-on is a package that adds a feature above the engine's public API. It has one install and one import, and it reaches the engine only through the engine's public entry points. The engine's own add-ons work the same way. `bunx @null3d/cli check-addon` runs these rules on a folder before a listing publishes it.
+An add-on is a package that adds a feature above the engine's public API. It has one install and one import, and it reaches the engine only through the engine's public entry points. The engine's own add-ons work the same way. `bunx @null3d/cli check-addon` runs gates on a folder before a listing publishes it. [The `null3d` command](../cli/null3d.md#check-addon) lists them. The sections on names, entry points, shaders, file sizes and the preset cost each have a gate. The sections on Rust and levels of detail are advice that no gate checks.
+
+## Choose a way to add drawing
+
+| What you want to draw | The call | Where in the frame it runs | GPU paths | The page |
+| --- | --- | --- | --- | --- |
+| A surface's look, with the engine's lighting | a surface function | in the material's draw | both | [Surface functions](../shaders/surface-functions.md) |
+| A material with WGSL of its own from end to end | `materials.shader` | in the object's draw | both | [Custom shaders](custom-shaders.md) |
+| A full-screen effect over the scene color | `post.addEffect` | after the scene passes, before bloom | both | [Custom passes and render targets](custom-passes.md) |
+| A scene drawn from another camera | `render.addPass` with `kind: 'scene'` | before the passes that show its texture | both | [Render graph API](../api/render.md) |
+| A full-screen pass into a texture | `render.addPass` with `kind: 'fullscreen'` | before the passes that read its texture | both | [Render graph API](../api/render.md#full-screen-passes) |
+| A compute pass | `render.addPass` with `kind: 'compute'` | before the passes that read its texture | WebGPU, with a WebGL2 fallback | [Render graph API](../api/render.md#compute-passes) |
+| A draw from a vertex count | `scene.createVertexDraw` | with the scene's draws | both | [Vertex draws](../api/vertex-draws.md) |
+| A draw from a feature | `scene.addFeatureDraw` | with the scene's draws | both | [Feature draws](../api/feature-draws.md) |
+| A full-screen pass from a feature | `post.addFeatureEffect` | after the scene passes | both | [Feature effects](../api/feature-effects.md) |
+| Instances whose count the GPU writes | `scene.addComputeInstances` | with the scene's draws | WebGPU | [Feature instances](../api/feature-instances.md) |
+
+Tasks (`runTask`) are the CPU side, not a draw: they run on the job workers ([Tasks on the job workers](../api/tasks.md)).
 
 ## Claim the add-on's names
 
@@ -26,9 +43,19 @@ declareAddonNamespace({
 });
 ```
 
-The name takes lowercase letters, digits and underscores, and starts with a letter. The package names the module that owns the add-on, and it gives the same value every time the add-on loads, so a development reload takes back its namespace. A second add-on that takes the name is refused. The engine owns `null3d`, and codes below 2000 are the engine's own. The engine refuses a name or a code that another add-on holds.
+The name rules:
 
-The plugin interface version changes only when a stable hook changes, so an add-on can span many engine releases. A page whose engine lies outside the declared range stops with [E1433](../errors/E1433.md) before it draws. The message names the add-on, the range and the engine's interface. The version is `PLUGIN_INTERFACE_VERSION` in the engine that the add-on builds against. Widen the range only after the add-on works with the wider interface.
+- lowercase letters, digits and underscores, starting with a letter;
+- `null3d` belongs to the engine;
+- error codes from 2000 to 9999, with the engine's codes below 2000;
+- a held name, package or code range throws [E1225](../errors/E1225.md);
+- a reload with the same package takes back its namespace.
+
+A second add-on that takes a name is refused. [Namespaces](../api/features.md#namespaces) gives the full rules.
+
+The plugin interface version changes only when a stable hook changes, so an add-on can span many engine releases. A page whose engine lies outside the declared range stops with [E1433](../errors/E1433.md) before it draws.
+
+The message names the add-on, the range and the engine's interface. The version is `PLUGIN_INTERFACE_VERSION` in the engine that the add-on builds against. Widen the range only after the add-on works with the wider interface.
 
 The engine's own add-ons leave the range out and pin the engine version exactly with `checkAddonVersion`, because they ship in step with the engine.
 
@@ -48,11 +75,20 @@ Keep setup, options, the public API and event handling in TypeScript. They run o
 
 An add-on's meshes get levels of detail as a page's meshes do, with no call of the add-on's own. A far copy then draws a few dozen triangles instead of its full mesh. The engine hides a copy that covers less than a pixel.
 
-A mesh from `geometry.fromArrays` or a generator plans its levels at its first draw. It plans when it holds 4,096 triangles or more, or when it holds at least 256 and its copies hold 65,536 together. The plan runs on the job workers with the asset tool's planner. The levels keep their measured errors, so they switch in at once while the threshold stays small, and fade once the governor raises it past about one and a half pixels ([Levels of detail](../concepts/lod.md#levels-of-meshes-made-in-code)). They name the mesh's own vertices, so the mesh keeps its vertex and triangle order, which raycasts and `updateVertices` read.
+The engine plans a mesh's levels when the mesh is large enough. A mesh from `geometry.fromArrays` or a generator plans them at its first draw. The levels keep the mesh's vertex and triangle order, which raycasts and `updateVertices` read ([Levels of detail](../concepts/lod.md#levels-of-meshes-made-in-code)).
+
+<details>
+<summary>Technical details: when a mesh plans its levels</summary>
+
+It plans when it holds 4,096 triangles or more, or when it holds at least 256 and its copies hold 65,536 together. The plan runs on the job workers with the asset tool's planner. The levels keep their measured errors, so they switch in at once while the threshold stays small, and fade once the governor raises it past about one and a half pixels.
+
+</details>
 
 So make every mesh through `fromArrays` or a generator, and leave its `levels` option out. Arrays that a task of the add-on builds on a job worker go to `fromArrays` too, and the mesh then plans as any other. An add-on that returns arrays, such as a shape generator, leaves the mesh, and its levels, to the page.
 
-Do not ask for levels mesh by mesh. The default picks the meshes whose levels save GPU time. A small mesh drawn a few times gains little, and each level adds draw work. `levels: true` and `await mesh.buildLevels()` plan at any size. Use `buildLevels()` to plan again after `updateVertices` gives a mesh a new shape, or to await the levels in a test. The one exception is a mesh of separate leaf cards. It asks for `levels: { cards: true }`, so each level thins its cards rather than dropping whole small pieces.
+Do not ask for levels mesh by mesh. The default picks the meshes whose levels save GPU time.
+
+`levels: true` and `await mesh.buildLevels()` plan at any size. Use `buildLevels()` to plan again after `updateVertices` gives a mesh a new shape, or to await the levels in a test. The one exception is a mesh of separate leaf cards. It asks for `levels: { cards: true }`, so each level thins its cards rather than dropping whole small pieces.
 
 Opt a mesh out with `levels: false` only where levels are wrong for it, and say why in a comment beside the mesh:
 
@@ -64,9 +100,24 @@ Opt a mesh out with `levels: false` only where levels are wrong for it, and say 
 | It keeps one size on the screen | Its levels would never switch | Gizmo handles |
 | Its vertices change in every frame | The levels would measure a shape that the next frame replaces | None |
 
-The engine refuses planned levels by itself in a few cases. A mesh with joints, morph targets or a vertex record (`targets`) plans none, and so does a mesh that lies flat. A mesh that a material with a displacement map or a custom `vertexOffset` draws drops its planned levels. The first `updateVertices` drops them too. Levels that `mesh.setLevels` gives win over the plan, so a mesh with hand-made levels, such as a generated plant's, gets no planned levels on top. Still pass `levels: false` for a mesh of the table, so the code states the decision where the mesh is made.
+The engine refuses planned levels by itself in some cases:
 
-The asset tool also sorts a large level into pieces ([Pieces of a large level](../concepts/lod.md#pieces-of-a-large-level)). Each copy skips the pieces that the view leaves out or that face away. A mesh made in code gets pieces with its planned levels, so an add-on that takes the default gets them with no change. A smaller mesh that many copies draw, such as a building kit's walls, gets a piece for each way it faces. It gets them even when its levels are set by hand or come from a file that holds it once. A mesh with `levels: false` gets none. Some large meshes take no levels but span the view, such as a merged far cell. Such a mesh asks for `levels: 'pieces'`, which sorts it into pieces by space alone.
+- a mesh with joints, morph targets or a vertex record (`targets`);
+- a flat mesh;
+- a mesh that a material with a displacement map or a custom `vertexOffset` draws;
+- the first `updateVertices`;
+- levels that `mesh.setLevels` gives.
+
+A mesh that `mesh.setLevels` gives hand-made levels gets no planned levels on top, such as a generated plant's. Still pass `levels: false` for a mesh of the table, so the code states the decision where the mesh is made.
+
+A mesh made in code gets pieces with its planned levels, so an add-on that takes the default gets them with no change. Each copy skips the pieces that the view leaves out or that face away. A mesh with `levels: false` gets none. A large mesh that takes no levels but spans the view, such as a merged far cell, asks for `levels: 'pieces'`, which sorts it into pieces by space alone ([Pieces of a large level](../concepts/lod.md#pieces-of-a-large-level)).
+
+<details>
+<summary>Technical details: which meshes get pieces</summary>
+
+A smaller mesh that many copies draw, such as a building kit's walls, gets a piece for each way it faces. It gets them even when its levels are set by hand or come from a file that holds it once.
+
+</details>
 
 ## Follow the preset and show the cost
 
@@ -110,11 +161,18 @@ The null3D Vite plugin compiles each `.wgsl` file that the add-on imports, for W
 
 The engine's start stays small, and so does an add-on's. The files that the add-on loads after the first frame hold to a budget in each of three columns: raw bytes, gzip and Brotli. The check warns about each file that goes over its budget, with each column and its figure. An add-on is a choice, so an over-budget file does not fail the check.
 
-A custom material's, a custom effect's and a custom tone curve's compiled builds load on first use, in files of their own. Those files take the budget for shader builds, which is larger than the budget for code. Not all compiled WGSL leaves the entry, though. A whole shader's or a sky layer's builds sit in the file that imports them, and so do an effect's pieces. The check counts those bytes as shader data, and holds them to the budget for shader builds. A file that holds both therefore answers both budgets. [Custom shaders](custom-shaders.md#where-a-custom-materials-builds-go) shows the files.
+A custom material's, a custom effect's and a custom tone curve's compiled builds load on first use in files of their own. Those files take the budget for shader builds, which is larger than the budget for code ([Custom shaders](custom-shaders.md#where-the-builds-go)).
+
+<details>
+<summary>Technical details: how the size gate counts shader bytes</summary>
+
+Not all compiled WGSL leaves the entry, though. A whole shader's or a sky layer's builds sit in the file that imports them, and so do an effect's pieces. The check counts those bytes as shader data, and holds them to the budget for shader builds. A file that holds both therefore answers both budgets.
+
+</details>
 
 ## Name a page
 
-The browser gates open a page of the add-on's project. The check takes the page of the first test in `null3d.json`, or the page that `--page` names:
+The page, cost and allocation gates open a page of the add-on's project in a browser. The check takes the page of the first test in `null3d.json`, or the page that `--page` names:
 
 ```json
 { "tests": [{ "name": "demo", "page": "/index.html", "hold": 1.5 }] }
@@ -146,7 +204,14 @@ Use `--skip-browser` on a machine that has no GPU or no browser. Use `--skip-cos
 
 The cost figures are measured, and the check prints them; it does not compare them with a number that the add-on claims. The page builds for production, so the figures match what a user gets.
 
-The allocation gate counts the bytes that the add-on's own code allocates in each frame, on each quality preset. It reads the heaps of the page's sketch worker and render worker, and names each function by its source file. A place counts as the add-on's own when its source file is in the add-on's folder, or in the add-on's copy under `node_modules`. The gate prints the page's figure beside it. A frame that allocates feeds the browser's garbage collector, so aim at zero. The gate fails only when it cannot measure the add-on's code, such as on a page that runs none of the add-on's files.
+The allocation gate counts the bytes that the add-on's own code allocates in each frame, on each quality preset. Aim at zero, since a frame that allocates feeds the garbage collector. The gate fails only when it cannot measure the add-on's code.
+
+<details>
+<summary>Technical details: how the allocation gate measures</summary>
+
+It reads the heaps of the page's sketch worker and render worker, and names each function by its source file. A place counts as the add-on's own when its source file is in the add-on's folder, or in the add-on's copy under `node_modules`. The gate prints the page's figure beside it.
+
+</details>
 
 ## Related pages
 
@@ -154,3 +219,8 @@ The allocation gate counts the bytes that the add-on's own code allocates in eac
 - [E1433](../errors/E1433.md): the error for an add-on built for another plugin interface.
 - [Custom shaders](custom-shaders.md): the WGSL that an add-on can use.
 - [Custom passes and render targets](custom-passes.md): the engine's public hooks for extra drawing.
+- [Feature descriptions](../api/features.md): one description of the render work.
+- [Feature draws](../api/feature-draws.md): a draw from a feature.
+- [Feature effects](../api/feature-effects.md): a full-screen pass from a feature.
+- [Feature instances](../api/feature-instances.md): instances whose count the GPU writes.
+- [Tasks on the job workers](../api/tasks.md): work on the job workers.
