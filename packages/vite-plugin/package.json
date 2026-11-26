@@ -1,6 +1,6 @@
 {
 	"name": "@null3d/vite-plugin",
-	"version": "0.0.0",
+	"version": "0.1.0",
 	"description": "Vite plugin for null3D projects: cross-origin isolation headers, HTTPS for testing on phones and tablets, WGSL compiled for WebGPU and WebGL2, glTF models optimized on import, and production builds that compile the sketch module and ship the engine core.",
 	"license": "MIT OR Apache-2.0",
 	"author": "Ramesh Nair (https://hiddentao.com)",
