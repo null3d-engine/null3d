@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'bun:test';
 import { parseShaderList } from '../../vite-plugin/src/shader-list.ts';
 import {
-	listText,
 	RECORD_GPUS,
 	RECORD_PRESETS,
 	readExtraWords,
@@ -9,7 +8,8 @@ import {
 	recordTargets,
 	scrollToEnd,
 } from './shader-record.js';
-import { parseRecordArgs, WRITER } from './shaders.js';
+import { listText, WRITER } from './shader-words.js';
+import { parseRecordArgs } from './shaders.js';
 
 describe('recordTargets', () => {
 	it('holds each page at each preset on each GPU path', () => {
@@ -131,6 +131,10 @@ describe('parseRecordArgs', () => {
 		expect(options.held).toEqual(['/', '/game.html']);
 		expect(options.live).toEqual(['/story.html']);
 		expect([options.scroll, options.click, options.extra]).toEqual([true, '#play', [0x10]]);
+	});
+
+	it("writes the run's words alone with --replace", () => {
+		expect(parseRecordArgs(['--replace']).replace).toBe(true);
 	});
 
 	it('refuses a full address as a page, a base that is no address, and a scroll without a live page', () => {

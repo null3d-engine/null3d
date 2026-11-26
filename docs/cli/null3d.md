@@ -568,8 +568,9 @@ bunx @null3d/cli shaders record --base http://localhost:8080 --live /game.html -
 | `--click <selector>` | An element to press after each page loads, for a page whose engine starts on a click | No element is pressed |
 | `--extra <words>` | Words to add by hand, as hexadecimal numbers joined by commas, such as `0x10,0x14` | Only the recorded words |
 | `--out <file>` | The list to write | `shader-permutations.txt` |
+| `--replace` | Writes the run's words alone | The words join those that the list holds |
 
-The command loads up to four pages at once in a headless browser, each with the engine's recording switch, `?permutations=record`. A held page publishes its words once its held frame has drawn. The recorder stops a live page once it has driven it through its states, and then the page publishes its words. A page that fails gets a second try. A second failure stops the run with the page's errors, so no list leaves out a page's words. The list holds each word that any page asked for, in order:
+The command loads up to four pages at once in a headless browser, each with the engine's recording switch, `?permutations=record`. A held page publishes its words once its held frame has drawn. The recorder stops a live page once it has driven it through its states, and then the page publishes its words. A page that fails gets a second try. A second failure stops the run with the page's errors, so no list leaves out a page's words. The run's words join those that the list holds already. So each level or mode can be recorded in a run of its own into one list. The list holds each word once, in order:
 
 ```text
 # The permutation words that this project draws with, one hexadecimal word on each line.

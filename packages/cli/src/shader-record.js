@@ -5,6 +5,7 @@
 // and the repository's own recorder both run this module.
 import { setTimeout as sleep } from 'node:timers/promises';
 import { switchedPath } from './page.js';
+import { recordedWords } from './shader-words.js';
 
 /** @import { Browser, Page } from 'playwright-core' */
 
@@ -29,7 +30,6 @@ const LIVE_MS = 5000;
 
 /** How long a page may take to load, and to start or publish its words, in ms. */
 const LOAD_MS = 120_000;
-const PUBLISH_MS = 240_000;
 
 /**
  * A scroll step waits until the page has asked for nothing for this long, in ms. A scene stage that
@@ -50,12 +50,6 @@ const SCROLL_STEPS = 200;
  * @property {boolean} live True for a live page, which the recorder drives through its states and
  *   then stops.
  * @property {boolean} [scroll] True for a live page that the recorder scrolls to its end.
- */
-
-/**
- * The page's record of the words that a recording collected, and the stop of a live page.
- *
- * @typedef {{ __null3dPermutations?: number[], __null3dStopRecording?: () => void }} Recorded
  */
 
 /**
@@ -113,26 +107,6 @@ export function readExtraWords(text) {
 				);
 			return Number.parseInt(digits, 16);
 		});
-}
-
-/**
- * The text of a list of words: a header that names the tool that wrote it, then one word on each
- * line, as eight hexadecimal digits after `0x`, in order.
- *
- * @param {Iterable<number>} words
- * @param {string} writer The command that wrote the list, such as `bunx @null3d/cli shaders record`.
- */
-export function listText(words, writer) {
-	// The word without any bit set is a word like another: the builds of compute passes,
-	// pre-passes and full-screen passes carry it, so a list that left it out would leave those
-	// passes without a shader.
-	const sorted = [...new Set([...words].map((word) => word >>> 0))].sort((a, b) => a - b);
-	return `${[
-		'# The permutation words that this project draws with, one hexadecimal word on each line.',
-		`# Written by ${writer}. A word added by hand keeps the run working`,
-		'# where a path cannot be recorded.',
-		...sorted.map((word) => `0x${word.toString(16).padStart(8, '0')}`),
-	].join('\n')}\n`;
 }
 
 /**
@@ -276,7 +250,9 @@ async function recordPage(browser, base, target, { click, log }) {
 			// The engine puts the stop on the page once it starts, so the words are read after the
 			// page has offered its controls.
 			await tab.waitForFunction(
-				() => /** @type {Recorded} */ (globalThis).__null3dStopRecording !== undefined,
+				() =>
+					/** @type {{ __null3dStopRecording?: unknown }} */ (globalThis).__null3dStopRecording !==
+					undefined,
 				undefined,
 				{ timeout: LOAD_MS, polling: 250 },
 			);
@@ -285,16 +261,8 @@ async function recordPage(browser, base, target, { click, log }) {
 			const picks = await sweepHud(tab);
 			if (picks > 0) log(`${target.path}: pressed ${picks} controls`);
 			if (target.scroll) log(`${target.path}: scrolled ${await scrollToEnd(tab, watch)} steps`);
-			await tab.evaluate(() => /** @type {Recorded} */ (globalThis).__null3dStopRecording?.());
 		}
-		await tab.waitForFunction(
-			() => /** @type {Recorded} */ (globalThis).__null3dPermutations !== undefined,
-			undefined,
-			{ timeout: PUBLISH_MS, polling: 500 },
-		);
-		const found = /** @type {number[]} */ (
-			await tab.evaluate(() => /** @type {Recorded} */ (globalThis).__null3dPermutations)
-		);
+		const found = await recordedWords(tab);
 		log(`${target.path}: ${found.length} words`);
 		return found;
 	} catch (error) {

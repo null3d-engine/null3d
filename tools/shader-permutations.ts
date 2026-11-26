@@ -17,17 +17,16 @@
 // showcase scene's controls HUD, so the words those states turn on reach the list. Pages of a
 // project's own are named with repeated `--page <path>` arguments instead, which record in hold mode
 // at each preset on both GPU paths, and a page that the run drives through its states with
-// `--live <path>`. `--scroll` scrolls each live page to its end. `--extra` adds words by hand, as
+// `--live <path>`. `--scroll` scrolls each live page to its end. The script writes the recorded
+// words alone, so a word that no page draws leaves the list. `--extra` adds words by hand, as
 // hexadecimal numbers, for a path that the recording cannot reach. `--click` presses a selector
 // after each page loads, for a page whose engine starts on a click, such as a game page with a Play
 // button. The pages must be served with a development build of the engine, or one built with the
 // plugin's `urlSwitches`: a production build ignores `?gpu`, `?preset` and `?permutations`, so it
 // records nothing.
-import { writeFileSync } from 'node:fs';
 import { DEMOS } from '../examples/demos.ts';
 import { defaultEnvironment } from '../packages/cli/src/browser.js';
 import {
-	listText,
 	RECORD_GPUS,
 	RECORD_PRESETS,
 	type RecordTarget,
@@ -35,6 +34,7 @@ import {
 	recordTargets,
 	recordWords,
 } from '../packages/cli/src/shader-record.js';
+import { writeWordList } from '../packages/cli/src/shader-words.js';
 import { launchRepoBrowser } from '../tests/lib/chrome-for-testing.ts';
 
 /**
@@ -102,5 +102,9 @@ try {
 } finally {
 	await browser.close();
 }
-writeFileSync(out, listText(words, 'bun tools/shader-permutations.ts'));
-console.log(`wrote ${words.length} words to ${out}`);
+// The demos' list holds what the demos draw now, so a word that no demo draws leaves it.
+const list = writeWordList(out, words, {
+	replace: true,
+	writer: 'bun tools/shader-permutations.ts',
+});
+console.log(`wrote ${list.words.length} words to ${out}, ${list.added} of them new`);

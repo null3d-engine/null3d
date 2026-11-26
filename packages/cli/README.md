@@ -14,7 +14,7 @@ The tool has nine commands:
 - `assets` prepares models and textures. `optimize` quantizes glTF meshes and encodes KTX2 textures. `convert` turns FBX, OBJ, STL and PLY files into glTF. The `pack-orm` and `normal-from-bump` commands make material maps, and `env` makes environment maps from HDR images. The `impostor` command bakes the atlases of `@null3d/impostors` cards from a model.
 - `mcp` runs a Model Context Protocol server for your running scene. A coding agent lists and changes its objects, captures a frame, and reads its frame figures, errors and render graph.
 - `upgrade` moves every null3D package in your `package.json` to one version, so that an add-on and the engine never mix two versions.
-- `shaders record` writes the list of the shader permutation words that your pages draw with. The Vite plugin's `shaders.list` option names it, and a production build then copies only those words' shader builds, not the engine's whole set.
+- `shaders record` writes the list of the shader permutation words that your pages draw with. The Vite plugin's `shaders.list` option names it, and a production build then copies only those words' shader builds, not the engine's whole set. Each run adds to the list.
 
 ```sh
 bunx @null3d/cli create my-game

@@ -1,14 +1,14 @@
 // null3d shaders record: records the permutation words that the project's pages draw with, and
-// writes them to a list. The Vite plugin's `shaders.list` option names the list, and a production
+// adds them to a list. The Vite plugin's `shaders.list` option names the list, and a production
 // build then copies only the shader builds of those words, rather than every build of the engine's
 // shader set. The pages load in a headless browser with the engine's recording switch: each held
 // page at the low and high presets on both GPU paths, and each live page on both GPU paths.
-import { writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { readArguments, UsageError } from './args.js';
 import { defaultEnvironment, launchBrowser } from './browser.js';
 import { startDevServer } from './server.js';
-import { listText, readExtraWords, recordTargets, recordWords } from './shader-record.js';
+import { readExtraWords, recordTargets, recordWords } from './shader-record.js';
+import { writeWordList } from './shader-words.js';
 import { shownPath } from './text.js';
 
 const OPTIONS = /** @type {const} */ ({
@@ -19,15 +19,13 @@ const OPTIONS = /** @type {const} */ ({
 	click: { type: 'string' },
 	out: { type: 'string', default: 'shader-permutations.txt' },
 	extra: { type: 'string' },
+	replace: { type: 'boolean', default: false },
 	help: { type: 'boolean', short: 'h', default: false },
 });
 
-/** The command that writes a list, as the list's header names it. */
-export const WRITER = 'bunx @null3d/cli shaders record';
-
 export const HELP = `Usage: bunx @null3d/cli shaders record [options]
 
-Records the permutation words that the project's pages draw with, and writes them to a list, one
+Records the permutation words that the project's pages draw with, and adds them to a list, one
 hexadecimal word on each line. Name the list in the Vite plugin's options, as
 null3d({ shaders: { list: 'shader-permutations.txt' } }). A production build then copies only the
 shader builds of those words. Without a list, it copies the engine's whole shader set, which is
@@ -36,7 +34,8 @@ thousands of files and gigabytes.
 Each page loads with the engine's recording switch. A held page loads in hold mode at the low and
 high quality presets, on WebGPU and on WebGL2. A live page loads on both GPU paths, draws for five
 seconds, and the recorder presses every button of its controls HUD, when it has one. Without
---page or --live, it records / both ways.
+--page or --live, it records / both ways. The words join those that the list holds already, so
+each level or mode can be recorded in a run of its own.
 
 Options:
   --base <url>              The address of a server that serves the pages with a development
@@ -56,6 +55,7 @@ Options:
   --extra <words>           Words to add by hand, as hexadecimal numbers joined by commas, such as
                             0x10,0x14, for a state that no page reaches while it records
   --out <file>              The list to write (shader-permutations.txt)
+  --replace                 Write the recorded words alone, rather than adding them to the list
 
 Record again after the project gains a feature that draws with a new word. A production build that
 lacks a word fails its pipeline with a message that names the word. It draws with Chrome for
@@ -72,6 +72,7 @@ with Playwright's Chromium on SwiftShader, the software GPU of machines without 
  * @property {string | undefined} click The element to press after each page loads.
  * @property {number[]} extra The words to add by hand.
  * @property {string} out The list to write, from the current folder.
+ * @property {boolean} replace True to write the recorded words alone.
  * @property {boolean} help True to print the help instead.
  */
 
@@ -95,7 +96,7 @@ function readPath(option, path) {
  */
 export function parseRecordArgs(args) {
 	const { values } = readArguments(args, OPTIONS, false);
-	const { base, click, out, help, scroll } = values;
+	const { base, click, out, help, scroll, replace } = values;
 	if (base !== undefined && !/^https?:\/\//.test(base))
 		throw new UsageError(`--base takes an address such as https://localhost:5173, not "${base}"`);
 	const held = (values.page ?? []).map((path) => readPath('--page', path));
@@ -117,6 +118,7 @@ export function parseRecordArgs(args) {
 		click,
 		extra,
 		out,
+		replace,
 		help,
 	};
 }
@@ -149,20 +151,14 @@ export async function run(args) {
 		const browser = await launchBrowser(defaultEnvironment());
 		let words;
 		try {
-			words = await recordWords({
-				browser,
-				base,
-				targets,
-				click: options.click,
-				extra: options.extra,
-			});
+			words = await recordWords({ browser, base, targets, click: options.click });
 		} finally {
 			await browser.close();
 		}
 		const out = resolve(options.out);
-		writeFileSync(out, listText(words, WRITER));
+		const list = writeWordList(out, [...words, ...options.extra], { replace: options.replace });
 		console.log(
-			`Wrote ${words.length} words to ${shownPath(out)}. Name it in the Vite plugin's options: null3d({ shaders: { list: '${options.out}' } })`,
+			`Wrote ${list.words.length} words to ${shownPath(out)}, ${list.added} of them new. Name it in the Vite plugin's options: null3d({ shaders: { list: '${options.out}' } })`,
 		);
 		return 0;
 	} finally {

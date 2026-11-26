@@ -490,6 +490,8 @@ bunx @null3d/cli shaders record --page / --extra 0x00000010
 
 `0x00000010` is the alpha mask bit, for a masked material that a visitor's action shows. A word that you add by hand leaves out the device bits, as the recorded words do.
 
+Each run adds its words to the list that `--out` names, once each, in order. So each level or mode of a game can be recorded in a run of its own into one list. The `--replace` option writes the run's words alone, for a list that starts afresh.
+
 ### Build with the list
 
 Name the list in the plugin's options. The path is relative to Vite's root:
