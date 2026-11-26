@@ -53,10 +53,18 @@ const DECLARATION = /^(fn|struct|const)\s+([A-Za-z_]\w*)/;
 
 /** The text of consecutive comment lines that start with `marker`, as one paragraph. */
 function commentText(lines: readonly string[], marker: '///' | '//'): string {
-	return lines
-		.map((line) => line.trim().slice(marker.length).trim())
-		.join(' ')
-		.trim();
+	const out: string[] = [];
+	for (const raw of lines) {
+		const line = raw.trim().slice(marker.length).trim();
+		if (!line) {
+			if (out.length > 0 && out[out.length - 1] !== '') out.push('');
+			continue;
+		}
+		const previous = out.at(-1);
+		if (previous !== undefined && previous !== '') out[out.length - 1] = `${previous} ${line}`;
+		else out.push(line);
+	}
+	return out.join('\n').trim();
 }
 
 /** Where the declaration that starts at `start` ends: its closing line. */
