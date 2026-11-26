@@ -41,6 +41,7 @@ pub const LENS: Perspective = Perspective {
     fov_degrees: 60.0,
     near: 0.1,
     far: 100.0,
+    shift: [0.0; 2],
 };
 
 pub struct World<B: FrameBuilder = GpuDrivenRenderer> {
@@ -668,6 +669,7 @@ pub const WIDE_LENS: Perspective = Perspective {
     fov_degrees: 70.0,
     near: 0.5,
     far: 1500.0,
+    shift: [0.0; 2],
 };
 
 impl<B: FrameBuilder> World<B> {

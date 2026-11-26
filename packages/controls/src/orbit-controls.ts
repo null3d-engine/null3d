@@ -791,7 +791,8 @@ export class OrbitControls {
 	/**
 	 * Aims the frame's zoom at the point of the canvas in `zoomPoint`, in CSS pixels: the direction
 	 * from the camera through it, from the camera's pose before the frame moves it. It leaves the
-	 * point in `zoomPoint` as -1 to 1 across the canvas. The callers write the point there rather
+	 * point in `zoomPoint` as its place across the camera's view, -1 to 1 for a lens without a
+	 * shift, which a lens shift moves by twice its share. The callers write the point there rather
 	 * than pass it, because a call that takes a fraction as an argument can store it in a new
 	 * object on each frame.
 	 */
@@ -799,8 +800,9 @@ export class OrbitControls {
 		const { width, height } = this.viewport;
 		if (!(width > 0 && height > 0)) return;
 		const { zoomPoint, dollyDirection, right, up, back, camera } = this;
-		const nx = ((zoomPoint[0] as number) / width) * 2 - 1;
-		const ny = 1 - ((zoomPoint[1] as number) / height) * 2;
+		const shift = camera.lensShift;
+		const nx = ((zoomPoint[0] as number) / width) * 2 - 1 + 2 * shift[0];
+		const ny = 1 - ((zoomPoint[1] as number) / height) * 2 + 2 * shift[1];
 		zoomPoint[0] = nx;
 		zoomPoint[1] = ny;
 		this.cursorZoom = true;
@@ -1053,19 +1055,23 @@ export class OrbitControls {
 		const { camera, position, right, up, back, ndc } = this;
 		const ground = this.values[GROUND] as number;
 		// The point's offset from the camera in its own plane: a perspective ray leaves the eye
-		// through it, and an orthographic ray leaves it straight ahead.
+		// through it, and an orthographic ray leaves it straight ahead. A lens shift moves the view
+		// by twice its share of the view's half sizes.
+		const shift = camera.lensShift;
+		const viewX = (ndc[0] as number) + 2 * shift[0];
+		const viewY = (ndc[1] as number) + 2 * shift[1];
 		let across: number;
 		let upward: number;
 		if (camera.isOrthographic) {
 			const fixedWidth = camera.width;
 			const halfHeight = camera.height / 2;
 			const halfWidth = fixedWidth === undefined ? (halfHeight * width) / height : fixedWidth / 2;
-			across = (ndc[0] as number) * halfWidth;
-			upward = (ndc[1] as number) * halfHeight;
+			across = viewX * halfWidth;
+			upward = viewY * halfHeight;
 		} else {
 			const tan = Math.tan((camera.fov * Math.PI) / 360);
-			across = (ndc[0] as number) * tan * (width / height);
-			upward = (ndc[1] as number) * tan;
+			across = viewX * tan * (width / height);
+			upward = viewY * tan;
 		}
 		const ax = (right[0] as number) * across + (up[0] as number) * upward;
 		const ay = (right[1] as number) * across + (up[1] as number) * upward;

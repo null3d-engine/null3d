@@ -19,6 +19,9 @@ pub struct Perspective {
     pub fov_degrees: f32,
     pub near: f32,
     pub far: f32,
+    /// The lens shift: how far the view sits right of and above the camera's axis, as fractions of
+    /// the view's width and height. See [`shift_clip`].
+    pub shift: [f32; 2],
 }
 
 /// An orthographic camera's lens: a box-shaped view, in which an object keeps its size at every
@@ -37,6 +40,9 @@ pub struct Orthographic {
     /// camera, since an orthographic view has no vanishing point.
     pub near: f32,
     pub far: f32,
+    /// The lens shift: how far the view sits right of and above `center`, as fractions of the
+    /// view's width and height. See [`shift_clip`].
+    pub shift: [f32; 2],
 }
 
 /// How a camera projects the scene onto its target.
@@ -147,6 +153,24 @@ pub fn view_matrix(world: &Affine) -> Mat4 {
     ]
 }
 
+/// Moves the image of the projection `m` by `offset` in normalized device coordinates, after the
+/// perspective division: each clip coordinate gains the offset times its w. The image keeps its
+/// perspective, as a real camera's shift lens keeps it, so a shifted view is a crop of a wider
+/// view of the same camera. A lens shift of `(x, y)`, in fractions of the view's width and height,
+/// is the offset `(-2x, -2y)`: the view moves right and up, so the scene moves left and down.
+pub fn shift_clip(m: &mut Mat4, offset: [f32; 2]) {
+    for column in 0..4 {
+        let w = m[column * 4 + 3];
+        m[column * 4] += offset[0] * w;
+        m[column * 4 + 1] += offset[1] * w;
+    }
+}
+
+/// The offset in normalized device coordinates of a lens shift of `shift`, for [`shift_clip`].
+fn shift_offset(shift: [f32; 2]) -> [f32; 2] {
+    [-2.0 * shift[0], -2.0 * shift[1]]
+}
+
 /// The product `a × b` of two column-major matrices: `b` applied first.
 pub fn multiply(a: &Mat4, b: &Mat4) -> Mat4 {
     let mut out = [0.0; 16];
@@ -161,7 +185,10 @@ pub fn multiply(a: &Mat4, b: &Mat4) -> Mat4 {
 impl Perspective {
     /// The projection matrix for a target of `aspect`, its width over its height.
     pub fn projection(&self, aspect: f32) -> Mat4 {
-        perspective_reversed(self.fov_degrees.to_radians(), aspect, self.near, self.far)
+        let mut m =
+            perspective_reversed(self.fov_degrees.to_radians(), aspect, self.near, self.far);
+        shift_clip(&mut m, shift_offset(self.shift));
+        m
     }
 }
 
@@ -172,18 +199,28 @@ impl Orthographic {
         let half_height = self.height / 2.0;
         let half_width = self.width.unwrap_or(self.height * aspect) / 2.0;
         let [x, y] = self.center;
-        orthographic_reversed(
+        let mut m = orthographic_reversed(
             x - half_width,
             x + half_width,
             y - half_height,
             y + half_height,
             self.near,
             self.far,
-        )
+        );
+        shift_clip(&mut m, shift_offset(self.shift));
+        m
     }
 }
 
 impl Lens {
+    /// The lens shift, in fractions of the view's width and height.
+    pub fn shift(&self) -> [f32; 2] {
+        match self {
+            Lens::Perspective(lens) => lens.shift,
+            Lens::Orthographic(lens) => lens.shift,
+        }
+    }
+
     /// The projection matrix for a target of `aspect`, its width over its height.
     pub fn projection(&self, aspect: f32) -> Mat4 {
         match self {
@@ -322,9 +359,16 @@ pub fn invert(m: &Mat4) -> Option<Mat4> {
 mod tests {
     #[test]
     fn a_projection_times_its_inverse_is_the_identity() {
+        let shifted = Lens::Perspective(Perspective {
+            fov_degrees: 50.0,
+            near: 0.1,
+            far: 500.0,
+            shift: [0.3, -0.45],
+        });
         let lenses = [
             perspective_reversed(1.0, 16.0 / 9.0, 0.1, 500.0),
             orthographic_reversed(-4.0, 6.0, -2.0, 3.0, -5.0, 50.0),
+            shifted.projection(16.0 / 9.0),
         ];
         for projection in lenses {
             let inverse = invert(&projection).unwrap();
@@ -369,7 +413,18 @@ mod tests {
             center,
             near: 1.0,
             far: 10.0,
+            shift: [0.0; 2],
         })
+    }
+
+    impl Lens {
+        /// The same lens with the shift `shift`.
+        fn with_shift(self, shift: [f32; 2]) -> Lens {
+            match self {
+                Lens::Perspective(lens) => Lens::Perspective(Perspective { shift, ..lens }),
+                Lens::Orthographic(lens) => Lens::Orthographic(Orthographic { shift, ..lens }),
+            }
+        }
     }
 
     #[test]
@@ -471,6 +526,82 @@ mod tests {
     }
 
     #[test]
+    fn a_shifted_view_is_the_matching_crop_of_a_wider_view() {
+        // A wide view, and the view of one rectangle of its image: the rectangle's lens is as much
+        // narrower as the rectangle is smaller, and its shift moves it onto the rectangle's middle.
+        // Every point lands at the same place of the wide image through both, and at the same
+        // depth. The rectangle spans x from -0.2 to 0.7 and y from -0.9 to 0.1 of the wide image's
+        // normalized device coordinates.
+        let (aspect, sub_aspect) = (1.6, 1.6 * 0.9);
+        let ([x0, x1], [y0, y1]) = ([-0.2f32, 0.7], [-0.9f32, 0.1]);
+        let (half_x, half_y) = ((x1 - x0) / 2.0, (y1 - y0) / 2.0);
+        let (middle_x, middle_y) = ((x0 + x1) / 2.0, (y0 + y1) / 2.0);
+        let shift = [middle_x / (2.0 * half_x), middle_y / (2.0 * half_y)];
+        let tan = (25f32).to_radians().tan();
+        let pairs = [
+            (
+                Lens::Perspective(Perspective {
+                    fov_degrees: 50.0,
+                    near: 0.2,
+                    far: 90.0,
+                    shift: [0.0; 2],
+                }),
+                Lens::Perspective(Perspective {
+                    fov_degrees: 2.0 * (tan * half_y).atan().to_degrees(),
+                    near: 0.2,
+                    far: 90.0,
+                    shift,
+                }),
+            ),
+            (
+                ortho(8.0, None, [1.0, -2.0]),
+                ortho(8.0 * half_y, None, [1.0, -2.0]).with_shift(shift),
+            ),
+        ];
+        let world: Affine = [0.0, 0.0, 1.0, 3.0, 0.0, 1.0, 0.0, 4.0, -1.0, 0.0, 0.0, 10.0];
+        for (wide, narrow) in pairs {
+            let wide = wide.view_projection(&world, aspect);
+            let narrow = narrow.view_projection(&world, sub_aspect);
+            for p in [[-4.0, 3.0, 9.5], [-1.0, 4.0, 10.0], [-12.0, 1.0, 13.0]] {
+                let [wx, wy, wz, ww] = transform(&wide, p);
+                let [nx, ny, nz, nw] = transform(&narrow, p);
+                let cropped = [(wx / ww - middle_x) / half_x, (wy / ww - middle_y) / half_y];
+                assert_close(&[nx / nw, ny / nw], &cropped, 1e-4);
+                assert_close(&[nz / nw], &[wz / ww], 1e-5);
+            }
+        }
+    }
+
+    #[test]
+    fn a_lens_shift_matches_three_js_s_view_offset_on_a_full_view() {
+        // setViewOffset(width, height, x, y, width, height) moves the frustum's edges by x and y
+        // pixels' share of its width and height, with y down: a lens shift of (x / width,
+        // -y / height). Its projection then holds (right + left) / (right - left) and the same of
+        // top and bottom in the third column.
+        let lens = Lens::Perspective(Perspective {
+            fov_degrees: 40.0,
+            near: 0.5,
+            far: 100.0,
+            shift: [120.0 / 800.0, -(-90.0) / 600.0],
+        });
+        let m = lens.projection(800.0 / 600.0);
+        let top = 0.5 * (20f32).to_radians().tan();
+        let half_width = top * 800.0 / 600.0;
+        let left = -half_width + 2.0 * half_width * 120.0 / 800.0;
+        let right = left + 2.0 * half_width;
+        let upper = top - 2.0 * top * -90.0 / 600.0;
+        let lower = upper - 2.0 * top;
+        assert_close(
+            &[m[8], m[9]],
+            &[
+                (right + left) / (right - left),
+                (upper + lower) / (upper - lower),
+            ],
+            1e-6,
+        );
+    }
+
+    #[test]
     fn the_view_matrix_inverts_the_world_transform() {
         // A camera at (1, 2, 3), turned 90 degrees about +Y, then scaled by 2.
         let world: Affine = [0.0, 0.0, 2.0, 1.0, 0.0, 2.0, 0.0, 2.0, -2.0, 0.0, 0.0, 3.0];
@@ -494,6 +625,7 @@ mod tests {
             fov_degrees: 50.0,
             near: 0.1,
             far: 500.0,
+            shift: [0.0; 2],
         });
         let orthographic = Lens::Orthographic(Orthographic {
             height: 30.0,
@@ -501,6 +633,7 @@ mod tests {
             center: [2.0, -1.0],
             near: -5.0,
             far: 500.0,
+            shift: [0.0; 2],
         });
         // A camera at (3, 4, 10), turned 90 degrees about +Y.
         let world: Affine = [0.0, 0.0, 1.0, 3.0, 0.0, 1.0, 0.0, 4.0, -1.0, 0.0, 0.0, 10.0];
@@ -521,6 +654,7 @@ mod tests {
             fov_degrees: 50.0,
             near: 0.5,
             far: 80.0,
+            shift: [0.0; 2],
         });
         // A camera at (3, 4, 10), turned 90 degrees about +Y, so it looks down -X, and scaled 2.
         let world: Affine = [0.0, 0.0, 2.0, 3.0, 0.0, 2.0, 0.0, 4.0, -2.0, 0.0, 0.0, 10.0];
@@ -546,6 +680,7 @@ mod tests {
             fov_degrees: 60.0,
             near: 0.1,
             far: 100.0,
+            shift: [0.0; 2],
         });
         for lens in [perspective, ortho(4.0, None, [0.0, 0.0])] {
             let clip = transform(&lens.view_projection(&at([0.0, 0.0, 5.0]), 2.0), [0.0; 3]);
@@ -561,6 +696,7 @@ mod tests {
             fov_degrees: 60.0,
             near: 0.1,
             far: 100.0,
+            shift: [0.0; 2],
         });
         // Turned 90 degrees about +Y and scaled by 2: it looks down -X, so +X points back at it.
         let world: Affine = [0.0, 0.0, 2.0, 7.0, 0.0, 2.0, 0.0, 8.0, -2.0, 0.0, 0.0, 9.0];

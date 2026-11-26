@@ -3,7 +3,9 @@
 // a point in the world in each frame, as a camera's autofocus does. Meanwhile a dolly zoom runs:
 // the lens goes from 35 to 85 mm while the camera backs away, so the board keeps its size and the
 // string lights behind it swell into wide discs of light. The blur takes the camera's focal
-// length, so it always matches the framing.
+// length, so it always matches the framing. The shifted framing moves the board to one side with
+// a lens shift, as for a title beside it, and keeps the perspective that turning the camera would
+// change.
 import { defineSketch, type MeshOptions, math, vec3 } from '@null3d/engine';
 import { interact } from '../lib/interact';
 
@@ -30,7 +32,7 @@ const LAMP = { position: [-0.6, 0.9, 0.5], target: [0, 0, 0], range: 4, angle: 0
 const SUBJECT = [0, 0.03, -0.05] as const;
 
 export default defineSketch(async (ctx) => {
-	const { scene, assets, geometry, materials, textures, post, quality, time } = ctx;
+	const { scene, assets, geometry, materials, textures, post, quality, time, input, page } = ctx;
 	scene.setBackground('#0a0807');
 	scene.setEnvironment(await assets.builtinEnvironment('room'), { intensity: 0.35 });
 	scene.setFog({ color: '#0a0807', density: 0.25 });
@@ -51,6 +53,16 @@ export default defineSketch(async (ctx) => {
 	const camera = scene.createPerspectiveCamera({ near: 0.01, far: 50, position: [0, 0.1, 0.4] });
 	scene.setActiveCamera(camera);
 	const view = interact(ctx, camera, { target: SUBJECT, groundY: 0.01, surfaces: true });
+	// The framing: a lens shift of a fifth of the width moves the board right of the middle.
+	let shifted = false;
+	const frame = (on: boolean) => {
+		shifted = on;
+		camera.setLensShift(on ? -0.2 : 0, 0);
+	};
+	input.actions.define({ framing: ['KeyL'] });
+	page.onMessage((name, value) => {
+		if (name === 'framing') frame(value === 'Shifted');
+	});
 
 	// The board: walnut and maple squares with a fine grain, in a darker frame, on a table.
 	const data = new Uint8Array(128 * 128 * 4).fill(255);
@@ -120,6 +132,10 @@ export default defineSketch(async (ctx) => {
 				camera.lookAt(SUBJECT[0], SUBJECT[1], SUBJECT[2]);
 			}
 			view.update(dt);
+			if (input.wasPressed('framing')) {
+				frame(!shifted);
+				page.post('toast', `Lens shift: ${shifted ? 'on' : 'off'}`);
+			}
 			// The focus racks between the pawn and the king, with a smooth pull between them.
 			const rack = math.smoothstep(Math.sin((Math.PI * t) / RACK), -0.6, 0.6);
 			vec3.lerp(focus, near, far, rack);

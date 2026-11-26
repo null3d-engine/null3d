@@ -286,6 +286,7 @@ describe('the grass batches', () => {
 			fov: 90,
 			near: 0.5,
 			far: 300,
+			lensShift: [0.25, -0.5],
 			getWorldMatrix(out: Float64Array) {
 				out.set([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 1, 2, 3, 1]);
 			},
@@ -340,8 +341,8 @@ describe('the grass batches', () => {
 		if (!made[0]) throw new Error('the blade list made no draw');
 		expect((made[0].options.uniforms as Record<string, number>).cull).toBe(1);
 		// The pass's values hold the camera's place, its right, up and forward with its lens, then
-		// the tufts that the preset draws, the material that the rows read, and the data texture's
-		// width. The camera looks down its own -z, at the origin turned.
+		// the tufts that the preset draws, the material that the rows read, the data texture's width
+		// and the far plane. The camera looks down its own -z, at the origin turned.
 		const values = passes[0]?.values as number[];
 		expect(values.slice(0, 4)).toEqual([1, 2, 3, 1]);
 		expect(values.slice(4, 7)).toEqual([1, 0, 0]);
@@ -351,6 +352,9 @@ describe('the grass batches', () => {
 		expect(values[15]).toBe(0.5);
 		expect(values.slice(16, 19)).toEqual([100, 7, 2048]);
 		expect(values[19]).toBe(300);
+		// Then the middle of the shifted view, across and up per unit along it.
+		expect(values[20]).toBeCloseTo((2 * 0.25 * 960) / 540, 12);
+		expect(values[21]).toBeCloseTo(-1, 12);
 		// The tuft data holds two texels for each tuft.
 		const data = uploads.find((upload) => upload.width === 2048);
 		if (!data) throw new Error('the blade list wrote no tuft texture');

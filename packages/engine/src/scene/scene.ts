@@ -70,6 +70,8 @@ import {
 	LENS_HALF_WIDTH,
 	LENS_NEAR,
 	LENS_ORTHO,
+	LENS_SHIFT_X,
+	LENS_SHIFT_Y,
 	type Ray,
 } from './frame-cameras';
 import {
@@ -1907,6 +1909,8 @@ export abstract class Camera extends Object3D {
 	layers: number = C.LAYERS_DEFAULT;
 	/** @internal The lens as the frame cameras keep it, which `updateLens` writes. */
 	readonly lens = new Float64Array(LENS_FLOATS);
+	/** @internal The lens shift across and up, which `lensShift` gives. */
+	protected readonly shift: [number, number] = [0, 0];
 
 	/** @internal */
 	constructor(
@@ -1951,6 +1955,34 @@ export abstract class Camera extends Object3D {
 		}
 		this.nearPlane = near;
 		this.farPlane = far;
+		this.scene.lensChanged(this);
+	}
+
+	/**
+	 * The lens shift: how far the view sits right of and above the camera's axis, as fractions of the
+	 * view's width and height. The array is the camera's own and changes with `setLensShift`, so
+	 * copy it to keep a value.
+	 */
+	get lensShift(): readonly [number, number] {
+		return this.shift;
+	}
+
+	/**
+	 * Moves the view off the camera's axis, as a shift lens on a real camera does: right by `x`
+	 * times the view's width, and up by `y` times its height. The perspective stays as it is, so the
+	 * image is a crop of a wider view from the same place. A shift of 0.25 across puts the camera's
+	 * axis, and a `target` it looks at, a quarter of the width left of the middle. Culling,
+	 * shadows, picking, `screenToRay`, `worldToScreen`, views and labels all follow the shifted
+	 * view. The default is no shift. It allocates nothing.
+	 */
+	setLensShift(x: number, y: number): void {
+		if (DEV) {
+			checkLive('setLensShift', this);
+			checkNumber('setLensShift', 'x', x, this);
+			checkNumber('setLensShift', 'y', y, this);
+		}
+		this.shift[0] = x;
+		this.shift[1] = y;
 		this.scene.lensChanged(this);
 	}
 
@@ -2002,6 +2034,16 @@ export abstract class Camera extends Object3D {
 		this.writeLensShape(lens);
 		lens[LENS_NEAR] = this.nearPlane;
 		lens[LENS_FAR] = this.farPlane;
+		lens[LENS_SHIFT_X] = this.shift[0];
+		lens[LENS_SHIFT_Y] = this.shift[1];
+	}
+
+	/** @internal Gives a copy of this camera the layers and the lens shift that this one has. */
+	protected copyLensTo(twin: Camera): void {
+		twin.layers = this.layers;
+		twin.shift[0] = this.shift[0];
+		twin.shift[1] = this.shift[1];
+		twin.updateLens();
 	}
 
 	/** @internal Writes the lens's kind, its view's size and its center into `lens`. */
@@ -2091,7 +2133,7 @@ export class PerspectiveCamera extends Camera {
 			this.near,
 			this.far,
 		);
-		twin.layers = this.layers;
+		this.copyLensTo(twin);
 		return twin;
 	}
 
@@ -2101,6 +2143,8 @@ export class PerspectiveCamera extends Camera {
 		values[0] = this.verticalFov;
 		values[1] = this.near;
 		values[2] = this.far;
+		values[3] = this.shift[0];
+		values[4] = this.shift[1];
 		core.glue.setPerspectiveCamera(this.handle, layers, target);
 	}
 }
@@ -2174,7 +2218,7 @@ export class OrthographicCamera extends Camera {
 			this.near,
 			this.far,
 		);
-		twin.layers = this.layers;
+		this.copyLensTo(twin);
 		return twin;
 	}
 
@@ -2188,6 +2232,8 @@ export class OrthographicCamera extends Camera {
 		values[3] = view.centerY;
 		values[4] = this.near;
 		values[5] = this.far;
+		values[6] = this.shift[0];
+		values[7] = this.shift[1];
 		core.glue.setOrthographicCamera(this.handle, layers, target);
 	}
 }

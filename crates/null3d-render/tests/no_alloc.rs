@@ -1057,6 +1057,7 @@ fn light_grid_allocations(count: u32, cap: u32, on_gpu: bool, area_cap: Option<u
         fov_degrees: 60.0,
         near: 0.1,
         far: 300.0,
+        shift: [0.0; 2],
     });
     let world = [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0];
     let view = GridView {

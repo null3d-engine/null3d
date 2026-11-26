@@ -171,6 +171,8 @@ export default defineSketch<{ scroll: number }>(({ data, page, preferences }) =>
 });
 ```
 
+A canvas behind the page's text often wants its subject beside the text, not under it. Shift the lens rather than turn the camera: `camera.setLensShift(-0.25, 0)` puts the camera's target three quarters of the way across, and upright lines stay upright. A section can change the shift as the scroll moves, in the same `onUpdate` ([Cameras](../api/cameras.md#lens-shift)).
+
 ## Second visits and navigation
 
 | Lifetime | What keeps it | How |
