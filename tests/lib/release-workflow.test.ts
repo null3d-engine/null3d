@@ -19,25 +19,40 @@ describe('the Release workflow', () => {
 		expect(readFileSync(RELEASE, 'utf8')).not.toMatch(/^\s{2}pull_request:/m);
 	});
 
-	it('lands the version commit on main with the release App, whose key only main may read', () => {
+	it('lands the version commit and pushes the tag with the release App, whose key only main may read', () => {
 		const text = readFileSync(RELEASE, 'utf8');
 		expect(text).toContain('environment: release');
 		expect(text).toContain('uses: actions/create-github-app-token@');
 		expect(text).toContain('secrets.RELEASE_APP_PRIVATE_KEY');
-		// The checkout's default token header is cleared, or GitHub would read it and not the App's.
-		expect(text).toContain('git -c http.https://github.com/.extraheader= \\');
-		expect(text).toMatch(
-			/push "https:\/\/x-access-token:\$\{APP_TOKEN\}@github\.com\/\$\{GITHUB_REPOSITORY\}\.git" HEAD:main/,
-		);
-		// A token lasts an hour, so it is made after the shader set, just before the push.
+		// The tag's commit keeps the released commit's workflow files, which may differ from main's.
+		expect(text).toContain('permission-workflows: write');
+		// The App's token replaces the checkout's header, so no push sends the default token.
+		expect(text).toContain('git config --local --unset-all http.https://github.com/.extraheader');
+		expect(text).toContain('x-access-token:%s\' "$APP_TOKEN"');
+		expect(text).toContain('git push origin HEAD:main');
+		expect(text).toMatch(/git push origin "refs\/tags\/\$\{VERSION\}"/);
+		// A token lasts an hour, so it is made after the shader set, just before the pushes.
 		const steps = [
 			"Write the release's shader set",
 			"Get the release App's token",
+			"Push with the release App's token",
 			'Land the version on main',
+			'Tag the release',
 		];
 		const at = steps.map((name) => text.indexOf(`- name: ${name}`));
 		expect(at.every((index) => index !== -1)).toBe(true);
 		expect(at).toEqual([...at].sort((a, b) => a - b));
+	});
+
+	it('lands nothing when main already holds the version from an earlier run', () => {
+		const text = readFileSync(RELEASE, 'utf8');
+		const land = text.slice(
+			text.indexOf('- name: Land the version on main'),
+			text.indexOf('- name: Tag the release'),
+		);
+		const moved = land.slice(land.indexOf('git checkout -q -B release-version origin/main'));
+		expect(moved.indexOf('git diff --cached --quiet')).toBeGreaterThan(-1);
+		expect(moved.indexOf('git diff --cached --quiet')).toBeLessThan(moved.indexOf('git commit'));
 	});
 
 	it('publishes through the workflow file that the guide names as the trusted publisher', () => {
@@ -95,5 +110,27 @@ describe('the Release workflow', () => {
 		].map((step) => steps.indexOf(step!));
 		expect(order.every((index) => index !== -1)).toBe(true);
 		expect(order).toEqual([...order].sort((a, b) => a - b));
+	});
+	it('publishes an existing tag without a release, and builds the npm job from the shader caches', () => {
+		const parsed = Bun.YAML.parse(readFileSync(RELEASE, 'utf8')) as {
+			on: { workflow_dispatch: { inputs: Record<string, unknown> } };
+			jobs: Record<
+				string,
+				{
+					if?: string;
+					env?: Record<string, string>;
+					steps?: { uses?: string; run?: string; with?: Record<string, string> }[];
+				}
+			>;
+		};
+		expect(parsed.on.workflow_dispatch.inputs['publish-tag']).toBeDefined();
+		const { release, 'publish-npm': npm, 'notify-website': website } = parsed.jobs;
+		expect(release?.if).toContain("inputs.publish-tag == ''");
+		expect(npm?.if).toContain("needs.release.result == 'skipped' && inputs.publish-tag != ''");
+		expect(npm?.env?.VERSION).toContain('inputs.publish-tag');
+		expect(website?.if).toContain("needs.publish-npm.result == 'success'");
+		const build = npm?.steps?.find((step) => step.uses === './.github/actions/shaders');
+		expect(build?.with?.run).toBe('bun tools/build-wasm.ts --pages-only');
+		expect(npm?.steps?.some((step) => step.run?.includes('gh release download'))).toBe(true);
 	});
 });
