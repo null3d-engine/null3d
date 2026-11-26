@@ -65,6 +65,7 @@ describe('withRecordingSwitch', () => {
 		expect(withRecordingSwitch('/game.html?level=2')).toBe(
 			'/game.html?level=2&permutations=record',
 		);
+		expect(withRecordingSwitch('/?gpu=webgl2#top')).toBe('/?gpu=webgl2&permutations=record#top');
 		expect(withRecordingSwitch('http://localhost:5173/')).toBe(
 			'http://localhost:5173/?permutations=record',
 		);

@@ -113,11 +113,13 @@ export function writeWordList(file, words, { replace = false, writer = WRITER } 
  * @param {string} address
  */
 export function withRecordingSwitch(address) {
-	const url = new URL(address, 'http://relative.invalid');
-	url.searchParams.set('permutations', 'record');
-	return url.origin === 'http://relative.invalid'
-		? `${url.pathname}${url.search}${url.hash}`
-		: url.href;
+	const hash = address.indexOf('#');
+	const fragment = hash < 0 ? '' : address.slice(hash);
+	const rest = hash < 0 ? address : address.slice(0, hash);
+	const query = rest.indexOf('?');
+	const params = new URLSearchParams(query < 0 ? '' : rest.slice(query + 1));
+	params.set('permutations', 'record');
+	return `${query < 0 ? rest : rest.slice(0, query)}?${params}${fragment}`;
 }
 
 /**
