@@ -16,7 +16,9 @@ flowchart LR
     ktx2 --> load
 ```
 
-The `assets optimize` command makes glTF models smaller and faster to load and draw. It stores each mesh's vertices as small integers, in the order that the GPU reads them fastest. It stores each animation clip in the form the engine keeps in memory. It encodes each texture as a KTX2 file, which the GPU keeps compressed. Your files download less, take less GPU memory and upload in fewer frames. The command runs on your computer before you publish, from npm, with nothing else to install. The same files give the same output bytes on every computer.
+The `assets optimize` command makes glTF models smaller and faster to load and draw. It stores each mesh's vertices as small integers, in the order that the GPU reads them fastest. It stores each animation clip in the form the engine keeps in memory. It encodes each texture as a KTX2 file, which the GPU keeps compressed. Your files download less, take less GPU memory and upload in fewer frames.
+
+The command runs on your computer before you publish, from npm, with nothing else to install. The same files give the same output bytes on every computer.
 
 The command's sub-commands:
 
@@ -168,7 +170,9 @@ A mesh's glTF extras can override the choice. The extras `"occluder": false` giv
 
 ### Stored raycast trees
 
-Raycasts walk a tree over each mesh's triangles. The engine builds a mesh's tree on the job workers on the first query, in about 0.2 to 0.3 µs per triangle. The `--bvh` option stores the trees in the file instead, for each mesh part of at least that many triangles. A stored tree takes about 20 bytes per triangle, as much as the mesh's positions and indices together. meshopt compresses it to about 12. So a stored tree pays only for large meshes, whose build would hold up the first raycast. The engine checks each stored tree against the mesh in about a tenth of the time of a build. It builds its own tree where a stored one does not fit.
+Raycasts walk a tree over each mesh's triangles. The engine builds a mesh's tree on the job workers on the first query, in about 0.2 to 0.3 µs per triangle. The `--bvh` option stores the trees in the file instead, for each mesh part of at least that many triangles. A stored tree takes about 20 bytes per triangle, as much as the mesh's positions and indices together. meshopt compresses it to about 12.
+
+So a stored tree pays only for large meshes, whose build would hold up the first raycast. The engine checks each stored tree against the mesh in about a tenth of the time of a build. It builds its own tree where a stored one does not fit.
 
 ## Textures
 
@@ -181,7 +185,9 @@ The command encodes each PNG and JPEG texture of a model as a KTX2 file of Basis
 | Metal-rough maps of materials with normal maps | UASTC, with [the roughness bake](#the-roughness-bake) | Linear |
 | Other metal-rough, occlusion and other maps | ETC1S, or UASTC with `--texture-quality high` | Linear |
 
-Each side of a texture becomes its nearest power of two, and then both halve together until the longer side fits `--max-texture-size`. A 1000 x 600 image becomes 1024 x 512. Every level of a mip chain then halves exactly. A side is never less than 4 texels, so each texture is whole blocks of 4 x 4 texels. A texture in part blocks would load uncompressed, at 4 to 8 times the GPU memory. The command cannot resize a KTX2 image that the model already had. When such an image is not whole blocks, the report names it and counts it as uncompressed. Give the command its PNG or JPEG source instead.
+Each side of a texture becomes its nearest power of two, and then both halve together until the longer side fits `--max-texture-size`. A 1000 x 600 image becomes 1024 x 512. Every level of a mip chain then halves exactly. A side is never less than 4 texels, so each texture is whole blocks of 4 x 4 texels. A texture in part blocks would load uncompressed, at 4 to 8 times the GPU memory.
+
+The command cannot resize a KTX2 image that the model already had. When such an image is not whole blocks, the report names it and counts it as uncompressed. Give the command its PNG or JPEG source instead.
 
 Textures are at most 2048 x 2048. The encoder is a 32-bit WebAssembly build, which refuses 4096 x 4096 images.
 
@@ -191,7 +197,9 @@ In 40 sets of photographed materials at 1024 x 1024, each ETC1S color map took a
 
 A normal map adds small bumps to a surface. Far away, many bumps fall in one pixel. The GPU then reads a lower mip level of the normal map, which averages the bumps into one flat normal. The surface looks smooth and sharp, and its highlights flicker as the camera moves. A real surface of tiny bumps looks rougher from far away.
 
-So when a material has both a normal map and a metal-rough map, the command makes the metal-rough map's mip levels itself. In each level below the full size, it measures how far the normal map's normals under each texel spread. It adds that spread to the texel's roughness, the green channel. A smooth texel becomes at most 0.4 rough, and a rough texel gains less. Occlusion and metalness keep their plain averages. The full size stays as you made it, because up close the GPU reads the normal map's own bumps.
+So when a material has both a normal map and a metal-rough map, the command makes the metal-rough map's mip levels itself. In each level below the full size, it measures how far the normal map's normals under each texel spread. It adds that spread to the texel's roughness, the green channel.
+
+A smooth texel becomes at most 0.4 rough, and a rough texel gains less. Occlusion and metalness keep their plain averages. The full size stays as you made it, because up close the GPU reads the normal map's own bumps.
 
 ```mermaid
 flowchart LR
@@ -254,9 +262,13 @@ Over the 213 models of four Kenney city kits, `--lod` gives levels to 162. The 4
 
 `--stages` writes the levels as separate files, so a model shows its coarse shape at once and gets finer while the page draws it. The command keeps the full vertex stream and the coarsest level in the model file, and writes each finer level to a file beside it, named after the model. Each node that draws the mesh names its stages in its extras, with the error of each level, as `NULL3D_stages`.
 
-The engine downloads the stages in order, from the next coarsest down to the finest, and draws each as it arrives. A copy that a page already made refines in place, with no new object and no flicker. A stage holds indices alone, because every level names the mesh's own vertices. The tool orders each mesh's vertices coarsest level first, so a level's triangles name a stretch at the start of the vertex buffer. A staged download can send that stretch first, then the finer levels' parts. A mesh whose levels hold positions of their own, such as a level of cards, keeps its levels in the file, as `MSFT_lod` gives them. So does a mesh with one level.
+The engine downloads the stages in order, from the next coarsest down to the finest, and draws each as it arrives. A copy that a page already made refines in place, with no new object and no flicker. A stage holds indices alone, because every level names the mesh's own vertices. The tool orders each mesh's vertices coarsest level first, so a level's triangles name a stretch at the start of the vertex buffer. A staged download can send that stretch first, then the finer levels' parts.
 
-The loader sets aside a stage that the camera never shows. The stage after the file's own level always arrives. Each later stage waits until a view has drawn the level that the mesh has now, during a warm-up of about two seconds. A level that never draws cannot lead to a finer one. So the loader sets that stage and the finer ones aside, and asks for none of their files. It looks again about every second and a half, so a camera that comes close later brings those stages back.
+A mesh whose levels hold positions of their own, such as a level of cards, keeps its levels in the file, as `MSFT_lod` gives them. So does a mesh with one level.
+
+The loader sets aside a stage that the camera never shows. The stage after the file's own level always arrives. Each later stage waits until a view has drawn the level that the mesh has now, during a warm-up of about two seconds. A level that never draws cannot lead to a finer one.
+
+So the loader sets that stage and the finer ones aside, and asks for none of their files. It looks again about every second and a half, so a camera that comes close later brings those stages back.
 
 The loader's `maxLevels` option stops the downloads after that many levels, the file's own counted first. A page whose camera never comes close enough to show the finest level sets it to 1, or to the number of levels that show. Other glTF readers draw the coarsest level, since the finer ones are not in the file.
 
@@ -279,7 +291,11 @@ The command splits each mesh part into patches and builds the tree above them wi
 2. A patch above a group simplifies its children's triangles to about half of them. The vertices that the group shares with other groups stay in place, so two patches of different detail still meet. The mesh's own open edge simplifies too, but its corners stay.
 3. Each patch stores its error and a sphere. The error is the patch's measured distance from the full mesh below it, and never less than a child's error. The sphere holds the spheres of the patch's children, and a leaf's sphere holds its triangles. So a patch never passes the view's threshold where one of its children fails, and the patches that draw cover the mesh once.
 
-The tree holds about twice the mesh's triangles. Every patch's indices name the mesh's own vertices, so the tree adds no vertex. On WebGL2, a mesh of more than 65,535 vertices draws its tree from a copy of its vertices, as [cluster levels](../concepts/lod.md#cluster-levels) describes. The tree goes into the file with `NULL3D_clusters`. Other glTF loaders ignore it and draw the whole mesh. The build also gives the mesh the whole levels that `--lod` makes, even without `--lod`. Each level has about half the triangles of the level above, and the levels share the mesh's vertices. A viewer that draws no patches draws these levels. The engine draws the patches on both GPU paths when one copy of the mesh draws: WebGPU picks them in a compute pass, and WebGL2 with `WEBGL_multi_draw` picks them on the job workers. Each shadow map picks its own patches too, in its own texels. The WebGPU path that draws objects directly and WebGL2 without `WEBGL_multi_draw`, such as Firefox, draw the whole levels.
+The tree holds about twice the mesh's triangles. Every patch's indices name the mesh's own vertices, so the tree adds no vertex. On WebGL2, a mesh of more than 65,535 vertices draws its tree from a copy of its vertices, as [cluster levels](../concepts/lod.md#cluster-levels) describes. The tree goes into the file with `NULL3D_clusters`. Other glTF loaders ignore it and draw the whole mesh.
+
+The build also gives the mesh the whole levels that `--lod` makes, even without `--lod`. Each level has about half the triangles of the level above, and the levels share the mesh's vertices. A viewer that draws no patches draws these levels.
+
+The engine draws the patches on both GPU paths when one copy of the mesh draws: WebGPU picks them in a compute pass, and WebGL2 with `WEBGL_multi_draw` picks them on the job workers. Each shadow map picks its own patches too, in its own texels. The WebGPU path that draws objects directly and WebGL2 without `WEBGL_multi_draw`, such as Firefox, draw the whole levels.
 
 A mesh gets no tree in four cases. It has fewer than 20,000 triangles, or a skin or a morph target bends it. It also gets none when its material blends or masks, or more than four copies draw it. Those meshes keep whole levels.
 
@@ -522,7 +538,9 @@ The preview serves HTTPS by default. A secure origin is what makes WebGPU, and s
 
 The empty variable makes `bun run examples:build` compile the full set, so the recording sees every word that the pages ask for. Without the variable, `examples:build` reads `examples/shader-permutations.txt` when that file exists.
 
-The recorder writes `examples/shader-permutations.txt`, and `bun run examples:build` reads it. Its `--page-root` names the address that the pages sit under. Use `/` for a preview of the built site, or `/examples/` for this repository's own dev server. A demo that draws more in a state its controls cannot reach enters that state through the recorder's own query. The island's pages record with its highest walker count. The recorder runs from a checkout of this repository, because it drives a browser through the repository's own page list and browser launcher. A project outside the repository runs it from such a checkout and names its pages with one `--page <path>` for each, instead of `--pages demos`.
+The recorder writes `examples/shader-permutations.txt`, and `bun run examples:build` reads it. Its `--page-root` names the address that the pages sit under. Use `/` for a preview of the built site, or `/examples/` for this repository's own dev server.
+
+A demo that draws more in a state its controls cannot reach enters that state through the recorder's own query. The island's pages record with its highest walker count. The recorder runs from a checkout of this repository, because it drives a browser through the repository's own page list and browser launcher. A project outside the repository runs it from such a checkout and names its pages with one `--page <path>` for each, instead of `--pages demos`.
 
 A game page that starts its engine on a click needs `--live` pages and `--click <selector>`, such as `--click "#play"`. A production build of the engine folder ignores the URL switches. Record against a development build of that folder (`vite build --mode development`). The [deterministic simulation guide](deterministic-simulation.md#a-production-build-of-a-games-engine-files) gives the full sequence.
 

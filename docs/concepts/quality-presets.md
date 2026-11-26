@@ -98,7 +98,9 @@ Device hints only suggest a preset. A laptop with a weak GPU and a desktop with 
 1. The sketch's setup runs at the chosen preset and builds its scene. `createEngine` resolves.
 2. The engine draws the first frame, with every pipeline built, and play starts: the sketch's `onUpdate`, its input and its animations run as usual.
 3. The engine waits until the GPU has finished the first frame and draws at play's rate, for up to 4 seconds. Then, for a moment, it measures two rates: the frames that it presented, and the frames that the GPU finished. It reads the lower one, so frames that wait in a queue on the GPU cannot pass for a healthy rate.
-4. When that rate misses the target, the engine lowers the preset by one, waits for the new preset's first frame, and measures again. It stops at a preset that holds the target, or at Low. A rate under a quarter of the target is far below it: the engine then lowers the preset straight to Low, and measures Low. The sketch's `quality.onChange` handlers hear of each lighter preset in the next frame. A setting that the sketch changed with `quality.set` keeps its value on the lighter preset. The lighter preset also gives the anti-aliasing mode, which the device moves its canvas to before it draws that preset's first frame. Every other setting that a device fixes at start keeps the value it started with.
+4. When that rate misses the target, the engine lowers the preset by one, waits for the new preset's first frame, and measures again. It stops at a preset that holds the target, or at Low. A rate under a quarter of the target is far below it: the engine then lowers the preset straight to Low, and measures Low.
+
+   The sketch's `quality.onChange` handlers hear of each lighter preset in the next frame. A setting that the sketch changed with `quality.set` keeps its value on the lighter preset. The lighter preset also gives the anti-aliasing mode, which the device moves its canvas to before it draws that preset's first frame. Every other setting that a device fixes at start keeps the value it started with.
 5. The check ends, and `engine.presetChecked` resolves. The [frame-budget governor](#the-frame-budget-governor) waits until then, so the check measures each preset at the full render scale.
 
 The viewer sees the scene from its first frame, so a lighter preset applies in front of the viewer. A sketch that asks for a preset itself with `quality.setPreset` while the check runs ends the check. The sketch's choice then stands, and `engine.mode.presetCheck` stays null.
@@ -197,7 +199,9 @@ The shadow settings set the GPU memory that shadows take. The shadow map stores 
 | High | 24 MiB | 64 MiB | 88 MiB | 272 MiB |
 | Ultra | 128 MiB | 96 MiB | 224 MiB | 1,536 MiB, refused |
 
-The shadow map takes its memory once the directional light casts shadows. The atlas takes its own once a spot or point light casts. While the sun names a [hero shadow](shadows.md#a-hero-shadow), the atlas has one more layer. Every layer then takes the size of the preset's `heroTileSize`: 1,024 texels on Low, 2,048 on Medium and High, and 4,096 on Ultra. An atlas above 1 GiB fails with [E1501](../errors/E1501.md). So on Ultra, a hero leaves room for 15 light tiles at most. [Shadows](shadows.md#what-shadows-cost) gives the cost of each.
+The shadow map takes its memory once the directional light casts shadows. The atlas takes its own once a spot or point light casts. While the sun names a [hero shadow](shadows.md#a-hero-shadow), the atlas has one more layer.
+
+Every layer then takes the size of the preset's `heroTileSize`: 1,024 texels on Low, 2,048 on Medium and High, and 4,096 on Ultra. An atlas above 1 GiB fails with [E1501](../errors/E1501.md). So on Ultra, a hero leaves room for 15 light tiles at most. [Shadows](shadows.md#what-shadows-cost) gives the cost of each.
 
 ### Texture filtering and uploads
 
@@ -205,7 +209,9 @@ The anisotropic filtering cap limits the `anisotropy` option of every texture, s
 
 ### Texture memory
 
-The texture memory budget caps the GPU memory of the scene's textures. A phone or a tablet closes a tab that uses too much memory, with no warning, so the budget keeps textures well below that point. Each preset's budget stays under half the lowest point that the engine's tab memory test measured on the devices that the preset serves. Phones and tablets take at most 1,008 MiB on any preset: half the 2,016 MiB at which an iPad Pro's tab closed. The page's `textureMemoryMiB` option replaces the preset's budget and the cap, and `quality.set({ textureMemoryMiB })` changes it during play.
+The texture memory budget caps the GPU memory of the scene's textures. A phone or a tablet closes a tab that uses too much memory, with no warning, so the budget keeps textures well below that point. Each preset's budget stays under half the lowest point that the engine's tab memory test measured on the devices that the preset serves.
+
+Phones and tablets take at most 1,008 MiB on any preset: half the 2,016 MiB at which an iPad Pro's tab closed. The page's `textureMemoryMiB` option replaces the preset's budget and the cap, and `quality.set({ textureMemoryMiB })` changes it during play.
 
 ```mermaid
 flowchart LR
@@ -252,7 +258,9 @@ The 33 MB counts the writes alone, and the memory is larger. The weighted blendi
 
 ### The depth prepass
 
-With the depth prepass, the engine first draws the depth of the opaque objects, with no color. The opaque pass then shades each pixel once, for its nearest surface. Without the prepass, a pixel can be shaded for several surfaces before the nearest one covers them. The prepass costs a second pass over the objects' vertices. So it saves GPU time where objects hide many others and their shading costs much, such as in a lit street of buildings. It costs time where a scene has many vertices and little overdraw.
+With the depth prepass, the engine first draws the depth of the opaque objects, with no color. The opaque pass then shades each pixel once, for its nearest surface. Without the prepass, a pixel can be shaded for several surfaces before the nearest one covers them.
+
+The prepass costs a second pass over the objects' vertices. So it saves GPU time where objects hide many others and their shading costs much, such as in a lit street of buildings. It costs time where a scene has many vertices and little overdraw.
 
 Some objects stay out of the prepass and shade as they would without it. These are blended objects, line batches, and objects whose material has an alpha cutoff or skips depth writes or the depth test.
 
@@ -260,7 +268,9 @@ On WebGL2, every preset turns the prepass on, except on the [lowest quality tier
 
 Each opaque object then has a depth pipeline beside its own, which the first frame and a warm-up build too. The `depthPrepass` option of `createEngine` replaces the preset's choice. Compare the scene's GPU time with `?prepass=on` and `?prepass=off`, and `quality.set({ depthPrepass })` changes it during play.
 
-WebGL2 draws the prepass because of Apple GPUs. On them, a depth prepass restores early rejection of hidden pixels in WebGL2, so each pixel is shaded about once. In the S4 benchmark on an iPad, WebGL2 went from 38 to 60 frames per second on Low. On Medium it went from 17 to 37 frames per second. The images stay the same. On Android phones that ran S4, WebGL2 kept its frame rate with the prepass, and its CPU time did not change. On WebGPU the GPU removes hidden surfaces itself, so the prepass only adds work. On the same iPad it added about 4 ms per frame to S4 on Medium.
+WebGL2 draws the prepass because of Apple GPUs. On them, a depth prepass restores early rejection of hidden pixels in WebGL2, so each pixel is shaded about once. In the S4 benchmark on an iPad, WebGL2 went from 38 to 60 frames per second on Low. On Medium it went from 17 to 37 frames per second. The images stay the same.
+
+On Android phones that ran S4, WebGL2 kept its frame rate with the prepass, and its CPU time did not change. On WebGPU the GPU removes hidden surfaces itself, so the prepass only adds work. On the same iPad it added about 4 ms per frame to S4 on Medium.
 
 Both GPU paths draw the prepass, and it gives the same image as a frame without it. The opaque pass shades a pixel only where its depth equals the prepass's depth exactly.
 
@@ -282,7 +292,9 @@ const plain = await createEngine({ canvas, sketch, depthPrepass: false });
 
 ### GPU occlusion culling
 
-With GPU occlusion culling, each camera skips the opaque objects that others hide. It draws the depth of the large opaque objects that showed in its last frame, and builds a depth pyramid from it. Then it draws only the objects that show. [Culling](culling.md#gpu-occlusion-culling-on-webgpu) describes the two phases. High and Ultra turn it on for desktops. Phones and tablets keep it off on every preset. A check during play turns its passes off while they hide too little or make the GPU's frame longer, so a scene where they do not pay loses almost nothing.
+With GPU occlusion culling, each camera skips the opaque objects that others hide. It draws the depth of the large opaque objects that showed in its last frame, and builds a depth pyramid from it. Then it draws only the objects that show. [Culling](culling.md#gpu-occlusion-culling-on-webgpu) describes the two phases.
+
+High and Ultra turn it on for desktops. Phones and tablets keep it off on every preset. A check during play turns its passes off while they hide too little or make the GPU's frame longer, so a scene where they do not pay loses almost nothing.
 
 The `gpuOcclusion` option of `createEngine` replaces the preset's choice, and `?occlusion=on` or `?occlusion=off` wins over the option, to compare the scene's GPU time. It is fixed while the engine runs. It runs only on WebGPU, so `quality.settings.gpuOcclusion` is false on WebGL2. It runs beside the depth prepass, which ambient occlusion and screen-space bounce light turn on.
 
@@ -375,7 +387,9 @@ Dynamic resolution is the first part of the frame-budget governor. A sketch can 
 9. Far characters update their poses half as often, up to every 4th frame. Each step doubles the interval, so the step happens only while the `farAnimationInterval` setting is below 4. A sketch reads `quality.governor.farAnimationInterval` to give it to its far characters ([Animation](../api/animation.md#crowds)).
 10. The volumetric fog draws half the slices of its grid, into the same textures, so its rays turn a little coarser along the view and no texture is made. This step happens only while the volumetric fog draws.
 
-Each step follows the rules of dynamic resolution. Frames must stay over budget for a second before a step down, and keep time to spare for 5 seconds before a step up. A wait follows each step, and no step happens early in play, after a pause, or during uploads. The governor raises the settings in the reverse order, so the render scale comes back last. It takes shadow steps only where a directional light casts shadows. A lower render scale picks coarser levels of detail too, as the render height counts in each level's error in pixels. It never changes the preset, nor a setting that is fixed while the preset runs, such as the shadow map's size.
+Each step follows the rules of dynamic resolution. Frames must stay over budget for a second before a step down, and keep time to spare for 5 seconds before a step up. A wait follows each step, and no step happens early in play, after a pause, or during uploads.
+
+The governor raises the settings in the reverse order, so the render scale comes back last. It takes shadow steps only where a directional light casts shadows. A lower render scale picks coarser levels of detail too, as the render height counts in each level's error in pixels. It never changes the preset, nor a setting that is fixed while the preset runs, such as the shadow map's size.
 
 Phones slow down as they heat up, often after a few minutes of play. The governor responds as it does to any slow frames: after a second over budget, it lowers the next setting. The target is the [target frame rate](#the-target-frame-rate): by default the display's refresh rate, at most 60 frames per second. When the browser lowers the rate of its frames to save battery, the rate that the engine measures falls. The target falls with it, as long as the GPU keeps up with the frames.
 
@@ -395,7 +409,9 @@ A sketch whose own thread limits its frames keeps the tier out. Its smaller rend
 
 ### Settings of an add-on's feature
 
-An add-on's feature declares its own settings in the same form as the engine's table: a value on each preset, an optional WebGL2 column, and the values it takes. The feature's budget joins the sketch's budgets. A step of the budgets' scale then lowers the feature's share of full quality with the sketch's own systems. A setting that names a `governor` follows that share: a count shrinks with it, and an interval doubles with each step. The stats overlay shows the feature's values and its budget beside the engine's figures. [Add-on feature descriptions](../api/features.md#preset-settings-and-the-frame-budget-governor) shows how a feature declares them.
+An add-on's feature declares its own settings in the same form as the engine's table: a value on each preset, an optional WebGL2 column, and the values it takes. The feature's budget joins the sketch's budgets. A step of the budgets' scale then lowers the feature's share of full quality with the sketch's own systems.
+
+A setting that names a `governor` follows that share: a count shrinks with it, and an interval doubles with each step. The stats overlay shows the feature's values and its budget beside the engine's figures. [Add-on feature descriptions](../api/features.md#preset-settings-and-the-frame-budget-governor) shows how a feature declares them.
 
 ## Related pages
 

@@ -14,7 +14,9 @@ flowchart TD
     adapter -- "no" --> gl["WebGL2"]
 ```
 
-null3D draws with WebGPU where the browser offers it, and with WebGL2 everywhere else. The same sketch code runs on both, with no backend checks in it. So one sketch works in every current browser on computers, tablets and phones. The engine picks the tier once, at startup, from feature tests. It tests the thread that will draw: where a worker draws, the engine picks the best tier that the worker can use. Where no worker can draw, the page draws in pipelined mode, even when the page asks for low latency ([Architecture](architecture.md#where-the-sketch-runs)). After two starts in a row that crashed the tab on WebGPU, the engine starts on WebGL2. A page that names a GPU path keeps it ([Quality presets](quality-presets.md#starts-that-crashed-the-tab)).
+null3D draws with WebGPU where the browser offers it, and with WebGL2 everywhere else. The same sketch code runs on both, with no backend checks in it. So one sketch works in every current browser on computers, tablets and phones.
+
+The engine picks the tier once, at startup, from feature tests. It tests the thread that will draw: where a worker draws, the engine picks the best tier that the worker can use. Where no worker can draw, the page draws in pipelined mode, even when the page asks for low latency ([Architecture](architecture.md#where-the-sketch-runs)). After two starts in a row that crashed the tab on WebGPU, the engine starts on WebGL2. A page that names a GPU path keeps it ([Quality presets](quality-presets.md#starts-that-crashed-the-tab)).
 
 Other pages call the tier the GPU path. `engine.capabilities.tier` says which one the engine started on.
 
@@ -109,7 +111,9 @@ The engine draws reversed depth: the near plane stores 1 and the far plane store
 | WebGL2 with the `EXT_clip_control` extension | Reversed, in a 32-bit float buffer | Out to 10 km |
 | WebGL2 without it | Reversed, in WebGL2's range from -1 to 1 | Out to about 250 m |
 
-WebGL2 maps depth into a range from -1 to 1, which loses most of the precision that reversed depth gives. The `EXT_clip_control` extension sets the range from 0 to 1, as on WebGPU. In the engine's tests, Chrome, Safari and Brave have it on a MacBook Pro. So do Chrome on a Galaxy S24+, and Safari and Brave on an iPad Pro. Firefox on macOS does not. Without the extension, the engine keeps reversed depth in the range from -1 to 1. In every browser tested, that fought in fewer pixels than standard depth.
+WebGL2 maps depth into a range from -1 to 1, which loses most of the precision that reversed depth gives. The `EXT_clip_control` extension sets the range from 0 to 1, as on WebGPU.
+
+In the engine's tests, Chrome, Safari and Brave have it on a MacBook Pro. So do Chrome on a Galaxy S24+, and Safari and Brave on an iPad Pro. Firefox on macOS does not. Without the extension, the engine keeps reversed depth in the range from -1 to 1. In every browser tested, that fought in fewer pixels than standard depth.
 
 The distances come from the engine's depth precision test on a MacBook Pro, with the camera's near plane at 0.1 m. The field `engine.capabilities.depth` says which depth the device draws: `reversed`, or `reversed-gl` on WebGL2 without the extension. In both, depth textures such as [shadow maps](shadows.md) hold the same values as on WebGPU. Shaders that read depth then work the same on every tier. The `?depth=standard` switch below gives a third value, `standard`.
 
@@ -131,7 +135,9 @@ The `features` field lists the WebGPU adapter's optional features. On WebGL2 it 
 - rendering into 16-bit and 32-bit float textures, and into the packed `R11F_G11F_B10F` format, on WebGL2 (`engine.report.webgl2.floatRenderTargets`)
 - transient attachments on WebGPU (`engine.report.webgpu.transientAttachments`)
 
-On an Apple GPU in WebKit, the engine also measures whether direct draws are faster than its indirect draws. WebKit is the engine of Safari and of every browser on iPhone and iPad. It checks each indirect draw at a fixed cost, which direct draws do not pay. That is not a capability flag. The `directDraws` field reports the choice, and it is false on WebGL2, which always draws directly. The `drawPath` field says why the engine took its path. On other devices it is `not-apple-gpu-in-webkit`, since they skip the measurement.
+On an Apple GPU in WebKit, the engine also measures whether direct draws are faster than its indirect draws. WebKit is the engine of Safari and of every browser on iPhone and iPad. It checks each indirect draw at a fixed cost, which direct draws do not pay.
+
+That is not a capability flag. The `directDraws` field reports the choice, and it is false on WebGL2, which always draws directly. The `drawPath` field says why the engine took its path. On other devices it is `not-apple-gpu-in-webkit`, since they skip the measurement.
 
 `hdr` says whether the engine took the HDR path ([Color and anti-aliasing on each tier](#color-and-anti-aliasing-on-each-tier)).
 
@@ -157,7 +163,9 @@ The storage binding is the one limit the engine raises past this budget. When a 
 
 On WebGPU, development builds warn once when a scene passes 2,097,152, because a device with the default limits refuses that scene.
 
-On WebGL2 the limit follows the largest texture the device allows. Each object's matrix takes 3 texels of a data texture, 512 matrices to a texel row. That is 2,097,152 objects and instance rows at 4,096 pixels, and 8,388,608 at 16,384. Larger textures hold no more, because the list of visible objects can name at most 8,388,608. WebGL2 promises at least 2,048 pixels, which holds 1,048,576. `engine.capabilities.maxInstances` gives the number on WebGL2 too. On WebGL2, development builds warn once when a scene passes 1,048,576, because a device with the smallest textures refuses that scene.
+On WebGL2 the limit follows the largest texture the device allows. Each object's matrix takes 3 texels of a data texture, 512 matrices to a texel row. That is 2,097,152 objects and instance rows at 4,096 pixels, and 8,388,608 at 16,384. Larger textures hold no more, because the list of visible objects can name at most 8,388,608. WebGL2 promises at least 2,048 pixels, which holds 1,048,576.
+
+`engine.capabilities.maxInstances` gives the number on WebGL2 too. On WebGL2, development builds warn once when a scene passes 1,048,576, because a device with the smallest textures refuses that scene.
 
 Engine memory holds the rows too. A page with worker threads gives the engine 1 GiB by default, which holds about 5 million instance rows. The `memory` option of `createEngine` raises the maximum to as much as 4 GiB ([Page API](../api/engine.md#memory)). A call that needs more memory than the engine can get fails with E1109.
 
@@ -192,7 +200,11 @@ The switch `?scene-format=` picks the HDR scene color's format where the device 
 
 ## When the GPU goes away
 
-A WebGPU device can be lost, for example after a driver reset, and so can a WebGL2 context. The thread that draws then makes a new device, or waits for the context to come back. It draws the whole scene again from data the engine kept. A texture from a file loads its file again. On a phone or a tablet the engine also keeps a copy of each texture's texels after their upload, so those maps come back too. The `keepTextureCopies` option of `createEngine` turns that on or off on any device ([Page API](../api/engine.md#options)). Keeping the copies costs about one more copy of each image in memory. Where no copy is kept, such a texture draws without its map until the sketch gives it texels again ([Textures](../api/textures.md#when-the-browser-takes-the-gpu-away)). The sketch worker keeps running, so your sketch's state survives. If the GPU is lost more than twice within one minute, or no new device starts, the engine stops drawing and reports E1302.
+A WebGPU device can be lost, for example after a driver reset, and so can a WebGL2 context. The thread that draws then makes a new device, or waits for the context to come back. It draws the whole scene again from data the engine kept. A texture from a file loads its file again.
+
+On a phone or a tablet the engine also keeps a copy of each texture's texels after their upload, so those maps come back too. The `keepTextureCopies` option of `createEngine` turns that on or off on any device ([Page API](../api/engine.md#options)). Keeping the copies costs about one more copy of each image in memory. Where no copy is kept, such a texture draws without its map until the sketch gives it texels again ([Textures](../api/textures.md#when-the-browser-takes-the-gpu-away)).
+
+The sketch worker keeps running, so your sketch's state survives. If the GPU is lost more than twice within one minute, or no new device starts, the engine stops drawing and reports E1302.
 
 The engine also gives the GPU away itself while the browser keeps the page in its back-forward cache, where it keeps texture copies. A cached page would otherwise hold all its GPU memory, and on a phone with little memory the next page could lack it. When the page shows again, the thread that draws makes a new device and draws the scene again, as after a loss. This counts as no loss.
 
