@@ -22,7 +22,7 @@ Then comes warm-up: the GPU builds a pipeline for each kind of object in the sce
 
 ## Report progress from the sketch
 
-The `downloads` option of `defineSketch` names the files that the setup loads. A live start begins to download them as soon as the sketch's module has loaded, often while the engine's core still downloads. The handler of `assets.onProgress` counts them as they arrive, including the bytes that arrived before the setup added it. The setup's loads take the files that arrived or are on their way, so nothing downloads twice.
+The `downloads` option of `defineSketch` names the files that the setup loads. A live start begins to download them as soon as the sketch's module has loaded, often while the engine's core still downloads. The handler of `assets.onProgress` counts them as they arrive, including the bytes that arrived before the setup added it. The setup's loads take the files that arrived or are on their way, so nothing downloads twice. The [glTF model demo](https://github.com/null3d-engine/null3d/tree/main/examples/gltf-model) reports its downloads through the shared loading helper.
 
 ```ts
 // sketch.ts
@@ -148,7 +148,7 @@ The first frame waits until every pipeline that it needs is built, so it shows t
 
 ### Repeat visits
 
-The engine keeps a list of the pipelines that the first frame of each sketch built, in the page's `localStorage`. On the next start in the same browser, the thread that draws builds them as soon as it has its GPU. The engine downloads and the setup runs meanwhile. On a slow tablet, the list cut the island showcase's repeat-visit wait by more than half ([A fast start](start-time.md#pipelines-on-phones)).
+The engine keeps a list of the pipelines that the first frame of each sketch built, in the page's `localStorage`. On the next start in the same browser, the thread that draws builds them as soon as it has its GPU. The engine downloads and the setup runs meanwhile. On a slow tablet, the list cut the island showcase's repeat-visit wait by more than half ([A fast start](start-time.md#pipelines-on-phones)). The [Island showcase](https://github.com/null3d-engine/null3d/tree/main/examples/showcase/island) is that scene.
 
 ## The first frame
 
@@ -275,7 +275,7 @@ page.onMessage(async (name, preset) => {
 });
 ```
 
-[Quality API](../api/quality.md#switching-presets) says what the call changes.
+[Quality API](../api/quality.md#switching-presets) says what the call changes. The [Island](https://github.com/null3d-engine/null3d/tree/main/examples/showcase/island), [Creek](https://github.com/null3d-engine/null3d/tree/main/examples/showcase/creek) and [Skyway](https://github.com/null3d-engine/null3d/tree/main/examples/showcase/skyway) showcases change preset from a Quality menu while the last frame stays on screen.
 
 ## Measure the warm-up
 

@@ -35,6 +35,10 @@ Lights, shadow cascades, raycasts, overlap queries, `screenToRay`, `worldToScree
 
 Cells keep world matrices precise, but a position that you set is a 32-bit float by default. At the Earth's radius it moves in steps of 0.5 m before it reaches a cell. Start the engine with `largeWorld: true`, and the setters keep each position exact:
 
+![A road at golden hour with dashed lane marks, trees and hazy hills.](../images/concepts/large-worlds/large-world.webp)
+
+A road 6,378 km from the origin, in large-world mode.
+
 ```ts
 // page.ts
 const engine = await createEngine({ canvas, sketch, largeWorld: true });
@@ -129,3 +133,4 @@ The engine does not use logarithmic depth, which writes depth from the fragment 
 - [Engine](../api/engine.md): the `largeWorld` option of `createEngine`.
 - [GPU tiers and backends](backends.md#depth-on-each-tier): depth on each tier.
 - [The large world demo](https://github.com/null3d-engine/null3d/tree/main/examples/large-world): a drive along a road on the Earth's surface, in large-world mode with batch origins.
+- [No `largeWorld` flag](https://github.com/null3d-engine/null3d/tree/main/examples/far-from-origin): 2 cm keys and a brass wheel, 1,000 km from the origin, seen from 40 cm.

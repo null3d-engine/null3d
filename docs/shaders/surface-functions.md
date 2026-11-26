@@ -29,6 +29,10 @@ export default defineSketch(({ scene, geometry, materials }) => {
 });
 ```
 
+![Two rows of spheres and planes. The top row pairs three standard materials with surface functions that keep their look. The bottom row shows surface functions that change it: glowing stripes, colored rings and a plane colored by its face.](../images/shaders/surface-functions/custom-surface.webp)
+
+Top row: each pair must match. Bottom row: surface functions that change the look.
+
 ## Make a custom material
 
 `materials.shader(options)` makes a custom material. Its `wgsl` option holds the WGSL. Its `uniforms` and `textures` options give the values of the WGSL's [uniforms](#uniforms) and [textures](#textures). Its other options are those of `materials.standard`, but the texture maps, which a custom material samples as textures of its own. [Materials](../api/materials.md) lists them.
@@ -504,6 +508,10 @@ const stone = materials.shader({ wgsl: wet, color: '#8d8a84', roughness: 0.85 })
 ## Vertex offsets
 
 A vertex offset moves each vertex of the mesh before the engine places the object in the world. You write `fn vertexOffset`, which returns how far to move the vertex, in the mesh's own space. The engine then applies the object's transform and instancing, and lights the moved surface:
+
+![Two planes bent into waves, a sphere swollen in bands, and a twisted torus beside a plain one, all moved by vertex offsets.](../images/shaders/surface-functions/vertex-offset.webp)
+
+The wave from this section.
 
 ```wgsl
 struct Uniforms { height: f32, waves: f32 }

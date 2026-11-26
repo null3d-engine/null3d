@@ -21,6 +21,10 @@ A layer mask is a 32-bit number. Bit n puts an object on layer n, so the mask `1
 
 New objects, batches and cameras are on layer 0 alone, with the mask 1. Every camera draws every object until you change a mask.
 
+![Brick cottages drawn without their roof layer, so the rooms inside show, with a red map pin above each house.](../images/concepts/render-layers/layers-cottages.webp)
+
+The camera's mask leaves out the roof layer and draws the pin layer.
+
 ## Setting layers
 
 ```ts
@@ -62,6 +66,8 @@ export default defineSketch(({ scene, geometry, materials, input }) => {
 - `camera.setLayers(mask)` changes the layers that the camera draws.
 - A mask of 0 puts an object on no layer, so no camera draws it. A mask of `0xffffffff` puts it on all 32 layers.
 - In development builds, a mask must be a whole number from `-(2 ** 31)` to `0xffffffff`, or the call throws [E1207](../errors/E1207.md). Negative masks are allowed so that `1 << 31`, which JavaScript makes negative, names layer 31.
+
+[Camera layer masks](https://github.com/null3d-engine/null3d/tree/main/examples/layers) shows a camera that changes its layers every 2 seconds, to show or hide roofs and map pins.
 
 ## Layers and visibility
 
@@ -106,4 +112,4 @@ A new mask rebuilds none of the engine's tables of what it draws. On WebGPU it r
 - [Cameras](../api/cameras.md): the camera's layers.
 - [Scene](../api/scene.md): the `layers` option, and when changes take effect.
 - [Culling](culling.md): the test that masks join.
-- [The render layers demo](https://github.com/null3d-engine/null3d/tree/main/examples/layers): a camera that changes its layers every 2 seconds, to show or hide roofs and map pins.
+- [Camera layer masks](https://github.com/null3d-engine/null3d/tree/main/examples/layers): a camera that changes its layers every 2 seconds, to show or hide roofs and map pins.

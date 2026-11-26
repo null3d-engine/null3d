@@ -37,6 +37,10 @@ export default defineSketch(({ scene, materials, geometry, textures, render }) =
 
 `render.addPass({ kind: 'scene', ... })` adds a pass from the next frame on and returns a `RenderPass`.
 
+![A monitor on a wall shows a night camera's grainy view of the yard behind it.](../images/api/render/security-camera.webp)
+
+A scene pass's texture on a material.
+
 | Option | Meaning | Default |
 | --- | --- | --- |
 | `kind` | `'scene'`: the pass draws the scene's objects from `camera`. | Required |
@@ -70,6 +74,10 @@ It draws the scene's background behind the objects, the sky included. With a `cl
 A pass draws no ambient occlusion.
 
 ## Reflection passes
+
+![A red box, a green box, a blue ball and a yellow post mirrored in a polished floor under a blue sky.](../images/api/render/reflection-mirror.webp)
+
+A reflection pass on a mirror floor.
 
 ```mermaid
 flowchart LR
@@ -159,6 +167,10 @@ Take S1, the swarm benchmark, with water under 100,000 boxes. On a MacBook Pro o
 Small objects such as S1's boxes cost the reflection their vertices at any size, so its size matters most where large surfaces fill its pixels.
 
 ## Full-screen passes
+
+![A white ball with a warm orange glow around it, among colored boxes on a grey floor.](../images/api/render/fullscreen-glow.webp)
+
+The outline mask blurred at half size and added by an effect.
 
 ```mermaid
 flowchart LR
@@ -520,6 +532,9 @@ The core checks the whole graph when `render.addPass`, `render.removePass` or `t
 - [Textures](textures.md): `textures.fromPass`.
 - [Cameras](cameras.md): perspective and orthographic cameras.
 - [The security camera demo](https://github.com/null3d-engine/null3d/tree/main/examples/security-camera): a camera on a pole sweeps a yard behind a wall, and a monitor shows what it sees.
+- [Compute passes](https://github.com/null3d-engine/null3d/tree/main/examples/ocean): the water add-on adds three compute passes that transform the ocean's wave spectra each frame.
+- [Reflection passes](https://github.com/null3d-engine/null3d/tree/main/examples/mesh-arrays): a reflection pass mirrors an island in the water, and a custom material reads it.
+- [Passes with history and instance buffers](https://github.com/null3d-engine/null3d/tree/main/examples/vegetation-wind): the wind add-on's pass keeps history, and the grass add-on's pass fills instance buffers.
 
 ## API reference
 

@@ -6,6 +6,10 @@ summary: "HDR scene color, ambient occlusion and screen-space reflections at hal
 
 # The post-processing chain
 
+![Crates in a neon alley at night, with glowing neon, reflections in the wet ground and a yellow outline round one crate.](../images/concepts/post-processing/post-effects-alley.webp)
+
+The post effects demo: built-in bloom, reflections and outline, and the lens kit's custom effect.
+
 > The chain has HDR scene color, ambient occlusion, screen-space reflections, screen-space bounce light, custom effects, depth of field, bloom, automatic exposure and outlines. The final pass adds color grading, the vignette, sharpening and custom tone curves. A still view blends and then rests the GPU.
 
 ```mermaid
@@ -38,7 +42,7 @@ Each frame draws the scene into a linear HDR target, runs the effects that need 
 
 1. Before the opaque objects shade, the depth prepass draws depth. Ambient occlusion and screen-space reflections read it.
 2. The scene passes draw linear color with no upper limit into a float target, the scene color. The exposure scales each light and color as it enters, so the scene color holds exposed color. The opaque pass darkens its ambient light with the occlusion and reflects the frame before's colors where the reflections' rays hit.
-3. The HDR effects read the scene color in this order: the volumetric fog's light ([Lighting and environment](lighting.md#volumetric-fog)), custom effects, depth of field, then bloom.
+3. The HDR effects read the scene color in this order: the volumetric fog's light ([Lighting and environment](lighting.md#volumetric-fog)), custom effects, depth of field, then bloom. The [light shafts demo](https://github.com/null3d-engine/null3d/tree/main/examples/light-shafts) shows that stage at dusk, with sun rays between the trunks.
 4. The final pass smooths edges with FXAA, adds the effects' results, darkens the edges with the vignette and applies the tone curve: AgX with a punchy look by default, which keeps the hues of bright colors ([Color management](color-management.md#exposure-and-tone-mapping)). Then it encodes sRGB.
 5. In the same pass, it draws the outline's line, applies the color grading table when the sketch sets one, and dithers last.
 
@@ -140,6 +144,10 @@ With the default weights, bloom draws 15 small passes: 8 steps down and 7 steps 
 
 Depth of field blurs what lies in front of and behind the focus distance, as a camera lens does. Each pixel's blur is the circle of confusion of a thin lens, from the pixel's depth, the focal length, the aperture and the focus distance. The near field, what lies in front of the focus, and the far field, what lies behind it, blur apart:
 
+![A low view across a chess board: the far king is sharp, and the near pawns and the string lights are blurred.](../images/concepts/post-processing/depth-of-field.webp)
+
+Depth of field in the camera lens demo.
+
 1. The setup step reads four pixels of the scene's color and depth for each texel of a target at half the render size. It finds each pixel's blur, and writes their color with the smallest blur. In-focus color counts less in the average, so sharp detail does not bleed into the blur.
 2. The gather reads a spiral of taps over a disk around each texel, or over a polygon when the aperture has blades. A tap adds to the far field only where both its own blur and the texel's reach it. It adds to the near field wherever its own blur reaches the texel.
 3. A small tent filter smooths the gather.
@@ -181,6 +189,10 @@ Depth of field adds three passes at half the render size and one at the render s
 ## Automatic exposure
 
 Automatic exposure adapts the picture to the scene's brightness, as an eye or a camera does. A meter on the GPU reads the color that the final pass reads, in the same frame. It writes the adapted exposure into one texel, and the final pass multiplies the color by it before FXAA, the vignette and the tone curve.
+
+![A stone hall and a pool under a blue sky, lit after automatic exposure adapted to the scene.](../images/concepts/post-processing/auto-exposure.webp)
+
+The stone hall with automatic exposure on.
 
 ```ts
 post.set({ autoExposure: { minEv: -6, speedDown: 0.7 } });
@@ -292,6 +304,10 @@ Ambient occlusion adds the depth prepass and three small passes at half the rend
 
 Screen-space reflections make shiny opaque surfaces reflect what the screen shows along their mirror direction. A wet street shows the lamps and windows above it, a polished floor the furniture on it, and a metal pipe the wall beside it. They work in four steps, the first three at the size of ambient occlusion's grid:
 
+![Puddles that mirror lit windows and neon signs.](../images/concepts/post-processing/ssr-wet-street.webp)
+
+Screen-space reflections in the wet street demo.
+
 1. The depth prepass draws the opaque objects' depth, and a first step copies the depth of one pixel under each texel, as for ambient occlusion.
 2. Six small steps build a depth pyramid. Each texel of a level keeps the nearest depth of the four texels under it, so a level shows where nothing stands in front of a ray.
 3. The trace rebuilds each surface's normal from the depth, and marches its mirror ray through the pyramid. Where a cell holds nothing nearer than the ray, the ray crosses the whole cell and climbs to a larger one. Where it does, the ray drops to a smaller cell, until it meets a surface. A hit counts only where the ray passes no further behind that surface than `thickness`. The trace keeps the ray's length.
@@ -336,6 +352,10 @@ The engine's benchmark scene of 100,000 boxes over a polished floor ran on a Mac
 ## Screen-space bounce light
 
 Screen-space bounce light adds one bounce of the indirect light that the camera's view shows. A red wall throws red light onto the floor beside it. A green wall throws green light onto the other side. The environment's light is one color for every direction, so it cannot show that.
+
+![A room without and with bounce light: with it, the floor turns red and green near the walls.](../images/concepts/post-processing/bounce-light.webp)
+
+Bounce light off and on.
 
 Bounce light needs no `post.set` call. The High and Ultra presets draw it, and so does Medium on WebGL2. While it draws, the depth prepass runs too. `quality.set({ bounceRays: 0 })` turns it off.
 
@@ -399,6 +419,10 @@ A color grading table, from a `.cube` or a `.3dl` file through `assets.loadLut` 
 
 Sharpening makes edges and fine detail crisper, as a lens that is stopped down does. `post.set({ sharpen: 0.5 })` turns it on with half its strength, and it is off by default. [The post-processing API](../api/post.md#sharpening) lists its setting.
 
+![A small patch of fine detail before and after sharpening, enlarged.](../images/concepts/post-processing/sharpen.webp)
+
+Sharpening, enlarged 4 times.
+
 - It works on display color, after the tone mapping and the sRGB encoding, as FSR 1's RCAS does at the end of its chain. Sharpening light before the tone curve lets a bright edge gain colored rings, so the engine sharpens what the canvas shows.
 - RCAS is robust contrast-adaptive sharpening. Each pixel reads the four neighbors that cross it. The pass takes a share of them that grows where they form an edge, and shrinks it where the ring around the pixel is noise. Flat areas and grain therefore stay as they are. It also limits the result to the colors' own range, so no channel clips and no dark or bright halo appears.
 - It draws at the whole canvas's render scale. A render scale below 1 sharpens its own upscale, so the value adds nothing there.
@@ -450,3 +474,10 @@ The devices that the engine was tested on all draw HDR color with WebGL2, and wi
 - [Color management](color-management.md): HDR color, the final pass and the 8-bit path.
 - [The render graph](render-graph.md): how the passes of a frame are declared and ordered.
 - [Quality presets](quality-presets.md): `bloomSize`, `aoScale`, `dofSamples`, the depth prepass and the frame-budget governor.
+- [The whole chain](https://github.com/null3d-engine/null3d/tree/main/examples/post-effects): bloom, ambient occlusion, an outline, depth of field, a vignette, sharpening and color grading in one neon alley.
+- [Depth of field](https://github.com/null3d-engine/null3d/tree/main/examples/camera-lens): the focus racks across a chess board during a dolly zoom.
+- [Automatic exposure](https://github.com/null3d-engine/null3d/tree/main/examples/auto-exposure): a walk from a sunny courtyard into a dark hall.
+- [Screen-space reflections](https://github.com/null3d-engine/null3d/tree/main/examples/wet-street): puddles that mirror the lit windows, the neon signs and a passing taxi.
+- [Screen-space bounce light](https://github.com/null3d-engine/null3d/tree/main/examples/bounce-light): red and green walls that tint a gray floor and back wall.
+- [Outlines](https://github.com/null3d-engine/null3d/tree/main/examples/picking): a click outlines the selected piece, and the hidden parts keep their own line.
+- [Color grading tables](https://github.com/null3d-engine/null3d/tree/main/examples/compare/night-town): a city block whose color grade comes from a table, in both engines.

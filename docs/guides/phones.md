@@ -22,7 +22,7 @@ export default defineSketch(({ quality }) => {
 });
 ```
 
-Do not force a heavier preset on phones. When a player picks one in a menu, switch to it with `quality.setPreset` in the sketch ([Quality API](../api/quality.md#switching-presets)). The GPU path still caps it, and `quality.highest` names the cap. To start at a choice that the page remembers, pass it to `createEngine` with the `preset` option.
+Do not force a heavier preset on phones. When a player picks one in a menu, switch to it with `quality.setPreset` in the sketch ([Quality API](../api/quality.md#switching-presets)). The GPU path still caps it, and `quality.highest` names the cap. To start at a choice that the page remembers, pass it to `createEngine` with the `preset` option. The [instancing demo](https://github.com/null3d-engine/null3d/tree/main/examples/instances) draws a 101 x 101 grid of columns on Low, and 317 x 317 above it.
 
 Low, the phone's preset, leaves out the costliest work:
 
@@ -145,7 +145,7 @@ A view that holds still stops drawing after about a second. The engine first ble
 
 ## Touch input
 
-The engine reads touches as it reads the mouse: the first finger presses `Mouse0`, and `input.touches` lists every finger on the canvas. A tap on an object calls its `click` handler, as a mouse click does ([Pointer events on objects](../api/input.md#pointer-events-on-objects)).
+The engine reads touches as it reads the mouse: the first finger presses `Mouse0`, and `input.touches` lists every finger on the canvas. A tap on an object calls its `click` handler, as a mouse click does ([Pointer events on objects](../api/input.md#pointer-events-on-objects)). The [picking demo](https://github.com/null3d-engine/null3d/tree/main/examples/picking) shows such a handler.
 
 A canvas that takes touch gestures needs `touch-action: none` in its CSS. Without it, the browser scrolls or zooms the page, and it cancels the touch. [Input](../api/input.md#touches) explains touches and pinches.
 
@@ -155,7 +155,7 @@ canvas { touch-action: none; }
 
 ## Networks and repeat visits
 
-On a phone, a start is mostly downloads, the round trips between them, and the GPU's pipeline builds. A host that compresses every file, `.wasm` included, and lets the browser keep the build's files saves seconds. So does a sketch that starts its downloads together and draws before its large models arrive. A first view with few pipelines saves more: 55 pipelines took 10.9 seconds to build on a Galaxy Tab A9 Plus. [A fast start](start-time.md) gives each step, with measured times on real phones.
+On a phone, a start is mostly downloads, the round trips between them, and the GPU's pipeline builds. A host that compresses every file, `.wasm` included, and lets the browser keep the build's files saves seconds. So does a sketch that starts its downloads together and draws before its large models arrive. A first view with few pipelines saves more: 55 pipelines took 10.9 seconds to build on a Galaxy Tab A9 Plus. [A fast start](start-time.md) gives each step, with measured times on real phones. The [Island showcase sketch](https://github.com/null3d-engine/null3d/tree/main/examples/showcase/island) starts its downloads together and draws before its large models arrive.
 
 Phones often lose their network. A game that must play offline caches the engine's files and its own in a service worker, as [Hosting](../getting-started/hosting.md#offline-play) shows. The engine keeps each transcoded KTX2 texture in its [cache of derived data](../api/assets.md#the-cache-of-derived-data), so a repeat visit skips the transcoder. On phones that saves less time than on a tablet, because other start work takes most of a phone's start.
 

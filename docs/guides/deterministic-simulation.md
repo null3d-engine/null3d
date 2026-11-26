@@ -110,7 +110,7 @@ The sketch still draws with the main entry's helpers, which use the browser's `M
 
 ## Input that another library records
 
-`createEngine({ input: false })` keeps the engine from listening for input. The engine then adds no listener that takes input: none for pointers, keys, the wheel, focus, the pointer lock or gamepads. [Input off](../api/input.md#input-off) lists them. The library that records the player's input listens alone.
+`createEngine({ input: false })` keeps the engine from listening for input. The engine then adds no listener that takes input: none for pointers, keys, the wheel, focus, the pointer lock or gamepads. [Input off](../api/input.md#input-off) lists them. The library that records the player's input listens alone. The [deterministic simulation demo](https://github.com/null3d-engine/null3d/tree/main/examples/replay) takes its input on the page, and the [input demo](https://github.com/null3d-engine/null3d/tree/main/examples/input) binds an action map to the keyboard and a gamepad.
 
 ```ts
 // page.ts
@@ -132,6 +132,10 @@ The sketch's `ctx.input` then stays at rest. Every key, button and action is up,
 ## Where the player looks
 
 A game whose result depends on where the player looks records the look as input. An example is a game that scores what the player aims at. The camera is then the simulation's, and the sketch only draws it:
+
+![A walled court at dusk with glowing gold orbs, seen from the player's start point in the deterministic simulation demo.](../images/guides/deterministic-simulation/replay-demo.webp)
+
+The run's start, built from the seed.
 
 1. The page's input code locks the pointer on the canvas with `canvas.requestPointerLock()`, in a click handler. When a drag also turns the view, ask only on a click that barely moved, since a drag ends in a click too. Read `document.pointerLockElement` at each event, since a press can come before `pointerlockchange` does. Take no pointer capture under the lock: the browser refuses one with an `InvalidStateError`. The engine's own `requestPointerLock()` belongs to its input, and fails with [E1426](../errors/E1426.md) when that is off.
 2. Each tick, the page records the mouse's movement since the last tick as whole counts, and carries the fraction to the next tick. A browser can report a fraction of a pixel, and the log holds what the simulation reads.

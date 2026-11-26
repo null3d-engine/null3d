@@ -347,7 +347,7 @@ The box follows the camera, so update the material's `origin` values in each fra
 
 A vertex offset that reads the field orders the pass before every pass that draws the material. The shadows and the motion vectors therefore move with the plant.
 
-Trees and plants sway through such a material. The forest demo, `examples/forest`, draws the bark of its trees made in code with one custom material, and their leaf cards with a standard material. The bark's vertex offset samples this field's block at each vertex, as the example above does. Its sway fades to nothing at the material's `swayDistance`. So a tree past it stands still, and its far shadow cascades keep their layers.
+Trees and plants sway through such a material. The [forest demo](https://github.com/null3d-engine/null3d/tree/main/examples/forest) draws the bark of its trees made in code with one custom material, and their leaf cards with a standard material. The bark's vertex offset samples this field's block at each vertex, as the example above does. Its sway fades to nothing at the material's `swayDistance`. So a tree past it stands still, and its far shadow cascades keep their layers.
 
 A tree loaded from a glTF file sways the same way: give its meshes such a material with `setMaterial`. The grass package, [`@null3d/grass`](grass.md), reads the field for its blades. Its `swayDistanceFor(preset)` gives each quality preset's sway distance.
 
@@ -414,6 +414,7 @@ Where the page shares its memory, the worker writes the answer in place; otherwi
 - [Materials](materials.md): a custom material's vertex offset reads the field.
 - [Add-on feature descriptions](features.md): the feature that declares the field's work.
 - [Quality API](quality.md): the presets that set the field's grid and steps.
+- [Plants in the field](https://github.com/null3d-engine/null3d/tree/main/examples/vegetation-wind): a grove of oaks, birches and firs that sway in the field. The plant material lives in the shared helper `examples/lib/sway.ts`, which the sketch imports.
 
 ## API reference
 

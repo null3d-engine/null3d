@@ -124,7 +124,11 @@ The image moves to the thread that draws, without a copy, so the sketch can use 
 
 ## Canvases
 
-`textures.fromCanvas` makes a texture that follows an `OffscreenCanvas` drawn in the sketch, such as a score board, a map or a drawing surface. The canvas's last row goes to v = 0, the bottom of a plane, so the canvas stands upright on a plane as on a page. Its first pixels upload as any image's do.
+`textures.fromCanvas` makes a texture that follows an `OffscreenCanvas` drawn in the sketch, such as a score board, a map or a drawing surface. The canvas's last row goes to v = 0, the bottom of a plane, so the canvas stands upright on a plane as on a page. Its first pixels upload as any image's do. The [screens on a canvas demo](https://github.com/null3d-engine/null3d/tree/main/examples/canvas-screen) paints wall panels and a console this way, each at its own rate.
+
+![A dark wall with three glowing screens that show numbers and bar gauges, and a small console panel with a wave trace below them.](../images/api/textures/canvas-screen.webp)
+
+Screens painted on canvases.
 
 `texture.refresh(rect)` reads the canvas again. Give it the rectangle that changed, in the canvas's own coordinates. The rectangle starts at the column and row of its top-left texel, counted from the canvas's top-left corner, and gives its width and height. Only that rectangle uploads, in the texture's turn and within the frame's upload budget. The rest of the texture keeps its texels. Without a rectangle, the call reads the whole canvas.
 
@@ -189,7 +193,7 @@ The video element's own settings, such as its file format and its cross-origin r
 
 A texture with `depth` above 1 holds that many layers, up to 256, one after another in `data`. Its layers are a texture array of their own. Materials read its first layer.
 
-Data of the wrong length or type for the size and format throws E1208. Data textures have no mip levels unless `mipmaps` is true.
+Data of the wrong length or type for the size and format throws E1208. Data textures have no mip levels unless `mipmaps` is true. The [security camera demo](https://github.com/null3d-engine/null3d/tree/main/examples/security-camera) makes its ground maps with `textures.fromData`.
 
 ## Textures of render passes
 
@@ -264,6 +268,10 @@ Until its texels are on the GPU, a texture draws as if the material had no map. 
 
 Mip levels are smaller copies of a texture. The GPU reads them where the texture covers few pixels on screen, so distant textures do not shimmer. The engine makes each texture's mip levels on the GPU, after its texels upload. Each level is the average of the level above it, in linear color. Textures in `rgba16float` have no mip levels. A texture from a KTX2 file has the mip levels of its file.
 
+![A checkerboard drawn smaller and smaller: with mip levels the small copies fade to gray, without them they break into stray texels. Below, two receding floors; the right one uses anisotropic filtering and stays sharp further away.](../images/api/textures/mipmaps.webp)
+
+Mip levels and anisotropic filtering.
+
 ## Sampling
 
 Each texture has its own sampler settings, from its options:
@@ -271,6 +279,10 @@ Each texture has its own sampler settings, from its options:
 - What texture coordinates outside 0 to 1 read along each axis: the texel at the edge, a repeat of the texture, or a mirrored repeat. By default the edge texel repeats outward.
 - The filter of magnified texels, of minified texels and between mip levels: linear or nearest. It is linear by default.
 - Anisotropic filtering, which keeps a texture sharp on a surface seen at a slant, such as a floor. It reaches at most 16 samples, or the quality preset's cap (`maxAnisotropy`) when that is lower. A nearest filter turns it off. It is off by default.
+
+![A grid of texture samples. The bottom row applies repeat, clamp and mirror wrap to the same picture, then shows nearest and linear filters.](../images/api/reference/textures/texture-wrap.webp)
+
+Wrap modes and the other texture checks.
 
 Materials do not sample cube maps. A cube map can be a background: [Assets](assets.md) loads one with `assets.loadCubemap`.
 

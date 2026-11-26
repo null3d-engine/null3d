@@ -60,6 +60,10 @@ Put the catcher a little above the surface it lies on, so its shadows show over 
 
 ## Standard values
 
+![Fifteen spheres of one color: roughness rises left to right, metalness top to bottom.](../images/api/materials/standard-grid.webp)
+
+Roughness and metalness.
+
 | Option | Range | Default | What it does |
 | --- | --- | --- | --- |
 | `color` | A [color](#color) | White | The base color: the color of diffuse light, and of a metal's reflections |
@@ -180,6 +184,10 @@ Then each frame copies the camera's opaque colors once and makes the blurred cop
 
 A surface with `diffuseTransmission` lets the light that reaches its back through to its front, as glTF's `KHR_materials_diffuse_transmission` describes. A leaf, a petal, a lampshade or an ear then glows where the sun or a lamp shines behind it. The light from behind spreads out evenly, as the diffuse light does, so the surface does not show what lies behind it. For glass and water, which do, use `transmission`.
 
+![Backlit leaves and petals under a low sun, with a paper lantern.](../images/api/materials/translucency.webp)
+
+Diffuse transmission.
+
 | Value | What it does |
 | --- | --- |
 | `diffuseTransmission` | The share of the surface's diffuse light that passes through to the other side. The front keeps the rest, and the specular reflection stays. 0 lets nothing through, and 1 lets all the diffuse light through, as a sheet of paper does |
@@ -229,6 +237,10 @@ Each pixel of such a surface adds one product per light, and one more reading of
 
 Light that enters skin, wax or marble leaves it a little way from where it entered, redder the further it went. A material with `subsurfaceRadius` draws that: the subsurface blur spreads the surface's diffuse light over the radius. The edges of its shadows, the light at the side of a nose and the detail of its maps then go soft. Its highlights stay sharp, since only the diffuse light spreads.
 
+![Wax candles, a jade knot and a soap egg that glow softly by candlelight.](../images/api/materials/subsurface.webp)
+
+Light under the surface. It shows on High and Ultra.
+
 | Value | Meaning |
 | --- | --- |
 | `subsurfaceRadius` | How far light spreads under the surface, in world units taken as meters. Skin takes about 0.01, wax about 0.02, and marble a few millimeters |
@@ -266,6 +278,10 @@ While it draws, the objects with a radius draw a second time, in a skin pass tha
 ## Clear coat and sheen
 
 Two layers can lie over the standard material's surface, as glTF's `KHR_materials_clearcoat` and `KHR_materials_sheen` extensions describe them:
+
+![A red car on a plinth in the rain, over wet cobbles whose puddles shine with a clear coat, beside a velvet cushion with a sheen.](../images/api/materials/coat-and-sheen.webp)
+
+Clear coat and sheen.
 
 - A **clear coat** is a thin, clear, shiny film, such as the lacquer of car paint, varnish on wood, or water on a stone. It has highlights and a reflection of its own, at its own roughness. Where it reflects light, it dims what lies under it. So a rough red paint under a smooth coat shows a sharp reflection over a soft color.
 - A **sheen** is the soft glow that cloth, velvet and fuzz take at grazing angles, where the light catches the tips of their fibers. Its color tints the glow. Light that the sheen reflects does not reach the surface under it.
@@ -330,6 +346,10 @@ A layered material costs each of its pixels, per light, one more highlight for t
 
 Two more effects sit in the same shaders as the clear coat and the sheen, and a material takes them with the same options:
 
+![A beetle with a shifting film on a brushed metal plinth, among soap bubbles.](../images/api/materials/iridescence-and-anisotropy.webp)
+
+Iridescence and anisotropy.
+
 - **Iridescence** is the color that a thin film adds to a reflection, as on a soap bubble, an oil slick, a beetle's shell or a pearl. The film reflects each wavelength by its own phase, so the color depends on the film's thickness and on the angle you see it from. The engine uses Belcour and Barla's thin-film formulas.
 - **Anisotropy** stretches the surface's highlight along one direction, as the grain of brushed metal spreads it across the grooves instead of around them. The engine uses an anisotropic GGX lobe, after Filament.
 
@@ -390,6 +410,10 @@ They run in the shaders of the layers above the surface, which load the first ti
 ## Decals
 
 A decal material projects a standard material onto every opaque surface inside a box. Use decals for scorch marks, mud, puddles, road paint, moss, cracks and posters. Give the material to a mesh of `geometry.box()`: the object's position, rotation and scale place the box.
+
+![A zebra crossing, road paint, puddles and posters on a street at dusk.](../images/api/materials/decals.webp)
+
+Decals.
 
 ```ts
 // sketch.ts: a scorch mark on the ground, and cracks on a wall. The maps come from textures.
@@ -522,6 +546,10 @@ On WebGL2, the maps of one material share at most six textures on the GPU. Maps 
 
 Three maps give a surface relief. Each reads heights from its red channel, in the `linear` color space.
 
+![Hills, boulders, a brick wall and a wireframe frame drawn with displacement, parallax and bump maps.](../images/api/materials/relief.webp)
+
+Relief maps.
+
 ```ts
 // sketch.ts
 const [color, normal, height] = await Promise.all([
@@ -625,7 +653,7 @@ A material with `vertexColors` draws a mesh without colors in its base color alo
 
 A material with `wireframe: true` draws each triangle's three edges as lines. An edge that two triangles share draws twice. The engine keeps an edge list for each mesh from the first wireframe on, which takes twice the GPU memory of the mesh's triangle indices. Its shadows draw lines too.
 
-Flat shading and bump maps have no effect, because lines have no faces. Lines are one pixel wide on every GPU path. For wide lines, or for a mesh's outline edges alone, use [Lines](lines.md).
+Flat shading and bump maps have no effect, because lines have no faces. Lines are one pixel wide on every GPU path. For wide lines, or for a mesh's outline edges alone, use [Lines](lines.md). The [relief demo](https://github.com/null3d-engine/null3d/tree/main/examples/relief) draws a geodesic frame with `wireframe: true`, and its shadow is a shadow of lines.
 
 ## Alpha modes
 
@@ -689,7 +717,7 @@ scene.createMesh({ mesh: geometry.plane({ width: 8, height: 6 }), material: hold
 
 A blended surface with `doubleSided: true` draws in two draws. Its back faces draw first, then its front faces. So the near side of a glass box or a sphere always covers its far side, whatever the order of the mesh's triangles. Neighbors that share the mesh and the material draw together: all their back faces, then all their front faces.
 
-`forceSinglePass: true` draws both faces in one draw. The triangles then cover each other in the mesh's order. Use it for flat surfaces, such as leaves and planes of glass, whose two faces never overlap on screen: it saves one draw per object. The second draw costs about as much as the first, so it is the speed setting for scenes with many double-sided blended objects. Solid double-sided materials always draw once.
+`forceSinglePass: true` draws both faces in one draw. The triangles then cover each other in the mesh's order. Use it for flat surfaces, such as leaves and planes of glass, whose two faces never overlap on screen: it saves one draw per object. The second draw costs about as much as the first, so it is the speed setting for scenes with many double-sided blended objects. Solid double-sided materials always draw once. The [depth-only demo](https://github.com/null3d-engine/null3d/tree/main/examples/depth-only) sets it on its double-sided glass panes.
 
 ```ts
 // sketch.ts: a glass globe that shows its far side, and a flat pane that needs one draw.
@@ -782,6 +810,10 @@ const poster = materials.standard({ color: '#e8554e', depthBias: { constant: -4,
 ## Custom materials
 
 `materials.shader(options)` takes every option of `materials.standard` but the texture maps, and a `wgsl` option: WGSL that the null3D Vite plugin compiled. The WGSL declares a surface function, which starts from the look that the standard options make:
+
+![Crystals in one batch colored by their row, and stones with bands, both drawn by custom materials.](../images/api/materials/shader-inputs.webp)
+
+A custom material that reads row and object values.
 
 ```ts
 const rings = /* wgsl */ `
@@ -954,6 +986,17 @@ One engine holds up to 1,024 materials at once. One more throws E1501. A materia
 - [Lights](lights.md): what lights a standard material.
 - [Surface functions](../shaders/surface-functions.md): the WGSL of a custom material.
 - [Math helpers](math.md#colors): sRGB and linear colors.
+- [Clear coat and sheen](https://github.com/null3d-engine/null3d/tree/main/examples/coat-and-sheen): candy paint, carbon fiber and velvet in a rainy showroom.
+- [Iridescence and anisotropy](https://github.com/null3d-engine/null3d/tree/main/examples/iridescence-and-anisotropy): a beetle's shell, soap bubbles and an oil slick.
+- [Diffuse transmission](https://github.com/null3d-engine/null3d/tree/main/examples/translucency): broad leaves and coral petals let the low sun through.
+- [Subsurface light](https://github.com/null3d-engine/null3d/tree/main/examples/subsurface): wax, jade and soap glow under the surface.
+- [Decals](https://github.com/null3d-engine/null3d/tree/main/examples/decals): road paint, posters and stains projected onto a street.
+- [Bump, displacement and parallax](https://github.com/null3d-engine/null3d/tree/main/examples/relief): hills and a brick wall whose depth comes from maps made in code.
+- [Weighted blending](https://github.com/null3d-engine/null3d/tree/main/examples/weighted-transparency): eight crossing glass panes and 600 smoke puffs blend in any order.
+- [Custom materials](https://github.com/null3d-engine/null3d/tree/main/examples/shader-inputs): 900 crystals from one material that reads each row.
+- [Scene depth behind a surface](https://github.com/null3d-engine/null3d/tree/main/examples/water): the water add-on reads the bed's depth through the surface.
+- [Invisible surfaces that hide](https://github.com/null3d-engine/null3d/tree/main/examples/depth-only): a plane with `colorWrite: false` holds back a hall while the page shows through.
+- [Dispersion in glass](https://github.com/null3d-engine/null3d/tree/main/examples/extra-shapes): a torus knot and polyhedra in glass that separates the light into colors.
 
 ## API reference
 

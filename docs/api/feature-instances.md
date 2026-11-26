@@ -27,6 +27,10 @@ This is the adapter for a [feature description](features.md) with `kind: 'draw'`
 
 ## A draw of quads
 
+![Six rows of seven discs that a compute pass placed and counted.](../images/api/feature-instances/compute-instances.webp)
+
+The GPU writes the rows and the count.
+
 ```ts
 import { defineFeature, defineSketch } from '@null3d/engine';
 
@@ -151,6 +155,10 @@ The add-on's compute writes the count each frame. The engine copies the word int
 
 WebGL2 has no compute shaders and no storage buffers. There the draw is an instance batch that the CPU fills, and the same shader reads the same instances:
 
+![Standing discs, counted on the GPU, cast shadows on the ground.](../images/api/feature-instances/instances-shadow.webp)
+
+The page fills 64 rows but counts 42; only 42 cast shadows.
+
 ```ts
 draw.setInstances(rows, liveCount); // rows of 16 floats each, as draw.instances holds them
 draw.setCount(liveCount);
@@ -190,6 +198,7 @@ On WebGL2, each row's matrix is split into a position, a rotation and a scale th
 - [Add-on draws](feature-draws.md): a draw over its own vertices, rather than a capacity of instances.
 - [Compute passes](render.md#compute-passes): the pass that writes the count and the rows.
 - [Grass](grass.md): an add-on that draws with instance draws.
+- [Compute instances in use](https://github.com/null3d-engine/null3d/tree/main/examples/vegetation-wind): the grass add-on draws its blades this way in the Plants in wind demo.
 
 ## API reference
 

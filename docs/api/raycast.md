@@ -16,7 +16,7 @@ flowchart LR
 
 A raycast finds where a ray meets the scene's objects. An overlap query finds the objects inside a sphere or a box. Every query tests the triangles of objects and instance rows. Raycasts also hit [sprites, points and lines](#sprites-points-and-lines) where they draw. The engine keeps a tree over the scene's objects and a tree over each mesh's triangles. So a query tests only the few triangles near it.
 
-Queries run in the sketch, on the scene. They write their results into objects and arrays that you create once, so a query in every frame allocates nothing. The engine's allocation benchmark checks it in every frame.
+Queries run in the sketch, on the scene. They write their results into objects and arrays that you create once, so a query in every frame allocates nothing. The engine's allocation benchmark checks it in every frame. The [picking demo](https://github.com/null3d-engine/null3d/tree/main/examples/picking) casts rays from the pointer, and its `object.on` events report the hit point.
 
 ```ts
 import { defineSketch, type RaycastHit, vec3 } from '@null3d/engine';

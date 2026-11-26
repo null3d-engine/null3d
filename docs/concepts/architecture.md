@@ -217,3 +217,4 @@ A kept engine holds its memory and GPU buffers. Destroy it once the app is unlik
 - [The post-processing chain](post-processing.md): the passes of the effects.
 - [Render graph](render-graph.md): how the engine orders and checks the passes.
 - [Large worlds and precision](large-worlds.md): positions far from the origin.
+- [Job workers start as the parallel work grows](https://github.com/null3d-engine/null3d/tree/main/examples/instances): the instancing demo gives the job workers a batch of 100,000 columns to cull and fill.

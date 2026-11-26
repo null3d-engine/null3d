@@ -222,3 +222,5 @@ Live changes are for exploring. Write the final values into the sketch and the t
 - [Testing your sketch](testing.md): hold mode, image tests and switches.
 - [Debug drawing and stats](../api/debug.md): lines over the scene, the stats overlay, and `engine.measure`.
 - [Performance guide](performance.md): what to do when frames take too long.
+- [The objects demo](https://github.com/null3d-engine/null3d/tree/main/examples/objects): crates on a turntable that step between two parents.
+- [Hold mode](https://github.com/null3d-engine/null3d/tree/main/examples/hold-mode): a frame that every run draws the same, for a test that compares pictures.

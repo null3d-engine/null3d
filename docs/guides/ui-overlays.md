@@ -43,7 +43,7 @@ document.querySelector('#pause')!.addEventListener('click', () => engine.postToS
 
 ## Labels that follow objects
 
-A label is an element that sits over a scene object. The sketch tracks it with `ui.trackLabel`, and the page binds its element with `engine.labels.bind`. [Labels that follow objects](../api/ui.md) describes both calls.
+A label is an element that sits over a scene object. The sketch tracks it with `ui.trackLabel`, and the page binds its element with `engine.labels.bind`. [Labels that follow objects](../api/ui.md) describes both calls. The [picking demo](https://github.com/null3d-engine/null3d/tree/main/examples/picking) tracks a label on each piece as the plinth turns.
 
 This example gives each unit a health bar. The bar follows its unit in every frame, and only the health value travels as a message, when it changes.
 
@@ -122,7 +122,7 @@ layer.append(card);
 engine.labels.bind('card-3', card);
 ```
 
-Size the scene around the element's size in CSS pixels, and the browser keeps the text sharp at any distance. [Labels that follow objects](../api/ui.md#labels-that-follow-objects) gives the units.
+Size the scene around the element's size in CSS pixels, and the browser keeps the text sharp at any distance. [Labels that follow objects](../api/ui.md#labels-that-follow-objects) gives the units. The [3D labels demo](https://github.com/null3d-engine/null3d/tree/main/examples/css3d-labels) sets a card to `world` and its title to `billboard`.
 
 A plane follows either lens. An orthographic camera turns and scales the element as a perspective camera does. An element can hold any markup, such as an iframe or a form. Give it `pointer-events: auto` if it takes the pointer, because the layer around it passes the pointer through.
 
@@ -182,5 +182,6 @@ page.onMessage((type, data) => {
 - [Labels that follow objects](../api/ui.md): `ui.trackLabel` and `engine.labels.bind`.
 - [The 3D labels demo](https://github.com/null3d-engine/null3d/tree/main/examples/css3d-labels): cards that turn with a ring.
 - [Messages between sketch and page](../api/page.md): `page.post`, `page.onMessage` and `engine.postToSketch`.
+- [Messages in both directions](https://github.com/null3d-engine/null3d/tree/main/examples/weighted-transparency): a page button sends a blend to the sketch, and the sketch reports back.
 - [Cameras](../api/cameras.md): `worldToScreen` places a single point on the canvas.
 - [Accessibility](accessibility.md): meaning in HTML around the canvas.

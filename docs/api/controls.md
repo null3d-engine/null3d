@@ -14,7 +14,7 @@ flowchart LR
     update --> gizmo["A held handle moves,<br/>turns or scales an object"]
 ```
 
-The `@null3d/controls` package moves a camera with the mouse, the wheel, a trackpad, touch and the keyboard, and it moves, turns and scales scene objects with gizmos.
+The `@null3d/controls` package moves a camera with the mouse, the wheel, a trackpad, touch and the keyboard, and it moves, turns and scales scene objects with gizmos. The [glTF model demo](https://github.com/null3d-engine/null3d/tree/main/examples/gltf-model) uses orbit controls through the demos' shared helper, as a model viewer does.
 
 | Controls | Call | Moves like |
 | --- | --- | --- |
@@ -176,6 +176,10 @@ return {
 
 `createFirstPersonControls(ctx, camera, options)` makes first-person controls. Without a pointer lock, keys walk and a drag looks around. While the canvas holds the [pointer lock](#pointer-lock), the mouse turns the view.
 
+![A ruined temple at golden hour, seen from eye height between columns.](../images/api/controls/walk-and-fly.webp)
+
+First-person and fly controls.
+
 ```ts
 import { createFirstPersonControls } from '@null3d/controls';
 
@@ -252,6 +256,10 @@ The [first-person and fly controls demo](https://github.com/null3d-engine/null3d
 ## Gizmos
 
 `createTransformControls(ctx, camera, options)` draws handles on one object, and a drag of a handle moves, turns or scales that object. The [gizmos demo](https://github.com/null3d-engine/null3d/tree/main/examples/gizmos) selects one of three pieces and drags its handles.
+
+![Move handles, an arrow per axis and plane tiles, on a selected sphere on a plinth.](../images/api/controls/gizmo-handles.webp)
+
+The gizmo in translate mode.
 
 ```ts
 import { createTransformControls } from '@null3d/controls';

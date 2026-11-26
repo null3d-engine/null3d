@@ -32,6 +32,10 @@ export default defineSketch(({ scene }) => {
 
 The camera's view draws the whole canvas first, and each view covers its rectangle afterwards. The camera's aspect ratio is the canvas's, so a half of its image is a crop of a wider view. For two half-width cameras, add a view for each half:
 
+![One canvas split into a high wide view and a low view among standing stones.](../images/guides/multiple-views/split-screen.webp)
+
+Two cameras in one frame.
+
 ```ts
 const left = scene.createPerspectiveCamera({ fov: 50, position: [-4, 2, 6], target: [0, 1, 0] });
 const right = scene.createPerspectiveCamera({ fov: 50, position: [4, 2, 6], target: [0, 1, 0] });
@@ -126,3 +130,4 @@ On the 8-bit path a view writes display color into the camera's image. The resol
 - [Custom passes and render targets](custom-passes.md#render-to-a-texture): a camera's view in a texture that a material shows.
 - [The render graph](../concepts/render-graph.md): how the engine plans and orders what it draws.
 - [Performance](performance.md): the frame budget and the render scale.
+- [A picture in picture](https://github.com/null3d-engine/null3d/tree/main/examples/multiple-views): one scene from a high, wide camera and a low one, split across the canvas or in an inset.

@@ -1,0 +1,2231 @@
+[
+	{
+		"id": "index/showcase-island",
+		"pages": ["index#under the opening paragraph"],
+		"source": "scripted",
+		"images": ["webgpu/demo-island.png"],
+		"steps": "Open the examples page with ?demo=island on WebGPU, wait for the first full frame of the default view (the image test holds 0.5 s), capture the canvas at 1280x720 or larger. Fallback: the reference image as it is (320x180).",
+		"alt": "A hilly Mediterranean island with forests, a beach and a harbour town, drawn by null3D with WebGPU.",
+		"caption": "The Island showcase.",
+		"files": [
+			"examples/showcase/island/",
+			"examples/demos.ts",
+			"tests/image/references/chrome-real-gpu/webgpu/demo-island.png"
+		],
+		"verdict": "shots-index.md"
+	},
+	{
+		"id": "getting-started/first-scene/turning-box",
+		"pages": ["getting-started/first-scene#Run it"],
+		"source": "scripted",
+		"steps": "bunx @null3d/cli create first-scene; cd first-scene && bun install; bunx @null3d/cli shot --time 1 --size 1280x720 --out turning-box.png. The empty template draws the same scene as the page.",
+		"alt": "A blue box turned partway round on a dark gray background, lit from the upper right.",
+		"caption": "What the four files draw after one second.",
+		"files": ["docs/getting-started/first-scene.md", "packages/cli/templates/empty/src/sketch.ts"],
+		"verdict": "shots-getting-started__first-scene.md"
+	},
+	{
+		"id": "getting-started/project-structure/template-empty",
+		"pages": ["getting-started/project-structure#the template table"],
+		"source": "scripted",
+		"steps": "bunx @null3d/cli create t-empty --template empty; bun install; bunx @null3d/cli shot --time 2 --out template-empty.png. The first shot run downloads Chrome for Testing.",
+		"alt": "The empty template: a blue cube that turns, lit by a directional and an ambient light.",
+		"caption": "The empty template's first view.",
+		"files": ["packages/cli/templates/empty/src/sketch.ts"],
+		"verdict": "shots-getting-started__project-structure.md"
+	},
+	{
+		"id": "getting-started/project-structure/template-product",
+		"pages": ["getting-started/project-structure#the template table"],
+		"source": "scripted",
+		"steps": "bunx @null3d/cli create t-product --template product; bun install; bunx @null3d/cli shot --time 2 --out template-product.png. The first shot run downloads Chrome for Testing.",
+		"alt": "The product template: a model on a turntable with a soft key light and its shadow.",
+		"caption": "The product template's first view.",
+		"files": ["packages/cli/templates/product/src/sketch.ts"],
+		"verdict": "shots-getting-started__project-structure.md"
+	},
+	{
+		"id": "getting-started/project-structure/template-game",
+		"pages": ["getting-started/project-structure#the template table"],
+		"source": "scripted",
+		"steps": "bunx @null3d/cli create t-game --template game; bun install; bunx @null3d/cli shot --time 2 --out template-game.png. The first shot run downloads Chrome for Testing. The score is HTML over the canvas, so it does not show; do not mention it.",
+		"alt": "The game template: a player on a field among gems and rocks, seen from behind and above.",
+		"caption": "The game template's first view.",
+		"files": ["packages/cli/templates/game/src/sketch.ts"],
+		"verdict": "shots-getting-started__project-structure.md"
+	},
+	{
+		"id": "getting-started/cdn/one-file-box",
+		"pages": ["getting-started/cdn#One HTML file"],
+		"source": "scripted",
+		"steps": "Use tests/pages/cdn-try.html?cdn=<CDN origin>/ with the server in tests/image/cdn-script-tag.spec.ts (it builds the CDN folder with buildCdn and serves page and build from two origins). Capture when the page sets its result (after 3 frames), not at engine.firstFrame.",
+		"alt": "An orange box on a dark blue background, drawn by one HTML file that loads null3D from a CDN.",
+		"caption": "What the one-file page draws. The test page's box is a little larger than the example's.",
+		"files": [
+			"docs/getting-started/cdn.md",
+			"tests/pages/cdn-try.html",
+			"tests/image/cdn-script-tag.spec.ts",
+			"tools/lib/cdn.ts"
+		],
+		"verdict": "shots-getting-started__cdn.md"
+	},
+	{
+		"id": "getting-started/hosting/network-brotli",
+		"pages": [
+			"getting-started/hosting#Send the files with Brotli",
+			"guides/deploying#Compress with Brotli",
+			"guides/start-time#Compress every file"
+		],
+		"source": "manual",
+		"steps": "bun run build; bun run examples:build; bun run examples:preview (set the Vite plugin's http2: true to show h2). Open any demo in Chrome. DevTools Network: Disable cache, Big request rows, filter Wasm, add Protocol, Content-Encoding and Content-Type columns. Load, wait a few seconds (the preview recompresses at best quality while idle), reload. Capture the null3d_bg-<hash>.wasm row. Match the alt text to the captured numbers.",
+		"alt": "The network panel shows the engine core sent with Brotli over HTTP/2: about 0.6 MB transferred for a 2.0 MB file.",
+		"caption": "Compare the transferred size with the full size. Read the protocol column for h2.",
+		"files": ["packages/vite-plugin/src/index.ts", "packages/vite-plugin/src/compress.ts"],
+		"verdict": "shots-guides__deploying.md; shots-getting-started__hosting.md; shots-guides__start-time.md"
+	},
+	{
+		"id": "getting-started/hosting/service-worker-offline",
+		"pages": ["getting-started/hosting#Keep the page isolated"],
+		"source": "manual",
+		"steps": "bun run test:packages --keep, then vite preview in the kept fresh-project folder. Load once and wait for the first frame. Dock DevTools to the side. Application > Service Workers: tick Offline, reload, open the console drawer, evaluate crossOriginIsolated. One frame shows the game, the ticked box and true.",
+		"alt": "Developer tools with Offline ticked for the service worker, the game still drawing, and the console printing true for crossOriginIsolated.",
+		"caption": "A page served from the cache stays cross-origin isolated.",
+		"files": ["tests/fixtures/fresh-project/public/sw.js"],
+		"verdict": "shots-getting-started__hosting.md"
+	},
+	{
+		"id": "getting-started/network-use/network-own-origin",
+		"pages": ["getting-started/network-use#Check the claim"],
+		"source": "manual",
+		"steps": "Open the splats demo in a production preview build. Wait for the scan to stream in. Network panel: tick the third-party requests filter. Crop so the status bar shows \"0 / N requests\".",
+		"alt": "The network panel filtered to third-party requests shows 0 of several hundred requests while the splats demo streams its scan.",
+		"caption": "Every request goes to the page's own origin.",
+		"files": ["examples/splats/", "examples/lib/samples.ts"],
+		"verdict": "shots-getting-started__network-use.md"
+	},
+	{
+		"id": "concepts/architecture/devtools-threads",
+		"pages": [
+			"concepts/architecture#The kinds of thread",
+			"porting/threejs-loop-and-threads#What goes where",
+			"guides/performance#Where frame time goes"
+		],
+		"source": "manual",
+		"steps": "Serve the instances demo with the isolation headers (the Vite plugin sets them). Record 2 to 3 s in the Performance panel about 5 s after load. Crop to the main, sketch, render and job tracks.",
+		"alt": "A browser performance recording: the page's main thread is nearly idle while the null3d-sketch, null3d-render and null3d-job workers do the frame's work.",
+		"caption": "Each engine thread has its own named track. The probe and glTF helper workers show only when the recording covers their work.",
+		"files": ["packages/engine/src/page/engine.ts", "examples/instances/"],
+		"verdict": "shots-concepts__architecture.md; shots-porting__threejs-loop-and-threads.md; shots-guides__performance.md",
+		"note": "On guides/performance keep it only if the section gains a sentence that says to record a trace and names the tracks. Optional on concepts/architecture: inside a technical details block."
+	},
+	{
+		"id": "concepts/architecture/stats-overlay-threads",
+		"pages": [
+			"concepts/architecture#When the job workers start",
+			"api/debug#Stats overlay and frame figures",
+			"guides/performance#Measure",
+			"guides/testing#Check every rendering mode"
+		],
+		"source": "scripted",
+		"steps": "On the examples dev server (switches work only in a development build), open ?demo=instances&gpu=webgpu&stats=open in desktop Chrome. Play live for about 5 s, no hold (a held frame never shows the overlay). Capture the page clipped to the canvas with the open card at its top right.",
+		"alt": "The open stats overlay over 100,000 columns: CPU time per frame of the sketch worker and the render worker, the main thread's long tasks, and one line with the number of job workers and the busiest one's time.",
+		"caption": "The stats overlay on the instance batch demo. Figures are from one machine.",
+		"files": [
+			"packages/engine/src/debug/stats-text.ts",
+			"packages/engine/src/debug/overlay-look.ts",
+			"packages/engine/src/page/switches.ts",
+			"examples/lib/run.ts"
+		],
+		"verdict": "shots-concepts__architecture.md; shots-api__debug.md; shots-guides__performance.md; shots-guides__testing.md"
+	},
+	{
+		"id": "concepts/assets/gltf-model",
+		"pages": [
+			"concepts/assets#Models and prefabs",
+			"api/assets#glTF models",
+			"guides/assets-pipeline#Optimize a model"
+		],
+		"source": "reference",
+		"images": ["webgpu/demo-gltf-model.png"],
+		"alt": "The Khronos BoomBox on a polished turntable in a dark studio.",
+		"caption": "The glTF models demo. On the assets tool page, say only that this is the model the example output describes, not the optimized file.",
+		"files": [
+			"examples/gltf-model/sketch.ts",
+			"tests/image/references/chrome-real-gpu/webgpu/demo-gltf-model.png"
+		],
+		"verdict": "shots-concepts__assets.md; shots-api__assets.md; shots-guides__assets-pipeline.md",
+		"note": "320x180. A larger capture: examples page ?demo=gltf-model&hold=2 in a development build."
+	},
+	{
+		"id": "concepts/backends/three-tiers",
+		"pages": ["concepts/backends#The three tiers"],
+		"source": "reference",
+		"images": [
+			"webgpu/demo-environment.png",
+			"compat/demo-environment.png",
+			"webgl2/demo-environment.png"
+		],
+		"steps": "Join the three files in a row with a label under each.",
+		"alt": "The same sphere gallery drawn on WebGPU, WebGPU compatibility mode and WebGL2.",
+		"caption": "One sketch on each tier. Compatibility mode and WebGL2 run at most the Medium preset, so they look a little softer.",
+		"files": [
+			"examples/environment/",
+			"tests/image/references/chrome-real-gpu/webgpu/demo-environment.png",
+			"tests/image/references/chrome-real-gpu/compat/demo-environment.png",
+			"tests/image/references/chrome-real-gpu/webgl2/demo-environment.png"
+		],
+		"verdict": "shots-concepts__backends.md"
+	},
+	{
+		"id": "concepts/color-management/tone-mapped",
+		"pages": ["concepts/color-management#Materials that keep their display color"],
+		"source": "reference",
+		"images": ["webgpu/demo-tone-mapped.png"],
+		"alt": "Two rows of the same seven bright colors: the top row keeps its display color, the bottom row takes the tone curve.",
+		"caption": "toneMapped: false on the top row.",
+		"files": [
+			"examples/tone-mapped/",
+			"tests/image/references/chrome-real-gpu/webgpu/demo-tone-mapped.png"
+		],
+		"verdict": "shots-concepts__color-management.md"
+	},
+	{
+		"id": "concepts/color-management/tone-curves",
+		"pages": [
+			"concepts/color-management#Exposure and tone mapping",
+			"api/post#Tone mapping and exposure",
+			"api/reference/post#ToneMapping"
+		],
+		"source": "reference",
+		"images": [
+			"webgpu/tone-agx-punchy.png",
+			"webgpu/tone-agx.png",
+			"webgpu/tone-aces.png",
+			"webgpu/tone-neutral.png",
+			"webgpu/tone-none.png"
+		],
+		"steps": "Join the five full-exposure files in a row, each labeled. Do not use the -half-exposure files. Leave out reinhard and cineon here: they are not engine curves.",
+		"alt": "The same tiles of rising brightness under the agx-punchy, agx, aces, neutral and none tone curves.",
+		"caption": "Under none the bright tiles clip to flat white; the other curves roll off toward white.",
+		"files": [
+			"tests/pages/sketches/bright-sketch.ts",
+			"packages/engine/src/scene/post.ts",
+			"tests/image/references/chrome-real-gpu/webgpu/tone-agx-punchy.png",
+			"tests/image/references/chrome-real-gpu/webgpu/tone-agx.png",
+			"tests/image/references/chrome-real-gpu/webgpu/tone-aces.png",
+			"tests/image/references/chrome-real-gpu/webgpu/tone-neutral.png",
+			"tests/image/references/chrome-real-gpu/webgpu/tone-none.png"
+		],
+		"verdict": "shots-concepts__color-management.md; shots-api__post.md; shots-api__reference__post.md",
+		"note": "The api/reference/post placement needs the reference generator to print images."
+	},
+	{
+		"id": "concepts/culling/far-from-origin",
+		"pages": ["concepts/culling#What this means for your sketch"],
+		"source": "reference",
+		"images": ["webgpu/demo-far-from-origin.png"],
+		"alt": "A tray of small keys and a brass wheel, drawn sharp.",
+		"caption": "2 cm keys 1,000 km from the origin, drawn without jitter.",
+		"files": [
+			"examples/far-from-origin/",
+			"tests/image/references/chrome-real-gpu/webgpu/demo-far-from-origin.png"
+		],
+		"verdict": "shots-concepts__culling.md",
+		"note": "The distance label is page HTML and is not in the reference."
+	},
+	{
+		"id": "concepts/instances/instances",
+		"pages": [
+			"concepts/instances#under the opening paragraphs",
+			"concepts/static-dynamic#Dirty ranges in instance batches"
+		],
+		"source": "reference",
+		"images": ["webgpu/demo-instances.png"],
+		"alt": "A field of about 100,000 columns in one instance batch at golden hour, with hover cars streaming above it.",
+		"caption": "One dynamic batch: the sketch writes every column's height in every frame.",
+		"files": [
+			"examples/instances/sketch.ts",
+			"tests/image/references/chrome-real-gpu/webgpu/demo-instances.png"
+		],
+		"verdict": "shots-concepts__instances.md; shots-concepts__static-dynamic.md",
+		"note": "On static-dynamic place it beside the dynamic batch example. 320x180; a larger capture uses ?hold=2."
+	},
+	{
+		"id": "concepts/instances/per-row-colors",
+		"pages": ["concepts/instances#Per-row colors"],
+		"source": "reference",
+		"images": ["webgpu/row-colors.png"],
+		"alt": "Five instance batches of eight rows each, every row in its own color, beside one gray row of the same material without colors.",
+		"caption": "Row colors multiply the material's color.",
+		"files": [
+			"tests/pages/sketches/row-colors-sketch.ts",
+			"tests/image/references/chrome-real-gpu/webgpu/row-colors.png"
+		],
+		"verdict": "shots-concepts__instances.md"
+	},
+	{
+		"id": "concepts/large-worlds/large-world",
+		"pages": ["concepts/large-worlds#Large-world mode"],
+		"source": "reference",
+		"images": ["webgpu/demo-large-world.png"],
+		"alt": "A road at golden hour with dashed lane marks, trees and hazy hills.",
+		"caption": "A road 6,378 km from the origin, in large-world mode.",
+		"files": [
+			"examples/large-world/",
+			"tests/image/references/chrome-real-gpu/webgpu/demo-large-world.png"
+		],
+		"verdict": "shots-concepts__large-worlds.md"
+	},
+	{
+		"id": "concepts/lighting/area-lights",
+		"pages": ["concepts/lighting#Kinds of light and their units", "api/lights#Area lights"],
+		"source": "reference",
+		"images": ["webgpu/demo-area-lights.png"],
+		"alt": "Shop windows and a neon sign lit as area lights, their shapes stretched across a wet street.",
+		"caption": "Rectangle and tube lights.",
+		"files": [
+			"examples/area-lights/",
+			"tests/image/references/chrome-real-gpu/webgpu/demo-area-lights.png"
+		],
+		"verdict": "shots-concepts__lighting.md; shots-api__lights.md"
+	},
+	{
+		"id": "concepts/lighting/light-shafts",
+		"pages": ["concepts/lighting#Volumetric fog", "api/scene#Volumetric fog"],
+		"source": "reference",
+		"images": ["webgpu/demo-light-shafts.png"],
+		"alt": "Sun rays through a pine wood in haze, with the trunks' shadows in the fog.",
+		"caption": "Volumetric fog takes the sun's light.",
+		"files": [
+			"examples/light-shafts/",
+			"tests/image/references/chrome-real-gpu/webgpu/demo-light-shafts.png"
+		],
+		"verdict": "shots-concepts__lighting.md; shots-api__scene.md"
+	},
+	{
+		"id": "concepts/lighting/environment",
+		"pages": ["concepts/lighting#Environment maps", "guides/assets-pipeline#Environment maps"],
+		"source": "reference",
+		"images": ["webgpu/demo-environment.png"],
+		"alt": "Plastic and metal spheres, from rough to smooth, over a polished floor, lit by the Venice sunset environment map.",
+		"caption": "Light from an environment alone. The demo filters the HDR file at load, which gives the same map as the assets env command.",
+		"files": [
+			"examples/environment/",
+			"tests/image/references/chrome-real-gpu/webgpu/demo-environment.png"
+		],
+		"verdict": "shots-concepts__lighting.md; shots-guides__assets-pipeline.md"
+	},
+	{
+		"id": "concepts/lighting/reflection-probes",
+		"pages": ["concepts/lighting#Reflection probes", "api/scene#Reflection probes"],
+		"source": "reference",
+		"images": ["webgpu/demo-reflection-probes.png"],
+		"alt": "A warm room and a cool room over one polished floor, each reflected in place.",
+		"caption": "Two rooms, one probe each. The demo's B key turns box projection on and off.",
+		"files": [
+			"examples/reflection-probes/",
+			"tests/image/references/chrome-real-gpu/webgpu/demo-reflection-probes.png"
+		],
+		"verdict": "shots-concepts__lighting.md; shots-api__scene.md"
+	},
+	{
+		"id": "concepts/lighting/atmosphere",
+		"pages": ["concepts/lighting#The physical sky", "api/scene#The physical sky"],
+		"source": "reference",
+		"images": ["webgpu/demo-atmosphere.png"],
+		"alt": "A valley at sunset under the physical sky, with rose clouds and ridges fading into the evening air.",
+		"caption": "The physical sky.",
+		"files": [
+			"examples/atmosphere/",
+			"tests/image/references/chrome-real-gpu/webgpu/demo-atmosphere.png"
+		],
+		"verdict": "shots-concepts__lighting.md; shots-api__scene.md",
+		"note": "Optional second picture for aerial perspective: webgpu/physical-sky-afternoon.png beside physical-sky-no-haze.png."
+	},
+	{
+		"id": "concepts/lod/forest",
+		"pages": ["concepts/lod#under the opening paragraphs"],
+		"source": "reference",
+		"images": ["webgpu/demo-forest.png"],
+		"alt": "A dense mixed forest at golden hour, under a cloudy sky.",
+		"caption": "What you see. The levels view beside it shows what the engine picks.",
+		"files": ["examples/forest/", "tests/image/references/chrome-real-gpu/webgpu/demo-forest.png"],
+		"verdict": "shots-concepts__lod.md"
+	},
+	{
+		"id": "concepts/lod/forest-levels",
+		"pages": [
+			"concepts/lod#How the engine picks a level",
+			"api/geometry#Levels by hand",
+			"guides/assets-pipeline#Levels of detail"
+		],
+		"source": "scripted",
+		"steps": "Development build, WebGPU: examples page ?demo=forest&hold=2&view=levels&compile=wait. Capture the held frame. Check for magenta markers past 300 m where the understory stops.",
+		"alt": "The forest in the levels view: near trees in blue, farther ones in green, yellow and orange.",
+		"caption": "The levels debug view colors each copy by the level it draws. The forest sets its four levels by hand, not with the assets tool.",
+		"files": [
+			"examples/forest/",
+			"examples/lib/trees.ts",
+			"packages/engine/src/debug/view-names.ts"
+		],
+		"verdict": "shots-concepts__lod.md; shots-api__geometry.md; shots-guides__assets-pipeline.md"
+	},
+	{
+		"id": "concepts/materials/alpha-modes",
+		"pages": [
+			"concepts/materials#Alpha modes",
+			"api/materials#Alpha modes",
+			"api/reference/materials#AlphaMode"
+		],
+		"source": "reference",
+		"images": ["webgpu/alpha-mask.png", "webgpu/alpha-hash.png"],
+		"steps": "Two panels. Show alpha to coverage only as a zoomed crop of one card edge beside the same crop from mask, or leave it out.",
+		"alt": "Ring-shaped cards cut out by alpha: hard edges with mask, a dotted pattern with hash.",
+		"caption": "The mask and hash alpha modes.",
+		"files": [
+			"tests/pages/sketches/alpha-mask-sketch.ts",
+			"tests/image/manifest.ts",
+			"tests/image/references/chrome-real-gpu/webgpu/alpha-mask.png",
+			"tests/image/references/chrome-real-gpu/webgpu/alpha-hash.png"
+		],
+		"verdict": "shots-concepts__materials.md; shots-api__materials.md"
+	},
+	{
+		"id": "concepts/materials/weighted-transparency",
+		"pages": ["concepts/materials#The transparent pass", "api/materials#Weighted blending"],
+		"source": "reference",
+		"images": ["webgpu/demo-weighted-transparency.png"],
+		"alt": "Crossing panes of stained glass and smoke in a pavilion, blended in any order.",
+		"caption": "Weighted blending needs no sort.",
+		"files": [
+			"examples/weighted-transparency/",
+			"tests/image/references/chrome-real-gpu/webgpu/demo-weighted-transparency.png"
+		],
+		"verdict": "shots-concepts__materials.md; shots-api__materials.md"
+	},
+	{
+		"id": "concepts/particle-buffer/particles-wind-field",
+		"pages": ["concepts/particle-buffer#The wind field"],
+		"source": "reference",
+		"images": ["webgpu/particles.png", "webgpu/particles-wind.png"],
+		"alt": "A row of dust carried sideways across the floor by the wind field.",
+		"caption": "Left: the field off. Right: the same scene with the field on; look at the dust row.",
+		"files": [
+			"tests/pages/sketches/particles-sketch.ts",
+			"packages/particles/src/system.ts",
+			"tests/image/references/chrome-real-gpu/webgpu/particles.png",
+			"tests/image/references/chrome-real-gpu/webgpu/particles-wind.png"
+		],
+		"verdict": "shots-concepts__particle-buffer.md"
+	},
+	{
+		"id": "concepts/post-processing/post-effects-alley",
+		"pages": [
+			"concepts/post-processing#under the opening diagram",
+			"guides/lens-kit#under the intro",
+			"guides/custom-passes#Custom effects",
+			"porting/threejs-postprocessing#Passes that become settings",
+			"cookbook/index#Glow and a custom effect"
+		],
+		"source": "scripted",
+		"images": ["webgpu/demo-post-effects.png"],
+		"steps": "Capture larger through the image test page: tests/pages/image.html?sketch=/examples/post-effects/sketch.ts&hold=4&gpu=webgpu&size=1280x720. For the lens kit page add a crop near the pink ring and blue tube where the streak and fringes show. Fallback: the reference.",
+		"alt": "Crates in a neon alley at night, with glowing neon, reflections in the wet ground and a yellow outline round one crate.",
+		"caption": "The post effects demo: built-in bloom, reflections and outline, and the lens kit's custom effect.",
+		"files": [
+			"examples/post-effects/sketch.ts",
+			"examples/addons/lens-kit/index.ts",
+			"tests/image/references/chrome-real-gpu/webgpu/demo-post-effects.png"
+		],
+		"verdict": "shots-concepts__post-processing.md; shots-guides__lens-kit.md; shots-guides__custom-passes.md; shots-porting__threejs-postprocessing.md; shots-cookbook__index.md"
+	},
+	{
+		"id": "concepts/post-processing/bloom",
+		"pages": ["concepts/post-processing#Bloom", "api/post#Bloom"],
+		"source": "reference",
+		"images": ["webgpu/bloom-off.png", "webgpu/bloom-soft.png", "webgpu/bloom-strong.png"],
+		"alt": "The same scene without bloom, with soft bloom and with strong bloom.",
+		"caption": "Bloom off, soft and strong.",
+		"files": [
+			"tests/pages/sketches/bloom-sketch.ts",
+			"tests/image/references/chrome-real-gpu/webgpu/bloom-off.png",
+			"tests/image/references/chrome-real-gpu/webgpu/bloom-soft.png",
+			"tests/image/references/chrome-real-gpu/webgpu/bloom-strong.png"
+		],
+		"verdict": "shots-concepts__post-processing.md; shots-api__post.md"
+	},
+	{
+		"id": "concepts/post-processing/depth-of-field",
+		"pages": ["concepts/post-processing#Depth of field", "api/post#Depth of field"],
+		"source": "reference",
+		"images": ["webgpu/demo-camera-lens.png"],
+		"alt": "A low view across a chess board: the far king is sharp, and the near pawns and the string lights are blurred.",
+		"caption": "Depth of field in the camera lens demo.",
+		"files": [
+			"examples/camera-lens/",
+			"tests/image/references/chrome-real-gpu/webgpu/demo-camera-lens.png"
+		],
+		"verdict": "shots-concepts__post-processing.md; shots-api__post.md"
+	},
+	{
+		"id": "concepts/post-processing/auto-exposure",
+		"pages": ["concepts/post-processing#Automatic exposure", "api/post#Automatic exposure"],
+		"source": "scripted",
+		"images": ["webgpu/demo-auto-exposure.png"],
+		"steps": "\"Adapted\": the reference (hold 6 s). \"Held\": development build, ?demo=auto-exposure&hold=6 with a hold script that presses E at 0.05 s (or open live, press E at once, capture at 6 s). Cheaper fallback: test references exposure-off.png beside exposure-dark.png.",
+		"alt": "A stone hall and a pool under a blue sky, lit after automatic exposure adapted to the scene.",
+		"caption": "The stone hall with automatic exposure on.",
+		"files": [
+			"examples/auto-exposure/",
+			"tests/image/references/chrome-real-gpu/webgpu/demo-auto-exposure.png"
+		],
+		"verdict": "shots-concepts__post-processing.md; shots-api__post.md"
+	},
+	{
+		"id": "concepts/post-processing/ambient-occlusion",
+		"pages": ["concepts/post-processing#Ambient occlusion", "api/post#Ambient occlusion"],
+		"source": "reference",
+		"images": ["webgpu/ao-off.png", "webgpu/ao-wide.png"],
+		"alt": "A scene without and with ambient occlusion: dark creases under the spheres and behind the boxes.",
+		"caption": "Ambient occlusion with a wider radius than the default (radius 0.8, scale 1.5).",
+		"files": [
+			"tests/pages/sketches/ao-sketch.ts",
+			"tests/image/references/chrome-real-gpu/webgpu/ao-off.png",
+			"tests/image/references/chrome-real-gpu/webgpu/ao-wide.png"
+		],
+		"verdict": "shots-concepts__post-processing.md; shots-api__post.md"
+	},
+	{
+		"id": "concepts/post-processing/ssr-wet-street",
+		"pages": ["concepts/post-processing#Screen-space reflections"],
+		"source": "reference",
+		"images": ["webgpu/demo-wet-street.png"],
+		"alt": "Puddles that mirror lit windows and neon signs.",
+		"caption": "Screen-space reflections in the wet street demo.",
+		"files": [
+			"examples/wet-street/",
+			"tests/image/references/chrome-real-gpu/webgpu/demo-wet-street.png"
+		],
+		"verdict": "shots-concepts__post-processing.md"
+	},
+	{
+		"id": "concepts/post-processing/bounce-light",
+		"pages": ["concepts/post-processing#Screen-space bounce light"],
+		"source": "scripted",
+		"images": ["webgpu/demo-bounce-light.png"],
+		"steps": "\"With\": the reference. \"Without\": open bounce-light/ live, press B once (the cycle starts on, so B turns it off), wait a few frames, capture without moving the pointer.",
+		"alt": "A room without and with bounce light: with it, the floor turns red and green near the walls.",
+		"caption": "Bounce light off and on.",
+		"files": [
+			"examples/bounce-light/",
+			"tests/image/references/chrome-real-gpu/webgpu/demo-bounce-light.png"
+		],
+		"verdict": "shots-concepts__post-processing.md"
+	},
+	{
+		"id": "concepts/post-processing/outline",
+		"pages": ["concepts/post-processing#Outlines", "api/post#Outlines"],
+		"source": "reference",
+		"images": ["webgpu/outline-plain.png", "webgpu/outline-hidden.png"],
+		"alt": "A box and a half-hidden ball outlined in white, then in orange with a blue line over the hidden part.",
+		"caption": "An outline, and an outline with a second color where the object is hidden.",
+		"files": [
+			"tests/pages/sketches/outline-sketch.ts",
+			"tests/image/references/chrome-real-gpu/webgpu/outline-plain.png",
+			"tests/image/references/chrome-real-gpu/webgpu/outline-hidden.png"
+		],
+		"verdict": "shots-concepts__post-processing.md; shots-api__post.md"
+	},
+	{
+		"id": "concepts/post-processing/vignette-and-grade",
+		"pages": ["concepts/post-processing#Color grading and the vignette"],
+		"source": "reference",
+		"images": ["webgpu/lut-cube.png", "webgpu/vignette.png"],
+		"alt": "The grading test scene with a grading table, and with a vignette.",
+		"caption": "A grading table and a vignette on the same scene.",
+		"files": [
+			"tests/image/manifest.ts",
+			"tests/image/references/chrome-real-gpu/webgpu/lut-cube.png",
+			"tests/image/references/chrome-real-gpu/webgpu/vignette.png"
+		],
+		"verdict": "shots-concepts__post-processing.md",
+		"note": "lut-vignette.png shows both at once."
+	},
+	{
+		"id": "concepts/post-processing/sharpen",
+		"pages": ["concepts/post-processing#Sharpening"],
+		"source": "scripted",
+		"images": ["webgpu/sharpen.png"],
+		"steps": "Draw sharpen-sketch.ts with no query in the image page's hold mode at 320x180. Crop the same small area of that frame and of sharpen.png, enlarge 4x with nearest-neighbour scaling, put side by side.",
+		"alt": "A small patch of fine detail before and after sharpening, enlarged.",
+		"caption": "Sharpening, enlarged 4 times.",
+		"files": [
+			"tests/pages/sketches/sharpen-sketch.ts",
+			"tests/image/references/chrome-real-gpu/webgpu/sharpen.png"
+		],
+		"verdict": "shots-concepts__post-processing.md"
+	},
+	{
+		"id": "concepts/post-processing/still-accumulation",
+		"pages": ["concepts/post-processing#Still-camera accumulation"],
+		"source": "reference",
+		"images": ["webgpu/antialias-none.png", "webgpu/still.png"],
+		"steps": "Crop both at the same bar or box edge, enlarge 4x with nearest-neighbour scaling, side by side.",
+		"alt": "An edge without anti-aliasing and the same edge after a still camera blends its frames, enlarged.",
+		"caption": "Still-camera accumulation, enlarged 4 times.",
+		"files": [
+			"tests/image/manifest.ts",
+			"tests/image/references/chrome-real-gpu/webgpu/antialias-none.png",
+			"tests/image/references/chrome-real-gpu/webgpu/still.png"
+		],
+		"verdict": "shots-concepts__post-processing.md"
+	},
+	{
+		"id": "concepts/quality-presets/render-scale-softness",
+		"pages": [
+			"concepts/quality-presets#Dynamic resolution",
+			"concepts/post-processing#Below the whole canvas's render scale",
+			"api/quality#Render scale",
+			"guides/phones#Render scale"
+		],
+		"source": "reference",
+		"images": ["webgpu/scene.png", "webgpu/render-scale-75.png", "webgpu/render-scale-50.png"],
+		"steps": "Crop the same area of each, enlarge with nearest-neighbour scaling. The render-scale-100 test reuses scene.png. On api/quality and guides/phones the 1 and 0.5 panels are enough.",
+		"alt": "A detail of the same frame at render scales 1, 0.75 and 0.5, enlarged: tile seams and box edges soften at 0.5.",
+		"caption": "Fine lines get softer at a lower render scale.",
+		"files": [
+			"tests/pages/sketches/boxes-sketch.ts",
+			"tests/image/manifest.ts",
+			"tests/image/references/chrome-real-gpu/webgpu/scene.png",
+			"tests/image/references/chrome-real-gpu/webgpu/render-scale-75.png",
+			"tests/image/references/chrome-real-gpu/webgpu/render-scale-50.png"
+		],
+		"verdict": "shots-concepts__quality-presets.md; shots-concepts__post-processing.md; shots-api__quality.md; shots-guides__phones.md"
+	},
+	{
+		"id": "concepts/quality-presets/presets-side-by-side",
+		"pages": ["concepts/quality-presets#The settings of each preset"],
+		"source": "scripted",
+		"steps": "WebGPU browser, development build: examples/?demo=skyway&hold=1&preset=low, then medium, high, ultra. Join the four held frames. Not the island: it overrides the presets.",
+		"alt": "The same Skyway view at the Low, Medium, High and Ultra presets.",
+		"caption": "Each preset on one scene. Skyway also draws fewer facades and less traffic on the lighter presets.",
+		"files": ["examples/showcase/skyway/", "packages/engine/src/quality/presets.ts"],
+		"verdict": "shots-concepts__quality-presets.md; shots-concepts__quality-preset-tables.md",
+		"note": "Show it on this page only, not on the generated tables page."
+	},
+	{
+		"id": "concepts/quality-preset-tables/stats-overlay-preset",
+		"pages": ["concepts/quality-preset-tables#Rules of the preset check"],
+		"source": "scripted",
+		"steps": "examples/?demo=skyway&check=fresh&stats=open, live (click the header if it stays collapsed). Wait until the preset in the heading stops changing. Capture the top-right corner with the open card.",
+		"alt": "The stats overlay heading with the GPU path, the preset the check kept and the render scale, and the frame rate against the target.",
+		"caption": "The preset that the check kept on one machine.",
+		"files": ["packages/engine/src/debug/overlay.ts", "examples/lib/run.ts"],
+		"verdict": "shots-concepts__quality-preset-tables.md",
+		"note": "The tables page is generated: the image needs a slot in tools/lib/docs.ts."
+	},
+	{
+		"id": "concepts/render-graph/graph-dump",
+		"pages": ["concepts/render-graph#The text dump"],
+		"source": "scripted",
+		"steps": "Development build on WebGPU with HDR color: run the security-camera demo. In the console: (await __null3dInspector.inspect('graph')).graph. Render with dot -Tsvg and export as webp.",
+		"alt": "The render graph of the security camera demo, with its scene pass and copy pass, drawn by Graphviz.",
+		"caption": "render.dumpGraph() output, drawn as a graph.",
+		"files": [
+			"packages/engine/src/debug/channel.ts",
+			"packages/engine/src/page/engine.ts",
+			"examples/security-camera/"
+		],
+		"verdict": "shots-concepts__render-graph.md"
+	},
+	{
+		"id": "concepts/render-layers/layers-cottages",
+		"pages": [
+			"concepts/render-layers#under the opening paragraph",
+			"api/cameras#Layers",
+			"api/objects#Layers"
+		],
+		"source": "reference",
+		"images": ["webgpu/demo-layers.png"],
+		"alt": "Brick cottages drawn without their roof layer, so the rooms inside show, with a red map pin above each house.",
+		"caption": "The camera's mask leaves out the roof layer and draws the pin layer.",
+		"files": [
+			"examples/layers/sketch.ts",
+			"tests/image/references/chrome-real-gpu/webgpu/demo-layers.png"
+		],
+		"verdict": "shots-concepts__render-layers.md; shots-api__cameras.md; shots-api__objects.md"
+	},
+	{
+		"id": "concepts/render-layers/layers-two-masks",
+		"pages": ["concepts/render-layers#Setting layers"],
+		"source": "scripted",
+		"steps": "Layers demo with ?hold=1 (street and roofs) and ?hold=3 (street, roofs and pins). Avoid the edges at 2 s and 4 s. Side by side.",
+		"alt": "The same street with roofs and no pins, then with roofs and pins.",
+		"caption": "camera.setLayers changes what one camera draws.",
+		"files": ["examples/layers/sketch.ts"],
+		"verdict": "shots-concepts__render-layers.md"
+	},
+	{
+		"id": "concepts/shadows/cascade-count",
+		"pages": ["concepts/shadows#under the settings table"],
+		"source": "reference",
+		"images": [
+			"webgpu/shadows-cascades-1.png",
+			"webgpu/shadows-cascades-2.png",
+			"webgpu/shadows-cascades-4.png"
+		],
+		"steps": "Crop every frame to x 80-320, y 70-260. The full frames look the same at page width.",
+		"alt": "The same sphere shadow with one, two and four cascades: coarse and stepped with one, sharp with two and four.",
+		"caption": "Cascade count, cropped.",
+		"files": [
+			"tests/image/manifest.ts",
+			"tests/image/references/chrome-real-gpu/webgpu/shadows-cascades-1.png",
+			"tests/image/references/chrome-real-gpu/webgpu/shadows-cascades-2.png",
+			"tests/image/references/chrome-real-gpu/webgpu/shadows-cascades-4.png"
+		],
+		"verdict": "shots-concepts__shadows.md"
+	},
+	{
+		"id": "concepts/shadows/contact-shadows",
+		"pages": ["concepts/shadows#Contact shadows", "api/lights#Contact shadows"],
+		"source": "reference",
+		"images": ["webgpu/contact-shadows.png", "webgpu/contact-shadows-off.png"],
+		"steps": "Crop both to x 110-400, y 110-200 (the pebbles and the crate's base) and enlarge 2x.",
+		"alt": "Pebbles on the ground, with and without contact shadows.",
+		"caption": "Contact shadows on and off, cropped and enlarged.",
+		"files": [
+			"tests/image/manifest.ts",
+			"tests/image/references/chrome-real-gpu/webgpu/contact-shadows.png",
+			"tests/image/references/chrome-real-gpu/webgpu/contact-shadows-off.png"
+		],
+		"verdict": "shots-concepts__shadows.md; shots-api__lights.md"
+	},
+	{
+		"id": "concepts/shadows/hero-shadow",
+		"pages": ["concepts/shadows#A hero shadow", "api/lights#hero shadow"],
+		"source": "reference",
+		"images": ["webgpu/demo-hero-shadow.png"],
+		"alt": "A red car on a launch yard at sunset, with a sharp hero shadow beside the stone blocks' cascade shadows.",
+		"caption": "A hero shadow beside cascade shadows.",
+		"files": [
+			"examples/hero-shadow/",
+			"tests/image/references/chrome-real-gpu/webgpu/demo-hero-shadow.png"
+		],
+		"verdict": "shots-concepts__shadows.md; shots-api__lights.md",
+		"note": "Option: a second capture at about 4 s gives the same view with the hero shadow off."
+	},
+	{
+		"id": "concepts/shadows/spot-point-shadows",
+		"pages": ["concepts/shadows#Spot and point light shadows"],
+		"source": "reference",
+		"images": ["webgpu/spot-shadows.png", "webgpu/point-shadows.png"],
+		"alt": "Shadows from two spot lights, and from one point light on the ground and a wall.",
+		"caption": "Spot and point light shadows.",
+		"files": [
+			"tests/image/manifest.ts",
+			"tests/image/references/chrome-real-gpu/webgpu/spot-shadows.png",
+			"tests/image/references/chrome-real-gpu/webgpu/point-shadows.png"
+		],
+		"verdict": "shots-concepts__shadows.md"
+	},
+	{
+		"id": "guides/multiple-views/split-screen",
+		"pages": [
+			"guides/multiple-views#A split screen",
+			"api/scene#Multiple views",
+			"api/cameras#Several cameras (beside the createView paragraph)"
+		],
+		"source": "reference",
+		"images": ["webgpu/demo-multiple-views.png"],
+		"alt": "One canvas split into a high wide view and a low view among standing stones.",
+		"caption": "Two cameras in one frame.",
+		"files": [
+			"examples/multiple-views/",
+			"tests/image/references/chrome-real-gpu/webgpu/demo-multiple-views.png"
+		],
+		"verdict": "shots-guides__multiple-views.md; shots-api__scene.md; shots-api__cameras.md"
+	},
+	{
+		"id": "guides/multiple-views/picture-in-picture",
+		"pages": ["guides/multiple-views#A picture in picture"],
+		"source": "scripted",
+		"steps": "Pick Inset with the demo's layout choice button (the V key also posts a toast). Hold 1 s. Alternative: webgpu/demo-look-at.png already has a picture in picture.",
+		"alt": "A wide view with a small inset of the low camera in the top-right corner.",
+		"caption": "The inset layout.",
+		"files": ["examples/multiple-views/", "examples/demos.ts"],
+		"verdict": "shots-guides__multiple-views.md"
+	},
+	{
+		"id": "guides/debugging/in-page-inspector",
+		"pages": ["guides/debugging#The in-page inspector", "api/debug#The in-page inspector"],
+		"source": "scripted",
+		"steps": "Dev server, live (a held page opens no panel): examples/index.html?demo=objects&inspect at 1280x720. Click the row \"crate 0\" (child of \"table\") in the tree, wait one second, capture the page.",
+		"alt": "The inspector lists the scene as a tree, with one crate outlined in the view.",
+		"caption": "The in-page inspector.",
+		"files": ["examples/objects/"],
+		"verdict": "shots-guides__debugging.md; shots-api__debug.md"
+	},
+	{
+		"id": "guides/custom-passes/reflection-water",
+		"pages": ["guides/custom-passes#reflection pass recipe"],
+		"source": "reference",
+		"images": ["webgpu/reflection-water.png"],
+		"alt": "Boxes and a ball mirror in rippled water through a reflection pass.",
+		"caption": "A reflection pass read by a water material.",
+		"files": [
+			"tests/pages/sketches/reflection-sketch.ts",
+			"tests/image/references/chrome-real-gpu/webgpu/reflection-water.png"
+		],
+		"verdict": "shots-guides__custom-passes.md",
+		"note": "Replaces the rejected reflection-pass shot."
+	},
+	{
+		"id": "guides/baked-light-data/probe-validity",
+		"pages": ["guides/baked-light-data#after the validity paragraph"],
+		"source": "reference",
+		"images": ["webgpu/probe-grid-wall-leak.png", "webgpu/probe-grid-wall.png"],
+		"alt": "Light leaks under a partition when every probe counts as valid; with the validity mask, contact shadows stay dark.",
+		"caption": "Why the validity member matters.",
+		"files": [
+			"tests/pages/sketches/probe-grid-sketch.ts",
+			"tests/image/references/chrome-real-gpu/webgpu/probe-grid-wall-leak.png",
+			"tests/image/references/chrome-real-gpu/webgpu/probe-grid-wall.png"
+		],
+		"verdict": "shots-guides__baked-light-data.md"
+	},
+	{
+		"id": "guides/debugging/stats-overlay-card",
+		"pages": ["guides/debugging#Measure"],
+		"source": "scripted",
+		"steps": "Dev server, live: examples/index.html?demo=objects. Click the overlay header, wait 2 s, capture the card only.",
+		"alt": "The open stats card over the objects demo, with GPU steps for shadows, bloom, ambient occlusion and the vignette, and Memory by system.",
+		"caption": "The stats card.",
+		"files": ["examples/objects/", "examples/lib/run.ts"],
+		"verdict": "shots-guides__debugging.md"
+	},
+	{
+		"id": "guides/debugging/debug-view-wireframe",
+		"pages": ["guides/debugging#See the scene with debug drawing"],
+		"source": "scripted",
+		"steps": "Hold examples/objects/sketch.ts at 2.5 s with view=wireframe and compile=wait at 1280x720.",
+		"alt": "The objects demo in the wireframe view.",
+		"caption": "A debug view from the page address.",
+		"files": ["examples/objects/sketch.ts"],
+		"verdict": "shots-guides__debugging.md"
+	},
+	{
+		"id": "guides/debugging/sketch-worker-breakpoint",
+		"pages": ["guides/debugging#Logs and breakpoints in the sketch"],
+		"source": "manual",
+		"steps": "Dev server: objects demo, Sources panel, pick the \"null3d-sketch\" thread, set a breakpoint in examples/objects/sketch.ts inside its update callback.",
+		"alt": "Chrome DevTools Sources panel with the null3d-sketch thread picked and a breakpoint in the objects demo's update callback.",
+		"caption": "The sketch runs in the null3d-sketch worker.",
+		"files": ["examples/objects/sketch.ts", "packages/engine/src/page/engine.ts"],
+		"verdict": "shots-guides__debugging.md"
+	},
+	{
+		"id": "guides/deterministic-simulation/replay-demo",
+		"pages": ["guides/deterministic-simulation#Where the player looks"],
+		"source": "reference",
+		"images": ["webgpu/demo-replay.png"],
+		"alt": "A walled court at dusk with glowing gold orbs, seen from the player's start point in the deterministic simulation demo.",
+		"caption": "The run's start, built from the seed.",
+		"files": ["examples/replay/", "tests/image/references/chrome-real-gpu/webgpu/demo-replay.png"],
+		"verdict": "shots-guides__deterministic-simulation.md"
+	},
+	{
+		"id": "guides/first-use-shaders/first-use-network",
+		"pages": ["guides/first-use-shaders#after the intro"],
+		"source": "manual",
+		"steps": "Showroom demo in Chrome on WebGPU. Network filter \"shaders-\". Wait for the first frame, clear the list, double-click the car. One new row: shaders-picking-wgsl. Select it and capture.",
+		"alt": "The network panel shows a shader file that downloads on first use.",
+		"caption": "The pick shaders download only when the sketch first picks.",
+		"files": ["examples/lib/cinematic.ts", "crates/null3d-shaders/shaders.toml"],
+		"verdict": "shots-guides__first-use-shaders.md",
+		"note": "The page is generated by tools/lib/first-use-docs.ts: add the image there."
+	},
+	{
+		"id": "guides/lens-kit/lens-marks",
+		"pages": ["guides/lens-kit#How the parts draw"],
+		"source": "scripted",
+		"steps": "tests/pages/image.html?sketch=/tests/pages/sketches/lens-kit-sketch.ts%3Flook%3D<look>&hold=0&gpu=webgpu&size=1280x720 for aberration, streak, grain, speed, and once with no look. Crop tight on the three bright bars for the streak; zoom a patch for the grain.",
+		"alt": "A plain checker wall, then red and blue fringes that grow toward the edges, a sideways streak on bright bars, film grain and speed blur.",
+		"caption": "The lens kit's four marks beside the plain wall.",
+		"files": ["tests/pages/sketches/lens-kit-sketch.ts"],
+		"verdict": "shots-guides__lens-kit.md"
+	},
+	{
+		"id": "guides/loading-screens/loading-card",
+		"pages": ["guides/loading-screens#Show progress on the page"],
+		"source": "scripted",
+		"steps": "Playwright Chromium with CDP Network.emulateNetworkConditions (about 150 ms, 200 KB/s). Open ?demo=gltf-model live. Wait until .loader__task-text reads \"Downloading scene files\" and .loader__fill is between 20% and 80%. Screenshot the canvas's parent.",
+		"alt": "A loading card over the canvas, with the row 'Downloading scene files', its byte count and a bar partway across.",
+		"caption": "Progress shown by the page.",
+		"files": ["examples/lib/progress.ts", "examples/lib/run.ts", "examples/gltf-model/"],
+		"verdict": "shots-guides__loading-screens.md"
+	},
+	{
+		"id": "guides/performance/overdraw-view",
+		"pages": ["guides/performance#The depth prepass"],
+		"source": "reference",
+		"images": ["webgpu/debug-view-overdraw.png"],
+		"alt": "A small test scene in the overdraw view, brighter where surfaces overlap under a see-through box.",
+		"caption": "The overdraw view.",
+		"files": [
+			"tests/pages/sketches/debug-view-sketch.ts",
+			"tests/image/references/chrome-real-gpu/webgpu/debug-view-overdraw.png"
+		],
+		"verdict": "shots-guides__performance.md",
+		"note": "Low value. Keep only if the page keeps the overdraw sentence."
+	},
+	{
+		"id": "guides/phones/presets-low-high",
+		"pages": ["guides/phones#The preset on a phone"],
+		"source": "scripted",
+		"steps": "tests/pages/image.html?sketch=/examples/showcase/island/sketch.ts&size=1280x720&preset=low&hold=5, and the same with preset=high, both on WebGPU on one machine. Crop the same town area.",
+		"alt": "The island's town at the Low and High presets: ambient occlusion, shadow detail and edge smoothing differ.",
+		"caption": "Low against High. Do not mention pixel ratio.",
+		"files": ["examples/showcase/island/sketch.ts", "tests/image/script-runs.ts"],
+		"verdict": "shots-guides__phones.md"
+	},
+	{
+		"id": "guides/phones/chrome-inspect",
+		"pages": ["guides/phones#Testing on real devices"],
+		"source": "manual",
+		"steps": "Open only a null3D demo tab on the phone before the capture.",
+		"alt": "chrome://inspect on a computer, listing an Android phone and a null3D demo tab with its inspect link.",
+		"caption": "Remote debugging an Android phone.",
+		"files": [],
+		"verdict": "shots-guides__phones.md"
+	},
+	{
+		"id": "guides/phones/safari-develop-menu",
+		"pages": ["guides/phones#Testing on real devices"],
+		"source": "manual",
+		"alt": "Safari's Develop menu on a Mac listing a connected iPhone.",
+		"caption": "Remote debugging an iPhone.",
+		"files": [],
+		"verdict": "shots-guides__phones.md",
+		"note": "The page should say to turn on \"Show features for web developers\" in Safari's Advanced settings first."
+	},
+	{
+		"id": "guides/screens/lcd-close-up",
+		"pages": ["guides/screens#The LCD look"],
+		"source": "scripted",
+		"steps": "shot --script on canvas-screen at 1280x720 with: \"0 set #camera.position=0,-1.15,3.9\" and \"1 shot lcd\". Crop to the panel.",
+		"alt": "A close view of the console screen: red, green and blue sub-pixel bars, dark row gaps and a few dead texels.",
+		"caption": "The LCD look up close.",
+		"files": ["examples/canvas-screen/"],
+		"verdict": "shots-guides__screens.md"
+	},
+	{
+		"id": "guides/screens/boot-glitch",
+		"pages": ["guides/screens#The LCD look (beside screen.boot())"],
+		"source": "scripted",
+		"steps": "Hold canvas-screen at 2.8 s (?hold=2.8 or shot --time 2.8) at 1280x720 or larger; crop one wall panel.",
+		"alt": "A wall panel 0.3 s into its boot: rows torn sideways, a band rolling up and the picture still dim.",
+		"caption": "screen.boot().",
+		"files": ["examples/canvas-screen/"],
+		"verdict": "shots-guides__screens.md"
+	},
+	{
+		"id": "guides/start-time/creek-first-frame",
+		"pages": ["guides/start-time#Draw the first frame before the large models"],
+		"source": "scripted",
+		"steps": "(1) examples/index.html?demo=creek&bench from a production build; stall the garden and plant model requests with a route that does not answer; await window.__null3dEngine.firstFrame; capture. (2) Same with &grown; await firstFrame; capture at once. Side by side.",
+		"alt": "The creek at its first frame with the cliff, water and steps, beside the same view once the statue, gate, lanterns and plants are in.",
+		"caption": "First frame, then the large models.",
+		"files": ["examples/showcase/creek/sketch.ts"],
+		"verdict": "shots-guides__start-time.md"
+	},
+	{
+		"id": "guides/testing/hold-mode-frame",
+		"pages": ["guides/testing#Frames that stay the same on every run", "cli/null3d#shot"],
+		"source": "scripted",
+		"images": ["webgpu/demo-hold-mode.png"],
+		"steps": "For cli/null3d use a real shot image from the repository root: bunx @null3d/cli shot --page \"/examples/?demo=hold-mode\" --time 3 --out hold-mode.png. guides/testing can use the reference.",
+		"alt": "Glossy balls bouncing in a stone pen, the frame that a hold at 3 seconds draws.",
+		"caption": "A held frame is the same on every run.",
+		"files": [
+			"examples/hold-mode/sketch.ts",
+			"tests/image/references/chrome-real-gpu/webgpu/demo-hold-mode.png"
+		],
+		"verdict": "shots-guides__testing.md; shots-cli__null3d.md"
+	},
+	{
+		"id": "guides/testing/save-recording",
+		"pages": ["guides/testing#Record a session that went wrong"],
+		"source": "scripted",
+		"steps": "Open ?demo=hold-mode&record, wait for the first frame, capture the page. Not the replay demo: it records its own input.",
+		"alt": "The hold mode demo with the Save recording button at the bottom left.",
+		"caption": "A page opened with ?record.",
+		"files": ["packages/engine/src/page/record-button.ts", "examples/hold-mode/"],
+		"verdict": "shots-guides__testing.md"
+	},
+	{
+		"id": "cookbook/index/picking",
+		"pages": ["cookbook/index#Select objects with the pointer"],
+		"source": "reference",
+		"images": ["webgpu/demo-picking.png"],
+		"alt": "Six pieces on a plinth in a dark gallery, with the red cube outlined after a click.",
+		"caption": "The picking demo.",
+		"files": [
+			"examples/picking/",
+			"tests/image/references/chrome-real-gpu/webgpu/demo-picking.png"
+		],
+		"verdict": "shots-cookbook__index.md"
+	},
+	{
+		"id": "cookbook/index/walk-to-click",
+		"pages": ["cookbook/index#Walk to the point that the user clicks"],
+		"source": "scripted",
+		"steps": "Put the recipe in a project's sketch.ts; bunx @null3d/cli shot --gpu webgpu --script walk.txt with lines \"0.5 pointer down 900 500\", \"0.6 pointer up\", \"1.1 shot walking\".",
+		"alt": "A yellow capsule that walks toward a white marker on a flat ground.",
+		"caption": "The recipe mid-walk.",
+		"files": ["docs/cookbook/index.md"],
+		"verdict": "shots-cookbook__index.md"
+	},
+	{
+		"id": "cookbook/index/crowd",
+		"pages": ["cookbook/index#A crowd of animated characters"],
+		"source": "scripted",
+		"steps": "After a cookbook test run: /tests/pages/image.html?gpu=webgpu&hold=2&size=1280x720&sketch=/tests/test-results/skill-sketches/hold/docs-cookbook-index-a-crowd-of-animated-characters.ts",
+		"alt": "A crowd of 64 cartoon knights walking.",
+		"caption": "The crowd recipe. Start times are random, so each run differs a little.",
+		"files": ["tests/lib/skill-sketches.ts"],
+		"verdict": "shots-cookbook__index.md"
+	},
+	{
+		"id": "cookbook/index/time-of-day",
+		"pages": ["cookbook/index#A sky with a moving sun and fog"],
+		"source": "reference",
+		"images": ["webgpu/demo-time-of-day.png"],
+		"alt": "A lighthouse island at sunset with the sun on the horizon.",
+		"caption": "The time of day demo.",
+		"files": [
+			"examples/time-of-day/",
+			"tests/image/references/chrome-real-gpu/webgpu/demo-time-of-day.png"
+		],
+		"verdict": "shots-cookbook__index.md"
+	},
+	{
+		"id": "shaders/builtins/builtins",
+		"pages": ["shaders/builtins#under the opening example"],
+		"source": "reference",
+		"images": ["webgpu/custom-builtins.png"],
+		"alt": "Five spheres share one material. Each takes its own hue from its position and has stripes and a world-space checker. A far plane of the same material is darker.",
+		"caption": "One material that reads frame, camera and object values. It is not the opening example.",
+		"files": [
+			"tests/pages/sketches/custom-builtins-sketch.ts",
+			"tests/image/references/chrome-real-gpu/webgpu/custom-builtins.png"
+		],
+		"verdict": "shots-shaders__builtins.md"
+	},
+	{
+		"id": "shaders/library/noise-kinds",
+		"pages": ["shaders/library#null3d::noise"],
+		"source": "scripted",
+		"steps": "New test page: five unlit quads in a row at 960x200, toneMapped: false, gray from value2(uv*8), perlin2(uv*8)*0.5+0.5, simplex2(uv*8)*0.5+0.5, worley2(uv*8), fbm2(uv*8, 4u)*0.5+0.5. Labels in an HTML overlay or the caption.",
+		"alt": "Five tiles of 2D noise: value, Perlin, simplex, Worley and fractal.",
+		"caption": "The five kinds of 2D noise.",
+		"files": ["tools/lib/shader-library.ts", "tests/pages/shader-library.ts"],
+		"verdict": "shots-shaders__library.md",
+		"note": "The page is generated by tools/lib/shader-library.ts: add the image there."
+	},
+	{
+		"id": "shaders/surface-functions/custom-surface",
+		"pages": ["shaders/surface-functions#under the opening example"],
+		"source": "reference",
+		"images": ["webgpu/custom-surface.png"],
+		"alt": "Two rows of spheres and planes. The top row pairs three standard materials with surface functions that keep their look. The bottom row shows surface functions that change it: glowing stripes, colored rings and a plane colored by its face.",
+		"caption": "Top row: each pair must match. Bottom row: surface functions that change the look.",
+		"files": [
+			"tests/pages/sketches/custom-material-sketch.ts",
+			"tests/image/references/chrome-real-gpu/webgpu/custom-surface.png"
+		],
+		"verdict": "shots-shaders__surface-functions.md"
+	},
+	{
+		"id": "shaders/surface-functions/vertex-offset",
+		"pages": ["shaders/surface-functions#Vertex offsets"],
+		"source": "reference",
+		"images": ["webgpu/custom-vertex-offset.png"],
+		"alt": "Two planes bent into waves, a sphere swollen in bands, and a twisted torus beside a plain one, all moved by vertex offsets.",
+		"caption": "The wave from this section.",
+		"files": [
+			"tests/pages/sketches/custom-vertex-offset-sketch.ts",
+			"tests/image/references/chrome-real-gpu/webgpu/custom-vertex-offset.png"
+		],
+		"verdict": "shots-shaders__surface-functions.md"
+	},
+	{
+		"id": "porting/threejs-postprocessing/tone-curves",
+		"pages": ["porting/threejs-postprocessing#Delete the composer", "api/three-compat#Tone curves"],
+		"source": "reference",
+		"images": [
+			"webgpu/tone-none.png",
+			"webgpu/tone-aces.png",
+			"webgpu/tone-agx.png",
+			"webgpu/tone-agx-punchy.png",
+			"webgpu/tone-neutral.png",
+			"webgpu/tone-reinhard.png",
+			"webgpu/tone-cineon.png"
+		],
+		"steps": "Tile with each curve's name. On api/three-compat the reinhard, cineon and aces panels are enough.",
+		"alt": "The same tiles of rising brightness under none, aces, agx, agx-punchy, neutral, reinhard and cineon.",
+		"caption": "Seven tone curves. reinhard and cineon come from @null3d/three-compat.",
+		"files": [
+			"tests/pages/sketches/bright-sketch.ts",
+			"tests/pages/lib/bright-scene.ts",
+			"tests/image/references/chrome-real-gpu/webgpu/tone-none.png",
+			"tests/image/references/chrome-real-gpu/webgpu/tone-aces.png",
+			"tests/image/references/chrome-real-gpu/webgpu/tone-agx.png",
+			"tests/image/references/chrome-real-gpu/webgpu/tone-agx-punchy.png",
+			"tests/image/references/chrome-real-gpu/webgpu/tone-neutral.png",
+			"tests/image/references/chrome-real-gpu/webgpu/tone-reinhard.png",
+			"tests/image/references/chrome-real-gpu/webgpu/tone-cineon.png"
+		],
+		"verdict": "shots-porting__threejs-postprocessing.md; shots-api__three-compat.md"
+	},
+	{
+		"id": "porting/threejs-postprocessing/effects-off-on",
+		"pages": ["porting/threejs-postprocessing#Example: fog from the depth"],
+		"source": "reference",
+		"images": ["webgpu/effects-off.png", "webgpu/effects.png"],
+		"alt": "A scene without and with two custom effects: a red and blue split and a depth fog.",
+		"caption": "Both custom effects named in the caption; the fog changes the picture most.",
+		"files": [
+			"tests/pages/sketches/effects-sketch.ts",
+			"tests/image/references/chrome-real-gpu/webgpu/effects-off.png",
+			"tests/image/references/chrome-real-gpu/webgpu/effects.png"
+		],
+		"verdict": "shots-porting__threejs-postprocessing.md",
+		"note": "Replaces the rejected rgb-shift shot."
+	},
+	{
+		"id": "porting/threejs-overview/night-town-two-engines",
+		"pages": ["porting/threejs-overview#after the first paragraph"],
+		"source": "reference",
+		"images": ["webgpu/compare-night-town-threejs.png", "webgpu/compare-night-town-null3d.png"],
+		"steps": "Join the two into one file.",
+		"alt": "The same rainy night town, seen from above, drawn by three.js on the left and by null3D on the right.",
+		"caption": "Each half was written for its own engine, so it is not a line-by-line port.",
+		"files": [
+			"tests/pages/compare.html",
+			"examples/compare/night-town/",
+			"tests/image/references/chrome-real-gpu/webgpu/compare-night-town-threejs.png",
+			"tests/image/references/chrome-real-gpu/webgpu/compare-night-town-null3d.png"
+		],
+		"verdict": "shots-porting__threejs-overview.md"
+	},
+	{
+		"id": "porting/threejs-materials/toon-and-matcap",
+		"pages": ["porting/threejs-materials#Recipes"],
+		"source": "scripted",
+		"steps": "New test page with both recipes, hold 0, 640x360, tone mapping none. Draw the matcap texture in code with textures.fromData (no clay matcap file exists). Point the directional light like the toon uniform, [-0.5, -1, -0.3]. Give the toon material a base color.",
+		"alt": "A sphere in toon bands and a sphere with a clay matcap.",
+		"caption": "The toon and matcap recipes.",
+		"files": ["docs/porting/threejs-materials.md"],
+		"verdict": "shots-porting__threejs-materials.md"
+	},
+	{
+		"id": "porting/threejs-materials/clipping-plane",
+		"pages": ["porting/threejs-materials#Recipes"],
+		"source": "scripted",
+		"steps": "New test page: torusKnot from @null3d/geometry through geometry.fromArrays, centre at y = 1.2, plane [0, -1, 0, 1.2], doubleSided material, a low light from the side.",
+		"alt": "A torus knot cut through its middle by a clipping plane, with its shadow cut too.",
+		"caption": "The clipping-plane recipe.",
+		"files": ["docs/porting/threejs-materials.md", "packages/geometry/"],
+		"verdict": "shots-porting__threejs-materials.md"
+	},
+	{
+		"id": "porting/threejs-shaders/dissolve",
+		"pages": ["porting/threejs-shaders#A dissolve from TSL"],
+		"source": "reference",
+		"images": ["webgpu/custom-dissolve.png"],
+		"alt": "Four spheres from whole to nearly gone, with an orange glow along the edges of the holes.",
+		"caption": "The dissolve port at progress 0, 0.3, 0.5 and 0.7.",
+		"files": [
+			"tests/pages/sketches/custom-dissolve-sketch.ts",
+			"tests/image/references/chrome-real-gpu/webgpu/custom-dissolve.png"
+		],
+		"verdict": "shots-porting__threejs-shaders.md"
+	},
+	{
+		"id": "api/debug/stats-overlay-memory",
+		"pages": ["api/debug#GPU memory"],
+		"source": "scripted",
+		"steps": "As for the stats overlay shot, then click the Memory tab and wait until the whole-page line no longer reads \"measuring\".",
+		"alt": "The stats overlay's Memory tab with GPU textures, GPU buffers and the whole-page figure.",
+		"caption": "Memory by system in the stats overlay.",
+		"files": ["packages/engine/src/debug/overlay-look.ts"],
+		"verdict": "shots-api__debug.md"
+	},
+	{
+		"id": "api/impostors/impostors-forest",
+		"pages": ["api/impostors#under the opening paragraph", "concepts/lod#Cards beyond the levels"],
+		"source": "reference",
+		"images": ["webgpu/demo-impostors.png"],
+		"alt": "A pine forest on rolling hills at golden hour, backlit by a low sun.",
+		"caption": "The Impostors demo: meshes near, merged cells in the middle, cards far out. The hand-overs are made to be invisible.",
+		"files": [
+			"examples/impostors/",
+			"tests/image/references/chrome-real-gpu/webgpu/demo-impostors.png"
+		],
+		"verdict": "shots-api__impostors.md; shots-concepts__lod.md"
+	},
+	{
+		"id": "api/particles/campfire",
+		"pages": [
+			"api/particles#under the intro",
+			"concepts/particle-buffer#under the opening paragraph"
+		],
+		"source": "reference",
+		"images": ["webgpu/demo-particles.png"],
+		"alt": "A campfire in an autumn glade at dusk, with flames, embers, fireflies and fallen leaves.",
+		"caption": "Five particle systems in one sketch.",
+		"files": [
+			"examples/particles/",
+			"tests/image/references/chrome-real-gpu/webgpu/demo-particles.png"
+		],
+		"verdict": "shots-api__particles.md; shots-concepts__particle-buffer.md"
+	},
+	{
+		"id": "api/post/ssr-wet",
+		"pages": ["api/post#Screen-space reflections"],
+		"source": "reference",
+		"images": ["webgpu/ssr-off.png", "webgpu/ssr-wet.png"],
+		"alt": "A wet floor without and with reflections of the boxes, the sphere and the bar.",
+		"caption": "Reflections off and on.",
+		"files": [
+			"tests/pages/sketches/ssr-sketch.ts",
+			"tests/image/references/chrome-real-gpu/webgpu/ssr-off.png",
+			"tests/image/references/chrome-real-gpu/webgpu/ssr-wet.png"
+		],
+		"verdict": "shots-api__post.md"
+	},
+	{
+		"id": "api/animation/character",
+		"pages": ["api/animation#Models from glTF files", "cookbook/index#A third-person camera"],
+		"source": "reference",
+		"images": ["webgpu/demo-character.png"],
+		"alt": "A cartoon knight with a round shield walks across a cobbled courtyard.",
+		"caption": "The animated characters demo. In the cookbook, say it is the demo, not the recipe: its camera orbits.",
+		"files": [
+			"examples/character/",
+			"tests/image/references/chrome-real-gpu/webgpu/demo-character.png"
+		],
+		"verdict": "shots-api__animation.md; shots-cookbook__index.md"
+	},
+	{
+		"id": "api/animation/look-at-ring",
+		"pages": ["api/animation#Looking at a point"],
+		"source": "reference",
+		"images": ["webgpu/demo-look-at.png"],
+		"alt": "Seven knights in a ring turn their heads toward a floating wisp of light.",
+		"caption": "Joint overrides that look at a point.",
+		"files": [
+			"examples/look-at/",
+			"tests/image/references/chrome-real-gpu/webgpu/demo-look-at.png"
+		],
+		"verdict": "shots-api__animation.md"
+	},
+	{
+		"id": "api/animation/morph-tulips",
+		"pages": ["api/animation#Morph targets", "cookbook/index#Morph targets from a model"],
+		"source": "reference",
+		"images": ["webgpu/demo-morph-flowers.png"],
+		"alt": "A bed of tulips, some open and some closed, in morning sun.",
+		"caption": "One morph target per tulip head. The targets are made in code, not loaded from a file.",
+		"files": [
+			"examples/morph-flowers/",
+			"tests/image/references/chrome-real-gpu/webgpu/demo-morph-flowers.png"
+		],
+		"verdict": "shots-api__animation.md; shots-cookbook__index.md"
+	},
+	{
+		"id": "api/animation/skeleton-lines",
+		"pages": ["api/animation#Seeing the skeleton"],
+		"source": "reference",
+		"images": ["webgpu/gltf-skeleton.png"],
+		"alt": "Lines from blue to green trace the joints of a running fox; one yellow line traces a waving arm.",
+		"caption": "debug.skeleton with the default colors and with one color.",
+		"files": [
+			"tests/pages/sketches/gltf-skeleton-sketch.ts",
+			"tests/image/references/chrome-real-gpu/webgpu/gltf-skeleton.png"
+		],
+		"verdict": "shots-api__animation.md"
+	},
+	{
+		"id": "api/assets/environments-side-by-side",
+		"pages": ["api/assets#Environments"],
+		"source": "scripted",
+		"steps": "Development build: ?demo=environment&hold=1, hold=5 and hold=9. Row of three labelled \"Radiance .hdr\", \"OpenEXR .exr\", \"Generated sky\".",
+		"alt": "The same spheres lit by a Radiance .hdr file, an OpenEXR .exr file and the generated sky.",
+		"caption": "One call takes an HDR file, an EXR file or the generated sky.",
+		"files": ["examples/environment/"],
+		"verdict": "shots-api__assets.md"
+	},
+	{
+		"id": "api/assets/devtools-network-stages",
+		"pages": ["api/assets#staged levels"],
+		"source": "manual",
+		"steps": "Development server: open tests/pages/staged-levels.html?near with the Network panel open. Filter on \"staged-terrain\". Capture after the camera moves close (stage file names end in .m<N>.lod<N>.bin).",
+		"alt": "The network panel lists the coarse model file first, then the stage files that arrive as the camera moves close.",
+		"caption": "Stage files download as the camera comes close.",
+		"files": ["tests/pages/staged-levels.html", "tests/pages/sketches/staged-levels-sketch.ts"],
+		"verdict": "shots-api__assets.md"
+	},
+	{
+		"id": "api/cameras/lens-35-85",
+		"pages": ["api/cameras#Focal length"],
+		"source": "scripted",
+		"steps": "Hold the camera-lens demo at 16 (35 mm) and at 8 (85 mm), same canvas size, no pointer input. Label \"35 mm\" and \"85 mm\".",
+		"alt": "The same chess board at 35 mm and at 85 mm: the board keeps its size, the background narrows and the light discs grow.",
+		"caption": "35 mm and 85 mm with the camera moved back.",
+		"files": ["examples/camera-lens/sketch.ts"],
+		"verdict": "shots-api__cameras.md"
+	},
+	{
+		"id": "api/controls/walk-and-fly",
+		"pages": ["api/controls#First-person controls"],
+		"source": "reference",
+		"images": ["webgpu/demo-walk-and-fly.png"],
+		"alt": "A ruined temple at golden hour, seen from eye height between columns.",
+		"caption": "First-person and fly controls.",
+		"files": [
+			"examples/walk-and-fly/",
+			"tests/image/references/chrome-real-gpu/webgpu/demo-walk-and-fly.png"
+		],
+		"verdict": "shots-api__controls.md"
+	},
+	{
+		"id": "api/controls/gizmo-handles",
+		"pages": ["api/controls#Gizmos", "api/reference/controls#GizmoAxis"],
+		"source": "reference",
+		"images": ["webgpu/demo-gizmos.png"],
+		"steps": "Crop to the gizmo and the sphere.",
+		"alt": "Move handles, an arrow per axis and plane tiles, on a selected sphere on a plinth.",
+		"caption": "The gizmo in translate mode.",
+		"files": ["examples/gizmos/", "tests/image/references/chrome-real-gpu/webgpu/demo-gizmos.png"],
+		"verdict": "shots-api__controls.md; shots-api__reference__controls.md",
+		"note": "The reference page placement needs the generator to print images."
+	},
+	{
+		"id": "api/controls/gizmo-modes",
+		"pages": ["api/controls#Gizmos"],
+		"source": "scripted",
+		"steps": "Open ?demo=gizmos with no hold (the Mode buttons hide under hold). The sphere starts selected in Translate. Pointer off the canvas. Capture; click Rotate, wait a few frames, capture; click Scale, capture. Three crops in a row.",
+		"alt": "The same sphere with move arrows, rotate rings and scale cubes.",
+		"caption": "Translate, rotate and scale.",
+		"files": ["examples/gizmos/", "examples/index.ts"],
+		"verdict": "shots-api__controls.md"
+	},
+	{
+		"id": "api/debug/debug-shapes",
+		"pages": ["api/debug#Debug drawing", "guides/debugging#See the scene with debug drawing"],
+		"source": "reference",
+		"images": ["webgpu/debug.png"],
+		"alt": "A grid, a box, a sphere, two sets of axes, an arrow, a line, a camera frustum and a light, drawn as thin lines over a small scene.",
+		"caption": "Debug drawing.",
+		"files": [
+			"tests/pages/sketches/debug-sketch.ts",
+			"tests/image/references/chrome-real-gpu/webgpu/debug.png"
+		],
+		"verdict": "shots-api__debug.md; shots-guides__debugging.md"
+	},
+	{
+		"id": "api/debug/debug-views",
+		"pages": ["api/debug#under the views table"],
+		"source": "reference",
+		"images": [
+			"webgpu/debug-view-normals.png",
+			"webgpu/debug-view-depth.png",
+			"webgpu/debug-view-overdraw.png",
+			"webgpu/debug-view-wireframe.png",
+			"webgpu/debug-view-shadows.png"
+		],
+		"steps": "A row in the table's order.",
+		"alt": "One scene drawn five ways: normals, depth, overdraw, wireframe and shadows.",
+		"caption": "The debug views.",
+		"files": [
+			"tests/pages/sketches/debug-view-sketch.ts",
+			"tests/image/references/chrome-real-gpu/webgpu/debug-view-normals.png",
+			"tests/image/references/chrome-real-gpu/webgpu/debug-view-depth.png",
+			"tests/image/references/chrome-real-gpu/webgpu/debug-view-overdraw.png",
+			"tests/image/references/chrome-real-gpu/webgpu/debug-view-wireframe.png",
+			"tests/image/references/chrome-real-gpu/webgpu/debug-view-shadows.png"
+		],
+		"verdict": "shots-api__debug.md"
+	},
+	{
+		"id": "api/debug/levels-view",
+		"pages": ["api/debug#the levels row"],
+		"source": "reference",
+		"images": ["webgpu/lod-levels.png"],
+		"alt": "Copies of one mesh at growing distances, each in its level's color: blue, green, yellow and orange.",
+		"caption": "The levels view. lod-levels-hide.png also shows the striped magenta marker.",
+		"files": [
+			"tests/image/manifest.ts",
+			"tests/image/references/chrome-real-gpu/webgpu/lod-levels.png"
+		],
+		"verdict": "shots-api__debug.md"
+	},
+	{
+		"id": "api/debug/motion-view",
+		"pages": ["api/debug#the motion row"],
+		"source": "scripted",
+		"steps": "Math demo with ?view=motion in hold mode. Check the capture: crop to the flock if it reads as a black frame.",
+		"alt": "Moving drones in hues that show their direction on a black background.",
+		"caption": "The motion view.",
+		"files": ["examples/math/"],
+		"verdict": "shots-api__debug.md"
+	},
+	{
+		"id": "api/engine/transparent-canvas",
+		"pages": ["api/engine#A transparent canvas"],
+		"source": "scripted",
+		"images": ["webgpu/demo-depth-only.png"],
+		"steps": "Capture the page with the canvas over it (the reference holds only the canvas pixels).",
+		"alt": "Glass panes over an embedded web page that shows through a see-through canvas.",
+		"caption": "A see-through canvas over a page, with a depth-only plane.",
+		"files": [
+			"examples/depth-only/",
+			"examples/lib/run.ts",
+			"tests/image/references/chrome-real-gpu/webgpu/demo-depth-only.png"
+		],
+		"verdict": "shots-api__engine.md"
+	},
+	{
+		"id": "api/feature-draws/feature-draw-clouds",
+		"pages": ["api/feature-draws#A point cloud"],
+		"source": "reference",
+		"images": ["webgpu/feature-draw.png"],
+		"alt": "Two clouds of colored discs: small, firm discs behind and larger, soft discs in front.",
+		"caption": "An opaque and a blended feature draw.",
+		"files": [
+			"tests/pages/sketches/feature-draw-sketch.ts",
+			"tests/image/references/chrome-real-gpu/webgpu/feature-draw.png"
+		],
+		"verdict": "shots-api__feature-draws.md"
+	},
+	{
+		"id": "api/splats/splats-demo",
+		"pages": ["api/splats#under the intro", "api/feature-draws#Many copies of one shape"],
+		"source": "reference",
+		"images": ["webgpu/demo-splats.png"],
+		"alt": "A drone scan of a priory drawn from Gaussian splats.",
+		"caption": "The splats demo. On feature-draws, say the add-on makes the draw.",
+		"files": ["examples/splats/", "tests/image/references/chrome-real-gpu/webgpu/demo-splats.png"],
+		"verdict": "shots-api__splats.md; shots-api__feature-draws.md"
+	},
+	{
+		"id": "api/splats/splats-budget",
+		"pages": ["api/splats#beside setBudget(count)"],
+		"source": "reference",
+		"images": ["webgpu/splats.png", "webgpu/splats-budget.png"],
+		"alt": "A test cloud of 36,000 splats beside the same cloud capped at 9,000 splats.",
+		"caption": "A lower budget draws fewer, larger splats.",
+		"files": [
+			"tests/pages/sketches/splats-sketch.ts",
+			"tests/image/references/chrome-real-gpu/webgpu/splats.png",
+			"tests/image/references/chrome-real-gpu/webgpu/splats-budget.png"
+		],
+		"verdict": "shots-api__splats.md"
+	},
+	{
+		"id": "api/feature-effects/feature-effect-before-after",
+		"pages": ["api/feature-effects#A depth of field"],
+		"source": "scripted",
+		"steps": "tests/pages/image.html?gpu=webgpu&hold=0&preset=medium&size=960x540&sketch=/tests/pages/sketches/feature-effect-sketch.ts, then the same with sketch=...feature-effect-sketch.ts%3Fdof%3Doff. Side by side.",
+		"alt": "Six posts at different distances, sharp, and blurred away from the third post.",
+		"caption": "Without and with the feature effect.",
+		"files": [
+			"tests/pages/sketches/feature-effect-sketch.ts",
+			"tests/image/feature-effect.spec.ts"
+		],
+		"verdict": "shots-api__feature-effects.md"
+	},
+	{
+		"id": "api/feature-instances/compute-instances",
+		"pages": ["api/feature-instances#A draw of quads"],
+		"source": "reference",
+		"images": ["webgpu/feature-instances-compute.png"],
+		"alt": "Six rows of seven discs that a compute pass placed and counted.",
+		"caption": "The GPU writes the rows and the count.",
+		"files": [
+			"tests/pages/sketches/feature-instances-compute-sketch.ts",
+			"tests/image/references/chrome-real-gpu/webgpu/feature-instances-compute.png"
+		],
+		"verdict": "shots-api__feature-instances.md"
+	},
+	{
+		"id": "api/feature-instances/instances-shadow",
+		"pages": ["api/feature-instances#The count and the instances without compute"],
+		"source": "reference",
+		"images": ["webgpu/feature-instances-shadow.png"],
+		"alt": "Standing discs, counted on the GPU, cast shadows on the ground.",
+		"caption": "The page fills 64 rows but counts 42; only 42 cast shadows.",
+		"files": [
+			"tests/pages/sketches/feature-instances-shadow-sketch.ts",
+			"tests/image/references/chrome-real-gpu/webgpu/feature-instances-shadow.png"
+		],
+		"verdict": "shots-api__feature-instances.md"
+	},
+	{
+		"id": "api/features/stats-steps-tab",
+		"pages": ["api/features#Stats", "guides/add-ons#Follow the preset and show the cost"],
+		"source": "scripted",
+		"steps": "Chrome on WebGPU with timestamp queries: ?demo=water&stats&preset=medium (or stats=open). Wait about 5 s. Check the row reads reflectionEvery 2. For api/features click the Steps tab. Capture the card.",
+		"alt": "The stats overlay's water row with its GPU time, reflection cadence, budget and memory, and the GPU steps list.",
+		"caption": "An add-on's row in the stats overlay.",
+		"files": [
+			"packages/water/src/water.ts",
+			"packages/engine/src/debug/overlay-look.ts",
+			"packages/engine/src/debug/stats-text.ts"
+		],
+		"verdict": "shots-api__features.md; shots-guides__add-ons.md"
+	},
+	{
+		"id": "api/geometry/generators",
+		"pages": ["api/geometry#Generators"],
+		"source": "reference",
+		"images": ["webgpu/demo-generators.png"],
+		"alt": "Nine shapes in a 3 by 3 grid, three with a tile texture made in code and the rest plastic and metal.",
+		"caption": "The geometry generators.",
+		"files": [
+			"examples/generators/",
+			"tests/image/references/chrome-real-gpu/webgpu/demo-generators.png"
+		],
+		"verdict": "shots-api__geometry.md"
+	},
+	{
+		"id": "api/geometry/extra-shapes",
+		"pages": ["api/geometry#Extra shapes"],
+		"source": "reference",
+		"images": ["webgpu/demo-extra-shapes.png"],
+		"alt": "A torus knot, polyhedra, a lathe vase, an extruded star, a tube and a glowing flat heart, reflected in a polished floor at dusk.",
+		"caption": "Extra shapes from @null3d/geometry.",
+		"files": [
+			"examples/extra-shapes/",
+			"tests/image/references/chrome-real-gpu/webgpu/demo-extra-shapes.png"
+		],
+		"verdict": "shots-api__geometry.md"
+	},
+	{
+		"id": "api/geometry/mesh-arrays",
+		"pages": ["api/geometry#Computing normals and tangents"],
+		"source": "scripted",
+		"images": ["webgpu/demo-mesh-arrays.png"],
+		"steps": "Development build, ?demo=mesh-arrays&hold=1 on a 1280x720 canvas so the crystal's faces show. If the reference is used, drop \"hard-edged crystal\" from the alt text.",
+		"alt": "An island with smooth normals and vertex colors beside a hard-edged crystal.",
+		"caption": "Meshes from arrays.",
+		"files": [
+			"examples/mesh-arrays/",
+			"tests/image/references/chrome-real-gpu/webgpu/demo-mesh-arrays.png"
+		],
+		"verdict": "shots-api__geometry.md"
+	},
+	{
+		"id": "api/geometry/vertex-updates",
+		"pages": ["api/geometry#Vertices that change"],
+		"source": "reference",
+		"images": ["webgpu/demo-vertex-updates.png"],
+		"alt": "Rings spread over a pool from a glowing float.",
+		"caption": "updateVertices every frame.",
+		"files": [
+			"examples/vertex-updates/",
+			"tests/image/references/chrome-real-gpu/webgpu/demo-vertex-updates.png"
+		],
+		"verdict": "shots-api__geometry.md"
+	},
+	{
+		"id": "api/grass/grass-grove",
+		"pages": [
+			"api/grass#under the intro",
+			"api/wind#under the intro",
+			"api/feature-instances#Compute instances in use"
+		],
+		"source": "scripted",
+		"images": ["webgpu/demo-vegetation-wind.png"],
+		"steps": "Capture at 1280x720 after about 2 s (?demo=vegetation-wind&stats=off or the demo test page). Use the webgpu or compat image only: WebGL2 draws grass as a plain instance batch.",
+		"alt": "A grove of oaks, birches and firs at the edge of a grassy meadow, all swaying in one wind field.",
+		"caption": "The plants in wind demo. On feature-instances: the grass add-on places and counts its blades with a compute pass on WebGPU.",
+		"files": [
+			"examples/vegetation-wind/sketch.ts",
+			"packages/grass/src/grass.ts",
+			"tests/image/references/chrome-real-gpu/webgpu/demo-vegetation-wind.png"
+		],
+		"verdict": "shots-api__grass.md; shots-api__wind.md; shots-api__feature-instances.md"
+	},
+	{
+		"id": "api/grass/grass-presets",
+		"pages": ["api/grass#Grass on the ground"],
+		"source": "scripted",
+		"images": ["webgpu/vegetation-grass.png"],
+		"steps": "Image test page for the vegetation-grass sketch with preset=low and preset=ultra, hold 1 s at 1280x720. Put the existing High frame in the middle.",
+		"alt": "The same hill of grass at the Low, High and Ultra presets.",
+		"caption": "Grass counts follow the preset.",
+		"files": [
+			"tests/pages/sketches/vegetation-grass-sketch.ts",
+			"tests/image/manifest.ts",
+			"tests/image/references/chrome-real-gpu/webgpu/vegetation-grass.png"
+		],
+		"verdict": "shots-api__grass.md"
+	},
+	{
+		"id": "api/grass/grass-shadow",
+		"pages": ["api/grass#Near shadows and the sway distance"],
+		"source": "reference",
+		"images": ["webgpu/vegetation-grass-shadow.png"],
+		"alt": "Long blade shadows on a hill under a low sun.",
+		"caption": "Near grass shadows.",
+		"files": [
+			"tests/image/manifest.ts",
+			"tests/image/references/chrome-real-gpu/webgpu/vegetation-grass-shadow.png"
+		],
+		"verdict": "shots-api__grass.md"
+	},
+	{
+		"id": "api/impostors/impostor-atlas-pair",
+		"pages": ["api/impostors#The atlas and its cells"],
+		"source": "scripted",
+		"steps": "Bun script: call impostorAtlases() from examples/impostors/forest.ts (4x4 grid, 64 texels a cell). Turn rows upright with uprightImage. Color atlas over plain gray; surface atlas with alpha set to 255. Scale 2x nearest, draw the cell lines, side by side, encodePng.",
+		"alt": "A color atlas and a surface atlas of one tree, 4 by 4 cells, side by side with the cell lines drawn.",
+		"caption": "The two atlases a bake writes.",
+		"files": [
+			"examples/impostors/forest.ts",
+			"packages/cli/src/assets/impostor.js",
+			"packages/cli/src/png.js"
+		],
+		"verdict": "shots-api__impostors.md"
+	},
+	{
+		"id": "api/impostors/impostor-handover",
+		"pages": ["api/impostors#Hand the near meshes over to the cards"],
+		"source": "reference",
+		"images": ["webgpu/impostor-handover.png"],
+		"alt": "Three pines in the hand-over band with full crowns.",
+		"caption": "Each pine draws as its mesh and its card at once, and no sky shows through the crowns.",
+		"files": [
+			"tests/pages/sketches/impostor-handover-sketch.ts",
+			"tests/image/references/chrome-real-gpu/webgpu/impostor-handover.png"
+		],
+		"verdict": "shots-api__impostors.md"
+	},
+	{
+		"id": "api/impostors/impostor-shadow",
+		"pages": ["api/impostors#card shadows"],
+		"source": "reference",
+		"images": ["webgpu/impostor-shadow.png"],
+		"alt": "Crown-shaped shadows on the ground from a batch of cards that only the light draws.",
+		"caption": "Card shadows from a caster-only batch.",
+		"files": [
+			"tests/pages/sketches/impostor-shadow-sketch.ts",
+			"tests/image/references/chrome-real-gpu/webgpu/impostor-shadow.png"
+		],
+		"verdict": "shots-api__impostors.md"
+	},
+	{
+		"id": "api/input/picking-hover",
+		"pages": ["api/input#Pointer events on objects"],
+		"source": "scripted",
+		"steps": "Open the picking demo live (not held). Click the centre of the Sphere. Move the pointer with no button onto the Torus, wait two or three frames, capture within a second, with the HTML labels. Find each piece's place just before each move: the table turns.",
+		"alt": "The torus glows under the pointer while the sphere stays outlined with a hit dot from the last click.",
+		"caption": "pointerenter and click handlers on objects.",
+		"files": ["examples/picking/sketch.ts"],
+		"verdict": "shots-api__input.md"
+	},
+	{
+		"id": "api/raycast/picking-hit-marker",
+		"pages": ["api/raycast#Rays from the pointer"],
+		"source": "scripted",
+		"steps": "Picking demo at 1280x720. Wait until sketch time reaches 2 s. Click the pink capsule at about 33% across and 72% down. Wait one frame. Capture the page with its label overlay.",
+		"alt": "The pink capsule outlined and lit under the pointer, with a white dot where the click's ray hit it and its label reading Capsule: selected.",
+		"caption": "A pointer event and the point its ray hit.",
+		"files": ["examples/picking/sketch.ts", "packages/engine/src/scene/scene.ts"],
+		"verdict": "shots-api__raycast.md"
+	},
+	{
+		"id": "api/lights/lights-kinds",
+		"pages": ["api/lights#Kinds of light"],
+		"source": "reference",
+		"images": [
+			"webgpu/lights-spot.png",
+			"webgpu/lights-rect.png",
+			"webgpu/lights-tube.png",
+			"webgpu/lights-hemisphere.png"
+		],
+		"steps": "A row with a label on each panel.",
+		"alt": "The same floor of shapes under a spot light, a rectangle light, a tube light and a hemisphere light.",
+		"caption": "Spot, rectangle, tube and hemisphere.",
+		"files": [
+			"tests/image/manifest.ts",
+			"tests/image/references/chrome-real-gpu/webgpu/lights-spot.png",
+			"tests/image/references/chrome-real-gpu/webgpu/lights-rect.png",
+			"tests/image/references/chrome-real-gpu/webgpu/lights-tube.png",
+			"tests/image/references/chrome-real-gpu/webgpu/lights-hemisphere.png"
+		],
+		"verdict": "shots-api__lights.md"
+	},
+	{
+		"id": "api/lights/spot-cookies",
+		"pages": ["api/lights#Spot light maps"],
+		"source": "reference",
+		"images": ["webgpu/demo-spot-cookies.png"],
+		"alt": "A rose window projected on a wall by a spot light, over spheres on plinths.",
+		"caption": "A spot light with a map. Its shadows cut the projected window.",
+		"files": [
+			"examples/spot-cookies/",
+			"tests/image/references/chrome-real-gpu/webgpu/demo-spot-cookies.png"
+		],
+		"verdict": "shots-api__lights.md"
+	},
+	{
+		"id": "api/lines/lines-lit",
+		"pages": ["api/lines#Lit lines"],
+		"source": "reference",
+		"images": ["webgpu/lines-lit.png"],
+		"alt": "Two helixes shaded by a sun and a red light, a glowing blue bar, and a flat magenta line that the lights do not change.",
+		"caption": "Lit and unlit lines.",
+		"files": [
+			"tests/pages/sketches/lines-sketch.ts",
+			"tests/image/references/chrome-real-gpu/webgpu/lines-lit.png"
+		],
+		"verdict": "shots-api__lines.md"
+	},
+	{
+		"id": "api/lines/lines-widths",
+		"pages": ["api/lines#Widths in pixels and in the world"],
+		"source": "reference",
+		"images": ["webgpu/lines.png"],
+		"alt": "A strip, segments, a loop, dashes and a blended line; the floor loop in world units narrows toward the back.",
+		"caption": "Line widths in world units. Use this picture here and lines-lit under Lit lines, so no picture shows twice.",
+		"files": [
+			"tests/pages/sketches/lines-sketch.ts",
+			"tests/image/references/chrome-real-gpu/webgpu/lines.png"
+		],
+		"verdict": "shots-api__lines.md"
+	},
+	{
+		"id": "api/sprites/sprites-lines",
+		"pages": ["api/sprites#under the intro", "api/lines#under the intro"],
+		"source": "reference",
+		"images": ["webgpu/demo-sprites-lines.png"],
+		"alt": "A fountain of glowing sparks over a dark pool, ringed by a neon helix and a dashed loop of lines.",
+		"caption": "Only the sparks are sprites; the helix and the loop are lines.",
+		"files": [
+			"examples/sprites-lines/",
+			"tests/image/references/chrome-real-gpu/webgpu/demo-sprites-lines.png"
+		],
+		"verdict": "shots-api__sprites.md; shots-api__lines.md"
+	},
+	{
+		"id": "api/materials/standard-grid",
+		"pages": ["api/materials#Standard values"],
+		"source": "reference",
+		"images": ["webgpu/standard-grid.png"],
+		"alt": "Fifteen spheres of one color: roughness rises left to right, metalness top to bottom.",
+		"caption": "Roughness and metalness.",
+		"files": [
+			"tests/image/manifest.ts",
+			"tests/image/references/chrome-real-gpu/webgpu/standard-grid.png"
+		],
+		"verdict": "shots-api__materials.md"
+	},
+	{
+		"id": "api/materials/coat-and-sheen",
+		"pages": [
+			"api/materials#Clear coat and sheen",
+			"porting/threejs-materials#MeshPhysicalMaterial",
+			"shaders/surface-functions#Clear coat and sheen"
+		],
+		"source": "reference",
+		"images": ["webgpu/demo-coat-and-sheen.png"],
+		"alt": "A red car on a plinth in the rain, over wet cobbles whose puddles shine with a clear coat, beside a velvet cushion with a sheen.",
+		"caption": "Clear coat and sheen.",
+		"files": [
+			"examples/coat-and-sheen/car.ts",
+			"examples/coat-and-sheen/sketch.ts",
+			"examples/coat-and-sheen/surfaces.ts",
+			"tests/image/references/chrome-real-gpu/webgpu/demo-coat-and-sheen.png"
+		],
+		"verdict": "shots-api__materials.md; shots-porting__threejs-materials.md; shots-shaders__surface-functions.md"
+	},
+	{
+		"id": "api/materials/iridescence-and-anisotropy",
+		"pages": ["api/materials#Iridescence and anisotropy"],
+		"source": "reference",
+		"images": ["webgpu/demo-iridescence-and-anisotropy.png"],
+		"alt": "A beetle with a shifting film on a brushed metal plinth, among soap bubbles.",
+		"caption": "Iridescence and anisotropy.",
+		"files": [
+			"examples/iridescence-and-anisotropy/",
+			"tests/image/references/chrome-real-gpu/webgpu/demo-iridescence-and-anisotropy.png"
+		],
+		"verdict": "shots-api__materials.md"
+	},
+	{
+		"id": "api/materials/translucency",
+		"pages": ["api/materials#Light through thin surfaces"],
+		"source": "reference",
+		"images": ["webgpu/demo-translucency.png"],
+		"alt": "Backlit leaves and petals under a low sun, with a paper lantern.",
+		"caption": "Diffuse transmission.",
+		"files": [
+			"examples/translucency/",
+			"tests/image/references/chrome-real-gpu/webgpu/demo-translucency.png"
+		],
+		"verdict": "shots-api__materials.md"
+	},
+	{
+		"id": "api/materials/subsurface",
+		"pages": ["api/materials#Light under the surface"],
+		"source": "reference",
+		"images": ["webgpu/demo-subsurface.png"],
+		"alt": "Wax candles, a jade knot and a soap egg that glow softly by candlelight.",
+		"caption": "Light under the surface. It shows on High and Ultra.",
+		"files": [
+			"examples/subsurface/",
+			"tests/image/references/chrome-real-gpu/webgpu/demo-subsurface.png"
+		],
+		"verdict": "shots-api__materials.md",
+		"note": "Replaces the rejected subsurface-on-off pair. For an on/off view use webgpu/subsurface.png alone."
+	},
+	{
+		"id": "api/materials/decals",
+		"pages": ["api/materials#Decals"],
+		"source": "reference",
+		"images": ["webgpu/demo-decals.png"],
+		"alt": "A zebra crossing, road paint, puddles and posters on a street at dusk.",
+		"caption": "Decals.",
+		"files": ["examples/decals/", "tests/image/references/chrome-real-gpu/webgpu/demo-decals.png"],
+		"verdict": "shots-api__materials.md"
+	},
+	{
+		"id": "api/materials/relief",
+		"pages": ["api/materials#Relief"],
+		"source": "reference",
+		"images": ["webgpu/demo-relief.png"],
+		"alt": "Hills, boulders, a brick wall and a wireframe frame drawn with displacement, parallax and bump maps.",
+		"caption": "Relief maps.",
+		"files": ["examples/relief/", "tests/image/references/chrome-real-gpu/webgpu/demo-relief.png"],
+		"verdict": "shots-api__materials.md",
+		"note": "A larger Parallax on/off pair would show depth better."
+	},
+	{
+		"id": "api/materials/shader-inputs",
+		"pages": [
+			"api/materials#Custom materials",
+			"guides/custom-shaders#Custom materials",
+			"porting/threejs-shaders#Built-in values",
+			"shaders/builtins#object"
+		],
+		"source": "reference",
+		"images": ["webgpu/demo-shader-inputs.png"],
+		"alt": "Crystals in one batch colored by their row, and stones with bands, both drawn by custom materials.",
+		"caption": "A custom material that reads row and object values.",
+		"files": [
+			"examples/shader-inputs/",
+			"tests/image/references/chrome-real-gpu/webgpu/demo-shader-inputs.png"
+		],
+		"verdict": "shots-api__materials.md; shots-guides__custom-shaders.md; shots-porting__threejs-shaders.md; shots-shaders__builtins.md"
+	},
+	{
+		"id": "api/objects/objects-turntable",
+		"pages": ["api/objects#Parents"],
+		"source": "reference",
+		"images": ["webgpu/demo-objects.png"],
+		"alt": "Six crates in six materials on a turntable on a dark studio stage.",
+		"caption": "The objects demo moves crates between parents; a still picture cannot show it.",
+		"files": [
+			"examples/objects/",
+			"tests/image/references/chrome-real-gpu/webgpu/demo-objects.png"
+		],
+		"verdict": "shots-api__objects.md"
+	},
+	{
+		"id": "api/points/galaxy",
+		"pages": ["api/points#Create a batch", "cookbook/index#A field of stars"],
+		"source": "reference",
+		"images": ["webgpu/demo-galaxy.png"],
+		"alt": "A spiral galaxy of soft glowing points.",
+		"caption": "The galaxy demo (120,000 soft stars), not the code above it.",
+		"files": ["examples/galaxy/", "tests/image/references/chrome-real-gpu/webgpu/demo-galaxy.png"],
+		"verdict": "shots-api__points.md; shots-cookbook__index.md"
+	},
+	{
+		"id": "api/post/grades",
+		"pages": ["api/post#Grading controls"],
+		"source": "scripted",
+		"steps": "Development build: ?demo=post-effects&hold=T with T = 11.17 (none), 12.39 (warm), 26.87 (cool). Row of three.",
+		"alt": "The same alley with no grade, a warm grade and a cool grade.",
+		"caption": "Grading controls.",
+		"files": ["examples/post-effects/"],
+		"verdict": "shots-api__post.md"
+	},
+	{
+		"id": "api/quality/presets-side-by-side",
+		"pages": ["api/quality#intro"],
+		"source": "scripted",
+		"steps": "Development build on WebGPU (WebGL2 caps Ultra to Medium): examples/?demo=creek&preset=low&hold=0.5, then medium, high, ultra. Join the four.",
+		"alt": "The creek showcase at the Low, Medium, High and Ultra presets.",
+		"caption": "What quality.preset changes.",
+		"files": ["examples/showcase/creek/"],
+		"verdict": "shots-api__quality.md"
+	},
+	{
+		"id": "api/render/security-camera",
+		"pages": [
+			"api/render#Scene passes",
+			"guides/custom-passes#Render to a texture",
+			"cookbook/index#A screen that shows another camera"
+		],
+		"source": "reference",
+		"images": ["webgpu/demo-security-camera.png"],
+		"alt": "A monitor on a wall shows a night camera's grainy view of the yard behind it.",
+		"caption": "A scene pass's texture on a material.",
+		"files": [
+			"examples/security-camera/",
+			"tests/image/references/chrome-real-gpu/webgpu/demo-security-camera.png"
+		],
+		"verdict": "shots-api__render.md; shots-guides__custom-passes.md; shots-cookbook__index.md"
+	},
+	{
+		"id": "api/render/reflection-mirror",
+		"pages": ["api/render#Reflection passes"],
+		"source": "reference",
+		"images": ["webgpu/reflection-mirror.png"],
+		"alt": "A red box, a green box, a blue ball and a yellow post mirrored in a polished floor under a blue sky.",
+		"caption": "A reflection pass on a mirror floor.",
+		"files": [
+			"tests/pages/sketches/reflection-sketch.ts",
+			"tests/image/references/chrome-real-gpu/webgpu/reflection-mirror.png"
+		],
+		"verdict": "shots-api__render.md"
+	},
+	{
+		"id": "api/render/fullscreen-glow",
+		"pages": ["api/render#Full-screen passes", "guides/custom-passes#A soft outline glow"],
+		"source": "reference",
+		"images": ["webgpu/fullscreen-glow.png"],
+		"alt": "A white ball with a warm orange glow around it, among colored boxes on a grey floor.",
+		"caption": "The outline mask blurred at half size and added by an effect.",
+		"files": [
+			"tests/pages/sketches/fullscreen-sketch.ts",
+			"tests/image/references/chrome-real-gpu/webgpu/fullscreen-glow.png"
+		],
+		"verdict": "shots-api__render.md; shots-guides__custom-passes.md"
+	},
+	{
+		"id": "api/water/ocean",
+		"pages": ["api/water#The ocean", "api/render#Compute passes"],
+		"source": "reference",
+		"images": ["webgpu/demo-ocean.png"],
+		"alt": "An open sea with long swells under a cloudy evening sky.",
+		"caption": "The water add-on fills the sea's heights with compute passes every frame.",
+		"files": ["examples/ocean/", "tests/image/references/chrome-real-gpu/webgpu/demo-ocean.png"],
+		"verdict": "shots-api__water.md; shots-api__render.md"
+	},
+	{
+		"id": "api/scene/fog",
+		"pages": ["api/scene#Fog", "api/reference/scene#FogMode"],
+		"source": "reference",
+		"images": [
+			"webgpu/fog-linear.png",
+			"webgpu/fog-exponential.png",
+			"webgpu/fog-exp2.png",
+			"webgpu/fog-height.png"
+		],
+		"alt": "One row of towers under linear, exponential, squared exponential and height fog.",
+		"caption": "Fog curves, each labeled.",
+		"files": [
+			"tests/pages/sketches/fog-sketch.ts",
+			"bench/scenes/fog.ts",
+			"packages/engine/src/scene/fog.ts",
+			"tests/image/references/chrome-real-gpu/webgpu/fog-linear.png",
+			"tests/image/references/chrome-real-gpu/webgpu/fog-exponential.png",
+			"tests/image/references/chrome-real-gpu/webgpu/fog-exp2.png",
+			"tests/image/references/chrome-real-gpu/webgpu/fog-height.png"
+		],
+		"verdict": "shots-api__scene.md; shots-api__reference__scene.md"
+	},
+	{
+		"id": "api/scene/aurora-sky-layer",
+		"pages": ["api/scene#Sky layers"],
+		"source": "reference",
+		"images": ["webgpu/demo-aurora.png"],
+		"alt": "Green aurora curtains over dark pines, mirrored in a frozen lake.",
+		"caption": "A sky layer from the aurora add-on.",
+		"files": [
+			"examples/aurora/",
+			"examples/addons/aurora/",
+			"tests/image/references/chrome-real-gpu/webgpu/demo-aurora.png"
+		],
+		"verdict": "shots-api__scene.md"
+	},
+	{
+		"id": "api/scene/probe-grid",
+		"pages": ["api/scene#The light probe grid", "guides/baked-light-data#A probe grid"],
+		"source": "reference",
+		"images": ["webgpu/probe-grid-off.png", "webgpu/probe-grid.png"],
+		"alt": "Left: a room lit by its environment alone. Right: the same room with a probe grid; the red and green walls tint the floor and spheres, and the corners darken.",
+		"caption": "Without and with a light probe grid. The grid here was baked in the browser; a file from another bake tool gives the same result.",
+		"files": [
+			"tests/pages/sketches/probe-grid-sketch.ts",
+			"tests/image/references/chrome-real-gpu/webgpu/probe-grid-off.png",
+			"tests/image/references/chrome-real-gpu/webgpu/probe-grid.png"
+		],
+		"verdict": "shots-api__scene.md; shots-guides__baked-light-data.md"
+	},
+	{
+		"id": "api/scene/time-of-day-presets",
+		"pages": ["api/scene#Time of day"],
+		"source": "reference",
+		"images": [
+			"webgpu/time-of-day-afternoon.png",
+			"webgpu/time-of-day-golden-hour.png",
+			"webgpu/time-of-day-blue-hour.png",
+			"webgpu/time-of-day-night.png"
+		],
+		"alt": "A row of spheres under the afternoon, golden hour, blue hour and night presets.",
+		"caption": "Each panel names its preset. Blue hour reads dark with a red horizon.",
+		"files": [
+			"tests/image/manifest.ts",
+			"tests/image/references/chrome-real-gpu/webgpu/time-of-day-afternoon.png",
+			"tests/image/references/chrome-real-gpu/webgpu/time-of-day-golden-hour.png",
+			"tests/image/references/chrome-real-gpu/webgpu/time-of-day-blue-hour.png",
+			"tests/image/references/chrome-real-gpu/webgpu/time-of-day-night.png"
+		],
+		"verdict": "shots-api__scene.md"
+	},
+	{
+		"id": "api/sound/sound-demo",
+		"pages": ["api/sound#beside the sound demo paragraph"],
+		"source": "reference",
+		"images": ["webgpu/demo-sound.png"],
+		"alt": "Lightning strikes a dark moor in the rain, behind a ring of standing stones and a brook.",
+		"caption": "The sound demo: thunder, rain and a brook.",
+		"files": ["examples/sound/", "tests/image/references/chrome-real-gpu/webgpu/demo-sound.png"],
+		"verdict": "shots-api__sound.md"
+	},
+	{
+		"id": "api/tasks/task-on-job-worker",
+		"pages": ["api/tasks#What the engine guarantees"],
+		"source": "manual",
+		"steps": "Open the splats demo on a cross-origin isolated page. Wait for the scan, move the camera so the selection runs each frame. Record 2 s, expand the null3d-job-<n>, null3d-sketch and null3d-render tracks, crop to two or three frames. Say \"sketch worker\", not \"main thread\".",
+		"alt": "A performance recording with the splats selection task on a null3d-job worker track, beside the sketch worker's and render worker's frames.",
+		"caption": "A task runs off the sketch thread.",
+		"files": ["examples/splats/", "packages/splats/"],
+		"verdict": "shots-api__tasks.md"
+	},
+	{
+		"id": "api/terrain/terrain-demo",
+		"pages": ["api/terrain#under the intro"],
+		"source": "scripted",
+		"images": ["webgpu/demo-terrain.png"],
+		"steps": "examples page ?demo=terrain&still at 1280x720, wait about 3 s, capture.",
+		"alt": "A hilly valley at golden hour drawn by the terrain add-on, with snow on the far ridge.",
+		"caption": "The terrain demo.",
+		"files": [
+			"examples/terrain/",
+			"tests/image/references/chrome-real-gpu/webgpu/demo-terrain.png"
+		],
+		"verdict": "shots-api__terrain.md"
+	},
+	{
+		"id": "api/terrain/terrain-wireframe",
+		"pages": ["api/terrain#How it works (beside \"The ground is a quadtree\")"],
+		"source": "scripted",
+		"steps": "?demo=terrain&still&view=wireframe at 1280x720, wait about 3 s. Check the near blocks stay readable; else crop or add &preset=low.",
+		"alt": "The terrain in wireframe: small blocks near the camera, large blocks far away.",
+		"caption": "The quadtree of blocks.",
+		"files": ["examples/terrain/", "packages/engine/src/page/switches.ts"],
+		"verdict": "shots-api__terrain.md"
+	},
+	{
+		"id": "api/textures/canvas-screen",
+		"pages": [
+			"api/textures#Canvases",
+			"guides/screens#under the intro",
+			"cookbook/index#Screens in the world"
+		],
+		"source": "scripted",
+		"images": ["webgpu/demo-canvas-screen.png"],
+		"steps": "For a sharper picture hold canvas-screen at 1 s at 1280x720. Fallback: the reference.",
+		"alt": "A dark wall with three glowing screens that show numbers and bar gauges, and a small console panel with a wave trace below them.",
+		"caption": "Screens painted on canvases.",
+		"files": [
+			"examples/canvas-screen/",
+			"examples/addons/screens/",
+			"tests/image/references/chrome-real-gpu/webgpu/demo-canvas-screen.png"
+		],
+		"verdict": "shots-api__textures.md; shots-guides__screens.md; shots-cookbook__index.md"
+	},
+	{
+		"id": "api/textures/mipmaps",
+		"pages": ["api/textures#Mip levels"],
+		"source": "reference",
+		"images": ["webgpu/texture-mipmaps.png"],
+		"alt": "A checkerboard drawn smaller and smaller: with mip levels the small copies fade to gray, without them they break into stray texels. Below, two receding floors; the right one uses anisotropic filtering and stays sharp further away.",
+		"caption": "Mip levels and anisotropic filtering.",
+		"files": [
+			"tests/pages/sketches/texture-mipmaps-sketch.ts",
+			"tests/image/references/chrome-real-gpu/webgpu/texture-mipmaps.png"
+		],
+		"verdict": "shots-api__textures.md"
+	},
+	{
+		"id": "api/three-compat/outline-plain-and-glow",
+		"pages": ["api/three-compat#The outline"],
+		"source": "reference",
+		"images": ["webgpu/outline-plain.png", "webgpu/outline-compat-glow.png"],
+		"alt": "The core's thin white outline beside the add-on's soft orange outline with glow, on the same sphere and box.",
+		"caption": "Core outline and the add-on's glow. The colors are the test's, not the page's code.",
+		"files": [
+			"tests/pages/sketches/outline-sketch.ts",
+			"tests/image/references/chrome-real-gpu/webgpu/outline-plain.png",
+			"tests/image/references/chrome-real-gpu/webgpu/outline-compat-glow.png"
+		],
+		"verdict": "shots-api__three-compat.md"
+	},
+	{
+		"id": "api/vertex-draws/rain",
+		"pages": ["api/vertex-draws#Rain around the camera"],
+		"source": "reference",
+		"images": ["webgpu/demo-rain.png"],
+		"alt": "Thousands of thin rain streaks fall through a dark night street with one distant lamp.",
+		"caption": "Fifty thousand rain streaks from one vertex draw.",
+		"files": [
+			"examples/rain/sketch.ts",
+			"tests/image/references/chrome-real-gpu/webgpu/demo-rain.png"
+		],
+		"verdict": "shots-api__vertex-draws.md"
+	},
+	{
+		"id": "api/water/water-demo",
+		"pages": ["api/water#under the intro"],
+		"source": "reference",
+		"images": ["webgpu/demo-water.png"],
+		"alt": "A river with boulders running down a grassy valley under a hazy sky.",
+		"caption": "The water demo.",
+		"files": ["examples/water/", "tests/image/references/chrome-real-gpu/webgpu/demo-water.png"],
+		"verdict": "shots-api__water.md",
+		"note": "A larger copy: water demo with ?hold=1 at a larger size."
+	},
+	{
+		"id": "api/water/water-rain",
+		"pages": ["api/water#Rain on the surface"],
+		"source": "reference",
+		"images": ["webgpu/water-rain.png"],
+		"alt": "Raindrop rings on a lake beside a pale post and a dark stone.",
+		"caption": "Rain on the surface.",
+		"files": [
+			"tests/pages/sketches/water-rain-sketch.ts",
+			"tests/image/references/chrome-real-gpu/webgpu/water-rain.png"
+		],
+		"verdict": "shots-api__water.md"
+	},
+	{
+		"id": "api/water/waterfall",
+		"pages": ["api/water#Waterfalls"],
+		"source": "reference",
+		"images": ["webgpu/water-fall.png"],
+		"alt": "A creek falling from a cliff's lip in a white column into mist.",
+		"caption": "A waterfall.",
+		"files": [
+			"tests/pages/sketches/waterfall-sketch.ts",
+			"tests/image/references/chrome-real-gpu/webgpu/water-fall.png"
+		],
+		"verdict": "shots-api__water.md"
+	},
+	{
+		"id": "api/water/underwater",
+		"pages": ["api/water#The view from under the water"],
+		"source": "scripted",
+		"steps": "Open the water demo with ?hold=42 (the tour's sixth shot, 1.2 m under the lake) and capture.",
+		"alt": "The view from under a lake, tinted green-blue, with caustics on the bed.",
+		"caption": "Under the surface.",
+		"files": ["examples/water/valley.ts"],
+		"verdict": "shots-api__water.md"
+	},
+	{
+		"id": "api/reference/textures/texture-wrap",
+		"pages": ["api/reference/textures#TextureWrap"],
+		"source": "scripted",
+		"images": ["webgpu/textures.png"],
+		"steps": "tests/pages/image.html?sketch=/tests/pages/sketches/textures-sketch.ts&hold=0&size=1440x810&gpu=webgpu; crop the three left squares of the bottom row.",
+		"alt": "A grid of texture samples. The bottom row applies repeat, clamp and mirror wrap to the same picture, then shows nearest and linear filters.",
+		"caption": "Wrap modes and the other texture checks.",
+		"files": [
+			"tests/pages/sketches/textures-sketch.ts",
+			"tests/image/references/chrome-real-gpu/webgpu/textures.png"
+		],
+		"verdict": "shots-api__reference__textures.md",
+		"note": "Needs the reference generator to print images."
+	},
+	{
+		"id": "api/reference/ui/world-labels",
+		"pages": ["api/reference/ui#LabelTransform"],
+		"source": "scripted",
+		"steps": "Development build: examples/index.html?demo=css3d-labels&hold=3.5 at 1280x720. Screenshot the demo stage (the main element), not the canvas alone, so the HTML label layer shows. Check the cards and the title show.",
+		"alt": "Dark monoliths with HTML cards that lean with them, and a CSS3D title that stays square to the view.",
+		"caption": "'world' labels lean with their objects; a 'billboard' label faces the camera.",
+		"files": ["examples/css3d-labels/sketch.ts", "examples/lib/run.ts"],
+		"verdict": "shots-api__reference__ui.md",
+		"note": "The reference page needs the generator to print images."
+	},
+	{
+		"id": "cli/null3d/test-diff",
+		"pages": [
+			"cli/null3d#References and results",
+			"porting/verification#Compare the port with image tests"
+		],
+		"source": "scripted",
+		"steps": "bunx @null3d/cli create shot-demo; bun install; add null3d.json {\"tests\":[{\"name\":\"start\",\"sketch\":\"src/sketch.ts\",\"hold\":1.5}]}; bunx @null3d/cli test --gpu webgpu --update-references; change the cube color #4a8cff; bunx @null3d/cli test --gpu webgpu. Side by side: tests/references/chrome-real-gpu/webgpu/start.png, test-results/null3d/chrome-real-gpu/webgpu/start.png, start-diff.png.",
+		"alt": "A failed image test: the reference, the new image and the diff with changed pixels in red.",
+		"caption": "What test writes when a picture changes.",
+		"files": ["packages/cli/src/test.js", "packages/cli/src/compare.js"],
+		"verdict": "shots-cli__null3d.md; shots-porting__verification.md"
+	},
+	{
+		"id": "cli/null3d/impostor-atlas",
+		"pages": ["cli/null3d#assets impostor"],
+		"source": "scripted",
+		"steps": "bunx @null3d/cli assets impostor tests/pages/assets/models/asset-card-tree.glb --out <folder> --views 25 --texels 64; show <folder>/asset-card-tree-impostor-color.png.",
+		"alt": "A five by five grid of one tree seen from 25 directions: the impostor color atlas.",
+		"caption": "What assets impostor writes.",
+		"files": ["packages/cli/src/assets.js", "tests/pages/assets/models/asset-card-tree.glb"],
+		"verdict": "shots-cli__null3d.md"
+	},
+	{
+		"id": "errors/E1224/override-pair",
+		"pages": ["errors/E1224"],
+		"source": "reference",
+		"images": ["webgpu/demo-objects.png", "webgpu/demo-objects-one-material.png"],
+		"alt": "Left: six crates in six finishes on a turntable stage. Right: the same stage with the floor and every crate drawn in one plaster material.",
+		"caption": "What a valid one-material override changes.",
+		"files": [
+			"examples/objects/sketch.ts",
+			"tests/image/references/chrome-real-gpu/webgpu/demo-objects.png",
+			"tests/image/references/chrome-real-gpu/webgpu/demo-objects-one-material.png"
+		],
+		"verdict": "shots-errors__E1224.md",
+		"note": "Error pages are generated: the image needs support in the error page code in tools/lib/docs.ts."
+	},
+	{
+		"id": "errors/E1431/area-lights-no-tables",
+		"pages": ["errors/E1431"],
+		"source": "scripted",
+		"images": ["webgpu/demo-area-lights.png"],
+		"steps": "Right half: context.route that aborts every request whose URL contains \"area-light-tables\". Open the area-lights demo on webgpu without ?hold. Wait for the first frame plus about 2 s, no pointer moves. Check the console shows E1431, capture the canvas.",
+		"alt": "Left: a wet street lit by rectangle and tube lights. Right: the same street with the area lights dark because their tables failed to load.",
+		"caption": "What E1431 looks like.",
+		"files": [
+			"examples/area-lights/",
+			"tests/image/references/chrome-real-gpu/webgpu/demo-area-lights.png"
+		],
+		"verdict": "shots-errors__E1431.md",
+		"note": "The picture is two panels: the lit street, and the same street with its area-light tables aborted. The capture tool draws the lit demo alone, so this shot waits for a person."
+	}
+]

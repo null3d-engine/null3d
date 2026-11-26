@@ -144,6 +144,10 @@ While the browser holds the audio, the page starts no file. So the browser warns
 
 The [sound demo](https://github.com/null3d-engine/null3d/tree/main/examples/sound) shows a storm. Each strike's thunder plays from where the bolt struck, once sound could have reached the camera. A brook in it is a group of points.
 
+![Lightning strikes a dark moor in the rain, behind a ring of standing stones and a brook.](../images/api/sound/sound-demo.webp)
+
+The sound demo: thunder, rain and a brook.
+
 ## Pauses and hidden pages
 
 When the sketch's frames stop, every sound fades out within about a second, and the page suspends the audio soon after. That happens when `engine.setPaused(true)` pauses the engine, when the browser hides the page, and when a sketch stops calling `update`. It also happens when the engine was paused before the sound started. The audio resumes, and the sounds fade back in, when the frames move again.
@@ -194,6 +198,7 @@ MP3 decodes in every browser. An MP3 encoder adds samples at each end of a file,
 - [Assets](assets.md): loading the sound files.
 - [Hosting and cross-origin isolation](../getting-started/hosting.md): the headers that the mixer needs.
 - [Quality API](quality.md): the presets that drop the HRTF panner.
+- [Loops, groups and shots](https://github.com/null3d-engine/null3d/tree/main/examples/sound): a thunderstorm on the moor, with positional thunder, rain and a brook.
 
 ## API reference
 

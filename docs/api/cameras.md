@@ -184,6 +184,8 @@ A scene can have several cameras, and `setActiveCamera` switches between them. T
 - [Input](input.md): the pointer and touches whose positions `screenToRay` takes.
 - [Raycasting](raycast.md): finding the objects along a ray.
 - [Math helpers](math.md): `quat.lookAt`, and why cameras swap its eye and target.
+- [Camera layer masks](https://github.com/null3d-engine/null3d/tree/main/examples/layers): a camera that draws another set of layers every 2 seconds.
+- [A picture in picture](https://github.com/null3d-engine/null3d/tree/main/examples/multiple-views): one scene from two cameras, split across the canvas or in an inset.
 
 ## API reference
 

@@ -133,3 +133,5 @@ WebGL2 keeps no figure for the whole look. Its whole-frame timer reads about 9 m
 - [Color grading](../api/post.md): the grading controls that the kit sets.
 - [The post effects demo](https://github.com/null3d-engine/null3d/tree/main/examples/post-effects): a
   neon alley whose look comes from the kit.
+- [The Skyway showcase](https://github.com/null3d-engine/null3d/tree/main/examples/showcase/skyway): its
+  speed blur follows the hover car's speed.

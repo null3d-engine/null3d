@@ -221,6 +221,10 @@ A scene inside one cell has nothing to skip, and culls as it would without cells
 
 Write world positions as usual, and the engine picks the cells:
 
+![A tray of small keys and a brass wheel, drawn sharp.](../images/concepts/culling/far-from-origin.webp)
+
+2 cm keys 1,000 km from the origin, drawn without jitter.
+
 ```ts
 const base = [250_000, 0, -80_000] as const;
 const camera = scene.createPerspectiveCamera({
@@ -240,3 +244,5 @@ scene.createMesh({ mesh: geometry.box(), material: stone, position: base });
 - [Static and dynamic objects](static-dynamic.md): which objects upload their data each frame.
 - [Large worlds and precision](large-worlds.md): `largeWorld` mode and batch origins.
 - [The demo far from the origin](https://github.com/null3d-engine/null3d/tree/main/examples/far-from-origin): keys 2 cm wide, 1,000 km from the origin, seen from 40 cm.
+- [Row-by-row culling of a large batch](https://github.com/null3d-engine/null3d/tree/main/examples/instances): a dynamic batch of 100,000 rows, each culled on its own.
+- [Bounds that follow the waves](https://github.com/null3d-engine/null3d/tree/main/examples/vertex-updates): `setBounds` on a pool whose waves lift its corners past the flat mesh's sphere.

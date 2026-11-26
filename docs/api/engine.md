@@ -131,6 +131,10 @@ A value outside its range fails the start with [E1213](../errors/E1213.md), exce
 
 With `transparent: true`, the page shows through wherever no object draws. The canvas holds premultiplied alpha, the form that browsers composite. The sketch can still set a background with `scene.setBackground`, which makes the canvas opaque again.
 
+![Glass panes over an embedded web page that shows through a see-through canvas.](../images/api/engine/transparent-canvas.webp)
+
+A see-through canvas over a page, with a depth-only plane.
+
 ```ts
 const engine = await createEngine({
   canvas,
@@ -139,7 +143,7 @@ const engine = await createEngine({
 });
 ```
 
-Use it to put a model over the page's own background, such as a product on a marketing page. [Color management](../concepts/color-management.md#transparent-canvases) covers how the edges of objects blend with the page.
+Use it to put a model over the page's own background, such as a product on a marketing page. [Color management](../concepts/color-management.md#transparent-canvases) covers how the edges of objects blend with the page. The [depth-only holdout demo](https://github.com/null3d-engine/null3d/tree/main/examples/depth-only) shows the pattern. The demos' shared runner starts the engine with the option, not the demo's sketch.
 
 ## Memory
 
@@ -318,6 +322,8 @@ The engine's own add-ons need no range. They ship in step with the engine and us
 - [Hosting and cross-origin isolation](../getting-started/hosting.md): the headers that let the engine run threaded.
 - [3D scenes on content pages](../guides/content-pages.md): fallbacks, load deadlines and pausing on product pages.
 - [Color management](../concepts/color-management.md): HDR color, tone mapping and transparent canvases.
+- [Large worlds](https://github.com/null3d-engine/null3d/tree/main/examples/large-world): a drive along a road on the Earth's surface, with the option on.
+- [Input from the page](https://github.com/null3d-engine/null3d/tree/main/examples/replay): the engine starts with input off, and the demo's page takes the keys and the pointer lock.
 
 ## API reference
 
