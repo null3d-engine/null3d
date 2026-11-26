@@ -49,7 +49,7 @@ Motion vectors need the frame before the last one, so with them the engine draws
 
 Some effects show their result one frame late: screen-space bounce light, mirrors and light probes. Tasks on the job workers can also answer after the last step. In these cases the engine draws one more frame at the held time. That frame runs none of the sketch's code, so the hold still reports the last step's frame number.
 
-Hold mode waits for the sketch's tasks on the job workers, and for the levels of detail that meshes made in code plan. It waits up to 10 seconds in total for the tasks, then warns and draws anyway. It waits up to five minutes for the plans, then stops with [E1408](../errors/E1408.md). Give a mesh `levels: false` when a test should draw it without levels.
+Hold mode waits for the sketch's tasks on the job workers, and for the levels of detail that meshes made in code plan. Each of its two waits for the tasks lasts up to 10 seconds, and then it warns and draws anyway. It waits up to five minutes for the plans, then stops with [E1408](../errors/E1408.md). Give a mesh `levels: false` when a test should draw it without levels.
 
 <details>
 <summary>Technical details: what hold mode waits for</summary>
@@ -223,10 +223,7 @@ To read the numbers, open the stats overlay with `?stats=open`:
 
 ## Switches for tests
 
-The engine reads these switches from the page's address in development builds:
-
-- the dev server, the `null3d` command's runs and the CDN build's development entry, `lib-dev/index.js`;
-- a production build and the CDN build's production entry, `lib/index.js` ignore them.
+The engine reads these switches from the page's address in development builds: the dev server, the `null3d` command's runs and the CDN build's development entry, `lib-dev/index.js`. A production build and the CDN build's production entry, `lib/index.js`, ignore them.
 
 To use them in a production build of test pages, turn on the Vite plugin's `urlSwitches` option: `null3d({ urlSwitches: true })`. For a benchmark page that loads the CDN build, `bun run build:cdn --url-switches` does the same ([Try null3D from a CDN](../getting-started/cdn.md#production-and-development-entries)).
 
@@ -237,7 +234,7 @@ To use them in a production build of test pages, turn on the Vite plugin's `urlS
 | `?hold=1.5` | Hold mode at 1.5 seconds of sketch time; a bare `?hold` holds at the `hold` option's time, or at 0 |
 | `?gpu=webgpu`, `?gpu=compat`, `?gpu=webgl2` | Force a GPU tier, where the device has it |
 | `?direct=on`, `?direct=off` | On WebGPU, force the direct or the indirect draw path on any device, in place of the start-up probe's choice, to compare GPU time. The probe runs only on an Apple GPU in WebKit. `engine.capabilities.directDraws` says which path the engine took, and `engine.capabilities.drawPath` says why ([Performance guide](performance.md#how-the-engine-batches-builds-pipelines-and-times-frames)) |
-| `?preset=low`, `?preset=medium`, `?preset=high`, `?preset=ultra` | Fix the quality preset, within the GPU path's highest; the engine then ignores starts that crashed before |
+| `?preset=low`, `?preset=medium`, `?preset=high`, `?preset=ultra` | Fix the quality preset, within the GPU path's highest; a crashed start still lowers it by one |
 | `?target-fps=display`, `?target-fps=90` | Set the frame rate that the preset check and the governor defend, in place of the `targetFps` option: the display's full rate, or at most that many frames per second ([The target frame rate](../concepts/quality-presets.md#the-target-frame-rate)) |
 | `?preset-check=during-play`, `?preset-check=before-play` | Set when the preset check measures, in place of the `presetCheck` option: in the first frames of play, or before play, with `createEngine` waiting for it ([The preset check](../concepts/quality-presets.md#the-preset-check)) |
 | `?check=fresh` | Measure the quality preset again, as on a first visit, instead of taking the stored result of an earlier [preset check](../concepts/quality-presets.md#repeat-visits) |

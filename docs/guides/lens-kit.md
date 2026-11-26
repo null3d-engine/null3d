@@ -105,7 +105,7 @@ at 0, such as one that wants the grade alone, adds no pass at all.
 
 The grade and the vignette run inside the final pass and add no pass of their own. The sharpening adds one full-screen pass, about 1 ms at the size below.
 
-On a MacBook Pro with an Apple M3 Max, the canvas is 3840 by 2160 CSS pixels with the pixel ratio held at 2. That draws 33 megapixels. There the whole look costs about 3 to 4 ms of GPU time a frame, on WebGPU and in compatibility mode. The cost follows the pixels: a megapixel costs about a tenth of a millisecond. The [add-on's README](https://github.com/null3d-engine/null3d/tree/main/examples/addons/lens-kit) gives the figure at each preset and for each mark.
+On a MacBook Pro with an Apple M3 Max, the canvas is 3840 by 2160 CSS pixels with the pixel ratio held at 2. That draws 33 megapixels. There the whole look costs about 3 to 4 ms of GPU time a frame, on WebGPU and in compatibility mode. The cost follows the pixels: a megapixel costs about a tenth of a millisecond. The add-on's README gives the figure at each preset and for each mark.
 
 <details>
 <summary>Technical details: how the kit's passes join, and WebGL2</summary>

@@ -285,7 +285,11 @@ Chrome writes the code while the page runs, not when the download ends. It first
 <details>
 <summary>Technical details: when Chrome writes the compiled core</summary>
 
-Once Chrome has new optimized code, it waits until no further function has been optimized for two seconds, and then writes it. With 1 MB of new optimized code, it writes at once. On the engine's test page in Chrome 158, the write came about 6 seconds after the first frame. A repeat visit that read it compiled none of the core again, and its optimizing work fell from about 110 ms to 30 ms. In the engine's startup benchmark at full speed, a repeat visit that read the compiled core finished its first frame at 160 ms. Without it, the first frame took 176 to 180 ms. It compiled 3 of the core's functions again, against 273. Chrome 156 and earlier have a fault in this wait, which can put the write off for up to about half an hour.
+Once Chrome has new optimized code, it waits until no further function has been optimized for two seconds. It then writes that code. With 1 MB of new optimized code, it writes at once.
+
+On the engine's test page in Chrome 158, the write came about 6 seconds after the first frame. A repeat visit that read it compiled none of the core again, and its optimizing work fell from about 110 ms to 30 ms. In the engine's startup benchmark at full speed, a repeat visit that read the compiled core finished its first frame at 160 ms. Without it, the first frame took 176 to 180 ms. It compiled 3 of the core's functions again, against 273.
+
+Chrome 156 and earlier have a fault in this wait, which can put the write off for up to about half an hour.
 
 </details>
 

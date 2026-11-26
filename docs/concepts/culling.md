@@ -107,7 +107,9 @@ The pyramid holds the depth of objects drawn in this frame, at the detail that t
 
 ### The check during play
 
-The extra passes cost GPU time: a depth draw of the occluders, a depth pyramid and a second culling pass. So the engine checks during play whether they pay. About every 120 frames it runs a few frames the other way and compares. The passes stay on while they hide at least a tenth of the objects that would draw. The frame must also take no longer with them, within 2%. Otherwise they stay off until a later check finds that they pay. While the view holds still, the check pauses, so the still-camera accumulation can finish.
+The extra passes cost GPU time: a depth draw of the occluders, a depth pyramid and a second culling pass. So the engine checks during play whether they pay. About every 120 frames it runs a few frames the other way and compares.
+
+The passes stay on while they hide at least a tenth of the objects that would draw. The frame must also take no longer with them, within 2%. Otherwise they stay off until a later check finds that they pay. While the view holds still, the check pauses, so the still-camera accumulation can finish.
 
 `engine.measure` reports the objects that the culling hid as `occludedEntries`. That is the count of the newest frame whose counts came back, and 0 while the check keeps the passes off. The `?occlusion-check=off` switch keeps the passes on in every frame, for a test that compares the image with culling and without it.
 

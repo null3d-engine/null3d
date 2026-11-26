@@ -78,7 +78,7 @@ Do not draw a three.js canvas over the null3D canvas to keep one effect. Two GPU
 | drei `<AdaptiveDpr>` with `performance.regress()` | The governor follows frame times, not camera movement | Remove the `regress()` calls |
 | Pointer events on objects behind the closest one | Only the closest object and its parents get an event | `scene.raycastAll` finds the objects behind, nearest first |
 
-null3D's own [contact shadows](../concepts/shadows.md#contact-shadows) are another effect: the short dark line where an object meets the ground, cast toward the main directional light ([demo](https://github.com/null3d-engine/null3d/tree/main/examples/contact-shadows/)).
+null3D's own [contact shadows](../concepts/shadows.md#contact-shadows) are another effect: the short dark line where an object meets the ground, cast toward the main directional light.
 
 [Porting React Three Fiber](react-three-fiber.md) covers the rest of a React Three Fiber port.
 

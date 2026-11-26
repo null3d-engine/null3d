@@ -148,7 +148,9 @@ A production build with the null3D Vite plugin adds a small script to the head o
 
 So when the core arrives, the setup starts almost at once.
 
-Because the sketch worker imports the sketch module during the download, the module's top-level code runs before the engine has started. It also runs when the start fails. Work there must not need the engine: a call that makes scene data before the core starts fails with [E1403](../errors/E1403.md). Work that needs no engine can run there and overlap the download, such as a height grid that the first view reads. Hold mode, a replay and a recording load the module only after the engine has started. There, such work still holds up the setup ([Sketch API](../api/sketch.md)).
+Because the sketch worker imports the sketch module during the download, the module's top-level code runs before the engine has started. It also runs when the start fails.
+
+Work there must not need the engine: a call that makes scene data before the core starts fails with [E1403](../errors/E1403.md). Work that needs no engine can run there and overlap the download, such as a height grid that the first view reads. Hold mode, a replay and a recording load the module only after the engine has started. There, such work still holds up the setup ([Sketch API](../api/sketch.md)).
 
 The Vite plugin also writes into the built sketch module every file that the module reaches through its imports. So the sketch worker asks for all of them as soon as the module arrives. It needs no round trip for each step of the chain. A sketch's code then arrives in about 2 rounds instead of 4 to 6. Over HTTP/1.1 the six connections still queue those files, so the gain there is small.
 
@@ -236,7 +238,7 @@ export default defineSketch(async ({ assets, engine, scene }) => {
 
 Never await `engine.firstFrame` in the setup, because the first frame waits for the setup. A frame number is no such signal. The thread that draws can still be drawing the first frame while the sketch runs the second ([The engine field](../api/sketch.md#the-engine-field)).
 
-`engine.held` is true in hold mode and in a replay, so tests still draw the finished scene. A held start that waits for many files starts them all on the setup's first line with `assets.preload`. It then builds the scene in one fixed order. The [Island demo](https://github.com/null3d-engine/null3d/tree/main/examples/showcase/island/) takes a `?grown` switch that does the same on a live page. A page that measures frame rates then measures the finished scene.
+`engine.held` is true in hold mode and in a replay, so tests still draw the finished scene. A held start that waits for many files starts them all on the setup's first line with `assets.preload`. It then builds the scene in one fixed order. The Island demo takes a `?grown` switch that does the same on a live page. A page that measures frame rates then measures the finished scene.
 
 While the engine holds frames or replays, the sketch's `assets` calls run one at a time, in the order the sketch made them. So the held picture never depends on which file lands first ([Hold mode](testing.md#hold-mode)).
 
