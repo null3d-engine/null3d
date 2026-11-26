@@ -3,7 +3,7 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import type { Plugin, ResolvedConfig, Rollup, UserConfig } from 'vite';
-import { build } from 'vite';
+import { build, createLogger } from 'vite';
 import { DRACO_RELEASE } from '../../../tools/lib/draco-vendor';
 import { fixture } from '../../../tools/lib/fixture';
 import null3d, {
@@ -471,6 +471,145 @@ describe('the streamed shader files', () => {
 				match[1],
 				true,
 			]);
+	});
+
+	describe('with a list of permutation words', () => {
+		/** A device module in the shader build's form, with one build of each word. */
+		const deviceModule = (
+			words: readonly number[],
+		) => `import { SHARED_${words.join(', SHARED_')} } from './shader-paragraphs-glsl.js';
+
+// Paragraphs that several sources below share, each written once.
+const PART_0 = \`void main() {}\`;
+
+export const SHADERS = {
+\tlit: {
+${words.map((word) => `\t\tbuild_${word}: {\n\t\t\tpermutation: ${word},\n\t\t\twgsl: null,\n\t\t\tglsl: { main: \`\${SHARED_${word}}\${PART_0}\` },\n\t\t},`).join('\n')}
+\t},
+};
+`;
+
+		/**
+		 * A project whose shader set holds the builds of words 0, 4, 16 and 18 in its start module,
+		 * and of 64 in a feature's module, which a list without 64 leaves out. Its main module holds
+		 * a build of 32 of its own, as the main module of the set bundles a few.
+		 */
+		function listedProject(list: string): string {
+			return fixture({
+				'package.json': '{"name":"demo","private":true}',
+				'index.html': '<script type="module" src="/main.js"></script>',
+				'list.txt': list,
+				'shaders.ts': `export const SHADERS = { test: { a: {\n\t\tpermutation: 32,\n\t} } };
+export const start = () => new URL('./shaders-glsl.js', import.meta.url);
+export const skin = () => new URL('./shaders-skinning-glsl.js', import.meta.url);
+`,
+				'shaders-glsl.js': deviceModule([0, 4, 16, 18]),
+				'shaders-skinning-glsl.js': deviceModule([64]),
+				'shader-paragraphs-glsl.js': [0, 4, 16, 18, 64]
+					.map((word) => `export const SHARED_${word} = \`// paragraph ${word}\`;\n`)
+					.join(''),
+				'shader-permutations.ts':
+					'export const LISTED_PERMUTATIONS: readonly number[] | null = null;\n',
+				'main.js':
+					"import { SHADERS, start, skin } from './shaders.ts';\nimport { LISTED_PERMUTATIONS } from './shader-permutations.ts';\nconsole.log(start(), skin(), SHADERS, LISTED_PERMUTATIONS);\n",
+			});
+		}
+
+		/**
+		 * Builds the project with the list that `list` names, or with none for null, and gives its
+		 * output folder and the messages it logged.
+		 */
+		async function buildListed(root: string, list: string | null = 'list.txt') {
+			const messages: string[] = [];
+			const logger = createLogger('info');
+			logger.info = (message) => {
+				messages.push(message);
+			};
+			logger.warn = (message) => {
+				messages.push(message);
+			};
+			await build({
+				root,
+				customLogger: logger,
+				configFile: false,
+				plugins: [null3d(list === null ? {} : { shaders: { list } })],
+			});
+			return { out: join(root, 'dist'), messages };
+		}
+
+		/** The text of each file in the output's assets folder, by its name. */
+		function assetsOf(out: string): Map<string, string> {
+			const folder = join(out, 'assets');
+			return new Map(
+				readdirSync(folder).map((name) => [name, readFileSync(join(folder, name), 'utf8')]),
+			);
+		}
+
+		it('copies only the listed builds, for every value of the bits a device fixes', async () => {
+			const { out, messages } = await buildListed(listedProject('0x00000000\n0x00000010\n'));
+			const assets = assetsOf(out);
+			const start = [...assets].find(([name]) => /^shaders-glsl-[0-9a-f]{8}\.js$/.test(name));
+			expect(start?.[1]).toContain('permutation: 0,');
+			expect(start?.[1]).toContain('permutation: 16,');
+			expect(start?.[1]).toContain('permutation: 18,');
+			expect(start?.[1]).not.toContain('permutation: 4,');
+			// The table keeps the paragraphs that the kept builds import.
+			const table = assets.get('shader-paragraphs-glsl.js') ?? '';
+			expect(table).toContain('SHARED_16');
+			expect(table).toContain('SHARED_18');
+			expect(table).not.toContain('SHARED_4 ');
+			expect(table).not.toContain('SHARED_64');
+			expect(messages.join('\n')).toMatch(/copied 3 shader files.*permutation words of list\.txt/);
+		});
+
+		it('names a module without builds in place of a file whose builds the list leaves out', async () => {
+			const { out } = await buildListed(listedProject('0x00000000\n'));
+			const assets = assetsOf(out);
+			const names = [...assets.keys()];
+			expect(names.some((name) => name.startsWith('shaders-skinning-glsl'))).toBe(false);
+			const unlisted = names.find((name) => /^shaders-unlisted-[0-9a-f]{8}\.js$/.test(name));
+			expect(assets.get(unlisted ?? '')).toContain('export const SHADERS = {};');
+			const scripts = readdirSync(join(out, 'assets')).filter((name) => name.startsWith('index-'));
+			const page = scripts.map((name) => assets.get(name)).join('\n');
+			expect(page).toContain(unlisted as string);
+		});
+
+		it('names the listed words in the module that the engine reads them from', async () => {
+			const { out } = await buildListed(listedProject('0x00000010\n0x00000000\n0x00000004\n'));
+			const page = [...assetsOf(out)]
+				.filter(([name]) => name.startsWith('index-'))
+				.map(([, text]) => text)
+				.join('\n');
+			expect(page).toMatch(/\[\s*0\s*,\s*4\s*,\s*16\s*\]/);
+		});
+
+		it('answers a word that a build of the main module holds', async () => {
+			const { out } = await buildListed(listedProject('0x00000000\n0x00000020\n'));
+			expect(existsSync(out)).toBe(true);
+		});
+
+		it('fails the build for a listed word that no build of the set holds', async () => {
+			const root = listedProject('0x00000000\n0x00000400\n');
+			await expect(buildListed(root)).rejects.toThrow(
+				/list\.txt names 0x00000400, which no shader build of this project holds/,
+			);
+		});
+
+		it('fails the build for a list it cannot read, and says how to make one', async () => {
+			await expect(buildListed(listedProject('0x00000000\n'), 'none.txt')).rejects.toThrow(
+				/cannot read the shader list none\.txt.*shaders record/,
+			);
+		});
+
+		it('copies the whole set without a list, and warns with its size and the docs', async () => {
+			const { out, messages } = await buildListed(listedProject('0x00000000\n'), null);
+			const names = [...assetsOf(out).keys()];
+			expect(names.some((name) => name.startsWith('shaders-skinning-glsl-'))).toBe(true);
+			expect(names.some((name) => name.startsWith('shaders-unlisted'))).toBe(false);
+			expect(messages.join('\n')).toMatch(
+				/copied 3 shader files, 0 MB: every build.*shaders\.list.*assets-pipeline\.md#build-only-the-shader-permutations-you-draw-with/,
+			);
+		});
 	});
 
 	it('runs in the worker builds, which name the copies they load', () => {

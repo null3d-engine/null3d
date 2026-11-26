@@ -71,12 +71,27 @@ export function variantFor<Pipeline extends string>(
 /**
  * The message for a pipeline whose variant no loaded module holds. A variant that loads on first
  * use is absent until its module arrives, so only a caller that has waited for every module calls
- * this. A set narrowed to a recorded list names the word to add, and a full set names the word
- * that its manifest cannot make.
+ * this. A set narrowed to a project's list names the word to add, as the list writes it, without
+ * the bits that a device fixes. A full set names the word that its manifest cannot make.
  */
 export function missingVariant(permutation: number, listed = LISTED_PERMUTATIONS !== null): string {
-	const word = `0x${(permutation >>> 0).toString(16)}`;
+	if (!listed)
+		return `the shader set has no variant for the permutation word 0x${(permutation >>> 0).toString(16)}.`;
+	const word = `0x${((permutation & ~DEVICE_BITS) >>> 0).toString(16).padStart(8, '0')}`;
+	return `the shader set holds only the permutation words of the project's shader list, and this pipeline asks for ${word}, which the list lacks. Record the pages again with bunx @null3d/cli shaders record so that the word reaches the list, or add ${word} to the list by hand, and build again.`;
+}
+
+/**
+ * The message for an engine pass whose shader, which the device's modules hold from the start, no
+ * module holds with the word `permutation`. A set narrowed to a project's list names the word
+ * that the list lacks, as `missingVariant` does.
+ */
+export function missingShader(
+	name: string,
+	permutation: number,
+	listed = LISTED_PERMUTATIONS !== null,
+): string {
 	return listed
-		? `the shader set holds only the permutation words that its recording listed, and this pipeline asks for ${word}, which it lacks. Record the scene again so that the word reaches the list, or add the word to the file by hand.`
-		: `the shader set has no variant for the permutation word ${word}.`;
+		? `the ${name} shader is missing: ${missingVariant(permutation, true)}`
+		: `the device's shader modules have no ${name} shader`;
 }

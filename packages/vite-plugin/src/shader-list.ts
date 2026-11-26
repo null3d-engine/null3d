@@ -1,0 +1,350 @@
+// A project's list of the permutation words that its pages draw with, and the narrowing of the
+// engine's shader set to that list. The set holds every build of every word, gigabytes in
+// thousands of files, and a page downloads the few that its device needs. With a list, a build
+// copies only the builds of the listed words: a device file keeps the listed builds and drops the
+// others, and a file that holds no listed build is replaced by one module without builds. A page
+// that then asks for a word outside the list gets the engine's message that names the word.
+
+import { readFileSync } from 'node:fs';
+import MagicString from 'magic-string';
+import { parseAst } from 'vite';
+import { DRAW_INDEX, HALF, TONE_MAP } from './material-builds.ts';
+
+/**
+ * The permutation bits that a device fixes when it starts. A listed word leaves them out, so one
+ * list serves every device module, and a build matches a word with those bits cleared.
+ */
+export const DEVICE_BITS = DRAW_INDEX | TONE_MAP | HALF;
+
+/** The shader options of the plugin. */
+export interface ShaderOptions {
+	/**
+	 * The file that lists the permutation words that the project's pages draw with, one
+	 * hexadecimal word on each line, as `bunx @null3d/cli shaders record` writes it. The path is
+	 * relative to Vite's root. A production build then copies only the shader builds of those words,
+	 * for every value of the bits a device fixes, and fails when the engine's shader set lacks a
+	 * listed word. Without it, a build copies the whole set.
+	 */
+	list?: string;
+}
+
+/** The largest permutation word: the shader build keeps a word in 32 bits. */
+const MAX_WORD = 0xffff_ffff;
+
+/**
+ * The words of a list file's text: one word on each line, as hexadecimal with `0x` or as a decimal
+ * number, with `#` starting a comment, the rule that the engine's shader build reads. Throws with
+ * the line of a word it cannot read, and for a list without a word.
+ */
+export function parseShaderList(text: string, file: string): number[] {
+	const words: number[] = [];
+	for (const [index, raw] of text.split('\n').entries()) {
+		const word = (raw.split('#')[0] ?? '').trim();
+		if (word === '') continue;
+		const value = /^0[xX][0-9a-fA-F]+$/.test(word)
+			? Number.parseInt(word.slice(2), 16)
+			: /^\d+$/.test(word)
+				? Number(word)
+				: Number.NaN;
+		if (!(value <= MAX_WORD))
+			throw new Error(
+				`${file} line ${index + 1}: "${word}" is not a permutation word. Write one hexadecimal word on each line, such as 0x00000010.`,
+			);
+		words.push(value);
+	}
+	if (words.length === 0)
+		throw new Error(
+			`${file} lists no permutation word. Record the words with bunx @null3d/cli shaders record.`,
+		);
+	return words;
+}
+
+/** A project's list of permutation words. */
+export class ShaderList {
+	/** The listed words, without the bits that a device fixes. */
+	readonly words: ReadonlySet<number>;
+
+	constructor(
+		/** The list's file, as the build names it in its messages. */
+		readonly file: string,
+		words: Iterable<number>,
+	) {
+		this.words = new Set([...words].map((word) => word >>> 0));
+	}
+
+	/**
+	 * Reads the list at `path`, which messages name as `name`. Throws for a list without the word
+	 * that has no bit set, which every page's start draws its own passes with.
+	 */
+	static read(path: string, name: string = path): ShaderList {
+		let text: string;
+		try {
+			text = readFileSync(path, 'utf8');
+		} catch (error) {
+			throw new Error(
+				`cannot read the shader list ${name} (${(error as Error).message}). Record it with bunx @null3d/cli shaders record, or fix shaders.list in the null3D plugin's options.`,
+			);
+		}
+		const list = new ShaderList(name, parseShaderList(text, name));
+		if (!list.words.has(0))
+			throw new Error(
+				`the shader list ${name} lacks 0x00000000, the word of the engine's own passes, such as its culling, which every page draws with. Record the list again with bunx @null3d/cli shaders record, or add the word to it.`,
+			);
+		return list;
+	}
+
+	/**
+	 * True when the list names the build whose permutation word is `permutation`: the word itself,
+	 * or the word with the bits that a device fixes cleared.
+	 */
+	holds(permutation: number): boolean {
+		return this.words.has(permutation >>> 0) || this.words.has((permutation & ~DEVICE_BITS) >>> 0);
+	}
+
+	/** The listed words that none of `held`, the words that a set's builds answer, holds. */
+	missing(held: ReadonlySet<number>): number[] {
+		return [...this.words].filter((word) => !held.has(word)).sort((a, b) => a - b);
+	}
+}
+
+/** Adds to `held` each word that a build with the permutation word `permutation` answers. */
+export function holdWord(held: Set<number>, permutation: number): void {
+	held.add(permutation >>> 0);
+	held.add((permutation & ~DEVICE_BITS) >>> 0);
+}
+
+/** A word as the list writes it: eight hexadecimal digits after `0x`. */
+export function wordText(word: number): string {
+	return `0x${(word >>> 0).toString(16).padStart(8, '0')}`;
+}
+
+/**
+ * A line of a generated shader module that holds a build's permutation word. The hash workers
+ * read the same lines in `hash-worker.js`, which cannot import this module.
+ */
+export const PERMUTATION_LINE = /^\t*permutation: (\d+),$/gm;
+
+/** The permutation word of each build that a generated module's text holds. */
+export function moduleWords(text: string): number[] {
+	return [...text.matchAll(PERMUTATION_LINE)].map((match) => Number(match[1]));
+}
+
+/**
+ * A build's permutation word in any form that a built file holds it: a minified object literal, or
+ * the JSON text in which a module packs a custom material's builds, escaped inside a string.
+ */
+const BUILT_PERMUTATION = /\\?"?permutation\\?"?:\s*(\d+)/g;
+
+/**
+ * The permutation words that a built file's text names: those of the builds that it bundles, such
+ * as the main shader module's own, a custom material's and an add-on's. A key of that name in other
+ * code adds a word too, so the words that a check reads from here can only be more, never fewer.
+ */
+export function builtWords(text: string): number[] {
+	return [...text.matchAll(BUILT_PERMUTATION)].map((match) => Number(match[1]));
+}
+
+/**
+ * The module that stands for a device file whose builds the list leaves out. It holds no build,
+ * so a page that asks for one of those words loads it, finds no build, and the engine names the
+ * word.
+ */
+export const UNLISTED_MODULE = `// The builds of a device module that the project's shader list leaves out.\nexport const SHADERS = {};\n`;
+
+/** The generated module that names the listed words, in place of the set's own. */
+export function listedPermutationsModule(words: ReadonlySet<number>): string {
+	const sorted = [...words].sort((a, b) => a - b);
+	return `export const LISTED_PERMUTATIONS = [${sorted.join(', ')}];\n`;
+}
+
+/** A node of the module's syntax tree, as far as the narrowing reads it. */
+interface Node {
+	readonly type: string;
+	readonly start: number;
+	readonly end: number;
+	readonly [field: string]: unknown;
+}
+
+/** A property of an object literal. */
+interface PropertyNode extends Node {
+	readonly key: Node & { name?: string; value?: unknown };
+	readonly value: Node;
+}
+
+/** An object literal's properties, or undefined for any other node. */
+function propertiesOf(node: Node | undefined | null): PropertyNode[] | undefined {
+	if (node?.type !== 'ObjectExpression') return undefined;
+	const properties = node.properties as Node[];
+	return properties.every((property) => property.type === 'Property')
+		? (properties as PropertyNode[])
+		: undefined;
+}
+
+/** The name of a property's key, written as a name or as a string. */
+function keyName(property: PropertyNode): string | undefined {
+	const { key } = property;
+	if (key.type === 'Identifier') return key.name;
+	if (key.type === 'Literal' && typeof key.value === 'string') return key.value;
+	return undefined;
+}
+
+/** Each name that `node` and the nodes inside it read. */
+function namesIn(node: unknown, names: Set<string>): void {
+	if (Array.isArray(node)) {
+		for (const item of node) namesIn(item, names);
+		return;
+	}
+	if (node === null || typeof node !== 'object') return;
+	const { type } = node as Node;
+	if (type === 'Identifier') names.add((node as { name: string }).name);
+	for (const [field, value] of Object.entries(node))
+		if (field !== 'type' && value !== null && typeof value === 'object') namesIn(value, names);
+}
+
+/** The end of a statement that ends at `end`, with its line break, so that no blank line stays. */
+function lineEnd(text: string, end: number): number {
+	return text[end] === '\n' ? end + 1 : end;
+}
+
+/** Why a module cannot be narrowed: its form is not the one the shader build writes. */
+function unreadable(file: string, why: string): Error {
+	return new Error(
+		`null3D cannot narrow ${file} to the shader list: ${why}. The plugin reads the form that the engine's shader build writes, so install the same version of @null3d/vite-plugin as of @null3d/engine.`,
+	);
+}
+
+/**
+ * The text of the generated device module `text` with only the builds whose permutation word
+ * `keep` takes, and the counts of the builds it kept and held. A shader keeps its entry with no
+ * build. Each shared paragraph and imported name that no kept build reads goes too, and so does an
+ * import of a table of paragraphs that no kept build reads. Throws when the module is not in the
+ * form that the shader build writes, so a build never ships a module it misread.
+ */
+export function narrowShaderModule(
+	text: string,
+	keep: (permutation: number) => boolean,
+	file = 'a shader module',
+): { text: string; kept: number; builds: number } {
+	const program = parseAst(text) as unknown as { body: Node[] };
+	const out = new MagicString(text);
+	/** Each top-level constant by its name, with the statement that declares it. */
+	const constants = new Map<string, Node>();
+	let shaders: PropertyNode[] | undefined;
+	for (const statement of program.body) {
+		const declaration =
+			statement.type === 'ExportNamedDeclaration' ? (statement.declaration as Node) : statement;
+		if (declaration?.type !== 'VariableDeclaration') continue;
+		for (const declarator of declaration.declarations as Node[]) {
+			const name = (declarator.id as { name?: string }).name;
+			if (name === undefined) continue;
+			if (name === 'SHADERS' && statement.type === 'ExportNamedDeclaration')
+				shaders = propertiesOf(declarator.init as Node);
+			else if (statement === declaration) constants.set(name, statement);
+		}
+	}
+	if (shaders === undefined) throw unreadable(file, 'it exports no object named SHADERS');
+	const kept: Node[] = [];
+	let builds = 0;
+	for (const shader of shaders) {
+		const variants = propertiesOf(shader.value);
+		if (variants === undefined)
+			throw unreadable(file, `its shader ${keyName(shader)} is not an object of builds`);
+		for (const [index, variant] of variants.entries()) {
+			const word = propertiesOf(variant.value)?.find((field) => keyName(field) === 'permutation')
+				?.value as (Node & { value?: unknown }) | undefined;
+			if (word?.type !== 'Literal' || typeof word.value !== 'number')
+				throw unreadable(file, `its build ${keyName(variant)} has no permutation word`);
+			builds++;
+			if (keep(word.value)) {
+				kept.push(variant.value);
+				continue;
+			}
+			// A build goes with the text up to the next one, so the builds left keep their commas.
+			const next = variants[index + 1];
+			out.remove(variant.start, next === undefined ? shader.value.end - 1 : next.start);
+		}
+	}
+	// The paragraphs that the kept builds read, and those that those paragraphs read.
+	const read = new Set<string>();
+	namesIn(kept, read);
+	const pending = [...read];
+	for (let name = pending.pop(); name !== undefined; name = pending.pop()) {
+		const statement = constants.get(name);
+		if (statement === undefined) continue;
+		const inner = new Set<string>();
+		namesIn(statement, inner);
+		for (const more of inner)
+			if (!read.has(more)) {
+				read.add(more);
+				pending.push(more);
+			}
+	}
+	for (const statement of program.body) {
+		if (statement.type === 'VariableDeclaration') {
+			const names = (statement.declarations as Node[]).map(
+				(declarator) => (declarator.id as { name?: string }).name ?? '',
+			);
+			const plain = (statement.declarations as Node[]).every((declarator) => {
+				const init = declarator.init as Node | null;
+				return init?.type === 'TemplateLiteral' || init?.type === 'Literal';
+			});
+			if (plain && names.every((name) => !read.has(name)))
+				out.remove(statement.start, lineEnd(text, statement.end));
+		} else if (statement.type === 'ImportDeclaration') {
+			const source = (statement.source as { value?: unknown }).value;
+			if (typeof source !== 'string' || !source.startsWith('./shader-paragraphs-')) continue;
+			const specifiers = statement.specifiers as Node[];
+			const used = specifiers.filter(
+				(specifier) =>
+					specifier.type === 'ImportSpecifier' &&
+					read.has((specifier.local as { name: string }).name),
+			);
+			if (used.length === specifiers.length) continue;
+			// The import keeps the shader build's form, which the reader of a copy's tables reads, and
+			// one that goes takes its line with it, since a blank line ends the imports.
+			if (used.length === 0) out.remove(statement.start, lineEnd(text, statement.end));
+			else
+				out.overwrite(
+					statement.start,
+					statement.end,
+					`import { ${used.map((specifier) => text.slice(specifier.start, specifier.end)).join(', ')} } from '${source}';`,
+				);
+		}
+	}
+	return { text: out.toString(), kept: kept.length, builds };
+}
+
+/**
+ * The text of a table of shared paragraphs with only the paragraphs that `names` lists, the names
+ * that the build's copies import from it. A paragraph of a table reads no other value, so each
+ * one stays or goes on its own. Throws when the table is not in the form that the shader build
+ * writes.
+ */
+export function narrowParagraphTable(
+	text: string,
+	names: ReadonlySet<string>,
+	file = 'a table of paragraphs',
+): string {
+	const program = parseAst(text) as unknown as { body: Node[] };
+	const out = new MagicString(text);
+	for (const statement of program.body) {
+		if (statement.type !== 'ExportNamedDeclaration') continue;
+		const declaration = statement.declaration as Node | null;
+		const declarators = (declaration?.declarations ?? []) as Node[];
+		const plain =
+			declaration?.type === 'VariableDeclaration' &&
+			declarators.every((declarator) => {
+				const init = declarator.init as Node | null;
+				return (
+					init?.type === 'Literal' ||
+					(init?.type === 'TemplateLiteral' && (init.expressions as Node[]).length === 0)
+				);
+			});
+		if (!plain) throw unreadable(file, 'one of its paragraphs is not plain text');
+		const unused = declarators.every(
+			(declarator) => !names.has((declarator.id as { name?: string }).name ?? ''),
+		);
+		if (unused) out.remove(statement.start, lineEnd(text, statement.end));
+	}
+	return out.toString();
+}

@@ -1,6 +1,16 @@
 import { createHash } from 'node:crypto';
-import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import {
+	copyFileSync,
+	existsSync,
+	mkdirSync,
+	mkdtempSync,
+	readFileSync,
+	rmSync,
+	statSync,
+	writeFileSync,
+} from 'node:fs';
 import { createRequire } from 'node:module';
+import { tmpdir } from 'node:os';
 import { dirname, join, posix, relative, resolve, sep } from 'node:path';
 import MagicString from 'magic-string';
 import type {
@@ -8,6 +18,7 @@ import type {
 	DevEnvironment,
 	EnvironmentModuleNode,
 	HtmlTagDescriptor,
+	Logger,
 	Plugin,
 	Rollup,
 } from 'vite';
@@ -55,8 +66,19 @@ import {
 } from './offline.ts';
 import { ShaderPack } from './pack.ts';
 import { null3dPackages } from './package-files.ts';
-import { emitParagraphTables, shaderParagraphsPlugin, tableStemsOfFile } from './paragraphs.ts';
+import { emitParagraphTables, shaderParagraphsPlugin, tableImportsOfFile } from './paragraphs.ts';
 import { ShaderCache, shaderCacheOff } from './shader-cache.ts';
+import {
+	builtWords,
+	holdWord,
+	listedPermutationsModule,
+	narrowParagraphTable,
+	narrowShaderModule,
+	ShaderList,
+	type ShaderOptions,
+	UNLISTED_MODULE,
+	wordText,
+} from './shader-list.ts';
 import {
 	compileLiteral,
 	compileTaggedWgsl,
@@ -68,6 +90,7 @@ import { directImports, workerPreloadPlugin } from './worker-preload.ts';
 
 export type { AssetOptions } from './assets.ts';
 export { FILES_LIST, type OfflineFiles } from './offline.ts';
+export type { ShaderOptions } from './shader-list.ts';
 export type * from './shader-types.ts';
 
 /** Headers that make a page cross-origin isolated, which shared memory and worker threads need. */
@@ -114,6 +137,12 @@ export interface Null3dPluginOptions {
 	 * test and benchmark pages.
 	 */
 	urlSwitches?: boolean;
+	/**
+	 * Options for the engine's shader set. `list` names the file of the permutation words that the
+	 * project's pages draw with, as `bunx @null3d/cli shaders record` writes it, relative to Vite's
+	 * root. A production build then copies only the shader builds of those words.
+	 */
+	shaders?: ShaderOptions;
 }
 
 /** Sets the isolation headers on every response, including `.wasm` files and worker scripts. */
@@ -378,10 +407,35 @@ export function emptyWorkerPreloads(bundle: Rollup.OutputBundle, seeds: readonly
  */
 function isGeneratedShaderFile(importer: string, address: string): boolean {
 	const name = importer.slice(importer.lastIndexOf('/') + 1);
-	return (
-		/^shaders(?:-[a-z0-9-]+)?\.[cm]?[jt]s$/.test(name) &&
-		/^\.\/shaders-[a-z0-9-]+\.js$/.test(address)
-	);
+	return GENERATED_MODULE.test(name) && /^\.\/shaders-[a-z0-9-]+\.js$/.test(address);
+}
+
+/** The name of one of the engine's generated shader modules: the main module, or one it names. */
+const GENERATED_MODULE = /^shaders(?:-[a-z0-9-]+)?\.[cm]?[jt]s$/;
+
+/** The name of the generated module that names the words a narrowed shader set holds. */
+const LISTED_MODULE = /^shader-permutations\.[cm]?[jt]s$/;
+
+/** The start of the name of the module that stands for every device file a list leaves out. */
+const UNLISTED_STEM = 'shaders-unlisted';
+
+/** The docs on a project's list of permutation words, which the build's report names. */
+const SHADER_LIST_DOCS =
+	'https://github.com/null3d-engine/null3d/blob/generated/docs/guides/assets-pipeline.md#build-only-the-shader-permutations-you-draw-with';
+
+/** One generated shader file that the build copies into its output. */
+interface ShaderCopy {
+	/** Its name in the output, which carries a hash of its bytes. */
+	readonly name: string;
+	/** The file that holds its bytes: the set's own file, or a narrowed copy of it. */
+	readonly bytes: string;
+	/** The set's file that it comes from, beside which its tables of paragraphs sit. */
+	readonly source: string;
+}
+
+/** A number of bytes in megabytes, as the build's report gives it. */
+function megabytes(bytes: number): string {
+	return `${Math.round(bytes / 1e6).toLocaleString('en-US')} MB`;
 }
 
 /** A WGSL file that a module imports, without a query such as `?raw`. */
@@ -497,22 +551,62 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin[] {
 	 * each is named by a hash of its bytes and copied on its own, so the build never holds the
 	 * whole set in memory.
 	 */
-	const copiedShaders = new Map<string, string>();
+	const copiedShaders = new Map<string, ShaderCopy>();
 	/**
-	 * The content hash of each generated shader file by its path, which the pool computes. A page
-	 * build and its workers reach the same files, so each file is hashed once for the whole build,
-	 * and a second name for it waits for the same hash.
+	 * The copy of each generated shader file by its path, which the pool works out. A page build and
+	 * its workers reach the same files, so each file is read once for the whole build, and a second
+	 * name for it waits for the same copy.
 	 */
-	const copiedShaderHashes = new Map<string, Promise<string>>();
-	/** The hash of a generated shader file, read on the pool when a module first names it. */
-	const copiedShaderHash = (file: string): Promise<string> => {
-		let hash = copiedShaderHashes.get(file);
-		if (hash === undefined) {
-			hash = hasher.hash(file);
-			copiedShaderHashes.set(file, hash);
-		}
-		return hash;
+	const shaderCopies = new Map<string, Promise<ShaderCopy>>();
+	/** The tables of shared paragraphs that the copies import, which the build emits beside them. */
+	const copiedTables = { files: 0, bytes: 0 };
+	/** The project's list of permutation words, in a build whose options name one. */
+	let shaderList: ShaderList | undefined;
+	/** Each word that a build of the engine's shader set answers, as this build has read them. */
+	const heldWords = new Set<number>();
+	/** The folder of this build's narrowed copies, made when the first one is written. */
+	let narrowedFolder: string | undefined;
+	/** Writes the text of a narrowed copy, named by its hash, into this build's folder of them. */
+	const narrowedCopy = (stem: string, text: string, source?: string): ShaderCopy => {
+		narrowedFolder ??= mkdtempSync(join(tmpdir(), 'null3d-shaders-'));
+		const name = `${stem}-${createHash('sha256').update(text).digest('hex').slice(0, 8)}.js`;
+		const bytes = join(narrowedFolder, name);
+		if (!existsSync(bytes)) writeFileSync(bytes, text);
+		return { name, bytes, source: source ?? bytes };
 	};
+	/**
+	 * The copy of a generated shader file. Without a list it is the file itself, named by its hash.
+	 * With one, a file whose builds the list all names stays whole, a file of which it names some
+	 * keeps only those, and a file of which it names none gives way to one module without builds.
+	 */
+	const copyOf = async (file: string): Promise<ShaderCopy> => {
+		const stem = file.slice(file.lastIndexOf('/') + 1).replace(/\.js$/, '');
+		const list = shaderList;
+		if (list === undefined)
+			return { name: `${stem}-${await hasher.hash(file)}.js`, bytes: file, source: file };
+		const { hash, words } = await hasher.scan(file);
+		for (const word of words) holdWord(heldWords, word);
+		const kept = words.filter((word) => list.holds(word)).length;
+		if (kept === words.length) return { name: `${stem}-${hash}.js`, bytes: file, source: file };
+		if (kept === 0) return narrowedCopy(UNLISTED_STEM, UNLISTED_MODULE);
+		const narrowed = narrowShaderModule(
+			readFileSync(file, 'utf8'),
+			(word) => list.holds(word),
+			file,
+		);
+		return narrowedCopy(stem, narrowed.text, file);
+	};
+	/** The copy of a generated shader file, worked out on the pool when a module first names it. */
+	const shaderCopy = (file: string): Promise<ShaderCopy> => {
+		let copy = shaderCopies.get(file);
+		if (copy === undefined) {
+			copy = copyOf(file);
+			shaderCopies.set(file, copy);
+		}
+		return copy;
+	};
+	/** Vite's logger, for the build's report of the shader files it copied. */
+	let logger: Logger | undefined;
 	/** A copied shader file's path in the output, whatever the assets folder is called. */
 	const assetPath = (name: string) => (assetsDir === '' ? name : posix.join(assetsDir, name));
 	/** Compiles WGSL on worker threads, so the dev server answers other requests meanwhile. */
@@ -553,6 +647,22 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin[] {
 		if (existsSync(built)) return built;
 		const asSource = join(folder, name.replace(/\.js$/, '.ts'));
 		return existsSync(asSource) ? asSource : null;
+	};
+	/**
+	 * Reports the shader files that the build copied. Without a list, the build copied the whole
+	 * set, which a host stores although a page downloads a few files of it, so the report warns and
+	 * names the way to copy less.
+	 */
+	const reportShaderCopies = (files: number, bytes: number) => {
+		const copied = `null3D: copied ${files.toLocaleString('en-US')} shader files, ${megabytes(bytes)}`;
+		if (shaderList !== undefined)
+			logger?.info(
+				`${copied}: the builds of the ${shaderList.words.size} permutation words of ${shaderList.file}.`,
+			);
+		else
+			logger?.warn(
+				`${copied}: every build of every permutation word in the engine's shader set. A page downloads only the few that its device needs, but the host stores them all. Record the words that your pages draw with in a list, and name it in the plugin's shaders.list option, to copy only their builds: ${SHADER_LIST_DOCS}`,
+			);
 	};
 	const plugin: Plugin = {
 		name: 'null3d',
@@ -618,6 +728,7 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin[] {
 				);
 			}
 			notices = building && !config.build.ssr ? thirdPartyNotices(root) : null;
+			logger = config.logger;
 			// Vite's `--force` ignores its own caches; it ignores the shader cache too.
 			noShaderCache ||= config.optimizeDeps?.force === true;
 		},
@@ -628,10 +739,24 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin[] {
 			// The copies follow the generated set: a watch rebuild reads the files again, so a hash
 			// from the last build would name old bytes, and a file that went away would be copied.
 			copiedShaders.clear();
-			copiedShaderHashes.clear();
+			shaderCopies.clear();
+			copiedTables.files = 0;
+			copiedTables.bytes = 0;
+			heldWords.clear();
+			if (narrowedFolder !== undefined) rmSync(narrowedFolder, { recursive: true, force: true });
+			narrowedFolder = undefined;
+			shaderList = undefined;
 			earlyCoreId = undefined;
 			earlyCoreSought = false;
 			if (!building) return;
+			const list = options.shaders?.list;
+			if (list !== undefined) {
+				try {
+					shaderList = ShaderList.read(resolve(root, list), list);
+				} catch (error) {
+					this.error(`null3D: ${(error as Error).message}`);
+				}
+			}
 			const missing = missingCoreFiles(root);
 			if (missing && missing.length > 0) {
 				this.error(
@@ -641,6 +766,10 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin[] {
 		},
 		async buildEnd() {
 			await Promise.all([compiler.close(), hasher.close()]);
+		},
+		closeBundle() {
+			if (narrowedFolder !== undefined) rmSync(narrowedFolder, { recursive: true, force: true });
+			narrowedFolder = undefined;
 		},
 		// The dev server's pages import the client module of hot updates. A build of pages that
 		// imports the engine ships the early script, found from the module that imports the engine,
@@ -884,6 +1013,8 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin[] {
 						bundle,
 						[...workerChunks].map((ref) => this.getFileName(ref)),
 					);
+				/** True for a build with a list that reached the engine's shader set. */
+				const listing = shaderList !== undefined && copiedShaders.size > 0;
 				// Each file that names a copy now knows where it sits, so the mark becomes the
 				// address from there to the copy's own place in the output. A worker's files reach
 				// this bundle as the worker built them, so they take the same pass.
@@ -894,6 +1025,10 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin[] {
 							: typeof file.source === 'string'
 								? file.source
 								: new TextDecoder().decode(file.source);
+					// The builds that the bundle holds answer their words: the set's own main module,
+					// and the project's custom materials and add-on shaders, in the worker builds' files
+					// too.
+					if (listing) for (const word of builtWords(text)) holdWord(heldWords, word);
 					if (!text.includes(SHADER_URL_MARK)) continue;
 					const from = posix.dirname(file.fileName);
 					const rewritten = text.replaceAll(
@@ -906,6 +1041,13 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin[] {
 					if (file.type === 'chunk') file.code = rewritten;
 					else file.source = rewritten;
 				}
+				// A listed word that no build answers, a copied one or one that the bundle holds,
+				// would fail its pipeline on a device, so the build fails first and names it.
+				const missing = listing ? (shaderList?.missing(heldWords) ?? []) : [];
+				if (missing.length > 0)
+					this.error(
+						`null3D: the shader list ${shaderList?.file} names ${missing.map(wordText).join(', ')}, which no shader build of this project holds: none of the engine's shader set and none of its own shaders. Record the list again against this version of the engine with bunx @null3d/cli shaders record, or remove the word. A set that ${ENGINE_SHADERS_ENV} names must hold every listed word.`,
+					);
 				const tables = emitParagraphTables.call(this, bundle, root);
 				// The copied device modules are not in the bundle, so the tables of shared
 				// paragraphs that they import are emitted from here, once each, and each copy's
@@ -913,28 +1055,52 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin[] {
 				// whatever it is for.
 				const emittedTables = new Set([...tables.values()].flat());
 				const loads = new Map<string, string[]>();
-				for (const [name, source] of copiedShaders) {
+				/** The file of each table that the copies import, by its place in the output. */
+				const tableFiles = new Map<string, string>();
+				/** The names that the copies import from each of those tables. */
+				const tableNames = new Map<string, Set<string>>();
+				for (const [name, copy] of copiedShaders) {
 					const own: string[] = [];
-					for (const stem of tableStemsOfFile(source)) {
+					for (const { stem, names } of tableImportsOfFile(copy.bytes)) {
 						const table = assetPath(`${stem}.js`);
 						own.push(table);
 						if (emittedTables.has(table)) continue;
-						const file = join(dirname(source), `${stem}.js`);
-						if (!existsSync(file))
-							this.error(
-								`null3D: ${assetPath(name)} imports ${stem}.js, which the engine's shader modules do not hold. Run \`bun run shaders\` again, and reinstall @null3d/engine if the build still fails.`,
-							);
-						emittedTables.add(table);
-						this.emitFile({ type: 'asset', fileName: table, source: readFileSync(file) });
+						if (!tableFiles.has(table)) {
+							const file = join(dirname(copy.source), `${stem}.js`);
+							if (!existsSync(file))
+								this.error(
+									`null3D: ${assetPath(name)} imports ${stem}.js, which the engine's shader modules do not hold. Run \`bun run shaders\` again, and reinstall @null3d/engine if the build still fails.`,
+								);
+							tableFiles.set(table, file);
+							tableNames.set(table, new Set());
+						}
+						for (const imported of names) tableNames.get(table)?.add(imported);
 					}
 					loads.set(name, own);
+				}
+				// With a list, a table keeps only the paragraphs that the narrowed copies import.
+				for (const [table, file] of tableFiles) {
+					const whole = readFileSync(file);
+					const source =
+						shaderList === undefined
+							? whole
+							: Buffer.from(
+									narrowParagraphTable(
+										whole.toString('utf8'),
+										tableNames.get(table) ?? new Set(),
+										file,
+									),
+								);
+					copiedTables.files++;
+					copiedTables.bytes += source.length;
+					this.emitFile({ type: 'asset', fileName: table, source });
 				}
 				if (buildingPages) {
 					const listed = listedFiles(bundle, workerFiles, packageOf, root, tables);
 					// The copied shader files are not in the bundle, so the list of files for offline
 					// play takes them here, by the module each one holds.
-					for (const [name, source] of copiedShaders) {
-						const module = engineModule(source, packageOf);
+					for (const [name, copy] of copiedShaders) {
+						const module = engineModule(copy.source, packageOf);
 						listed.push({
 							fileName: assetPath(name),
 							entry: false,
@@ -966,7 +1132,12 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin[] {
 				if (copiedShaders.size > 0) {
 					const folder = join(outDir, assetsDir);
 					mkdirSync(folder, { recursive: true });
-					for (const [name, source] of copiedShaders) copyFileSync(source, join(folder, name));
+					let bytes = copiedTables.bytes;
+					for (const [name, copy] of copiedShaders) {
+						copyFileSync(copy.bytes, join(folder, name));
+						bytes += statSync(copy.bytes).size;
+					}
+					reportShaderCopies(copiedShaders.size + copiedTables.files, bytes);
 				}
 				const recovered = missingWorkerAssets(bundle, workerFiles).filter(
 					({ fileName, source }) => !existsSync(join(outDir, fileName)) && existsSync(source),
@@ -1053,7 +1224,8 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin[] {
 	 * `new URL('./shaders-<name>.js', import.meta.url)`, and a bundler reads every one of them into
 	 * memory to emit it as an asset; here a pool of worker threads hashes each file and the build
 	 * copies it on its own, and the module names the copy, so the build never holds the whole set
-	 * at once.
+	 * at once. With a list of words, each copy holds only the listed builds, and the set's module of
+	 * listed words names the project's list.
 	 *
 	 * The argument is a mark rather than an address: where a copy lands is fixed, but the file that
 	 * names it can sit anywhere in the output, and only `generateBundle` knows where.
@@ -1064,36 +1236,40 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin[] {
 		apply: 'build',
 
 		async transform(code, id) {
-			if (!code.includes('import.meta.url')) return;
 			const file = id.split('?')[0] ?? id;
-			// The files this module names, and the base of the copy name that each one's hash fixes.
-			const named: { match: RegExpExecArray; base: string; target: string }[] = [];
+			// The engine names a missing word as one that the list lacks, and the list to record.
+			const name = file.slice(file.lastIndexOf('/') + 1);
+			if (
+				shaderList !== undefined &&
+				LISTED_MODULE.test(name) &&
+				code.includes('LISTED_PERMUTATIONS')
+			)
+				return { code: listedPermutationsModule(shaderList.words), map: null };
+			if (!code.includes('import.meta.url')) return;
+			// The files this module names.
+			const named: { match: RegExpExecArray; target: string }[] = [];
 			for (const match of code.matchAll(SCRIPT_URL)) {
 				const address = match[2] ?? '';
 				if (!isGeneratedShaderFile(file, address)) continue;
 				const target = resolve(dirname(file), address);
 				if (!existsSync(target)) continue;
-				const base = target.slice(target.lastIndexOf('/') + 1).replace(/\.js$/, '');
-				named.push({ match, base, target });
+				named.push({ match, target });
 			}
 			if (named.length === 0) return;
 			// The pool reads each file in chunks and hashes it, so the build's own thread reads none
-			// of the files and holds none of their bytes.
-			const hashed = await Promise.all(
-				named.map(async ({ match, base, target }) => ({
-					match,
-					target,
-					name: `${base}-${await copiedShaderHash(target)}.js`,
-				})),
+			// of the files and holds none of their bytes; only a file that a list narrows is read
+			// here, to write the copy of its listed builds.
+			const copies = await Promise.all(
+				named.map(async ({ match, target }) => ({ match, copy: await shaderCopy(target) })),
 			);
 			let out: MagicString | undefined;
-			for (const { match, name, target } of hashed) {
-				copiedShaders.set(name, target);
+			for (const { match, copy } of copies) {
+				copiedShaders.set(copy.name, copy);
 				out ??= new MagicString(code);
 				out.overwrite(
 					match.index,
 					match.index + match[0].length,
-					`((u) => new URL(u, import.meta.url))(${JSON.stringify(SHADER_URL_MARK + name)})`,
+					`((u) => new URL(u, import.meta.url))(${JSON.stringify(SHADER_URL_MARK + copy.name)})`,
 				);
 			}
 			return out
