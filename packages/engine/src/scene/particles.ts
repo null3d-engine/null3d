@@ -219,8 +219,10 @@ export interface ParticleBufferOptions extends ParticleValues {
 /**
  * Where an emitter's particles are born, in its own space, and which way they set off. A `point`
  * emits at the emitter, along `direction`. A `sphere` emits inside a ball of `radius`, or on its
- * surface with `surface`, and sends particles outward. A `cone` emits on a disc of `radius` across
- * the emitter's +y axis. It sends particles up within `angle` radians of that axis. A `box` emits
+ * surface with `surface`, and sends particles outward.
+ *
+ * A `cone` emits on a disc of `radius` across the emitter's +y axis. It sends particles up within
+ * `angle` radians of that axis. A `box` emits
  * inside a box of `size`, centered on the emitter, along `direction`. A `disc` emits on a disc of
  * `radius` across the +y axis, along `direction`.
  *
@@ -548,7 +550,9 @@ const NO_FLOAT64 = new Float64Array(0);
  * particles add-on's emitters write records into it. Write a particle's record once, when it is
  * born, with `write`, or write a frame's births in one call with `writeRecords`. The GPU moves it
  * and changes its look as it ages, as the buffer's values say. It stops drawing the particle at
- * the end of its lifetime. Once per frame, write the buffer's time and the records the GPU reads
+ * the end of its lifetime.
+ *
+ * Once per frame, write the buffer's time and the records the GPU reads
  * into `frame`, and call `commit`. Every call takes typed arrays and whole numbers, so a frame's
  * calls allocate nothing.
  *

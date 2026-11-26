@@ -345,8 +345,10 @@ export interface BuildLevelsOptions {
  * The levels of detail that a mesh made in code plans on its own. By default it plans them the
  * first time the scene draws it, when it holds `geometry.automaticLevelTriangles` triangles or
  * more, or when it holds at least `geometry.automaticCopyTriangles` triangles and its copies hold `geometry.automaticDrawnTriangles` together; `false` plans none,
- * and `true` or options plan them when the mesh is made, at any size. `'pieces'` plans no lower
- * levels, and sorts a mesh of 32,768 triangles or more into pieces by space at its first draw, as
+ * and `true` or options plan them when the mesh is made, at any size.
+ *
+ * `'pieces'` plans no lower levels, and sorts a mesh of 32,768 triangles or more into pieces by
+ * space at its first draw, as
  * a merged far cell or a large ground whose levels come from elsewhere gains from.
  *
  * @category api/geometry
@@ -1813,8 +1815,10 @@ export interface MaterialOptions {
 /**
  * How a material uses its alpha: its opacity, times its base color map's alpha, and times its
  * mesh's vertex alpha with `vertexColors`. The `opaque` mode ignores the alpha. The `mask` mode
- * draws nothing where the alpha falls below `alphaCutoff`, and draws the rest opaque. The `hash`
- * mode draws each point of the surface opaque or not at all, by a pattern that stays on the mesh.
+ * draws nothing where the alpha falls below `alphaCutoff`, and draws the rest opaque.
+ *
+ * The `hash` mode draws each point of the surface opaque or not at all, by a pattern that stays on
+ * the mesh.
  * The alpha then sets how much of the surface draws. The `blend` mode blends the surface over what
  * lies behind it. Blended objects draw after the opaque ones, farthest first.
  *

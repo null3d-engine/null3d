@@ -211,8 +211,10 @@ function room(rate: number, life: number): number {
 /**
  * Makes a waterfall that falls from a river's lip: a sheet of water that curves over the lip and
  * drops almost straight, glassy at the lip and white lower down, with spray at the lip, a cloud of
- * mist that it bursts into lower down and a plume of mist at its foot. Give it the lip, the way the water runs, the river's
- * half width, its surface height and its current there, and the drop. End the river's own surface
+ * mist that it bursts into lower down and a plume of mist at its foot.
+ *
+ * Give it the lip, the way the water runs, the river's half width, its surface height and its
+ * current there, and the drop. End the river's own surface
  * at the lip: the sheet starts a short way upstream, on the river's surface, and fades in over it.
  *
  * @category api/water

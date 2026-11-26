@@ -88,7 +88,9 @@ export interface FoamMap {
  * The standard material values that the water's surface takes. The surface works two of them out
  * for each pixel, so a value that a call gives for them does not apply: the volume's thickness,
  * which is the depth of the bed under the surface there, and the transmission, which falls away
- * where the foam covers the water. Give `attenuationColor` and `attenuationDistance` to tint the
+ * where the foam covers the water.
+ *
+ * Give `attenuationColor` and `attenuationDistance` to tint the
  * water: the bed's light keeps the share that the attenuation leaves over the bed's depth, so
  * a shallow, clear creek needs a pale color over a distance far above its own depth, and a short
  * distance with a dark color turns it into an opaque slab that hides the bed.
