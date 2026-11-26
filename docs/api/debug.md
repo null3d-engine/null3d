@@ -17,7 +17,14 @@ flowchart LR
     relative --> pass["One draw of every line,<br/>after the opaque objects"]
 ```
 
-`ctx.debug` draws lines over the scene for one frame. Call it in `onUpdate` in every frame that needs the drawing. Each call adds the lines of its shape. When the frame draws, the engine moves each point relative to the camera in 64-bit floats. Then it draws every line in one call, after the opaque objects. So lines stay precise far from the origin, as objects do, and objects in front of a line hide it. The extra frame that hold mode draws for a pass that reads the frame before runs no `onUpdate`, so it draws the lines of the last `onUpdate` again.
+`ctx.debug` draws lines over the scene for one frame. Call it in `onUpdate` in every frame that needs the drawing. Each call adds the lines of its shape.
+
+<details>
+<summary>Technical details: how the lines draw</summary>
+
+When the frame draws, the engine moves each point relative to the camera in 64-bit floats. Then it draws every line in one call, after the opaque objects. So lines stay precise far from the origin, as objects do, and objects in front of a line hide it. The extra frame that [hold mode](../guides/testing.md#hold-mode) draws for a pass that reads the frame before runs no `onUpdate`, so it draws the lines of the last `onUpdate` again.
+
+</details>
 
 ```ts
 export default defineSketch(({ scene, materials, geometry, debug }) => {
@@ -75,7 +82,7 @@ Debug drawing works in development builds only. In a production build, every dra
 
 ```mermaid
 flowchart LR
-    call["debug.view('normals')"] --> core["Every mesh's pipeline<br/>takes the debug shading"]
+    view["debug.view('normals')"] --> core["Every mesh's pipeline<br/>takes the debug shading"]
     core --> frame["The next frame draws the view,<br/>clears to black, no tone mapping"]
 ```
 
@@ -181,14 +188,14 @@ flowchart LR
     page["The page's own meters:<br/>heap, page memory"] --> card
 ```
 
-The stats overlay sits over the top-right corner of the canvas, or over its bottom-right corner when the `corner` option asks. Its header is a button with a ring gauge and the frame rate, such as `58 fps`. A click on it, or Enter or Space while it has the focus, opens a card of figures and closes the card again. At the top right the card opens under the header, and at the bottom right above it. The card holds four tabs, which show one group of figures at a time. Four calls show the overlay:
+The stats overlay sits over the top-right corner of the canvas, or over its bottom-right corner when the `corner` option asks. Its header is a button with a ring gauge and the frame rate, such as `58 fps`. A click on it, or Enter or Space while it has the focus, opens a card of figures and closes the card again. At the top right the card opens under the header, and at the bottom right above it. The card holds four tabs, which show one group of figures at a time. Four ways show the overlay:
 
 - `createEngine({ stats: true })` shows it from the first frame.
 - `engine.stats(true)` on the page shows it, and `engine.stats(false)` hides it.
 - The `?stats` switch in the page's address shows it, and `?stats=off` hides it. `?stats=collapsed` and `?stats=open` show it with its card closed or open. The switches `?stats=top-right` and `?stats=bottom-right` show it in that corner. A comma joins a start state and a corner: `?stats=collapsed,bottom-right`. Production builds read the switch only when the Vite plugin's `urlSwitches` option is on.
 - `debug.stats(true)` in the sketch shows it, and `debug.stats(false)` hides it.
 
-Each call also takes options in place of `true`:
+The three calls also take options in place of `true`:
 
 | Option | What it sets | Default |
 | --- | --- | --- |
@@ -222,9 +229,13 @@ The card is 360 pixels wide and takes its height from the tab that shows, so a s
 
 The overlay updates every tab on each refresh, so a tab shows current figures the moment it is chosen. It gathers nothing extra for a tab that does not show: the figures come from the frame records that the engine writes anyway and from the same GPU timing pass, whichever tab is open.
 
-**The target.** The overlay judges each frame against the engine's own [target frame rate](../concepts/quality-presets.md#the-target-frame-rate): the one that the preset check and the quality governor defend. It is the display's refresh rate, at most 60 frames a second, unless the page's `targetFps` option asks for more. The `?fps=` switch caps it too. The engine still draws at the display's full rate when the GPU allows it. So on a 120 Hz display the card reads `120 Hz ≥60 fps · 16.7 ms`: the engine draws up to 120 frames per second and defends 60. With `targetFps: 'display'`, the same card reads `120 fps · 8.3 ms`. The display symbol is a button whose tooltip explains the figures, as the mode's symbol does.
+### The target
 
-**The work bars.** Each thread has its own bar, because the threads run at the same time. The bars come in this order: `Sketch`, `Drawing`, `Jobs`, `Page`, then `GPU`. A thread that the engine's thread mode does not run has no bar. Every bar spans twice the target's interval, so the target's dark mark sits in the middle of each. Where the display refreshes faster than the target, a faint second mark shows the display's interval, such as 8.3 ms at 120 Hz. Each bar is colored by who did the work:
+The overlay judges each frame against the engine's own [target frame rate](../concepts/quality-presets.md#the-target-frame-rate): the one that the preset check and the quality governor defend. It is the display's refresh rate, at most 60 frames a second, unless the page's `targetFps` option asks for more. The `?fps=` switch caps it too. The engine still draws at the display's full rate when the GPU allows it. So on a 120 Hz display the card reads `120 Hz ≥60 fps · 16.7 ms`: the engine draws up to 120 frames per second and defends 60. With `targetFps: 'display'`, the same card reads `120 fps · 8.3 ms`. The display symbol is a button whose tooltip explains the figures, as the mode's symbol does.
+
+### The work bars
+
+Each thread has its own bar, because the threads run at the same time. The bars come in this order: `Sketch`, `Drawing`, `Jobs`, `Page`, then `GPU`. A thread that the engine's thread mode does not run has no bar. Every bar spans twice the target's interval, so the target's dark mark sits in the middle of each. Where the display refreshes faster than the target, a faint second mark shows the display's interval, such as 8.3 ms at 120 Hz. Each bar is colored by who did the work:
 
 - Your code: the sketch's own callbacks, the `update` phase.
 - Engine: every other phase on the thread, such as commands, culling, recording, uploads and replay.
@@ -232,7 +243,9 @@ The overlay updates every tab on each refresh, so a tab shows current figures th
 
 A bar stacks parts only where the parts add up to the time beside it. A thread's phases run one after another, so they stack. The `Jobs` bar shows the slowest job worker, with the count of job workers that run beside its name, such as `Jobs ×6`. The engine starts job workers only as the work grows, so a small scene shows no `Jobs` bar. The job workers share one step of the frame, and the frame waits for the slowest of them. So a sum or a mean would mislead.
 
-**The thread modes.** The first symbol is a button whose tooltip explains the mode. The tooltip shows while the pointer is on the symbol or the symbol has the keyboard's focus, and a tap shows or hides it.
+### The thread modes
+
+The first symbol is a button whose tooltip explains the mode. The tooltip shows while the pointer is on the symbol or the symbol has the keyboard's focus, and a tap shows or hides it.
 
 | Mode | Symbol | Bars |
 | --- | --- | --- |
@@ -240,13 +253,23 @@ A bar stacks parts only where the parts add up to the time beside it. A thread's
 | Low latency | A clock | One thread prepares and then draws each frame. One bar, `Sketch + drawing`, stacks your code, the engine's sketch steps, then the drawing, and must fit the target |
 | Single thread | A clock | Without shared memory, the page's thread prepares and draws each frame. It shows as one `Sketch + drawing` bar too |
 
-**The colors.** A work bar's parts are blue for your code, purple for the engine's work, and green for the GPU. The memory bar keeps those meanings: purple for the engine's memory, green for the GPU's textures and buffers, and blue for the page's JavaScript heap. The chrome is amber: the active tab's underline, the header's border and the whole-page note's dot mark it. A work bar's time is green below 80% of the target's interval, amber up to the interval, and red past it. The ring gauge in the header fills with the frame rate as a share of the target. It is green from 90% of the target, the share that a preset must hold in the preset check. It is amber from 75%, and red below.
+### The colors
 
-**Held back by.** While the frame rate is below 90% of the target, a line under the GPU bar names the bar furthest past the target's mark: `Held back by: GPU`, `Drawing`, `Sketch`, `Sketch + drawing`, `Jobs` or `Page`. When no bar passes the mark, it reads `Held back by: outside the engine`. The rest of the page's code, or the browser, then holds the frame back.
+A work bar's parts are blue for your code, purple for the engine's work, and green for the GPU. The memory bar keeps those meanings: purple for the engine's memory, green for the GPU's textures and buffers, and blue for the page's JavaScript heap. The chrome is amber: the active tab's underline, the header's border and the whole-page note's dot mark it. A work bar's time is green below 80% of the target's interval, amber up to the interval, and red past it. The ring gauge in the header fills with the frame rate as a share of the target. It is green from 90% of the target, the share that a preset must hold in the preset check. It is amber from 75%, and red below.
 
-**The add-ons' rows.** A feature that an add-on declares with `settings`, `budget`, `gpu` or `memory` gets one row in the Steps tab, such as `water  gpu 0.42 ms  reflectionEvery 1  budget 1.7 of 1.7 ms`. The row names the feature, its one GPU timing scope, its own settings, its budget and the memory that it reports. The budget shows now and at full quality. A feature names its GPU scope with the render passes that carry its work, and the overlay adds up their time. A feature whose work records inside a pass of the engine's own reads `gpu not measured`. On WebGL2 no pass is timed alone, so every feature reads that. [Add-on feature descriptions](features.md#stats) explains the figures.
+### Held back by
 
-**Figures that the browser gives.** The frame rate, the work bars, the engine's and the GPU's memory and the counts show in every browser that runs the engine. The page's JavaScript heap comes from `performance.memory`, and the whole page's memory from `performance.measureUserAgentSpecificMemory`. Some browsers have neither. Where the browser lacks one, the overlay leaves it out, and the memory total adds up what it lists. Where the GPU path has no timer queries, the GPU bar reads `not measured` and stays empty.
+While the frame rate is below 90% of the target, a line under the GPU bar names the bar furthest past the target's mark: `Held back by: GPU`, `Drawing`, `Sketch`, `Sketch + drawing`, `Jobs` or `Page`. When no bar passes the mark, it reads `Held back by: outside the engine`. The rest of the page's code, or the browser, then holds the frame back.
+
+### The add-ons' rows
+
+A feature that an add-on declares with `settings`, `budget`, `gpu` or `memory` gets one row in the Steps tab, such as `water  gpu 0.42 ms  reflectionEvery 1  budget 1.7 of 1.7 ms`. The row names the feature, its one GPU timing scope, its own settings, its budget and the memory that it reports. The budget shows now and at full quality. A feature names its GPU scope with the render passes that carry its work, and the overlay adds up their time. A feature whose work records inside a pass of the engine's own reads `gpu not measured`. On WebGL2 no pass is timed alone, so every feature reads that. [Add-on feature descriptions](features.md#stats) explains the figures.
+
+### Figures that the browser gives
+
+The frame rate, the work bars, the engine's and the GPU's memory and the counts show in every browser that runs the engine. The page's JavaScript heap comes from `performance.memory`, and the whole page's memory from `performance.measureUserAgentSpecificMemory`. Some browsers have neither. Where the browser lacks one, the overlay leaves it out, and the memory total adds up what it lists. Where the GPU path has no timer queries, the GPU bar reads `not measured` and stays empty.
+
+### Frame figures in the sketch
 
 `debug.frameStats()` gives the sketch the engine's figures that the overlay shows. Each figure per frame is a mean over the frames of the last window, about half a second of presented frames. The figures change when a window ends. Only the page can measure its JavaScript heap and its memory, so those figures show only on the overlay.
 
@@ -306,11 +329,25 @@ The engine counts every draw of every pass on the thread that draws. That covers
 | `JS heap` | The JavaScript heap of the page's own thread, from `performance.memory`, where the browser gives it |
 | Whole page | The memory of the whole page and its workers, from `performance.measureUserAgentSpecificMemory`, where the browser gives it |
 
-The memory bar's parts add up to the total beside `Memory`. The whole page's figure is not that total, so it has its own line. The browser counts a shared memory once for each thread that holds it. Every engine thread holds the engine's WebAssembly memory, so the browser's figure counts it many times. Beside the browser's figure, the overlay gives the figure with the shared memory counted once. The browser answers once every worker has run the measurement, or after about a minute. While a measurement runs, the engine's idle job workers leave the job loop to run it between frame jobs, so it does not wait on them. `measurePageMemory()` from `@null3d/engine/stats` takes one measurement the same way, for a page that wants the browser's own breakdown. Until the first one ends, the line reads `measuring`. The page asks for one measurement at a time.
+The memory bar's parts add up to the total beside `Memory`. The whole page's figure is not that total, so it has its own line. Beside the browser's figure, the overlay gives the figure with the shared memory counted once. `measurePageMemory()` from `@null3d/engine/stats` takes one measurement the same way, for a page that wants the browser's own breakdown. Until the first one ends, the line reads `measuring`. The page asks for one measurement at a time. If the browser never answers, the line hides.
 
-**Memory by system.** A development build also lists the memory of each engine table and allocator under `Memory by system`. Each row gives three figures: the bytes that the area uses, reserves and has used at most. The rows cover the scene's own rows and world output, the instance batches, the grid cells, the level table and the frame builder's bucket-key scratch. After them come the shadow casters' table, the other draw tables, the upload arenas, the recorded draw lists and the animation table. Each figure's tooltip gives its exact bytes. The register runs only while the card is open, and only in a development build. A production page therefore pays nothing for it. The figures name faults that a single memory total hides. A table that keeps a high-water mark after a scene shrinks shows in its peak. An arena that grew for a frame shows the same.
+<details>
+<summary>Technical details: how the page measures its memory</summary>
 
-Some browsers offer the measurement but never answer it. When no answer comes within two minutes of the first request, the overlay hides the line. The page then asks no more for the rest of its life. An answer that comes later still shows.
+The browser counts a shared memory once for each thread that holds it. Every engine thread holds the engine's WebAssembly memory, so the browser's figure counts it many times. The browser answers once every worker has run the measurement, or after about a minute. While a measurement runs, the engine's idle job workers leave the job loop to run it between frame jobs, so it does not wait on them. When no answer comes within two minutes of the first request, the page asks no more for the rest of its life. An answer that comes later still shows.
+
+</details>
+
+### Memory by system
+
+`Memory by system` is a development build's list of each engine table and allocator. Each row gives three figures: the bytes that the area uses, reserves and has used at most. Each figure's tooltip gives its exact bytes. The register runs only while the card is open, and only in a development build, so a production page pays nothing for it. The figures name faults that a single memory total hides: a table that keeps a high-water mark after a scene shrinks shows in its peak, and an arena that grew for a frame shows the same.
+
+<details>
+<summary>Technical details: the tables of Memory by system</summary>
+
+The rows cover the scene's own rows and world output, the instance batches, the grid cells, the level table and the frame builder's bucket-key scratch. After them come the shadow casters' table, the other draw tables, the upload arenas, the recorded draw lists and the animation table.
+
+</details>
 
 ### GPU memory
 
@@ -331,7 +368,7 @@ A texture counts every mip level of every layer, as the GPU stores it. A compres
 - With the overlay hidden and no call of `debug.frameStats()`, the figures cost the frame almost nothing. The engine's threads write them anyway, for `engine.measure`. The counts of triangles and objects add a few operations per draw call.
 - With the card closed, the overlay costs nothing more. Its header reads the frame rate from the frame intervals that the engine records anyway. It times nothing on the GPU, reads nothing back and measures no memory.
 - While the card is open, the engine times one frame in eleven on the GPU, as `engine.measure` does. On WebGPU it also copies the counts of the culled draws back on those frames. The sketch thread publishes the memory of textures and meshes in the first frame that samples, then every eighth frame. The thread that draws copies its two GPU memory totals each frame, and the page measures its own memory. Closing the card stops all of it.
-- The sketch's first call of `debug.frameStats()` turns the same sampling on for the rest of the engine's life. Reading the figures allocates nothing, so a sketch can call it every frame. `bun run bench:allocation --calls` checks it.
+- The sketch's first call of `debug.frameStats()` turns the same sampling on for the rest of the engine's life. Reading the figures allocates nothing, so a sketch can call it every frame. The engine's allocation benchmark checks it in every frame.
 - The overlay's code downloads at its first showing, and the figures' code at the first call of `debug.frameStats()` or the overlay's first showing. Pages that never call them download neither.
 - Both work in every build, production builds included. A development build's figures include the cost of its development checks, so read frame times from a production build ([Measure fairly](../guides/performance.md#measure-fairly)).
 - The overlay lives in a shadow root with its own style sheet, so the page's styles do not change it. It works under a Content Security Policy without `'unsafe-inline'`.
@@ -442,7 +479,7 @@ These figures time the GPU's work only. Work that the browser does outside the p
 
 ## The in-page inspector
 
-`?inspect` opens a panel over the canvas that lists the scene's objects, outlines the one you select and edits its fields. On the page, `engine.inspect(call, args)` runs the same calls from your own code, and `window.__null3dInspector` holds them for the MCP server. These exist in a development build only. A held page or a replay publishes no bridge and opens no panel. [The in-page inspector](../guides/debugging.md#the-in-page-inspector) lists the calls.
+`?inspect` opens a panel at the left edge of the page, over the canvas, that lists the scene's objects, outlines the one you select and edits its fields. On the page, `engine.inspect(call, args)` runs the same calls from your own code, and `window.__null3dInspector` holds them for [the MCP server](../guides/debugging.md#the-mcp-server), which lets a coding agent read and change the scene. These exist in a development build only. A held page or a replay publishes no bridge and opens no panel. [The in-page inspector](../guides/debugging.md#the-in-page-inspector) lists the calls.
 
 ## API reference
 

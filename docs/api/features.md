@@ -6,22 +6,31 @@ summary: "One description for an add-on's render work: the frame point, the read
 
 # Add-on feature descriptions
 
-> A description with `kind: 'draw'` can become a draw with [`scene.addFeatureDraw`](feature-draws.md). A description with `kind: 'fullscreen'` can become a pass over the scene's color with [`post.addFeatureEffect`](feature-effects.md). A description with `kind: 'compute'` can become a compute pass with [`render.addPass`](render.md#compute-passes). A registration checks the shape, and the adapters place the work that each kind declares. A feature's preset settings, budget, GPU scope and stats work today.
+A description with `kind: 'draw'` can become a draw with [`scene.addFeatureDraw`](feature-draws.md). A description with `kind: 'fullscreen'` can become a pass over the scene's color with [`post.addFeatureEffect`](feature-effects.md). A description with `kind: 'compute'` can become a compute pass with [`render.addPass`](render.md#compute-passes). A registration checks the shape, and the adapters place the work that each kind declares.
 
 ```mermaid
 flowchart LR
     description["defineFeature<br/>frame point, reads, writes"] --> registry["FeatureRegistry<br/>one owner for each name"]
     registry --> outputs[("published outputs<br/>a neutral value for readers")]
     registry --> slots["lighting slots<br/>one provider each"]
-    registry --> draw["scene.addFeatureDraw<br/>a draw feature"]
-    registry --> effect["post.addFeatureEffect<br/>a full-screen feature"]
-    draw --> frame["The frame's draw list"]
-    effect --> chain["The chain of custom effects"]
+    registry --> adapters["the five adapters<br/>draw, instance, effect,<br/>compute, sky layer"]
+    adapters --> frame["The frame's draw list"]
+    adapters --> chain["The chain of custom effects"]
     registry --> host["FeatureHost<br/>preset values, budget, figures"]
     host --> overlay["The stats overlay<br/>one row for each feature"]
 ```
 
-A feature description is one object that describes an add-on's part of a frame. It names the point where the feature records and the scene resources that it reads and writes. It also names the textures that it publishes, the lighting slot that it provides, and the callbacks that keep it in step with the engine. Every add-on hook that records frame work uses this one shape. An add-on learns one API, and the engine documents and versions one shape.
+A feature description is one object that describes an add-on's part of a frame. It names the point where the feature records and the scene resources that it reads and writes. It also names the textures that it publishes, the lighting slot that it provides, and the callbacks that keep it in step with the engine.
+
+Every add-on hook that records frame work uses this one shape. An add-on learns one API, and the engine documents and versions one shape.
+
+| Kind | Frame point | Call | Page |
+| --- | --- | --- | --- |
+| Draw | The description's frame point | `scene.addFeatureDraw` | [Add-on draws](feature-draws.md) |
+| Instance draw | `'opaque'` | `scene.addComputeInstances` | [Instanced draws](feature-instances.md) |
+| Full-screen effect | `'resolve'` | `post.addFeatureEffect` | [Add-on effects](feature-effects.md) |
+| Compute pass | The description's frame point | `render.addPass({ kind: 'compute' })` | [Compute passes](render.md#compute-passes) |
+| Sky layer | `'background'` | `scene.setSkyLayer` | [Sky layers](scene.md#sky-layers) |
 
 ## Writing a description
 
@@ -72,19 +81,19 @@ A description is data, apart from its callbacks. The engine can send the declara
 | `order` | The feature's place inside its band. A lower number runs first. | The band's first place |
 | `reads` | The scene resources that the feature reads. | None |
 | `writes` | The scene resources that the feature writes. | None |
-| `outputs` | The textures that the feature publishes to materials, effects and passes, by name, each with a neutral default. | None |
-| `provides` | The lighting slots that the feature provides. One feature provides each slot. | None |
+| `outputs` | The textures that the feature publishes, by name, each with a neutral default. A compute pass publishes its one output as a texture that materials, effects and passes read through `textures.fromPass`. | None |
+| `provides` | The lighting slots that the feature claims. The registry keeps one owner for each slot, and no part of the engine reads the owner. | None |
 | `debugViews` | The debug views that the feature adds, each with a name and a `set` callback. See [Debug drawing and stats](debug.md#views-from-add-ons). | None |
 | `views` | The views that the feature records in, as its view mask. | `['main']` |
-| `ready` | Called when the engine needs to know whether the feature draws. `false` means no cost at all. | Always ready |
+| `ready` | Called when the engine needs to know whether the feature draws. `false` means no cost for the adapters that ask it, the full-screen and instance adapters. | Always ready |
 | `settings` | The feature's own settings, by name, each with a value on every preset and the values it takes. | None |
 | `budget` | The feature's time budget in each frame, on every preset. | None |
 | `gpu` | The render passes that carry the feature's frame work, whose GPU time the overlay shows as its own. | None |
 | `memory` | Returns the GPU bytes that the feature's own objects hold. | None |
-| `quality` | Called with the preset, the engine's settings and the feature's own values when the engine's quality changes. | None |
-| `resize` | Called with the render size in device pixels when it changes. | None |
-| `reset` | Called with `'resize'`, `'camera'` or `'exposure'` when the feature must drop its history. | None |
-| `destroy` | Called once when the feature is removed or the engine stops. | None |
+| `quality` | A callback that maps the engine's preset and settings onto the feature's own. See [Callbacks](#callbacks). | None |
+| `resize` | A callback that makes targets of a new size. See [Callbacks](#callbacks). | None |
+| `reset` | A callback that drops history that the reason makes stale. See [Callbacks](#callbacks). | None |
+| `destroy` | A callback that frees the feature's own objects. See [Callbacks](#callbacks). | None |
 
 A feature with no `frame` records no frame work. It gives no `kind`, `reads`, `writes` or `views`. It can still publish outputs, provide a lighting slot, add debug views and receive the callbacks.
 
@@ -126,9 +135,9 @@ A feature without an `order` takes the first place of its band, which is 0 for `
 
 The render graph runs a feature after the passes that write the resources that it reads. It runs the readers of the resources that the feature writes after the feature. The graph keeps its order from these declarations.
 
-The first four are the scene inputs. A custom material declares `'sceneDepth'` in the same words: `SceneInput` is one public type, and `FeatureResource` adds `'history'` and `'shadowAtlas'` to it. No pass makes a normals target today, and the motion pass runs only while a reader wants the motion vectors.
+The first four are the scene inputs (`SceneInput`). `FeatureResource` adds `'history'` and `'shadowAtlas'` to them. Of the scene inputs, a custom material declares only `'sceneDepth'` ([Materials](materials.md#the-scene-behind-a-surface)). The engine binds a feature's reads when it places the feature in the frame.
 
-A custom material reads the scene's depth now ([Materials](materials.md#the-scene-behind-a-surface)). The feature side binds its reads when the engine places a registered feature in the frame.
+No pass makes a normals target, and the motion pass runs only while a reader wants the motion vectors.
 
 ## Published outputs
 
@@ -173,7 +182,13 @@ export const NAMESPACE = declareAddonNamespace({
 });
 ```
 
-A name takes 1 to 32 lowercase letters, digits or underscore characters, and it starts with a letter. The package takes 1 to 128 characters with no spaces. The engine reserves `null3d` for both the name and the shader library. The engine's own error codes lie below 2000. An add-on's range therefore lies from 2000 to 9999, and two add-ons' ranges do not overlap. A quality key must not be a key of the engine's [quality table](../concepts/quality-presets.md#the-settings-of-each-preset) or another add-on's.
+The name and the package follow these rules:
+
+- A name takes 1 to 32 lowercase letters, digits or underscore characters, and it starts with a letter.
+- The package takes 1 to 128 characters with no spaces.
+- The engine reserves `null3d` for both the name and the shader library.
+- The engine's own error codes lie below 2000. An add-on's range therefore lies from 2000 to 9999, and two add-ons' ranges do not overlap.
+- A quality key must not be a key of the engine's [quality table](../concepts/quality-presets.md#the-settings-of-each-preset) or another add-on's.
 
 `FeatureHost` takes the namespace. A feature that the host registers exports its name, its outputs and its lighting slots to the whole thread. A second add-on that registers one of them is refused. The host's budgets carry the add-on's name too, so two add-ons keep their own budgets. A host refuses a namespace that the thread's registry does not hold.
 
@@ -252,7 +267,14 @@ features.add(
 );
 ```
 
-A feature whose work records inside a pass of the engine's own, such as a draw among the transparent objects, names no scope, and its row reads `gpu not measured`. The engine times one frame in eleven and at most seven passes in it. The passes after them share one figure, named `later passes`, which no scope names. A feature therefore never reads another step's time. A pass that draws in some frames only keeps the figure of the window that last timed it, so its row does not blank between them. On WebGL2 the engine times the whole frame alone, so no feature has a figure there.
+A feature whose work records inside a pass of the engine's own, such as a draw among the transparent objects, names no scope, and its row reads `gpu not measured`. On WebGL2 the engine times the whole frame alone, so no feature has a figure there.
+
+<details>
+<summary>Technical details: how the engine samples GPU time</summary>
+
+The engine times one frame in eleven and at most seven passes in it. The passes after them share one figure, named `later passes`, which no scope names. A feature therefore never reads another step's time. A pass that draws in some frames only keeps the figure of the window that last timed it, so its row does not blank between them.
+
+</details>
 
 The overlay also lists the GPU time of each step of the frame that the GPU timed, under `GPU steps` in the same tab. A step is one of the engine's own passes, by its name, or a sketch's pass, by the feature that declares it.
 
@@ -262,32 +284,27 @@ A feature's `memory` callback runs when the engine reads the figures, which happ
 
 ## Callbacks
 
-- `ready` answers whether the feature draws now. `false` means no cost at all: no pass, no target, and none of its code or shaders downloads.
-- `quality` maps the engine's preset and settings onto the feature's own settings. Its third argument holds the feature's resolved settings and its budget's share, which the host keeps current.
-- `resize` gives the render size in device pixels. Make targets of the new size.
-- `reset` names why the feature must drop its history. The reasons are a new render size, a camera cut to another place, and an exposure change that makes stored values stale.
-- `destroy` frees the feature's own objects. The registry does not call it. The full-screen adapter's handle calls it when you destroy the handle, and otherwise stop the feature before you remove it.
-
-This table says who calls each callback:
-
-| Callback | Who calls it |
-| --- | --- |
-| `quality` | `FeatureHost`, when the preset or its settings change |
-| `ready` | The full-screen adapter, when it places a feature and on each quality change, and `effect.refresh()` when the add-on calls it. The instance adapter asks it once each frame. The draw, compute and sky-layer adapters do not ask it. |
-| `resize`, `reset` | Nothing in the engine. An add-on that keeps targets or history keeps its own size and reset state. |
-| `destroy` | The full-screen adapter's handle, when the add-on destroys it. Otherwise the owner of the feature calls it. |
+| Callback | What it gets | Who calls it, and when |
+| --- | --- | --- |
+| `ready` | Nothing | The full-screen adapter, when it places a feature and on each quality change, and `effect.refresh()` when the add-on calls it. The instance adapter asks it once each frame. The draw, compute and sky-layer adapters do not ask it. `false` means no cost for the adapters that ask it. |
+| `quality` | The preset, the engine's settings, and the feature's resolved settings and budget share | `FeatureHost`, when the preset or its settings change. It runs once when the feature is added too. |
+| `resize` | The render size in device pixels | Nothing in the engine. An add-on that keeps targets keeps its own size. |
+| `reset` | `'resize'`, `'camera'` or `'exposure'` | Nothing in the engine. An add-on that keeps history keeps its own reset state. |
+| `destroy` | Nothing | The full-screen adapter's handle, when the add-on destroys it. Otherwise the owner of the feature calls it. |
 
 ## Adapters
 
 Adapters turn a checked description into work in the frame. Five exist:
 
 - **Draws:** [`scene.addFeatureDraw(description, options)`](feature-draws.md) draws the add-on's WGSL over its own vertices, with its uniforms, at the description's frame point. The band and order place a blended draw among the transparent pass's objects. The adapter places the main view alone.
-- **Instance draws:** [`scene.addComputeInstances(description, options)`](feature-instances.md) draws a capacity of instances from the add-on's own buffer. The count comes from the GPU on WebGPU, and from the page on WebGL2. The adapter places the main view alone, at the opaque point.
+- **Instance draws:** [`scene.addComputeInstances(description, options)`](feature-instances.md) draws a capacity of instances from the add-on's own buffer. The count comes from the GPU on WebGPU, and from the sketch on WebGL2. The adapter places the main view alone, at the opaque point.
 - **Full-screen effects:** [`post.addFeatureEffect(description, options)`](feature-effects.md) runs the add-on's WGSL over the whole image, at the `'resolve'` point. The pass reads the scene's color, and its depth when the description declares it, and writes the color. The adapter draws it only while the feature is ready, and asks `ready` again when the quality changes.
 - **Compute passes:** [`render.addPass({ kind: 'compute', description, ... })`](render.md#compute-passes) runs the add-on's compute shader over a storage texture, which materials, effects and passes sample in the same frame. The adapter places the main view alone, binds no scene resource, and publishes the description's one output. A WebGL2 page runs the pass's fragment form, or the call throws.
 - **Sky layers:** [`scene.setSkyLayer(description, options)`](scene.md#sky-layers) draws the add-on's WGSL over the background, at the `'background'` point as a `'draw'`, with the `'sky'` slot and the three views. The engine places it itself, because the background draws it before the opaque objects. Its function reads the core sky's values.
 
-The descriptions serve these five adapters alone. Some kinds of add-on have no hook:
+## Limits
+
+The descriptions serve the five adapters alone. Some kinds of add-on have no hook:
 
 | Kind of add-on | What the engine does |
 | --- | --- |
@@ -298,7 +315,18 @@ The descriptions serve these five adapters alone. Some kinds of add-on have no h
 
 ## Checks
 
-`defineFeature` returns a frozen description with the defaults filled. It throws E1223 for an option that a description does not take. It also throws for a frame point or kind that does not go together. The same holds for an order outside its band, or a name that is too long. An output with no neutral default throws too. So does a resource, view or slot that does not exist. A setting whose preset value is not one of its values throws. So does a setting with a governor but no budget, a budget whose four times are not above 0, and a GPU scope pass that `render.addPass` did not return.
+`defineFeature` returns a frozen description with the defaults filled. It throws [E1223](../errors/E1223.md) for:
+
+- An option that a description does not take.
+- A frame point or kind that does not go together.
+- An order outside its band.
+- A name that is too long.
+- An output with no neutral default.
+- A resource, view or slot that does not exist.
+- A setting whose preset value is not one of its values.
+- A setting with a governor but no budget.
+- A budget whose four times are not above 0.
+- A GPU scope pass that `render.addPass` did not return.
 
 `FeatureRegistry.add` refuses a feature name that another feature has. It also refuses an output name that another feature publishes, a lighting slot that another feature provides, and a debug view name that another feature adds. `remove` gives those names back. A debug view name that names one of the engine's own views is refused too.
 
@@ -306,7 +334,7 @@ The descriptions serve these five adapters alone. Some kinds of add-on have no h
 
 | Code | Cause |
 | --- | --- |
-| E1223 | A description that `defineFeature` or `FeatureRegistry.add` cannot take: an unknown option, a bad name, a frame point or kind that does not go together, an order outside its band, an unknown resource, slot or view, an output with no neutral default, a setting value outside its own values, a governor without a budget, a budget without four times above 0, or a name that another feature has. |
+| E1223 | A description that `defineFeature` or `FeatureRegistry.add` cannot take. [Checks](#checks) lists each case. |
 
 ## Related pages
 

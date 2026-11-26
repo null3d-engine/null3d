@@ -45,7 +45,7 @@ A model's morph targets load with their default weights, and its clips animate t
 
 The engine keeps each clip at one fixed rate of keys. The loader hands every clip to the job workers, which put it at that rate between frames. A track whose keys already sit at the rate is copied, and the job workers resample the others. A model's clips are ready when `loadGltf` resolves. In the single-threaded mode, the sketch's thread does this work a few milliseconds at a time.
 
-Files from `bunx @null3d/cli assets optimize` store every clip at the engine's rate, so they load with copies alone. [The asset pipeline](../guides/assets-pipeline.md#what-it-does-to-clips) says how. On the engine's test page, the KayKit Knight's 76 clips took 16.5 ms on two job workers from its source file. From the command's output they took 8 ms, and the output's binary part is 46% smaller.
+Files from `bunx @null3d/cli assets optimize` store every clip at the engine's rate, so they load with copies alone. [The asset pipeline](../guides/assets-pipeline.md#what-it-does-to-clips) says how. In Chrome on a MacBook Pro, on the engine's test page, the KayKit Knight's 76 clips took 16.5 ms on two job workers from its source file. From the command's output they took 8 ms, and the output's binary part is 46% smaller.
 
 ## Seeing the skeleton
 
@@ -94,7 +94,14 @@ return {
 
 A plain play fades out only the plain clips of its layer, and an additive play only the additive clips. So a walk keeps playing when a breath starts on its layer as an additive clip.
 
-Keep the options of the plays that a game repeats in frozen constants. The animator reads a frozen options object once and keeps what it read, so a clip switch allocates nothing. From an object that is not frozen, the animator reads at every play. The browser then makes a new 12-byte number for each fraction it reads. The same holds for the points of `playBlend`.
+Keep the options of the plays that a game repeats in frozen constants. The animator reads a frozen options object once and keeps what it read, so a clip switch allocates nothing. The same holds for the points of `playBlend`.
+
+<details>
+<summary>Technical details: why a frozen options object allocates nothing</summary>
+
+From an object that is not frozen, the animator reads at every play. The browser then makes a new 12-byte number for each fraction it reads.
+
+</details>
 
 ```ts
 const TO_RUN = Object.freeze({ fade: 0.3, weight: 0.75 });
@@ -351,7 +358,12 @@ In each frame, the clips blend first, then each joint rotation applies in the or
 
 A scene that never calls a joint call pays nothing: the engine makes the table of joint overrides at the first call. After that, an object without overrides costs a few reads in each frame. A joint rotation costs one quaternion blend. A look-at costs a few matrix products for each joint between the skeleton's root and the chain's last joint.
 
-The calls allocate nothing, but a weight that changes in each frame can. The browser inlines a small call into the function that makes it. In a large frame step, it may stop doing so, and then it passes each fraction as a new 12-byte number object. One knight per frame does not matter; a crowd of them makes garbage for the collector. The rotation and the target cross in arrays, so they never box. To keep a crowd's weights from boxing, call the joint calls from a small function of its own. Give it only objects and whole numbers, such as the animator and its index, and let it read the frame's fractions from an array:
+The calls allocate nothing, but in a crowd, a weight that is a fraction and changes in each frame can make garbage for the collector. To stop this, call the joint calls from a small function of its own that takes only objects and whole numbers. The default weight, 1, never allocates. The same holds for every engine call that takes a fraction, such as `setPosition` or `setLayerWeight`.
+
+<details>
+<summary>Technical details: why a fraction can allocate, and how to stop it</summary>
+
+The browser inlines a small call into the function that makes it. In a large frame step, it may stop doing so, and then it passes each fraction as a new 12-byte number object. One knight per frame does not matter; a crowd of them makes garbage for the collector. The rotation and the target cross in arrays, so they never box. Give the small function only objects and whole numbers, such as the animator and its index, and let it read the frame's fractions from an array:
 
 ```ts
 const now = new Float64Array(1);
@@ -367,7 +379,7 @@ return {
 };
 ```
 
-The default weight, 1, is a small whole number, which never boxes. The same holds for every engine call that takes a fraction, such as `setPosition` or `setLayerWeight`.
+</details>
 
 ## Events
 
@@ -413,7 +425,14 @@ Rotations between keys and rotations in a blend use a corrected form of normaliz
 
 A skinned mesh's vertices follow the joints of an animated object. Each vertex names up to four joints, with a weight for each. Its skinned place is the sum of its joints' skinning matrices applied to it, each times its weight. The mesh's own world matrix then places it.
 
-On both paths, the vertex shader of each pass that draws a skinned mesh skins it. The shadow passes skin it again. On the devices that the engine was measured on, this was as fast as skinning once per frame, or faster. On WebGPU that was a compute pass, and on WebGL2 transform feedback. Each frame uploads the animated objects' skinning matrices to one float texture, 48 bytes per joint. Every material skins in the vertex shader, custom materials included. Skinned meshes that share a mesh and a material draw in one instanced draw in each pass, so a crowd costs few draw calls. On WebGPU, a custom material's skinning builds download the first time the material draws a skinned mesh. A page whose custom materials never draw one never downloads them. The mesh draws once they have arrived, so call `await scene.warmUp()` in the setup to load them before play.
+On both GPU paths, the vertex shader of each pass that draws a skinned mesh skins it. The shadow passes skin it again. Each frame uploads the animated objects' skinning matrices to one float texture, 48 bytes per joint. Every material skins in the vertex shader, custom materials included. Skinned meshes that share a mesh and a material draw in one instanced draw in each pass, so a crowd costs few draw calls. On WebGPU, a custom material's [skinning builds](../guides/custom-shaders.md) download the first time the material draws a skinned mesh. A page whose custom materials never draw one never downloads them. The mesh draws once they have arrived, so call `await scene.warmUp()` in the setup to load them before play.
+
+<details>
+<summary>Technical details: why the vertex shader skins</summary>
+
+On the devices that the engine was measured on, skinning in each pass's vertex shader was as fast as skinning once per frame, or faster. Those measurements skinned once per frame with a compute pass on WebGPU and with transform feedback on WebGL2. `?skinning=compute` makes WebGPU skin every skinned mesh in its compute pass, so you can compare the two methods on your device ([Testing](../guides/testing.md#switches-for-tests)).
+
+</details>
 
 On WebGPU, a compute pass, the skinning pass, skins two kinds of mesh once per frame instead. It runs before the shadow passes and the scene passes. The first kind is morphed meshes, which it morphs first. The second is meshes that a debug view draws, or that a [full shader](../guides/custom-shaders.md#full-shaders) of the sketch's draws. Neither has a skinning build of its vertex shader. The passes then draw the skinned vertices as a plain mesh. Each mesh that the pass skins draws on its own, as it has vertices of its own. The pass skips a mesh that no view draws in a frame, neither the camera nor a shadow cascade. It also skips a mesh whose pose and morph weights did not change since its last skin. The `?skinning=compute` switch makes the pass skin every skinned mesh, to compare the two ways ([Testing](../guides/testing.md#switches-for-tests)).
 
@@ -439,7 +458,7 @@ The clips keep their real speed. Each update covers the frames that it skipped, 
 
 ### Limits of skinning
 
-- On WebGPU, each copy that the skinning pass skins or morphs keeps its skinned vertices in GPU memory, even when copies share a mesh. Positions take 32-bit floats. Normals and tangents take 8 bits per component, as unit directions, which is as precise as the asset tool's optimized meshes store them. The other attributes keep their types. With `?skinning=compute`, a knight of the S5 benchmark takes 20 bytes per vertex, so its 500 knights of about 5,000 vertices take about 50 MB.
+- On WebGPU, each copy that the skinning pass skins or morphs keeps its skinned vertices in GPU memory, even when copies share a mesh. Positions take 32-bit floats. Normals and tangents take 8 bits per component, as unit directions, which is as precise as the asset tool's optimized meshes store them. The other attributes keep their types. With `?skinning=compute`, a knight of the [S5 benchmark](../porting/threejs-overview.md#what-gets-faster) takes 20 bytes per vertex, so its 500 knights of about 5,000 vertices take about 50 MB.
 - Those vertices fill at most 8 GPU buffers, each as large as the device lets a shader read. That is 1 GiB in all at WebGPU's default limit of 128 MiB per buffer.
 - Skinned meshes fill at most 32 mesh buffers. Each mesh buffer holds meshes with one set of vertex attributes, up to that same size.
 - A scene past either limit draws nothing in its frames, and gives [E1501](../errors/E1501.md), which names the limit. The canvas keeps the last whole frame, and the scene draws again once it fits.
@@ -458,7 +477,14 @@ head.setMorphWeight(1, Math.sin(time.now) * 0.5 + 0.5);
 
 A clip of a glTF file can animate a mesh's weights. While it plays, it blends its weights with the object's own. A clip at full weight sets the weights, and a fade blends the two. The object's own weights hold when no clip animates them. The call `setMorphWeight` sets the object's own weight, so a weight that you set shows in full only where no clip animates it. Layers and joint masks work on weights too: a layer masked to a node's name takes that node's weights.
 
-On WebGPU, the skinning pass morphs each morphed mesh once per frame, before its joints skin it. On WebGL2, the vertex shader of each pass morphs it. Each object then keeps only its largest weights, by the `morphTargets` quality setting: 8 on Low, 16 on Medium, 32 on High and 64 on Ultra. WebGPU keeps every weight. The first morphed mesh that a WebGL2 page draws loads the morph shaders, about 20 KB after compression, and draws once they arrive. On WebGPU, it loads the skinning pass's shaders. `createEngine`'s `preload` option loads either before the first frame ([Loading screens](../guides/loading-screens.md#loading-everything-up-front)).
+On WebGPU, the skinning pass morphs each morphed mesh once per frame, before its joints skin it. On WebGL2, the vertex shader of each pass morphs it.
+
+<details>
+<summary>Technical details: how each backend morphs</summary>
+
+Each object then keeps only its largest weights, by the `morphTargets` quality setting: 8 on Low, 16 on Medium, 32 on High and 64 on Ultra. WebGPU keeps every weight. The first morphed mesh that a WebGL2 page draws loads the morph shaders, about 20 KB after compression, and draws once they arrive. On WebGPU, it loads the skinning pass's shaders. `createEngine`'s `preload` option loads either before the first frame ([Loading screens](../guides/loading-screens.md#loading-everything-up-front)).
+
+</details>
 
 A morphed object culls with a sphere that its weights grow: each target's longest move times the size of its weight. On WebGL2, a custom material draws a morphed mesh in its shape at rest.
 
@@ -482,6 +508,8 @@ The engine takes animation off the main thread, and does less work and stores le
 | [E1416](../errors/E1416.md) | A glTF file whose skins or clips break glTF's rules, such as key times that fall back or a skin that names a node twice, or whose skins and clips move more than 1,024 nodes |
 | [E1101](../errors/E1101.md) | An animator call after its object was destroyed |
 | [E1501](../errors/E1501.md) | A crowd of skinned meshes past WebGPU skinning's limits (see [Limits of skinning](#limits-of-skinning)) |
+
+Development builds run every check in this table. Release builds keep only the checks that guard engine memory, such as a clip name that the object does not have, and skip the rest, such as range checks and `setWeight` on a clip that does not play.
 
 ## API reference
 

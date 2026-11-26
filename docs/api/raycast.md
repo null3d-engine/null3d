@@ -6,8 +6,6 @@ summary: "raycast, raycastAny, raycastAll, raycastBatch, overlap queries, pointe
 
 # Raycasting and spatial queries
 
-> Queries test a skinned character in its bind pose, not in its animated pose. Pixel-exact picking draws each character as it is posed.
-
 ```mermaid
 flowchart LR
     query["A ray, a sphere<br/>or a box"] --> scene["The scene's trees:<br/>static and dynamic objects"]
@@ -18,7 +16,7 @@ flowchart LR
 
 A raycast finds where a ray meets the scene's objects. An overlap query finds the objects inside a sphere or a box. Every query tests the triangles of objects and instance rows. Raycasts also hit [sprites, points and lines](#sprites-points-and-lines) where they draw. The engine keeps a tree over the scene's objects and a tree over each mesh's triangles. So a query tests only the few triangles near it.
 
-Queries run in the sketch, on the scene. They write their results into objects and arrays that you create once, so a query in every frame allocates nothing. `bun run bench:allocation --calls` checks it.
+Queries run in the sketch, on the scene. They write their results into objects and arrays that you create once, so a query in every frame allocates nothing. The engine's allocation benchmark checks it in every frame.
 
 ```ts
 import { defineSketch, type RaycastHit, vec3 } from '@null3d/engine';
@@ -101,7 +99,9 @@ in-world screen turns a click into a pixel of its image.
 
 ## Rays from the pointer
 
-For clicks and hover on objects, `object.on('click', handler)` casts the ray itself. [Pointer events on objects](input.md#pointer-events-on-objects) describes it. For a ray of your own, such as one that tests only some layers, `camera.screenToRay(x, y, ray)` writes the ray through a point on the canvas. Pass `input.pointer.x` and `input.pointer.y`, and the ray comes from the frame that was on screen at the pointer's event. Over a view from `scene.createView`, cast the ray with `view.screenToRay` instead, and `scene.viewAt(x, y)` finds that view ([Multiple views](../guides/multiple-views.md#picking-in-a-view)).
+For clicks and hover on objects, `object.on('click', handler)` casts the ray itself. [Pointer events on objects](input.md#pointer-events-on-objects) describes it.
+
+For a ray of your own, such as one that tests only some layers, `camera.screenToRay(x, y, ray)` writes the ray through a point on the canvas. Pass `input.pointer.x` and `input.pointer.y`, and the ray comes from the frame that was on screen at the pointer's event. Over a view from `scene.createView`, cast the ray with `view.screenToRay` instead, and `scene.viewAt(x, y)` finds that view ([Multiple views](../guides/multiple-views.md#picking-in-a-view)).
 
 ```ts
 const ray = { origin: vec3.create(), direction: vec3.create() };   // made once
@@ -114,7 +114,9 @@ if (input.wasPressed('Mouse0')) {
 
 ## Batches of rays
 
-The call `scene.raycastBatch(rays, options, out)` casts many rays at once, on the job workers. Its `rays` array holds six numbers per ray: its origin, then its direction. Its `out` object holds typed arrays with one entry per ray, or three numbers per ray for points and normals. Only `distances` is required, and the call fills each other array that you give. It returns how many rays hit something.
+The call `scene.raycastBatch(rays, options, out)` casts many rays at once, on the job workers. Its `rays` array holds six numbers per ray: its origin, then its direction. Its `out` object holds typed arrays with one entry per ray, or three numbers per ray for points and normals.
+
+Only `distances` is required, and the call fills each other array that you give. It returns how many rays hit something.
 
 ```ts
 const COUNT = 1000;
@@ -144,26 +146,46 @@ scene.pick(240, 180).then((hit) => {
 });
 ```
 
-A hit carries `uv` and `hasUv`, as a raycast's hit does. `uv` holds where on the surface the pixel landed, in the mesh's first texture coordinates. It blends them across the hit triangle's three corners. `hasUv` says whether the surface has such coordinates. Read `hasUv` first: `uv` holds nothing to read when it is false.
+The pick draws each object's id into a small image around the point, then reads the id back. So a pick is exact to the pixel only when every source in the scene can draw into that image. One sprite, point or line in the scene, one material that blends, uses `transmission` or uses `alphaMode: 'hash'`, or one custom material that masks or has no vertex offset, makes every pick a raycast. That raycast tests triangles: it ignores masks, tests skinned characters in their bind pose, and uses the camera of the frame that last ran. In [hold mode](../guides/testing.md), which runs no frame loop, a pick is a raycast too.
 
-The coordinates stay the mesh's own. A repeated texture reports values past 1, and a material's `uvTransform` does not move them. A ray through the same point finds them, from the camera of the frame that recorded the pick. So a pick and a raycast on one point give one answer. A ray that names another object than the pixel did leaves `hasUv` false. The pick then keeps the object that the pixel showed.
-
-A skinned or morphed character draws a different shape than the mesh that the ray tests. So does a custom material that moves its vertices in its shader. Their coordinates can therefore differ from the pose that the frame drew.
-
-The point is tested at the pixel that the camera draws, not at a projected triangle. A surface thinner than a pixel picks where its pixels are. An engine material with `alphaMode: 'mask'` picks by its mask. So a ray through a cut-out hole finds what lies behind the hole. The frame that records the pick draws it, so the camera of that frame answers. A camera that moves meanwhile can differ from the frame that the click saw.
-
-A pick finds these sources:
+### What a pick finds
 
 - Meshes of the engine's materials, on the camera's layers, where they draw opaque.
 - Custom materials with a vertex offset, whose pick builds move each vertex as the surface draws.
 - Each row of an instance batch, named by `object` and `instance`.
 - Skinned and morphed characters, as their last frame's pose places them.
 
-A scene with a source that the pick's id target cannot hold answers the whole pick with a raycast instead. Such a source is a custom material without a vertex offset, a masked custom material, or a material with `alphaMode: 'hash'`, `blending` or `transmission`. A sprite, point or line is one too. The raycast tests triangles, so it ignores masks, and it uses the camera of the frame that last ran.
+### Texture coordinates
 
-A pick before the first frame answers `null`. The engine has not drawn the camera yet, so no pixel of a frame shows anything.
+A hit carries `uv` and `hasUv`, as a raycast's hit does. `uv` holds where on the surface the pixel landed, in the mesh's first texture coordinates. It blends them across the hit triangle's three corners. `hasUv` says whether the surface has such coordinates. Read `hasUv` first: `uv` holds nothing to read when it is false.
 
-A pick costs one more draw of the camera's opaque objects, one read of four bytes, and one raycast for the texture coordinates. Picks wait in a queue of their own. Each answers in a frame after the one that records it. A hidden object, an object off the camera's layers, and a pixel that no object covers answer `null`.
+The coordinates stay the mesh's own. A repeated texture reports values past 1, and a material's `uvTransform` does not move them.
+
+<details>
+<summary>Technical details: how a pick finds its texture coordinates</summary>
+
+A ray through the same point finds them, from the camera of the frame that recorded the pick. So a pick and a raycast on one point give one answer. A ray that names another object than the pixel did leaves `hasUv` false. The pick then keeps the object that the pixel showed.
+
+</details>
+
+The point is tested at the pixel that the camera draws, not at a projected triangle. A surface thinner than a pixel picks where its pixels are. An engine material with `alphaMode: 'mask'` picks by its mask. So a ray through a cut-out hole finds what lies behind the hole. The frame that records the pick draws it, so the camera of that frame answers. A camera that moves meanwhile can differ from the frame that the click saw.
+
+A skinned or morphed character draws a different shape than the mesh that the ray tests. So does a custom material that moves its vertices in its shader. Their coordinates can therefore differ from the pose that the frame drew.
+
+### Timing and cost
+
+A pick costs one more draw of the camera's opaque objects, one read of four bytes, and one raycast for the texture coordinates. A pick answers in a frame after the one that records it.
+
+<details>
+<summary>Technical details: what a pick costs</summary>
+
+Picks wait in a queue of their own, because a frame records one read.
+
+</details>
+
+### When a pick answers null or fails
+
+A pick before the first frame answers `null`. A hidden object, an object off the camera's layers, and a pixel that no object covers answer `null` too.
 
 A pick that waits for its read when the browser takes the GPU away is rejected with [E1436](../errors/E1436.md). The engine starts a new device, but the frame that recorded the pick drew on the lost one, so the read never lands. Ask for the pick again: the new device answers a new pick. A pick still queued behind it goes to the new device in its turn.
 
@@ -201,7 +223,9 @@ A ray hits [sprites](sprites.md), [points](points.md) and [lines](lines.md) wher
 
 A hit's `instance` is the row: the sprite, the point, or the segment. Segment `i` of a strip or a loop joins points `i` and `i + 1`, and the last segment of a loop joins the last point to the first. Segment `i` of a batch of segments joins points `2i` and `2i + 1`. A hit's `triangle` is -1.
 
-Sprites face the camera, and sizes in pixels depend on it. So these raycasts need a camera. `scene.raycast` and the other raycasts use the active camera. A pointer event's ray uses the camera of the frame on screen at the event. Without an active camera, rays miss sprites, points without `pointThreshold` and lines sized in pixels. A row sized in pixels is hit only between the camera's near and far planes, where the camera draws it.
+Sprites face the camera, and sizes in pixels depend on it. So these raycasts need a camera. `scene.raycast` and the other raycasts use the active camera. A pointer event's ray uses the camera of the frame on screen at the event.
+
+Without an active camera, rays miss sprites, points without `pointThreshold` and lines sized in pixels. A row sized in pixels is hit only between the camera's near and far planes, where the camera draws it.
 
 The hit on a sprite or a point's square is the point where the ray crosses it, and its normal faces the camera. A hit near a line, or near a point within a threshold, is the ray's closest point to it. Its distance is that point's distance along the ray, and its normal points back along the ray. A ray hits a dashed line in its gaps too, and a sprite or a point where its map is clear.
 
@@ -249,18 +273,25 @@ A direction can have any length above 0, from 10^-300 to 10^300. The engine make
 
 ## How queries find objects
 
-The engine keeps two levels of trees, in its WebAssembly core.
+- The first query after a mesh is created builds that mesh's tree. A large mesh can make that first query slow.
+- Static objects are cheap to move. Creating or destroying objects rebuilds the static tree at the next query.
+- Dynamic objects, dynamic batches, sprites, points and lines are rebuilt in each frame that runs a query. A large dynamic batch of particles adds to each such frame. A frame without queries builds nothing.
+- A raycast on layers that hold pixel-sized sprites, points or lines costs more. Keep them on their own layers to keep other raycasts fast.
+- A ray costs about the same in a large scene as in a small one.
+- Objects thousands of kilometers from the origin get the same precision as objects near it.
 
-- One tree per mesh, over its triangles. The first query after a mesh is created builds the mesh's tree, on the job workers. A large mesh can make that first query slow.
-- Two trees over the scene's objects and instance rows. The tree over static objects is built once, and again only after objects are created or destroyed. When a static object moves, the engine adjusts the boxes of its tree instead. The tree over dynamic objects is built again in each frame that runs a query, from all their positions at once. It holds the rows of dynamic batches too, also sprites, points and lines, on every layer. So a large dynamic batch of particles adds to each frame that runs a query. A frame without queries builds nothing.
+<details>
+<summary>Technical details: the query trees</summary>
+
+The engine keeps two levels of trees, in its WebAssembly core. One tree per mesh, over its triangles. Two trees sit over the scene's objects and instance rows. The tree over static objects is built once, and again only after objects are created or destroyed. When a static object moves, the engine adjusts the boxes of its tree instead. The tree over dynamic objects is built again in each frame that runs a query, from all their positions at once. It holds the rows of dynamic batches too, also sprites, points and lines, on every layer.
 
 Each node of a tree has four children, so one SIMD instruction tests a ray against four boxes. A query walks the scene's trees to the objects whose boxes it meets. Then it moves the ray into each object's own space and walks that object's mesh tree. Each object's box comes from its mesh's box, so it holds every triangle.
 
-Because a query walks these trees, a ray costs about the same in a large scene as in a small one. A three.js `Raycaster` tests each object's bounding sphere in turn, so its rays cost more as the scene grows.
+A three.js `Raycaster` tests each object's bounding sphere in turn, so its rays cost more as the scene grows. The trees hold sprites, points and line segments too. A row sized in pixels takes more room in the world the farther it lies from the camera. A threshold reaches past what a row draws. So when the query's layers hold such rows, the raycast grows each box of the trees as it walks them. A raycast on layers without them costs no more.
 
-The trees hold sprites, points and line segments too. A row sized in pixels takes more room in the world the farther it lies from the camera. A threshold reaches past what a row draws. So when the query's layers hold such rows, the raycast grows each box of the trees as it walks them. A raycast on layers without them costs no more.
+The trees give the same hits as testing every triangle of every object in turn. The engine stores positions relative to grid cells, and each query moves its origin into each cell's frame in 64-bit numbers.
 
-The trees give the same hits as testing every triangle of every object in turn. Objects far from the origin, thousands of kilometers out, get the same precision as objects near it. The engine stores positions relative to grid cells, and each query moves its origin into each cell's frame in 64-bit numbers.
+</details>
 
 ## API reference
 

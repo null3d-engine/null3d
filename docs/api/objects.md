@@ -41,10 +41,17 @@ Each object has a position, a rotation and a scale, all relative to its parent. 
 
 - `setPosition(x, y, z)` and `setScale(x, y, z)` set the position and the scale.
 - `setRotation(x, y, z, w)` sets the rotation as a quaternion. `setRotationEuler(x, y, z, order)` sets it from Euler angles. The order names the axes in turn: the default, `'XYZ'`, turns the object about its own X axis, then its Y axis, then its Z axis. The other orders are `'YXZ'`, `'ZXY'`, `'ZYX'`, `'YZX'` and `'XZY'`.
-- `setPose(position, rotation)` sets the position and, when you give it, the rotation, from two arrays that hold them: `[x, y, z]` and the quaternion `[x, y, z, w]`. Give it the arrays that a pose lives in, and no number crosses the call. The calls above pass each number on its own. A number passed to a call that the browser does not inline becomes an object of its own. The controls write a camera's pose this way in every frame.
+- `setPose(position, rotation)` sets the position and, when you give it, the rotation, from two arrays that hold them: `[x, y, z]` and the quaternion `[x, y, z, w]`. Give it the arrays that a pose lives in, and no number crosses the call. The controls write a camera's pose this way in every frame.
 - `rotateX(angle)`, `rotateY(angle)` and `rotateZ(angle)` turn the object by an angle about its own X, Y or Z axis.
 - `translate(x, y, z)` moves the object along its own axes. The object's rotation turns the vector, but its scale does not stretch it. So `camera.translate(0, 0, -1)` moves a camera 1 m forward.
 - `lookAt(x, y, z)` turns a mesh or a group so that its +Z axis points at a point. A camera or a light turns its -Z axis there instead. The call assumes that the object's parents are not rotated.
+
+<details>
+<summary>Technical details: why setPose takes arrays</summary>
+
+The calls above pass each number on its own. A number passed to a call that the browser does not inline becomes an object of its own.
+
+</details>
 
 Setters write straight into the engine's memory and mark the object as changed. They send no message and allocate nothing, so `onUpdate` can call them for many objects in every frame. In development builds, a setter that gets `NaN` or an infinite number throws E1203.
 
@@ -92,7 +99,7 @@ A parent loop puts an object under itself, or under an object below it, so it ca
 
 These calls change the structure of the scene, so they take effect when the engine processes the frame, after `onUpdate` returns. [Scene](scene.md#when-changes-take-effect) gives the details.
 
-In development builds, every call on an object apart from `describe` and `off` throws E1101 once you destroy the object. A model's copy also keeps `find` and `setOutlined`, which skip its destroyed parts. So does a call that gets a destroyed object, such as `setParent`. Once the frame has removed the object, the world getters throw E1101 in every build. In a release build, the other calls on a destroyed object change nothing, and never reach the object that takes its slot ([Handles](../concepts/handles.md#stale-handles)).
+In development builds, every call on a destroyed object throws [E1101](../errors/E1101.md), except `describe` and `off`. A model's copy also allows `find` and `setOutlined`, which skip its destroyed parts. A call that gets a destroyed object as an argument, such as `setParent`, also throws E1101. Once the frame has removed the object, its world getters throw E1101 in every build. In a release build, the other calls on a destroyed object change nothing, and never reach the object that takes its slot ([Handles](../concepts/handles.md#stale-handles)).
 
 ## Layers
 
@@ -104,19 +111,33 @@ The mask belongs to the object alone, so its children keep their own. Like `setV
 
 A mesh has these calls besides the ones above. Like the structural calls, they take effect in the next frame.
 
+These calls rebuild the draw tables, so call them at setup or behind a loading screen:
+
 - `setMaterial(material)` changes the material, and `setMesh(mesh)` changes the shape. The new mesh's bounding sphere replaces any bounds that `setBounds` gave.
 - `setCastShadows(true)` and `setReceiveShadows(true)` make the mesh cast and receive the shadows of every light that casts them. The `castShadows` and `receiveShadows` options of `createMesh` set them at the start. Both are false by default. Unlit materials show no shadows. [Shadows](../concepts/shadows.md) explains them.
-- `shaderId` is the number that a custom material reads as `object.id` for the mesh. Pass it to a uniform to pick out the mesh in a shader, as [Built-in shader inputs](../shaders/builtins.md#object) shows.
 - `setOutlined(true)` draws an outline around the mesh while `post.set({ outline })` turns outlines on. It is false by default. A model's copy from `scene.instantiate` has `setOutlined` too, which outlines each of its meshes. [Outlines](post.md#outlines) gives the outline's settings.
-- `setRenderOrder(order)` sets the order in which blended objects draw, lower first. Objects of one order draw farthest first. The engine orders opaque and masked objects itself, for speed, as the depth test decides what shows. The order costs nothing: the engine sorts blended objects in every frame anyway. [Materials and pipelines](../concepts/materials.md#the-transparent-pass) explains the sort.
-- `setMorphWeight(nameOrIndex, weight)` and `getMorphWeight(nameOrIndex)` set and read a morph target's weight: [Morph targets](animation.md#morph-targets).
 - `setFrustumCulled(false)` makes the engine draw the mesh even when its bounds are out of view.
-- `setBounds(center, radius)`, which every object has, gives the object a bounding sphere of its own, which culling tests instead of the mesh's sphere. The center is relative to the object's origin, and both values are before the object's scale. Use it when a shader moves vertices outside the mesh's sphere: bounds that cover the moved vertices keep culling at work, where `setFrustumCulled(false)` turns it off. A group has no sphere of its own, so it needs one wherever a sphere is read, as a directional light's [hero shadow](../concepts/shadows.md#a-hero-shadow) reads it. A negative radius throws E1108 in development builds.
-- `setLevelBias(bias)` raises or lowers the threshold that picks this object's levels of detail, as Godot's `lod_bias` does. A bias above 1 draws coarser levels, and one below 1 keeps the object's detail. The same factor moves the distance at which the object hides. The bias is 1 by default, and does nothing without a mesh that has levels. [Levels of detail](../concepts/lod.md#the-bias-of-one-object) shows it.
+- `setBounds(center, radius)` gives the object a bounding sphere of its own, which culling tests instead of the mesh's sphere. Use it when a shader moves vertices outside the mesh's sphere. [Culling](../concepts/culling.md#bounds-that-you-set) explains how the engine culls with your bounds.
+- `setLevelBias(bias)` raises or lowers the threshold that picks this object's levels of detail, as the inverse of Godot's `lod_bias`: a Godot bias of 2 is about a null3D bias of 0.5. A bias above 1 draws coarser levels, and one below 1 keeps the object's detail. The same factor moves the distance at which the object hides. The bias is 1 by default, and does nothing without a mesh that has levels. [Levels of detail](../concepts/lod.md#the-bias-of-one-object) shows it.
 - `setDrawRange(start, end)` draws the mesh only between those distances from the camera to its nearest point, fading at each edge. [Distance bands](../concepts/lod.md#distance-bands) shows it.
-- `setOccluder(true)` makes the mesh block the view on WebGL2: the objects wholly behind it skip the GPU while software occlusion culling runs, which every preset leaves off. The `occluder` option of `createMesh` and `instantiate` sets it at the start, and it needs no rebuild. A model that `assets optimize` gave blockers starts with its meshes that have one blocking. On WebGL2, each such mesh draws its blocker in place of its mesh. Mark large, solid meshes of up to 4,096 triangles, such as buildings. Meshes that blend, use an alpha mask or a custom material, or are skinned never block on WebGL2. On WebGPU, GPU occlusion culling needs no mark: every opaque mesh may hide what lies behind it, and `setOccluder(false)` keeps one out. [Culling](../concepts/culling.md#gpu-occlusion-culling-on-webgpu) explains both methods.
 
-`setMaterial`, `setMesh`, `setBounds`, `setFrustumCulled`, `setCastShadows`, `setReceiveShadows`, `setLevelBias`, `setDrawRange` and `setOutlined` rebuild the draw tables, so call them at setup or behind a loading screen. A click that outlines the picked object rebuilds them once, which is fine. The [performance guide](../guides/performance.md#objects-during-play) lists the cost of each call. [Culling](../concepts/culling.md#bounds-that-you-set) explains how the engine culls with your bounds.
+These calls cost nothing during play:
+
+- `shaderId` is the number that a custom material reads as `object.id` for the mesh. Pass it to a uniform to pick out the mesh in a shader, as [Built-in shader inputs](../shaders/builtins.md#object) shows.
+- `setRenderOrder(order)` sets the order in which blended objects draw, lower first. Objects of one order draw farthest first. The engine orders opaque and masked objects itself, for speed, as the depth test decides what shows. [Materials and pipelines](../concepts/materials.md#the-transparent-pass) explains the sort.
+- `setMorphWeight(nameOrIndex, weight)` and `getMorphWeight(nameOrIndex)` set and read a morph target's weight: [Morph targets](animation.md#morph-targets).
+- `setOccluder(true)` makes the mesh block the view on WebGL2 while software occlusion culling runs, which every preset leaves off. On WebGPU, GPU occlusion culling needs no mark where it runs: every opaque mesh may hide what lies behind it. There, `setOccluder(false)` keeps a mesh out, and `setOccluder(true)` lets it back in. The `occluder` option of `createMesh` and `instantiate` sets it at the start, and a change needs no rebuild. [Culling](../concepts/culling.md#gpu-occlusion-culling-on-webgpu) explains both methods.
+
+A click that outlines the picked object rebuilds them once, which is fine. The [performance guide](../guides/performance.md#objects-during-play) lists the cost of each call.
+
+<details>
+<summary>Technical details: occluders and bounds</summary>
+
+On WebGL2, software occlusion culling is off in every preset. Mark large, solid meshes of up to 4,096 triangles, such as buildings. A model that `assets optimize` gave blockers starts with those meshes blocking, and each draws its blocker in place of its mesh. Meshes that blend, use an alpha mask or a custom material, or are skinned never block on WebGL2.
+
+The center that `setBounds` takes is relative to the object's origin, and both values are before the object's scale. A group has no sphere of its own, so it needs one wherever a sphere is read, such as a directional light's hero shadow. A negative radius throws E1108 in development builds.
+
+</details>
 
 ## Animation
 

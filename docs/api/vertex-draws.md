@@ -8,16 +8,16 @@ summary: "scene.createVertexDraw: a custom material and a vertex count with no m
 
 ```mermaid
 flowchart LR
-    shader["Your WGSL<br/>@builtin(vertex_index)<br/>@builtin(instance_index)"] --> call["scene.createVertexDraw"]
-    counts["vertices: 6<br/>instances: 50,000"] --> call
-    bounds["bounds: a sphere"] --> call
-    call --> object["A scene object<br/>place, layers, culling sphere"]
+    shader["Your WGSL<br/>@builtin(vertex_index)<br/>@builtin(instance_index)"] --> create["scene.createVertexDraw"]
+    counts["vertices: 6<br/>instances: 50,000"] --> create
+    bounds["bounds: a sphere"] --> create
+    create --> object["A scene object<br/>place, layers, culling sphere"]
     object --> list["The frame's draw list<br/>one draw, no buffers"]
 ```
 
 A draw from a vertex count has a material and two numbers instead of a mesh. The numbers say how many vertices make one shape, and how many copies of the shape to draw. The shader makes every vertex itself, from the vertex index and the instance index. So the draw needs no vertex buffer, no index buffer and no per-instance data. A frame uploads nothing for it, whatever the number of copies.
 
-Use it for rain, streaks, sparks, card effects and shapes that a formula makes. You cannot change the shape per copy or hit-test it, and the whole draw sorts as one object in the transparent pass.
+Use it for rain, streaks, sparks, card effects and shapes that a formula makes. Every copy has the same vertex count and no data of its own: the shader makes each one from its index. You cannot hit-test the shapes, and the whole draw sorts as one object in the transparent pass.
 
 ## Rain around the camera
 
@@ -103,7 +103,7 @@ A draw's WGSL declares no texture, and the engine writes no values for a `struct
 draw.setCounts(6, 80_000);
 ```
 
-A frame reads the counts from engine memory, so a change uploads nothing.
+A frame reads the counts from engine memory, so a change uploads nothing. A scene holds up to 256 vertex draws, and one more throws E1108.
 
 ## The bounds
 
@@ -143,7 +143,7 @@ A copy that leaves one side of the box comes back on the other side. The field t
 
 - A draw sorts as one object. Per-copy sorting is not available: give several draws when copies must sort against each other.
 - A draw casts no shadow and receives none.
-- A raycast tests the small triangle that the engine keeps for the draw's object. It does not test the shapes that the shader makes, so do not use a draw to hit-test.
+- Raycasts and picks never hit a vertex draw, so do not use one to hit-test.
 - The pick pass and the depth prepass draw no vertex draw, so it is no occluder.
 - A draw has one shape and one material. For add-on draws with a feature description, use [scene.addFeatureDraw](feature-draws.md).
 
@@ -151,7 +151,7 @@ A copy that leaves one side of the box comes back on the other side. The field t
 
 | Code | Cause |
 | --- | --- |
-| E1108 | A count that is not a whole number from 1 up, a sphere radius that is not above 0, or more draws than the scene holds |
+| E1108 | A count that is not a whole number from 1 up, a sphere radius that is not above 0, or more than 256 draws in a scene |
 | E1215 | WGSL that the plugin did not compile, or one whose `@vertex` entry point is not the draw shader's |
 | E1217 | An alpha mode other than `blend`, or the weighted blending |
 

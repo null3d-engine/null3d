@@ -6,8 +6,6 @@ summary: "createParticles: emitters, bursts and sub-emitters; closed-form GPU mo
 
 # Particles (@null3d/particles)
 
-> Particles do not cast shadows, and lights do not light them. A system does not sort its own particles back to front.
-
 ```mermaid
 flowchart LR
     update["system.update()<br/>in onLateUpdate"] --> births["Records of the particles<br/>born in the frame"]
@@ -18,7 +16,9 @@ flowchart LR
 
 The `@null3d/particles` package makes particle systems: sparks, fire, smoke, dust, rain, falling leaves, fireflies and magic. A system is an emitter and a buffer of particles. The emitter decides where and when particles are born. The GPU moves each particle, turns it and changes its color and size over its life.
 
-The GPU works out each particle in closed form, from its birth and its age. The engine's core writes each particle's record once, when the particle is born. The sketch starts the frame and reads settings, but runs no loop over the births. No pass simulates the particles. So a system of a million particles costs the CPU one call in a frame, and it draws the same on WebGPU and WebGL2. A held frame at a given time is the same whatever frames came before it.
+The GPU works out each particle in closed form, from its birth and its age. The engine's core writes each particle's record once, when the particle is born. The sketch starts the frame and reads settings, but runs no loop over the births. No pass simulates the particles.
+
+So a system of a million particles costs the CPU one call in a frame, and it draws the same on WebGPU and WebGL2. A held frame at a given time is the same whatever frames came before it.
 
 ```sh
 bun add @null3d/particles
@@ -56,7 +56,10 @@ export default defineSketch(async (ctx) => {
 });
 ```
 
-Pass the whole sketch context, `ctx`, as the first argument: the system reads its scene, and the frame's step from its clock. Call `update()` once per frame in `onLateUpdate`. There, objects' world places are the frame's, so an emitter that follows a moving object starts its particles where the object is now. `update` allocates nothing, once the table of a system with sub-emitters has grown. `update(dt)` steps by `dt` seconds in place of the frame's step.
+- Pass the whole sketch context, `ctx`, as the first argument. The system reads its scene, and the frame's step from its clock.
+- Call `update()` once per frame in `onLateUpdate`. There, objects' world places are the frame's, so an emitter that follows a moving object starts its particles where the object is now.
+- `update(dt)` steps by `dt` seconds in place of the frame's step.
+- `update` allocates nothing, once the table of a system with sub-emitters has grown.
 
 ## Emitters
 
@@ -138,9 +141,16 @@ return {
 };
 ```
 
-The particle shader samples the field once for each particle at the place where the particle passes. That air replaces `wind`, so the system's fixed wind stands aside while a field is given. A particle takes the air's own displacement over its age, which costs one texture read in the vertex shader. It cannot ride a gust along its path, because it keeps no speed of its own; the field's air pushes it where it is. A system without a field costs no read.
+The particle shader samples the field once for each particle at the place where the particle passes. That air replaces `wind`, so the system's fixed wind stands aside while a field is given. A particle takes the air's own displacement over its age, which costs one texture read in the vertex shader. It cannot ride a gust along its path, because it keeps no speed of its own. A system without a field costs no texture read. To drive a particle buffer yourself, see [The wind field](../concepts/particle-buffer.md#the-wind-field).
 
-The field's box follows the camera. Its newest state changes in every frame. So the add-on gives the field to the core in every frame. A page that drives a particle buffer itself calls `buffer.setWind(field, time.now)` after `wind.update()`, and `buffer.setWind(undefined, time.now)` to remove the field. Give the sketch time, which the field's gust and swirl read.
+A page that drives a particle buffer itself calls `buffer.setWind(field, time.now)` after `wind.update()`, and `buffer.setWind(undefined, time.now)` to remove the field. Give the sketch time, which the field's gust and swirl read.
+
+<details>
+<summary>Technical details: why the field is given in every frame</summary>
+
+The field's box follows the camera, and its newest state changes in every frame. So the add-on gives the field to the core in every frame.
+
+</details>
 
 ## Look
 
@@ -172,11 +182,15 @@ Without a map, each particle is a soft round dot. `particleTextures` makes textu
 
 ### Soft particles
 
-A particle that crosses the ground or a wall shows a hard line where it cuts into it. With `softness`, the particle fades out as it nears the surface behind it. The camera's view then copies its opaque depth once per frame, after its opaque objects, and the copy costs one full-screen pass. Frames without a soft system copy nothing. Views other than the camera's draw particles without the fade. The Low preset turns the `softParticles` quality setting off, so phones keep one render pass and draw particles with hard edges.
+A particle that crosses the ground or a wall shows a hard line where it cuts into it. With `softness`, the particle fades out as it nears the surface behind it.
+
+The camera's view then copies its opaque depth once per frame, after its opaque objects, and the copy costs one full-screen pass. Frames without a soft system copy nothing. Views other than the camera's draw particles without the fade. The Low preset turns the `softParticles` quality setting off, so phones keep one render pass and draw particles with hard edges.
 
 ## Drawing
 
-A system is one scene object, with one draw of all its particles. The particles blend and write no depth. The system sorts among the other blended objects by its bounds. Its own particles draw in the order they were born, so `additive` blending, which needs no order, suits most effects. With `normal` blending, keep particles soft and faint, as smoke is.
+A system is one scene object, with one draw of all its particles. The particles blend and write no depth. The system sorts among the other blended objects by its bounds.
+
+Its own particles draw in the order they were born, so `additive` blending, which needs no order, suits most effects. With `normal` blending, keep particles soft and faint, as smoke is.
 
 The system keeps its object's culling sphere around its live particles, from where they were born and how far they can move. Particles do not cast shadows, and lights do not light them. Fog fades them as it fades other surfaces. Additive particles fade out in fog, and others take on its color.
 
@@ -188,7 +202,14 @@ A system draws its quads from its own records, not from a mesh, so it has no lev
 
 Each live particle costs the GPU one quad, whose vertex shader works out its state. The core writes 32 bytes per birth, and the engine uploads only the records born in the frame. A system with a large capacity costs vertex work for every record, live or not, so size `capacity` for the particles you need.
 
-The GPU keeps birth times as 32-bit floats. So every 1,024 seconds, a system moves the time that its birth times count from. It rewrites the records' birth times 16,384 at a time, one share per frame, so even a system of a million particles adds no long frame. A system with sub-emitters keeps a table of the events to come, 80 bytes per event. It starts small and doubles while the system warms up, up to one event per sub-emitter for each particle.
+A system that runs for hours adds no long frame.
+
+<details>
+<summary>Technical details: birth times and the sub-emitter table</summary>
+
+The GPU keeps birth times as 32-bit floats. So every 1,024 seconds, a system moves the time that its birth times count from. It rewrites the records' birth times 16,384 at a time, one share per frame. A system with sub-emitters keeps a table of the events to come, 80 bytes per event. It starts small and doubles while the system warms up, up to one event per sub-emitter for each particle.
+
+</details>
 
 ## Related pages
 

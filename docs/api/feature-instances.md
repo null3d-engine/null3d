@@ -10,18 +10,18 @@ summary: "scene.addComputeInstances draws a capacity of instances from your own 
 
 ```mermaid
 flowchart LR
-    description["defineFeature<br/>frame 'opaque', kind 'draw'"] --> call["scene.addComputeInstances"]
-    shader["Your WGSL"] --> call
-    vertices["Your shape"] --> call
-    call --> buffers["Your count and instance buffers"]
+    description["defineFeature<br/>frame 'opaque', kind 'draw'"] --> create["scene.addComputeInstances"]
+    shader["Your WGSL"] --> create
+    vertices["Your shape"] --> create
+    create --> buffers["Your count and instance buffers"]
     buffers --> compute["Your compute pass<br/>writes the count and the instances"]
     compute --> convert["The engine's conversion<br/>world rows to camera-relative rows"]
     convert --> list["The frame's draw list<br/>the count copied into the indirect draw"]
     list --> gpu["WebGPU<br/>the GPU's count drawn"]
-    call --> batch["WebGL2<br/>an instance batch the CPU fills"]
+    create --> batch["WebGL2<br/>an instance batch the CPU fills"]
 ```
 
-`scene.addComputeInstances` draws one shape once for each live instance. On WebGPU the live count comes from GPU memory. On WebGL2 the page gives it. Use it for a large set whose count a compute pass writes each frame, such as foliage that the pass places and culls. The add-on's compute writes the count word and the per-instance rows, and the engine draws exactly that many instances.
+`scene.addComputeInstances` draws one shape once for each live instance. On WebGPU the live count comes from GPU memory. On WebGL2 the sketch gives it, with `draw.setInstances` or `draw.setCount`. Use it for a large set whose count a compute pass writes each frame, such as foliage that the pass places and culls. The add-on's compute writes the count word and the per-instance rows, and the engine draws exactly that many instances.
 
 This is the adapter for a [feature description](features.md) with `kind: 'draw'` and `frame: 'opaque'`. The description places the draw; the options give the shape, the shader and the capacity.
 
@@ -72,8 +72,12 @@ export default defineSketch(async ({ scene }) => {
     count: 0,
   });
   // The add-on's compute pass binds draw.instances and draw.counts, then writes them each frame.
-  // A page without compute fills both on the CPU, which draws the same picture.
-  draw.setInstances(rows, liveCount);
+  // On WebGL2, which has no compute, the sketch fills both on the CPU with setInstances.
+  const row = new Float32Array(16);
+  row[0] = 1; row[5] = 1; row[10] = 1; // an identity matrix, in the first three rows
+  row[3] = 0; row[7] = 0; row[11] = 0; // the translation, in each row's w
+  row[12] = draw.materialIndex; // the first id word names the draw's material
+  draw.setInstances(row, 1);
 });
 ```
 
@@ -109,6 +113,26 @@ The draw's material is opaque. The options take the material's other values, suc
 
 The engine's vertex shaders read an instance matrix relative to the camera. On WebGPU the engine converts the world rows to that space on the GPU, once for each draw in each frame, before the pass that draws them. The rows that you write stay world rows, so a camera that moves costs no upload. The engine keeps a second buffer of `capacity` rows for the converted rows, which doubles the memory that the draw's instances take.
 
+<details>
+<summary>Technical details: a fill shader that writes one row</summary>
+
+```wgsl
+@group(0) @binding(0) var<storage, read_write> counts: atomic<u32>;
+@group(0) @binding(1) var<storage, read_write> instances: array<vec4f>;
+
+@compute @workgroup_size(1)
+fn main() {
+  for (var i = 0u; i < 16u; i++) { instances[i] = vec4f(0.0); }
+  instances[0] = vec4f(1.0, 0.0, 0.0, 0.0);
+  instances[5] = vec4f(0.0, 1.0, 0.0, 0.0);
+  instances[10] = vec4f(0.0, 0.0, 1.0, 0.0);
+  instances[12] = vec4f(0.0, 0.0, 0.0, 0.0); // the draw's material index goes here
+  atomicStore(&counts, 1u);
+}
+```
+
+</details>
+
 ```ts
 render.addPass({
   kind: 'compute',
@@ -136,17 +160,37 @@ On WebGL2, each row's matrix is split into a position, a rotation and a scale th
 
 `draw.setCount(n)` works on both paths. On WebGPU it is the count of a frame that the add-on's compute has not written yet. The compute's word replaces it in the same frame. The camera's view and every shadow view draw the word's count. An instance that the GPU counts therefore casts its shadow by that same count.
 
+## Rules
+
+- Run the add-on's compute in `band: 'before'`, as the example does.
+- Create the draw in the sketch's setup, and await `addComputeInstances()` before the first frame, or the frame fails with [E1506](../errors/E1506.md).
+- Keep the add-on's count at or under `capacity`.
+
 ## Limits
 
 - The draw records at the opaque point, and its feature records in the main view alone. The engine still draws the object into the shadow views of the lights that it casts into. The adapter places no transparent instance draw, and none in a reflection or a scene pass.
 - The draw records only while the description's `ready` callback answers true. The sketch's thread asks it once each frame. While it answers false the engine records no draw, no count copy and no conversion for it, and draws none of its rows on WebGL2.
 - The engine does not cull the draw by the camera's frustum or layers. Your compute's cull, or your count, decides what draws. `draw.setVisible(false)` stops it, and so does a hidden parent.
-- The engine does not bound the count. Keep the add-on's count at or under `capacity`. Past it, the GPU reads past the end of the buffer.
-- The engine keeps two buffers of `capacity` rows: the world rows that you fill and the camera-relative rows that it converts them into each frame. A large capacity therefore takes twice the instance memory.
-- The conversion uses the main view's camera, so every view, the shadows included, reads the rows converted for that camera. A shadow view draws the add-on's count word too, so the instances that cast shadows are the instances that the GPU counts.
-- The shadow views cull the faces that point away from the light, as every caster does. A thin surface, such as a leaf or a standing disc, therefore casts nothing while the light reaches its back. Give such a draw `doubleSided` to cast from either side.
-- The add-on's compute pass must run before the scene draws: use `band: 'before'`, as the example does. Rows that it writes after the scene are too late for that frame's opaque pass.
-- Create the draw in the sketch's setup, and await `addComputeInstances()` before the first frame. A device that draws the scene directly fixes that choice at its first frame. Such a device cannot take a draw whose count the GPU writes later. The frame then fails with [E1506](../errors/E1506.md).
+- The engine does not bound the count. Past `capacity`, the GPU reads past the end of the buffer.
+- The conversion uses the main view's camera, so every view, the shadows included, reads the rows converted for that camera.
+- The shadow views cull the faces that point away from the light. A thin surface, such as a leaf or a standing disc, therefore casts nothing while the light reaches its back. Give such a draw `doubleSided` to cast from either side.
+- On an Apple GPU in Safari, or in any browser on iPhone and iPad, the engine can draw the scene directly, with no indirect draws. `engine.capabilities.directDraws` is then true (see [GPU tiers and backends](../concepts/backends.md)). Such a device sets its draw list at its first frame, and cannot take a draw whose count the GPU writes later. The frame then fails with E1506.
 - The feature description's `reads`, `writes`, `outputs` and `provides` stay with the [feature registry](features.md).
+
+## Errors
+
+| Code | Cause |
+| --- | --- |
+| E1223 | A description that the adapter cannot take, such as a `kind` other than `'draw'`, a `frame` other than `'opaque'`, or a view other than `'main'`. |
+| E1506 | A device that draws the scene directly took the draw at its first frame, and the count arrives later. |
+
+## Related pages
+
+- [Feature descriptions](features.md): the description that places the draw.
+- [Add-on draws](feature-draws.md): a draw over its own vertices, rather than a capacity of instances.
+- [Compute passes](render.md#compute-passes): the pass that writes the count and the rows.
+- [Grass](grass.md): an add-on that draws with instance draws.
+
+## API reference
 
 [The API reference](reference/feature-instances.md) lists every export of this page with its type and description. The engine's doc comments make it.

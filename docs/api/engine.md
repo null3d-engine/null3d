@@ -29,7 +29,11 @@ try {
 
 ## The start
 
-`createEngine` tests what the browser offers, and picks the build and the GPU path from those tests, never from browser or GPU names. It starts the engine's threads, loads the sketch module and runs the sketch's setup. It resolves once the setup has run, and `engine.firstFrame` resolves once the GPU has finished the first frame. The engine can stop drawing before that frame. Then `engine.firstFrame` rejects with the failure that ended its frames, such as [E1404](../errors/E1404.md) when the thread that draws fails. A destroy before the first frame rejects it with [E1420](../errors/E1420.md). When the engine chose the preset itself, its [preset check](../concepts/quality-presets.md#the-preset-check) measures the first frames of play, and `engine.presetChecked` resolves once the check has ended. With the `presetCheck` option's `before-play`, the check runs before play, and `createEngine` waits for it. The first frame is then on the screen before `createEngine` resolves. On a repeat visit, the engine takes the check's stored result instead, and runs no check.
+`createEngine` tests what the browser offers, and picks the build and the GPU path (tier) from those tests, not from browser or GPU names. One later choice on WebGPU does read names: a start-up measurement of the draw path runs only on an Apple GPU in WebKit ([Never branch on GPU names](../concepts/backends.md#never-branch-on-gpu-names)). It starts the engine's threads, loads the sketch module and runs the sketch's setup. It resolves once the setup has run.
+
+`engine.firstFrame` resolves once the GPU has finished the first frame. If the engine stops drawing before that frame, `engine.firstFrame` rejects with the failure that ended its frames, such as [E1404](../errors/E1404.md) when the thread that draws fails. A destroy before the first frame rejects it with [E1420](../errors/E1420.md).
+
+When the engine chose the preset itself, its [preset check](../concepts/quality-presets.md#the-preset-check) measures the first frames of play, and `engine.presetChecked` resolves once the check has ended. With the `presetCheck` option's `before-play`, the check runs before play, and `createEngine` waits for it. The first frame is then on the screen before `createEngine` resolves. On a repeat visit, the engine takes the check's stored result instead, and runs no check.
 
 `onProgress` reports each stage of the start, in this order:
 
@@ -63,7 +67,7 @@ An `AbortSignal` in `signal` cancels a start in progress. Then `createEngine` st
 | [E1406](../errors/E1406.md) | The engine core's WebAssembly file did not download. |
 | [E1418](../errors/E1418.md) | The page's Content-Security-Policy blocks WebAssembly: its `script-src` lacks `'wasm-unsafe-eval'`. |
 | [E1109](../errors/E1109.md) | The browser refused the engine's memory, even after about 45 seconds of tries. |
-| [E1402](../errors/E1402.md) | The engine core's file comes from another build than the engine's JavaScript. Every build checks that the threaded core imports shared memory, and development builds also check each function. On null3D's own dev server, they also check that the core was built from the checkout's Rust sources. |
+| [E1402](../errors/E1402.md) | The engine core's file comes from another build than the engine's JavaScript. Every build checks that the threaded core imports shared memory, and development builds also check each function. |
 | [E1410](../errors/E1410.md) | The sketch module did not load, at the first import or the second: it did not download, or its code threw an error while it loaded. |
 | [E1401](../errors/E1401.md) | The sketch module's default export is not `defineSketch(...)`. |
 | [E1214](../errors/E1214.md) | An option of `defineSketch` is out of its range. |
@@ -89,15 +93,15 @@ The canvas takes its size from CSS. The engine sizes the canvas's drawing buffer
 | --- | --- | --- |
 | `preset` | `'auto'` | The quality preset, which the engine chooses for the device unless the page names one: [Quality presets](../concepts/quality-presets.md). The `?preset=` switch wins over it. |
 | `presetCheck` | `'during-play'` | When the engine checks a preset that it chose: in the first frames of play, while the loading screen is gone, or `'before-play'`, with `createEngine` waiting for it. `engine.presetChecked` resolves once the check has ended: [The preset check](../concepts/quality-presets.md#the-preset-check). The `?preset-check=` switch wins over it. |
-| `targetFps` | The display's rate, at most 60 | The frame rate that the engine defends. `'display'` defends the display's full rate, such as 120 or 144 for a game. A whole number caps the target at that rate: [Quality presets](../concepts/quality-presets.md#the-target-frame-rate). The `?target-fps=` switch wins over it. Another value fails with [E1213](../errors/E1213.md). |
+| `targetFps` | The display's rate, at most 60 | The frame rate that the engine defends. `'display'` defends the display's full rate, such as 120 or 144 for a game. A whole number caps the target at that rate: [Quality presets](../concepts/quality-presets.md#the-target-frame-rate). The `?target-fps=` switch wins over it. |
 | `maxPixelRatio` | The preset's cap | Caps the screen's pixel ratio that the engine draws at, in place of the preset's cap |
 | `antialias` | The preset's mode | `'msaa'`, `'fxaa'` or `'none'`, in place of the preset's anti-aliasing mode: [GPU tiers and backends](../concepts/backends.md#color-and-anti-aliasing-on-each-tier) |
-| `hdr` | The device's path | `false` draws the scene into 8-bit color, where each material's shader applies the output transform, instead of HDR color, which the final pass tone maps. Both paths honour a material's `toneMapped: false`, and the 8-bit path also honours it on a blended surface: [Materials that keep their display color](../concepts/color-management.md#materials-that-keep-their-display-color). The `?hdr=off` switch takes that path too. |
+| `hdr` | The device's path | `false` draws the scene into 8-bit color, where each material's shader applies the output transform, instead of HDR color, which the final pass tone maps. Both paths honor a material's `toneMapped: false`, and the 8-bit path also honors it on a blended surface: [Materials that keep their display color](../concepts/color-management.md#materials-that-keep-their-display-color). The `?hdr=off` switch takes that path too. |
 | `shadowTiles`, `shadowTileSize`, `pointLightShadows` | The preset's values | The shadows of spot and point lights, in place of the preset's settings: [Shadows](../concepts/shadows.md#settings). Each is fixed while the engine runs. |
-| `cloudSteps` | The preset's value | The steps of each ray of the sky's volumetric cloud tier, in place of the preset's value: 0 draws the flat layer, and a number above 0 the volumetric clouds, at that many steps. WebGL2 and compatibility mode stop at Medium, so a page there reaches the tier with this option or with `quality.set`. The tier's noise and shaders load at its first use: [Quality API](quality.md#settings). Another value fails with [E1213](../errors/E1213.md). |
-| `shadowCascades`, `shadowMapSize`, `heroTileSize`, `gpuOcclusion`, `morphTargets`, `softwareOcclusion`, `textureMemoryMiB` | The preset's values | These settings, in place of the preset's values: [Quality API](quality.md#settings). Another value fails with [E1213](../errors/E1213.md). |
+| `cloudSteps` | The preset's value | The steps of each ray of the sky's volumetric cloud tier, in place of the preset's value: 0 draws the flat layer, and a number above 0 the volumetric clouds, at that many steps. WebGL2 and compatibility mode stop at Medium, so a page there reaches the tier with this option or with `quality.set`. The tier's noise and shaders load at its first use: [Quality API](quality.md#settings). |
+| `shadowCascades`, `shadowMapSize`, `heroTileSize`, `gpuOcclusion`, `morphTargets`, `softwareOcclusion`, `textureMemoryMiB` | The preset's values | These settings, in place of the preset's values: [Quality API](quality.md#settings). |
 | `depthPrepass` | `true` on WebGL2 and `false` on WebGPU, on every preset | `true` draws the depth of the opaque objects before they are shaded: [The depth prepass](../concepts/quality-presets.md#the-depth-prepass). The `?prepass=` switch wins over it. |
-| `momentTransparency` | `false` on every preset | `true` blends the camera's blended surfaces in a layer that needs no sort, and draws those surfaces twice: [Moment transparency](materials.md#moment-transparency). It stays fixed while the engine runs. The `?moments=` switch wins over it. Another value fails with [E1213](../errors/E1213.md). |
+| `momentTransparency` | `false` on every preset | `true` blends the camera's blended surfaces in a layer that needs no sort, and draws those surfaces twice: [Moment transparency](materials.md#moment-transparency). It stays fixed while the engine runs. The `?moments=` switch wins over it. |
 | `keepTextureCopies` | `true` on phones and tablets, `false` on desktops | `true` keeps the engine's copy of each texture's texels after their upload, so a texture draws with its map again after the browser takes the GPU away. It costs about one more copy of each image in memory: [When the GPU goes away](../concepts/backends.md#when-the-gpu-goes-away). With it, the engine also gives its GPU back while the page sits in the browser's back-forward cache. |
 | `gpu` | `'auto'` | Forces a GPU path, for tests only. The `?gpu=` switch in the page's address wins over it, and also takes `compat` for WebGPU's compatibility mode. |
 | `powerPreference` | `'high-performance'` | Picks the GPU on a device that has two. `'low-power'` saves battery. The engine's start-up tests of the GPU run on the GPU that it picks. |
@@ -106,9 +110,9 @@ The canvas takes its size from CSS. The engine sizes the canvas's drawing buffer
 | `largeWorld` | false | Keeps the positions of objects exact at any distance from the origin, for scenes the size of a planet: [Large worlds and precision](../concepts/large-worlds.md#large-world-mode) |
 | `sketchThread` | `'worker'` | The thread that runs the sketch. `'main'` runs it on the page's main thread, where it can reach the DOM: [Where the sketch runs](../concepts/architecture.md#where-the-sketch-runs). The `?sketch-thread=` switch wins over it, and the single-threaded build always runs the sketch on the main thread. |
 | `memory` | `{ maximumMiB: 1024 }` | The most memory that the engine's threads share: [Memory](#memory) |
-| `expectedObjects` | None | The objects that the scene starts with room for, from 1 to 1,048,575, in place of 1,023. A scene that knows its size never grows its tables during play: [Scene limits](scene.md#limits). Another value fails with [E1213](../errors/E1213.md). |
-| `maxLabels` | `4096` | The most labels that the sketch tracks at once, from 1 to 65,536: [Labels that follow objects](ui.md). Another value fails with [E1213](../errors/E1213.md). |
-| `maxLabels3d` | `256` | The most labels whose `transform` is `'world'` or `'billboard'`, which are planes of the scene, from 0 to 65,536: [Labels as planes of the scene](ui.md#labels-as-planes-of-the-scene). Another value fails with [E1213](../errors/E1213.md). |
+| `expectedObjects` | None | The objects that the scene starts with room for, from 1 to 1,048,575, in place of 1,023. A scene that knows its size never grows its tables during play: [Scene limits](scene.md#limits). |
+| `maxLabels` | `4096` | The most labels that the sketch tracks at once, from 1 to 65,536: [Labels that follow objects](ui.md). |
+| `maxLabels3d` | `256` | The most labels whose `transform` is `'world'` or `'billboard'`, which are planes of the scene, from 0 to 65,536: [Labels as planes of the scene](ui.md#labels-as-planes-of-the-scene). |
 | `onProgress` | None | Reports each stage of the start, and a download stage's bytes |
 | `sketchData` | None | Start data that the sketch's setup reads as `ctx.data`, before the first frame and in hold mode. It takes plain JSON data, up to 64 KiB as JSON, and another value fails with [E1213](../errors/E1213.md). A recording keeps it: [Start data](page.md#start-data) |
 | `onSketchMessage` | None | Receives the sketch's messages from the start of its setup: [Messages](page.md) |
@@ -120,6 +124,8 @@ The canvas takes its size from CSS. The engine sizes the canvas's drawing buffer
 | `preload` | None | Features whose shaders load before the first frame, such as `['skinning', 'bloom']`, for a game that must fetch nothing while it plays. Each feature's shaders otherwise download the first time the sketch uses it: [Loading screens](../guides/loading-screens.md). A name that the engine does not know throws [E1421](../errors/E1421.md). |
 | `still` | true | `false` draws every frame of a view that holds still, which otherwise blends its frames into a sharper picture and then stops drawing until something changes: [Still-camera accumulation](../concepts/post-processing.md#still-camera-accumulation). The `?still-camera=off` switch turns it off too. |
 | `stats` | false | `true` shows the stats overlay from the first frame, `{ collapsed: true }` shows it with its card closed, and `{ corner: 'bottom-right' }` puts it over the canvas's bottom-right corner: [Stats overlay and frame figures](debug.md#stats-overlay-and-frame-figures). The `?stats` switch shows it too, and `?stats=off` hides it. A held engine shows no overlay. |
+
+A value outside its range fails the start with [E1213](../errors/E1213.md).
 
 ## A transparent canvas
 
@@ -145,40 +151,99 @@ const engine = await createEngine({ canvas, sketch, memory: { maximumMiB: 2048 }
 
 The browser reserves address space for the whole maximum when the engine starts, and the memory grows into it as the scene needs. Every other engine and WebAssembly module on the page, such as a physics engine, shares the address space that is left. So a larger maximum leaves less room for them. In Safari on an iPad Pro, a page holds the memories of 6 engines at 1024 MiB, and of 3 at 4096 MiB.
 
-Ask for more only when a scene needs it. Each instance row takes about 210 bytes of engine memory, so 1024 MiB holds about 5 million rows with the rest of the scene. Each place for an object takes about 267 bytes in the scene's tables. While the tables grow, the old and the new ones both take memory for a moment. A scene that needs more memory than the maximum fails with [E1109](../errors/E1109.md). A maximum that is not a whole number of MiB from 256 to 4096 fails the start with [E1409](../errors/E1409.md).
+Ask for more only when a scene needs it. A scene that needs more memory than the maximum fails with [E1109](../errors/E1109.md). A maximum that is not a whole number of MiB from 256 to 4096 fails the start with [E1409](../errors/E1409.md).
+
+<details>
+<summary>Technical details: how much memory a scene takes</summary>
+
+- Each instance row takes about 210 bytes of engine memory, so rows alone fill 1024 MiB at about 5 million. Leave room for the meshes and the rest of the scene, or ask for a larger maximum.
+- Each place for an object takes about 267 bytes in the scene's tables.
+- While the tables grow, the old and the new tables both take memory for a moment.
+
+</details>
 
 The single-threaded build's memory is not shared. It grows as the scene needs, so the option does not change it. The `?memory=<MiB>` switch in the page's address wins over the option, for tests.
 
 ## What the engine reports
 
-- `engine.capabilities` gives the GPU path (`tier`), whether the engine runs threaded, and the optional features and limits of the GPU path. It also gives whether the scene draws HDR color (`hdr`), the depth mode, and the most objects and instance rows that the device draws (`maxInstances`). The `directDraws` field says whether the device draws buckets directly. A start-up measurement picks that path only on an Apple GPU in Safari, or in any browser on iPhone and iPad. The `drawPath` field says why the engine took its path, such as `not-apple-gpu-in-webkit`. The `halfPrecision` field says whether the scene shaders do their color math at half precision, which only the `?half=on` switch turns on. [GPU tiers and backends](../concepts/backends.md) explains each.
-- `engine.mode` gives the build, the latency mode, the thread that runs the sketch and the thread that draws. It also gives the most job workers that the engine may start, and the held time in hold mode. The job workers start as the work grows ([Architecture](../concepts/architecture.md#when-the-job-workers-start)). It gives the quality preset that runs now and what the preset check measured. It also gives the starts that crashed the tab before this one, and the memory maximum. While a check runs during play, `presetCheck` is null and the preset can still drop. `engine.presetChecked` resolves once both hold the check's choice. The `keepTextureCopies` field says whether the engine keeps each texture's copy. It restores a map after a GPU loss ([When the GPU goes away](../concepts/backends.md#when-the-gpu-goes-away)). The `renderFallback` field says why the page draws where a worker was meant to, or is null.
+- `engine.capabilities` gives the GPU path that the engine chose and what that path offers: its tier, its features and limits, HDR, depth, and the most objects it draws. [EngineCapabilities](reference/engine.md#enginecapabilities) lists every field. [GPU tiers and backends](../concepts/backends.md) explains each.
+- `engine.mode` gives how the engine runs on this device: its build, its threads, its quality preset and its memory maximum. [EngineMode](reference/engine.md#enginemode) lists every field. `presetCheck` is null while a check runs during play, and `engine.presetChecked` resolves when the check is done. The job workers start as the work grows ([Architecture](../concepts/architecture.md#when-the-job-workers-start)).
 - `engine.report` holds every result of the start's tests, as plain JSON.
 
 ## The running engine
 
 - `setPaused(true)` stops the sketch's frames, and `setPaused(false)` resumes them. The first step after a pause is 0 seconds.
 - `detach()` takes the canvas off the page and pauses the engine, and `attach(container)` puts it back. Use them when a single-page app leaves the view with the canvas and comes back. The engine keeps its threads, its GPU resources and the scene.
-- `onFailure(handler)` receives a failure after the start. It can be a GPU that the engine could not get back ([E1302](../errors/E1302.md)), or an engine thread that failed ([E1404](../errors/E1404.md)). It can be a file of a custom shader's builds that a pipeline needs and that did not download ([E1424](../errors/E1424.md)). After E1404 or E1424 the engine stops drawing new frames, and the canvas keeps the last one: destroy the engine and start a new one. It can also be a job worker that did not start ([E1405](../errors/E1405.md)). On WebGPU it can be a GPU that ran out of memory ([E1304](../errors/E1304.md)) or rejected the engine's work ([E1305](../errors/E1305.md)). On either GPU path it can be a pipeline of the scene's objects that the GPU's driver refused twice ([E1307](../errors/E1307.md)). After these three the engine draws on without the objects that failed. The first handler that attaches after a failure that no handler heard still receives it, and the engine also logs the failure to the console. The handler is the only place where these failures show: no promise rejects for them. A failure that ends the frames reaches these handlers before the `onStop` handlers.
-- `onStop(handler)` calls the handler once, when the engine stops drawing for good. That happens as `destroy()` begins, or at a failure after which it draws no new frames: [E1302](../errors/E1302.md), [E1404](../errors/E1404.md) or [E1424](../errors/E1424.md). At such a failure, the `onFailure` handlers hear it first. A handler added after that runs at once. A handler that throws reaches the console, and the other handlers and the stop go on. Use it to end the page's own work for the engine, such as a frame loop that sends the sketch messages. It returns a function that removes the handler.
+- `onFailure(handler)` receives a failure after the start. A failure that ends the frames reaches these handlers before the `onStop` handlers. The first handler that attaches after a failure that no handler heard still receives it, and the engine also logs the failure to the console. The handler is the only place where these failures show: no promise rejects for them. [Failures after the start](#failures-after-the-start) lists each code and what happens next.
+- `onStop(handler)` calls the handler once, when the engine stops drawing for good. That happens as `destroy()` begins, or at a failure after which it draws no new frames. At such a failure, the `onFailure` handlers hear it first. A handler added after that runs at once. A handler that throws reaches the console, and the other handlers and the stop go on. Use it to end the page's own work for the engine, such as a frame loop that sends the sketch messages. It returns a function that removes the handler.
 - `onSketchError(handler)` receives each distinct error that the sketch's frame code threw, or a core call in a frame. The engine keeps drawing frames, so such an error does not stop it. `measure()` counts each frame whose update failed in `updateErrors`, and leaves it out of `updatedFps`. Without a handler, the error reaches the console. The `onSketchError` option adds a handler from the start.
 - `simulateGpuLoss()` acts out a loss of the GPU, so you can test how the page handles one. The engine starts a new GPU device and draws the whole scene again.
 - `measure(seconds)` measures the running engine: CPU time per frame by thread, GPU time, frame intervals, uploads, draw calls, memory and load time. [Performance guide](../guides/performance.md) explains the numbers. It measures whatever build the page runs. In a development build, the development checks add to the CPU times, so time a production build ([Measure fairly](../guides/performance.md#measure-fairly)).
 - `stats(true)` shows the stats overlay over the canvas, and `stats(false)` hides it: [Stats overlay and frame figures](debug.md#stats-overlay-and-frame-figures). Options in place of `true` set whether the card starts closed and the canvas's corner that the overlay sits in, on a shown overlay too. The sketch's `debug.stats` shows and hides the same overlay, and the last call from either side wins.
 - `capture()` resolves with a PNG image of the next frame that the engine draws: [Screenshots](#screenshots).
-- `captureFrame()` returns the pixels of the next frame that the engine draws, as RGBA8 rows, top row first. The thread that draws waits for its frame loop to take a new frame, then draws that frame again offscreen and reads it back. So captures back to back give newer frames, even on a slow GPU whose readback holds that thread up. In hold mode it returns the held frame and draws nothing. On a transparent canvas the pixels keep their premultiplied alpha. Tests use it: [Testing your sketch](../guides/testing.md).
+- `captureFrame()` returns the pixels of the next frame that the engine draws, as RGBA8 rows, top row first. Tests use it: [Testing your sketch](../guides/testing.md).
+
+<details>
+<summary>Technical details: how captureFrame reads a frame</summary>
+
+The thread that draws waits for its frame loop to take a new frame, then draws that frame again offscreen and reads it back. So captures back to back give newer frames, even on a slow GPU whose readback holds that thread up. In hold mode it returns the held frame and draws nothing. On a transparent canvas the pixels keep their premultiplied alpha.
+
+</details>
+
 - `saveRecording()` resolves with the recording of the session so far, or `undefined` when the page records none. A page records with the `?record` switch, and `?replay=<file>` plays a saved recording: [Record a session that went wrong](../guides/testing.md#record-a-session-that-went-wrong).
 - `postToSketch` and `onSketchMessage` send and receive [messages](page.md).
-- `inspect(call, args)` runs an inspection call against the live scene, for the in-page inspector and the MCP server: `objects`, `object`, `setObject`, `setMaterial`, `stats`, `errors`, `graph`, `setQuality`, `highlight` and `info`. The call runs between frames, in the thread that runs the sketch, and returns a JSON-safe value. The page answers `capture` itself, with `{ png, bytes }`: the PNG image of the next frame as base64 text, and its size in bytes. The method exists only in a development build, which carries the channel, and a production build leaves it out. Code that uses it checks for it first: `await engine.inspect?.('objects')`. [Debugging](../guides/debugging.md#the-in-page-inspector) shows the calls.
+- `inspect(call, args)` runs an inspection call against the live scene, for the in-page inspector and the MCP server. The method exists only in a development build, which carries the channel, and a production build leaves it out. Code that uses it checks for it first: `await engine.inspect?.('objects')`. [Debugging](../guides/debugging.md#the-in-page-inspector) shows the calls.
+
+<details>
+<summary>Technical details: the inspection calls</summary>
+
+`inspect` takes `objects`, `object`, `setObject`, `setMaterial`, `stats`, `errors`, `graph`, `setQuality`, `highlight` and `info`. The call runs between frames, in the thread that runs the sketch, and returns a JSON-safe value. The page answers `capture` itself, with `{ png, bytes }`: the PNG image of the next frame as base64 text, and its size in bytes.
+
+</details>
+
 - `labels.bind(id, element)` moves an HTML element over the label that the sketch tracks under `id`: [Labels that follow objects](ui.md).
 - `registerVideo(video, { name, maxSize, frameRate })` shows a video element on the page as a texture in the sketch, which makes it with `textures.fromVideo(name)`: [Video textures](../guides/video-textures.md). The page sends one image per frame that the video presents, scaled to `maxSize`, 512 texels by default. The call returns a function that stops the frames.
-- `requestPointerLock()` locks the pointer to the canvas, for [first-person controls](controls.md#pointer-lock) and games that turn with the mouse. Call it in a click or key handler: browsers lock the pointer only right after the user acts. It resolves once the lock begins. It fails with [E1425](../errors/E1425.md) when the browser refuses the lock: on a phone, in a frame without `allow-pointer-lock`, or just after the user pressed Esc. The option `{ unadjustedMovement: true }` asks for the mouse's raw movement, which some browsers cannot give. While the lock holds, the sketch's `input.pointer.locked` is true. The user ends the lock with Esc, and the page with `document.exitPointerLock()`. Destroying the engine ends a lock that it took or that its input read. On an engine started with `input: false`, it fails with [E1426](../errors/E1426.md): the code that records the page's input locks the canvas itself. Destroying the engine then leaves that lock.
+- `requestPointerLock()` locks the pointer to the canvas, for [first-person controls](controls.md#pointer-lock) and games that turn with the mouse. Call it in a click or key handler: browsers lock the pointer only right after the user acts. It resolves once the lock begins. It fails with [E1425](../errors/E1425.md) when the browser refuses the lock: on a phone, in a frame without `allow-pointer-lock`, or just after the user pressed Esc. While the lock holds, the sketch's `input.pointer.locked` is true. The user ends the lock with Esc, and the page with `document.exitPointerLock()`. Destroying the engine ends a lock that it took or that its input read.
+
+<details>
+<summary>Technical details: pointer lock in edge cases</summary>
+
+The option `{ unadjustedMovement: true }` asks for the mouse's raw movement, which some browsers cannot give. On an engine started with `input: false`, the call fails with [E1426](../errors/E1426.md): the code that records the page's input locks the canvas itself. Destroying the engine then leaves that lock.
+
+</details>
+
 - `destroy()` stops the engine and its threads, and the engine cannot start again. The sketch's `onDestroy` runs first, and every later call from the sketch's code fails with [E1420](../errors/E1420.md). Wait for its promise before you start another engine on the same page.
-- The page keeps the memory that a stopped engine's threads shared, for about 30 seconds. The next engine with the same memory maximum takes it. React's StrictMode, route changes and hot reloads destroy and create the engine again. Such a page then asks the browser for no new memory. Safari can refuse a new memory for some seconds after a page drops one. The page keeps at most 2 memories. Their RAM stays in use until a new engine takes one, the 30 seconds end or the page goes away. Call `destroy({ release: true })` when the page will not start the engine again soon: the browser can then free the memory at once. An engine whose threads did not all stop cleanly leaves no memory to reuse. The single-threaded build's memory is not shared, and the page keeps its core for the next engine.
-- A new engine can start on the canvas of an engine that you destroyed. Its start waits until the old engine has stopped, so it can begin before `destroy()` resolves. React's StrictMode needs this, because it starts an effect twice on one `<canvas>`. A canvas that a worker drew on stays with that worker. So the new engine needs the same thread options as the old one. The worker ends when the canvas leaves the page or the page goes away. It also ends when the browser refuses memory for a new engine while no engine runs on the canvas. A new engine on its canvas then fails with [E1419](../errors/E1419.md), as on a canvas whose engine still runs.
-- In Safari, a stopped engine's canvas that stays in the page keeps the engine's memory, 1 GiB by default, until that worker ends. A new engine that needs the room gets it. Other code does not: a page that also loads a large WebAssembly module can run out of room. So remove the canvas from the page once you are done with it.
-- A page that goes away without `destroy()`, such as a page in a frame that your app removes, still gives back the engine's memory. When the page hides, the engine wakes its job workers and ends their loops. Safari never frees the memory of a worker that it stops while the worker waits for work. Without this, an iPad would run out of room after a few such pages. A page that the browser brings back from its back-forward cache runs on, with the job workers' share of the work on the sketch thread.
-- Where the engine keeps texture copies, as phones and tablets do by default, it gives its GPU back. It does so while the browser keeps the page in its back-forward cache. The thread that draws destroys its textures, its buffers and its device. When the page shows again, it starts a new device, as after a GPU loss, and builds every pipeline again before the scene shows. The cached page then leaves its GPU memory to the next page. A repeat visit of a heavy page on a phone with little memory needs that room ([E1307](../errors/E1307.md)).
+
+### Failures after the start
+
+| Code | What happens next |
+| --- | --- |
+| [E1302](../errors/E1302.md) | The browser took the GPU away, and no new device started. The engine stops drawing new frames: destroy it and start again. |
+| [E1404](../errors/E1404.md) | An engine thread, or the drawing on the page, failed. The engine stops drawing new frames: destroy it and start again. |
+| [E1424](../errors/E1424.md) | A file of a custom shader's builds that a pipeline needs did not download. The engine stops drawing new frames: destroy it and start again. |
+| [E1405](../errors/E1405.md) | A job worker did not start. The engine draws on without that worker's share of the work. |
+| [E1304](../errors/E1304.md) | The GPU ran out of memory. The engine draws on without the objects that failed. |
+| [E1305](../errors/E1305.md) | The GPU rejected the engine's work. The engine draws on without the objects that failed. |
+| [E1307](../errors/E1307.md) | The GPU's driver refused a pipeline of the scene's objects twice. The engine draws on without the objects that failed. |
+
+### Destroy and start again
+
+A new engine can start on the canvas of an engine that you destroyed. Its start waits until the old engine has stopped, so it can begin before `destroy()` resolves. React's StrictMode needs this, because it starts an effect twice on one `<canvas>`. A canvas that a worker drew on stays with that worker, so the new engine needs the same thread options as the old one. That worker ends when the canvas leaves the page or the page goes away. It also ends when the browser refuses memory for a new engine while no engine runs on the canvas. A new engine on its canvas then fails with [E1419](../errors/E1419.md), as on a canvas whose engine still runs.
+
+The page keeps the memory that a stopped engine's threads shared for about 30 seconds, and the next engine with the same maximum takes it. Call `destroy({ release: true })` when the page will not start the engine again soon: the browser can then free the memory at once. An engine whose threads did not all stop cleanly leaves no memory to reuse. The single-threaded build's memory is not shared, and the page keeps its core for the next engine.
+
+In Safari, a stopped engine's canvas that stays in the page keeps the engine's memory, 1 GiB by default, until that worker ends. A new engine that needs the room gets it, but other code does not: a page that also loads a large WebAssembly module can run out of room. So remove the canvas from the page once you are done with it.
+
+<details>
+<summary>Technical details: memory and the GPU when a page goes away</summary>
+
+React's StrictMode, route changes and hot reloads destroy and create the engine again. Such a page then asks the browser for no new memory, because the stopped engine's memory is reused. Safari can refuse a new memory for some seconds after a page drops one. The page keeps at most 2 memories, and their RAM stays in use until a new engine takes one, the 30 seconds end, or the page goes away.
+
+A page that goes away without `destroy()`, such as a page in a frame that your app removes, still gives back the engine's memory. When the page hides, the engine wakes its job workers and ends their loops. Safari never frees the memory of a worker that it stops while the worker waits for work. Without this, an iPad would run out of room after a few such pages. A page that the browser brings back from its back-forward cache runs on, with the job workers' share of the work on the sketch thread.
+
+Where the engine keeps texture copies, as phones and tablets do by default, it gives its GPU back while the browser keeps the page in its back-forward cache. The thread that draws destroys its textures, its buffers and its device. When the page shows again, it starts a new device, as after a GPU loss, and builds every pipeline again before the scene shows. The cached page then leaves its GPU memory to the next page.
+
+</details>
 
 Each `on...` call returns a function that removes its handler.
 
