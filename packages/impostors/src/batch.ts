@@ -36,7 +36,7 @@ export interface ImpostorContext {
  * @category api/impostors
  */
 export interface ImpostorOptions {
-	/** The colour of every view, in sRGB: one cell per view, in the cells of `atlas`. */
+	/** The color of every view, in sRGB: one cell per view, in the cells of `atlas`. */
 	readonly color: Texture;
 	/**
 	 * The surface of every view, in the same cells as `color`: red and green hold the octahedral

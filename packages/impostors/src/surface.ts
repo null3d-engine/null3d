@@ -1,5 +1,5 @@
 // The surface atlas of an impostor bake: the normal and the depth of every texel of every view,
-// beside the colour atlas. The card material reads red and green as the octahedral code of the
+// beside the color atlas. The card material reads red and green as the octahedral code of the
 // view's normal, blue as the depth from the view's front to its back, and alpha as the coverage.
 // It decodes the normal and lights the card with it, so the bake stores the surface instead of
 // shading it.

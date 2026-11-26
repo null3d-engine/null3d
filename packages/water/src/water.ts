@@ -90,8 +90,8 @@ export interface FoamMap {
  * which is the depth of the bed under the surface there, and the transmission, which falls away
  * where the foam covers the water. Give `attenuationColor` and `attenuationDistance` to tint the
  * water: the bed's light keeps the share that the attenuation leaves over the bed's depth, so
- * a shallow, clear creek needs a pale colour over a distance far above its own depth, and a short
- * distance with a dark colour turns it into an opaque slab that hides the bed.
+ * a shallow, clear creek needs a pale color over a distance far above its own depth, and a short
+ * distance with a dark color turns it into an opaque slab that hides the bed.
  *
  * @category api/water
  */

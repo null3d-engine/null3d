@@ -343,8 +343,8 @@ export interface EngineOptions {
 	transparent?: boolean;
 	/**
 	 * False draws the scene into 8-bit color, where each material's shader applies the output
-	 * transform, instead of HDR color, which the final pass tone maps. Both paths honour a
-	 * material's `toneMapped: false`, and the 8-bit path also honours it on a blended surface. The
+	 * transform, instead of HDR color, which the final pass tone maps. Both paths honor a
+	 * material's `toneMapped: false`, and the 8-bit path also honors it on a blended surface. The
 	 * default lets the engine pick the path from the device, which draws HDR color wherever it
 	 * can. The `?hdr=off` switch takes the 8-bit path too.
 	 */

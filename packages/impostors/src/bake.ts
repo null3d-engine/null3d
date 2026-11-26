@@ -1,7 +1,7 @@
-// The bake: draws a mesh from every direction of an octahedral grid into the colour atlas and the
+// The bake: draws a mesh from every direction of an octahedral grid into the color atlas and the
 // surface atlas that the cards read. The work runs on the CPU, so one bake gives the same two
 // atlases on WebGPU and on WebGL2, and a picture test can hold both paths to one reference. The
-// colour atlas holds the unlit colour, which the card material lights, and the surface atlas holds
+// color atlas holds the unlit color, which the card material lights, and the surface atlas holds
 // each point's normal in the object's own frame, its depth and its coverage, which
 // `encodeImpostorSurface` writes.
 //
@@ -48,7 +48,7 @@ export interface ImpostorBakeMap {
 }
 
 /**
- * One part that a bake draws: its mesh arrays and what colours its surface.
+ * One part that a bake draws: its mesh arrays and what colors its surface.
  *
  * @category api/impostors
  */
@@ -60,17 +60,17 @@ export interface ImpostorBakePart {
 	/** The vertices' texture coordinates, two numbers each, where a map is drawn. */
 	readonly uvs?: ArrayLike<number>;
 	/**
-	 * The vertices' colours, three or four numbers each, linear. A fourth number is the vertex's
+	 * The vertices' colors, three or four numbers each, linear. A fourth number is the vertex's
 	 * coverage.
 	 */
 	readonly colors?: ArrayLike<number>;
 	/** The triangles' vertices, three each. */
 	readonly indices: ArrayLike<number>;
-	/** The colour map, in sRGB, that the part samples. Its alpha is not the coverage. */
+	/** The color map, in sRGB, that the part samples. Its alpha is not the coverage. */
 	readonly color?: ImpostorBakeMap;
 	/** The coverage map, linear: its blue holds the coverage. */
 	readonly coverage?: ImpostorBakeMap;
-	/** A linear colour that multiplies the part's own colour. The default is white. */
+	/** A linear color that multiplies the part's own color. The default is white. */
 	readonly tint?: readonly [number, number, number];
 	/** The coverage under which nothing draws. The default is 0.5. */
 	readonly alphaCutoff?: number;
@@ -97,15 +97,15 @@ export interface ImpostorBakeOptions {
 }
 
 /**
- * The two atlases that a bake writes: the colour in sRGB, with the coverage in alpha, and the
- * surface in linear colour, as `createImpostors` takes them.
+ * The two atlases that a bake writes: the color in sRGB, with the coverage in alpha, and the
+ * surface in linear color, as `createImpostors` takes them.
  *
  * @category api/impostors
  */
 export interface ImpostorBake {
 	/** The grid that the bake drew. */
 	readonly atlas: OctahedralAtlas;
-	/** The colour atlas: its texels, and their grid. */
+	/** The color atlas: its texels, and their grid. */
 	readonly color: { width: number; height: number; data: Uint8Array };
 	/** The surface atlas: its texels, and their grid. */
 	readonly surface: { width: number; height: number; data: Uint8Array };
@@ -127,7 +127,7 @@ export interface ImpostorBake {
 	readonly depth: number;
 }
 
-/** A part ready to draw: its arrays, its normals and its colour's stride. */
+/** A part ready to draw: its arrays, its normals and its color's stride. */
 interface Work {
 	positions: ArrayLike<number>;
 	normals: Float32Array;
@@ -155,7 +155,7 @@ interface Scratch {
 }
 
 /**
- * Draws `parts` from every cell of `atlas` into the colour and surface atlases, which it returns.
+ * Draws `parts` from every cell of `atlas` into the color and surface atlases, which it returns.
  *
  * The bake is arithmetic over the arrays. It gives the same pixels on every device, so both GPU
  * paths draw one card.
@@ -282,7 +282,7 @@ interface Cell {
 	span: number;
 }
 
-/** Makes a part's normals and reads its colour's stride. */
+/** Makes a part's normals and reads its color's stride. */
 function work(part: ImpostorBakePart): Work {
 	const vertices = part.positions.length / 3;
 	const colorStride = part.colors === undefined ? 0 : part.colors.length === vertices * 4 ? 4 : 3;
@@ -479,7 +479,7 @@ function draw(
 				nr /= length;
 				ng /= length;
 				nb /= length;
-				// The part's own colour: its vertex colours, its colour map, and the tint.
+				// The part's own color: its vertex colors, its color map, and the tint.
 				let r = 1;
 				let g = 1;
 				let b = 1;
@@ -520,7 +520,7 @@ function draw(
 				}
 				if (coverage < part.alphaCutoff) continue;
 				depth[at] = z;
-				// The colour is stored in sRGB; the tint is linear, so multiply it there.
+				// The color is stored in sRGB; the tint is linear, so multiply it there.
 				const t4 = at * 4;
 				color[t4] = linearToSrgb(r * tintR);
 				color[t4 + 1] = linearToSrgb(g * tintG);
@@ -578,7 +578,7 @@ function mapTexel(map: ImpostorBakeMap, x: number, y: number): number {
 	return (ty * map.width + tx) * 4;
 }
 
-/** Samples a colour map's sRGB texels, turns them linear and filters them, into `out`. */
+/** Samples a color map's sRGB texels, turns them linear and filters them, into `out`. */
 function sampleMapColor(
 	map: ImpostorBakeMap,
 	u: number,

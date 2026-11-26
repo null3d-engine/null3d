@@ -67,7 +67,7 @@ export interface SplatMaterial {
 
 /** The default meters that one repeat of a layer's map covers. */
 const DEFAULT_TILE = 8;
-/** The default strength of a layer's height against its neighbours. */
+/** The default strength of a layer's height against its neighbors. */
 const DEFAULT_CONTRAST = 1;
 /** A white texel, for a layer that the caller leaves out. */
 const WHITE = new Uint8Array([255, 255, 255, 255]);

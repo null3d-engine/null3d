@@ -130,7 +130,7 @@ const DEGREE = Math.PI / 180;
 
 /**
  * How low the sky's own sun sinks after sunset, in degrees. three.js's sky gives no sun light once
- * its sun is about 2.3 degrees under the horizon, which leaves only a flat grey that the tone curve
+ * its sun is about 2.3 degrees under the horizon, which leaves only a flat gray that the tone curve
  * maps to black. So after sunset the sky keeps its sun just above that, which keeps the sunset's
  * glow, and `skyIntensity` sets how bright it shows.
  */
