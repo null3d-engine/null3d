@@ -2,7 +2,8 @@
 // so that the Vite plugin can download and verify it. Run from the repository root:
 //   bun tools/shader-artifact.ts create --tag <tag> [--out <file>]
 //       Write the archive of the shader modules in packages/engine/src/generated, and print its
-//       SHA-256. The file defaults to target/<tag>-shaders.tar.br.
+//       SHA-256. The file defaults to target/<tag>-shaders.tar.br. Progress goes to stderr at each
+//       twentieth of the set, so a caller that captures the hash from stdout still sees it.
 //   bun tools/shader-artifact.ts write --tag <tag> --repo <owner/name>
 //       (--archive <file> | --sha256 <hex>) [--out <file>]
 //       Write the engine package's record of the release asset. The archive's hash is read from the
@@ -11,6 +12,7 @@
 import { join } from 'node:path';
 import { parseArgs } from 'node:util';
 import {
+	type ArchiveProgress,
 	createShaderArchive,
 	hashFile,
 	shaderArtifactFile,
@@ -23,6 +25,35 @@ const root = join(import.meta.dirname, '..');
 function fail(message: string): never {
 	console.error(`error: ${message}`);
 	process.exit(1);
+}
+
+/** The number of equal steps of the set that the progress lines mark. */
+const STEPS = 20;
+const MIB = 1 << 20;
+
+/** A length of time as minutes and seconds. */
+function duration(ms: number): string {
+	const seconds = Math.round(ms / 1000);
+	return `${Math.floor(seconds / 60)}m ${String(seconds % 60).padStart(2, '0')}s`;
+}
+
+/**
+ * Prints the archive's progress to stderr each time it passes another step of the set: the data
+ * packed, the time so far, and the time left at the rate so far.
+ */
+function progressReporter(): ArchiveProgress {
+	const started = performance.now();
+	let reported = 0;
+	return (done, total) => {
+		const step = Math.floor((done * STEPS) / total);
+		if (step <= reported && done < total) return;
+		reported = step;
+		const elapsed = performance.now() - started;
+		const left = done < total ? `, about ${duration((elapsed * (total - done)) / done)} left` : '';
+		console.error(
+			`packed ${Math.round(done / MIB)} of ${Math.round(total / MIB)} MiB (${Math.floor((done * 100) / total)}%) in ${duration(elapsed)}${left}`,
+		);
+	};
 }
 
 async function main(): Promise<void> {
@@ -48,7 +79,7 @@ async function main(): Promise<void> {
 		if (positionals.length !== 1)
 			fail('usage: bun tools/shader-artifact.ts create --tag <tag> [--out <file>]');
 		const out = values.out ?? join(root, 'target', shaderArtifactFile(tag));
-		const sha256 = await createShaderArchive(root, out);
+		const sha256 = await createShaderArchive(root, out, progressReporter());
 		console.log(sha256);
 		return;
 	}

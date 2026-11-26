@@ -3,8 +3,10 @@ name: Release
 # Started by hand from main. One workflow makes the whole release: it checks the commit, writes the
 # next version everywhere and the release's section of CHANGELOG.md, lands that on main, tags a
 # commit that holds the generated files, publishes the GitHub Release with each skill's zip file,
-# and publishes the npm packages (.dev/releases.md). It opens no pull request and needs no GitHub
-# App: its own `contents: write` permission lets the default token push.
+# and publishes the npm packages (.dev/releases.md). It opens no pull request. Main's rule refuses a
+# commit that has not passed CI, and the default token cannot skip that rule, so the version commit
+# lands with a token of the release GitHub App, which the rule lets skip it. The default token's own
+# `contents: write` pushes the tag and publishes the release, which the rule does not cover.
 #
 # The release holds the commit it starts from: the tag's commit is that commit plus the version
 # numbers, the changelog section and the generated files. A commit that reaches main after the
@@ -42,6 +44,8 @@ jobs:
     # cut off halfway is worse than a slow one.
     timeout-minutes: 90
     if: github.ref == 'refs/heads/main'
+    # The environment holds the release App's key, and only main's runs may use it.
+    environment: release
     env:
       # Git hooks are for local commits; each commit here carries its own trailers.
       HUSKY: "0"
@@ -115,10 +119,21 @@ jobs:
           bun tools/shader-artifact.ts write \
             --tag "$VERSION" --repo "$GITHUB_REPOSITORY" --archive "$archive"
 
+      # An App token lasts an hour and the shader set alone takes longer, so the token is made here,
+      # just before the push that needs it.
+      - name: Get the release App's token
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          permission-contents: write
+
       - name: Land the version on main
         id: land
         env:
           VERSION: ${{ steps.release.outputs.version }}
+          APP_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
           set -euo pipefail
           base="$(git rev-parse HEAD)"
@@ -159,7 +174,10 @@ jobs:
             git checkout -q "$released" -- $files
             git commit -q -m "chore(release): ${VERSION}" -m "$trailers"
           fi
-          git push origin HEAD:main
+          # The checkout keeps the default token as a header on every request to GitHub. An empty
+          # value clears that header for this push, so the App token in the address is the one sent.
+          git -c http.https://github.com/.extraheader= \
+            push "https://x-access-token:${APP_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" HEAD:main
 
       - name: Tag the release
         env:

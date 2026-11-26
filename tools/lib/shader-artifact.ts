@@ -149,14 +149,28 @@ function* fileHeader(name: string, size: number, mode: number): Generator<Buffer
 }
 
 /**
+ * Called as the archive takes in each piece of module data, with the bytes of module data taken in
+ * so far and the set's total. The compressor pulls the data, so this tracks the compression.
+ */
+export type ArchiveProgress = (done: number, total: number) => void;
+
+/**
  * Writes the tar of the shader modules in `root` into `out` and returns its SHA-256. The stream is
  * compressed as it is built, so a set of hundreds of megabytes never rests in memory.
  */
-export async function createShaderArchive(root: string, out: string): Promise<string> {
+export async function createShaderArchive(
+	root: string,
+	out: string,
+	onProgress?: ArchiveProgress,
+): Promise<string> {
 	mkdirSync(dirname(out), { recursive: true });
 	const folder = join(root, MODULE_DIR);
-	const names = shaderModuleNames(root);
-	if (names.length === 0) throw new Error(`${MODULE_DIR} holds no shader modules`);
+	const files = shaderModuleNames(root).map((name) => {
+		const stat = statSync(join(folder, name));
+		return { name, size: stat.size, mode: stat.mode & 0o777 };
+	});
+	if (files.length === 0) throw new Error(`${MODULE_DIR} holds no shader modules`);
+	const total = files.reduce((sum, file) => sum + file.size, 0);
 	const hash = createHash('sha256');
 	const hasher = new Transform({
 		transform(chunk: Buffer, _encoding, done) {
@@ -165,14 +179,16 @@ export async function createShaderArchive(root: string, out: string): Promise<st
 		},
 	});
 	const blocks = async function* (): AsyncGenerator<Buffer> {
-		for (const name of names) {
-			const path = join(folder, name);
-			const stat = statSync(path);
-			for (const block of fileHeader(name, stat.size, stat.mode & 0o777)) yield block;
+		let done = 0;
+		for (const { name, size, mode } of files) {
+			for (const block of fileHeader(name, size, mode)) yield block;
 			// A file's data fills whole blocks, and its header already names its true size.
-			for await (const chunk of createReadStream(path, { highWaterMark: 1 << 20 }))
+			for await (const chunk of createReadStream(join(folder, name), { highWaterMark: 1 << 20 })) {
 				yield chunk as Buffer;
-			const rest = padding(stat.size);
+				done += (chunk as Buffer).length;
+				onProgress?.(done, total);
+			}
+			const rest = padding(size);
 			if (rest.length > 0) yield rest;
 		}
 		// The archive ends with two empty blocks.
