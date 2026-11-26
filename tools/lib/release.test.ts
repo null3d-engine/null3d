@@ -14,7 +14,6 @@ import {
 	isReleaseCommit,
 	nextVersion,
 	notesProblems,
-	type PageStatus,
 	type ParsedCommit,
 	packageFolders,
 	parseCommit,
@@ -460,38 +459,20 @@ describe('the changelog file', () => {
 });
 
 describe('releaseProblems', () => {
-	const pages: PageStatus[] = [
-		{ id: 'concepts/lighting', status: 'planned', since: '0.1' },
-		{ id: 'concepts/assets', status: 'planned', since: '0.2' },
-		{ id: 'guides/video-textures', status: 'planned', since: 'after 1.0' },
-		{ id: 'api/engine', status: 'experimental', since: '0.1' },
-	];
 	const roadmap = '# x\n\n## Roadmap\n\n| Release | What it adds |\n';
-
 	const plain = '# x\n';
 
-	it('lets patch releases through with planned pages, and the roadmap before 0.1.0', () => {
-		expect(releaseProblems('0.0.4', pages, roadmap)).toEqual([]);
-		expect(releaseProblems('0.1.3', pages, plain)).toEqual([]);
-	});
-
-	it('refuses a minor release while a page it ships is still planned', () => {
-		expect(releaseProblems('0.1.0', pages, plain)).toEqual([
-			'docs/concepts/lighting.md is still planned, and 0.1.0 ships its feature (since 0.1)',
-		]);
-		expect(releaseProblems('0.2.0', pages, plain)).toHaveLength(2);
+	it('lets the roadmap through before 0.1.0', () => {
+		expect(releaseProblems('0.0.4', roadmap)).toEqual([]);
 	});
 
 	it('refuses a public release, from 0.1.0 on, while the README has the roadmap', () => {
-		const shipped = pages.filter((p) => p.status !== 'planned');
-		expect(releaseProblems('0.1.0', shipped, roadmap)).toEqual([
+		expect(releaseProblems('0.1.0', roadmap)).toEqual([
 			'README.md still has the roadmap, which is internal; remove it before the public 0.1.0 release',
 		]);
-		expect(releaseProblems('0.1.3', shipped, 'Everything else planned, by version')).toHaveLength(
-			1,
-		);
-		expect(releaseProblems('1.0.0', shipped, roadmap)).toHaveLength(1);
-		expect(releaseProblems('0.1.0', shipped, plain)).toEqual([]);
+		expect(releaseProblems('0.1.3', 'Everything else planned, by version')).toHaveLength(1);
+		expect(releaseProblems('1.0.0', roadmap)).toHaveLength(1);
+		expect(releaseProblems('0.1.0', plain)).toEqual([]);
 	});
 });
 

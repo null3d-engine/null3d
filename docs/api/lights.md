@@ -1,14 +1,12 @@
 ---
 id: api/lights
 title: Lights
-status: experimental
-since: "0.1"
 summary: "Directional, point, spot, hemisphere, ambient, rectangle and tube lights; shadow options."
 ---
 
 # Lights
 
-> Roadmap step 0.1, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. Surfaces show up to four directional lights: the first casts the shadows, and three more add fill and rim light.
+> Surfaces show up to four directional lights: the first casts the shadows, and three more add fill and rim light.
 
 A light is a scene object, like a mesh or a camera. It has a position, a rotation, a parent and layers, and `setVisible` and `destroy` work on it. Each kind of light has a class and a create call of its own. The standard material reflects lights, and the unlit material ignores them.
 

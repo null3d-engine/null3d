@@ -1,14 +1,12 @@
 ---
 id: api/feature-draws
 title: Add-on feature draws
-status: experimental
-since: "0.3"
 summary: "scene.addFeatureDraw turns a draw feature description into a draw of your WGSL, your vertices, your uniforms and the description's sort place, on both GPU paths and in every thread mode; scene.addFeatureInstances repeats that shape once for each row of a batch."
 ---
 
 # Add-on feature draws
 
-> Roadmap step 0.3, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. A draw records in the main view alone, and at the opaque, the transparent or the resolve point.
+> A draw records in the main view alone, and at the opaque, the transparent or the resolve point.
 
 ```mermaid
 flowchart LR

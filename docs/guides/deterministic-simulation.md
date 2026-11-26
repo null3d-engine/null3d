@@ -1,14 +1,10 @@
 ---
 id: guides/deterministic-simulation
 title: Using null3D with a deterministic simulation
-status: experimental
-since: "0.3"
 summary: "The maths entry a simulation may import; createMath with an exact math library; input, picking and physics that decide a result stay out of the sketch; createEngine's input option; a camera that the player aims from recorded input; a production build of a game's engine files."
 ---
 
 # Using null3D with a deterministic simulation
-
-> Roadmap step 0.3, first released in null3D 0.1.0. The API is experimental, so it can still change between versions.
 
 ```mermaid
 flowchart LR

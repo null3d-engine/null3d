@@ -1,14 +1,12 @@
 ---
 id: concepts/lod
 title: Levels of detail
-status: experimental
-since: "0.2"
 summary: "LOD groups; levels that meshes made in code plan on the job workers; generated LODs; cluster patches; staged downloads; per-instance selection; small-object hiding."
 ---
 
 # Levels of detail
 
-> Roadmap step 0.2, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. Morphed objects, and materials that blend or let light through, draw their base mesh at every distance. A skinned object draws a level while the level names the base mesh's own vertices, as the asset tool's levels do. Masks with the `'hash'` alpha mode switch levels at once, with no fading band. A distance band cuts at once for them too.
+> Morphed objects, and materials that blend or let light through, draw their base mesh at every distance. A skinned object draws a level while the level names the base mesh's own vertices, as the asset tool's levels do. Masks with the `'hash'` alpha mode switch levels at once, with no fading band. A distance band cuts at once for them too.
 
 ```mermaid
 flowchart LR

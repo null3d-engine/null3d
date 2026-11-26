@@ -1,14 +1,10 @@
 ---
 id: getting-started/first-scene
 title: Your first scene
-status: experimental
-since: "0.1"
 summary: "page.ts with createEngine; sketch.ts with defineSketch; camera, light, mesh; running it with Vite."
 ---
 
 # Your first scene
-
-> Roadmap step 0.1, first released in null3D 0.1.0. The API is experimental, so it can still change between versions.
 
 ```mermaid
 flowchart LR

@@ -1,14 +1,10 @@
 ---
 id: api/tasks
 title: Tasks on the job workers
-status: experimental
-since: "0.3"
 summary: "runTask: an add-on's code and WebAssembly on the job workers; shared memory; ordering with the frames; failures."
 ---
 
 # Tasks on the job workers
-
-> Roadmap step 0.3, first released in null3D 0.1.0. The API is experimental, so it can still change between versions.
 
 An add-on can move heavy work off the thread that runs the sketch, and onto the engine's job workers. `runTask` runs a task there while the frames continue. An add-on that chooses what to draw, or in what order, from many objects uses this hook: the Gaussian splats add-on chooses each chunk's prefix there, nearest first. The engine's transparent pass then sorts the chosen rows on the job workers, as it does for every blended draw, so an add-on does not sort its drawn rows through a task.
 

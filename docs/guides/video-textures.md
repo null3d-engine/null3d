@@ -1,14 +1,10 @@
 ---
 id: guides/video-textures
 title: Video textures
-status: experimental
-since: "0.3"
 summary: "engine.registerVideo on the page and textures.fromVideo in the sketch; frame sizes and the upload budget; browser limits."
 ---
 
 # Video textures
-
-> Roadmap step 0.3, first released in null3D 0.1.0. The API is experimental, so it can still change between versions.
 
 ```mermaid
 flowchart LR

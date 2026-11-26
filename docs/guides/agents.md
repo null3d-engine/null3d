@@ -1,14 +1,10 @@
 ---
 id: guides/agents
 title: Working with AI agents
-status: experimental
-since: "0.1"
 summary: "Installing the null3D skills in Claude Code, claude.ai and other agent tools; docs by ID; the test loop; the MCP server and the in-page inspector."
 ---
 
 # Working with AI agents
-
-> Roadmap step 0.1, first released in null3D 0.1.0. The API is experimental, so it can still change between versions.
 
 null3D comes with two agent skills. A skill is a folder of instructions that a coding agent loads when a task needs it.
 

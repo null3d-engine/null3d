@@ -1,14 +1,10 @@
 ---
 id: guides/screens
 title: In-world screens
-status: experimental
-since: "0.3"
 summary: "Displays painted on an OffscreenCanvas in the sketch, with a refresh rate for each screen, uploads of only the changed rectangles, an LCD look that changes with distance, a boot glitch, and clicks mapped back to the canvas's coordinates."
 ---
 
 # In-world screens
-
-> Roadmap step 0.3, first released in null3D 0.1.0. The API is experimental, so it can still change between versions.
 
 A screen is a plane in the world whose material samples an `OffscreenCanvas`. The sketch draws on
 the canvas with the 2D context, and the engine uploads only the rectangles that changed. Each screen

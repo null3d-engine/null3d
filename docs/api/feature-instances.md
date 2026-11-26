@@ -1,14 +1,12 @@
 ---
 id: api/feature-instances
 title: Add-on instance draws
-status: experimental
-since: "0.3"
 summary: "scene.addComputeInstances draws a capacity of instances from your own buffer, with a count that the GPU writes, on WebGPU, and an instance batch that the CPU fills on WebGL2."
 ---
 
 # Add-on instance draws
 
-> Roadmap step 0.3, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. A draw records in the main view alone, at the opaque point.
+> A draw records in the main view alone, at the opaque point.
 
 ```mermaid
 flowchart LR

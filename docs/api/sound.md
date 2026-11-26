@@ -1,14 +1,10 @@
 ---
 id: api/sound
 title: "Sound (@null3d/sound)"
-status: experimental
-since: "0.3"
 summary: "createSound and connectSound: loops, groups and one-shots placed in the scene, played with the browser's audio and driven from the sketch on the audio thread."
 ---
 
 # Sound (@null3d/sound)
-
-> Roadmap step 0.3, first released in null3D 0.1.0. The API is experimental, so it can still change between versions.
 
 ```mermaid
 flowchart LR

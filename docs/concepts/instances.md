@@ -1,14 +1,10 @@
 ---
 id: concepts/instances
 title: Instances and batching
-status: experimental
-since: "0.1"
 summary: "createInstances; typed-array views; markDirty; automatic batching; per-row colors and values."
 ---
 
 # Instances and batching
-
-> Roadmap step 0.1, first released in null3D 0.1.0. The API is experimental, so it can still change between versions.
 
 ```mermaid
 flowchart LR

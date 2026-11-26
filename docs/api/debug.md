@@ -1,14 +1,10 @@
 ---
 id: api/debug
 title: Debug drawing and stats
-status: experimental
-since: "0.1"
 summary: "debug.line, box, sphere, arrow, axes, grid, frustum, light and skeleton; the stats overlay, debug.frameStats and @null3d/engine/stats; engine.measure and its figures; debug.view, the ?view switch and add-on views; debug.shadowCamera; the in-page inspector and engine.inspect."
 ---
 
 # Debug drawing and stats
-
-> Roadmap step 0.1, first released in null3D 0.1.0. The API is experimental, so it can still change between versions.
 
 Debug drawing shows where things are in the scene: lines, boxes, spheres, arrows, axes, grids, camera frustums, lights and skeletons. Debug views draw the whole scene with one debug shading, such as its normals, its wireframe or its shadows. The overlay of `debug.stats` shows the engine's frame figures over the top-right corner of the canvas, and `debug.frameStats` gives them to the sketch. On the page, `engine.measure` measures the running engine.
 

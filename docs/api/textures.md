@@ -1,14 +1,12 @@
 ---
 id: api/textures
 title: Textures
-status: experimental
-since: "0.1"
 summary: "loadTexture options; KTX2 files; fromData; fromImageBitmap; fromCanvas; fromVideo; fromPass."
 ---
 
 # Textures
 
-> Roadmap step 0.1, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. Materials do not sample cube maps. A cube map can be a background: [Assets](assets.md) loads one with `assets.loadCubemap`.
+> Materials do not sample cube maps. A cube map can be a background: [Assets](assets.md) loads one with `assets.loadCubemap`.
 
 ```mermaid
 flowchart LR

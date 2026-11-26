@@ -1,14 +1,12 @@
 ---
 id: concepts/materials
 title: Materials and pipelines
-status: experimental
-since: "0.1"
 summary: "Built-in materials; permutations; pipeline warm-up; why changing shader features can stall a frame."
 ---
 
 # Materials and pipelines
 
-> Roadmap step 0.1, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. Custom materials take a surface function, a vertex offset, their uniforms and up to 6 textures of their own, or a full shader. They take none of the standard texture maps.
+> Custom materials take a surface function, a vertex offset, their uniforms and up to 6 textures of their own, or a full shader. They take none of the standard texture maps.
 
 ```mermaid
 flowchart LR

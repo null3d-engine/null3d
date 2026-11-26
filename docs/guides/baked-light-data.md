@@ -1,14 +1,12 @@
 ---
 id: guides/baked-light-data
 title: Baked light data
-status: stable
-since: "0.3"
 summary: "One file format for probe grids and light maps baked outside the engine: the JSON members, base64 payloads, the loading calls, the engine's own bake, and the faults that the loader names."
 ---
 
 # Baked light data
 
-> Roadmap step 0.3, first released in null3D 0.1.0. The format is stable: version 1 holds the members that this page lists, and a reader ignores members that it does not know. A change that an earlier reader would misread takes a new version number. A directional light map bends its light with a normal map, as the light of the bake came from a direction.
+> The format is stable: version 1 holds the members that this page lists, and a reader ignores members that it does not know. A change that an earlier reader would misread takes a new version number. A directional light map bends its light with a normal map, as the light of the bake came from a direction.
 
 ```mermaid
 flowchart LR

@@ -1,14 +1,10 @@
 ---
 id: concepts/handles
 title: Handles and objects
-status: experimental
-since: "0.1"
 summary: "30-bit handles; wrapper objects; stale-handle errors; keeping per-object data in your own arrays."
 ---
 
 # Handles and objects
-
-> Roadmap step 0.1, first released in null3D 0.1.0. The API is experimental, so it can still change between versions.
 
 ```mermaid
 flowchart LR

@@ -1,14 +1,12 @@
 ---
 id: concepts/lighting
 title: Lighting and environment
-status: experimental
-since: "0.1"
 summary: "Light types, units and exposure; clustered lighting; fog; environment maps and spherical harmonics; light probe grids; sky and environment backgrounds; the sky's light and time of day."
 ---
 
 # Lighting and environment
 
-> Roadmap step 0.1, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. Surfaces show up to four directional lights. The quality presets cap area lights, and they do not cap point and spot lights.
+> Surfaces show up to four directional lights. The quality presets cap area lights, and they do not cap point and spot lights.
 
 ```mermaid
 flowchart LR

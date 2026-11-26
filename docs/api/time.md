@@ -1,14 +1,10 @@
 ---
 id: api/time
 title: Time
-status: experimental
-since: "0.1"
 summary: "dt, time.now, fixed steps."
 ---
 
 # Time
-
-> Roadmap step 0.1, first released in null3D 0.1.0. The API is experimental, so it can still change between versions.
 
 The engine calls the sketch's `onUpdate` callback once per frame. Its argument, `dt`, is the frame's step: the time in seconds since the sketch's previous frame. The `time` object in the sketch's context holds the sketch time, the frame's step and the frame number. Simulation that must step the same at every frame rate runs in fixed steps instead, in `onFixedUpdate`.
 

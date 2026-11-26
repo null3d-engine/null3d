@@ -1,14 +1,10 @@
 ---
 id: getting-started/hosting
 title: Hosting and cross-origin isolation
-status: experimental
-since: "0.1"
 summary: "COOP and COEP headers; require-corp on Safari; CORS and CORP for assets; the Content-Security-Policy; the engine's files on a CDN; Brotli; the third-party notices; offline play with a service worker and the build's file list; the caches between visits; the single-threaded fallback; Electron desktop apps served from a custom scheme."
 ---
 
 # Hosting and cross-origin isolation
-
-> Roadmap step 0.1, first released in null3D 0.1.0. The API is experimental, so it can still change between versions.
 
 ```mermaid
 flowchart TD

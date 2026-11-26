@@ -1,14 +1,10 @@
 ---
 id: guides/multiple-views
 title: Multiple views
-status: experimental
-since: "0.3"
 summary: "Split screens and picture in picture with scene.createView: a camera and a rectangle of the canvas, drawn after the camera's view in the same frame; per-view culling; the cost of each view."
 ---
 
 # Multiple views
-
-> Roadmap step 0.3, first released in null3D 0.1.0. The API is experimental, so it can still change between versions.
 
 A view draws the scene again from another camera, into a rectangle of the canvas, in the same frame as the camera's view. Use it for a split screen, a picture in picture, a rear-view mirror or a tactical inset. Two kinds of work are different:
 

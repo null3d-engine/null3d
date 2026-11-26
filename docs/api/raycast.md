@@ -1,14 +1,12 @@
 ---
 id: api/raycast
 title: Raycasting and spatial queries
-status: experimental
-since: "0.2"
 summary: "raycast, raycastAny, raycastAll, raycastBatch, overlap queries, pointer events on objects."
 ---
 
 # Raycasting and spatial queries
 
-> Roadmap step 0.2, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. Queries test a skinned character in its bind pose, not in its animated pose. Pixel-exact picking draws each character as it is posed.
+> Queries test a skinned character in its bind pose, not in its animated pose. Pixel-exact picking draws each character as it is posed.
 
 ```mermaid
 flowchart LR

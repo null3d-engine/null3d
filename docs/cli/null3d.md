@@ -1,14 +1,12 @@
 ---
 id: cli/null3d
 title: "The `null3d` command"
-status: experimental
-since: "0.1"
 summary: "create, test, bench, check-addon, shot, upgrade, assets, mcp."
 ---
 
 # The `null3d` command
 
-> Roadmap step 0.1, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. `test` runs image tests, and no behavior tests.
+> `test` runs image tests, and no behavior tests.
 
 The `@null3d/cli` package holds the `null3d` command. You need no command to build or run a sketch: Vite and the null3D Vite plugin do that. The command does jobs that a bundler does not do, such as drawing a frame of your scene with no person watching.
 

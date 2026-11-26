@@ -1,14 +1,10 @@
 ---
 id: api/objects
 title: Objects and transforms
-status: experimental
-since: "0.1"
 summary: "Setters and getters; parents; flags; destroy; pointer events."
 ---
 
 # Objects and transforms
-
-> Roadmap step 0.1, first released in null3D 0.1.0. The API is experimental, so it can still change between versions.
 
 Groups, meshes, cameras and lights are objects: nodes in the scene with a position, a rotation, a scale and a parent. Each class extends `Object3D`, so the calls in the first sections of this page work on all of them. Meshes have more calls, which [Mesh calls](#mesh-calls) lists, and [Lights](lights.md) gives the calls of each kind of light.
 

@@ -1,14 +1,12 @@
 ---
 id: concepts/particle-buffer
 title: The particle buffer
-status: experimental
-since: "0.2"
 summary: "What a particle buffer holds: its 32-byte records, its values and its frame's values; how an emitter or sketch code writes births into it; and the limits that it meets."
 ---
 
 # The particle buffer
 
-> Roadmap step 0.2, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. Use the [particles add-on](../api/particles.md), which fills this buffer for you, unless you write your own emitter. Coding agents must not use these calls.
+> Use the [particles add-on](../api/particles.md), which fills this buffer for you, unless you write your own emitter. Coding agents must not use these calls.
 
 ```mermaid
 flowchart LR

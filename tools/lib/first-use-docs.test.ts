@@ -23,6 +23,6 @@ describe('the page of shaders that load on first use', () => {
 		const page = firstUsePage(['bloom', 'skinning']);
 		expect(page).toContain("| `'bloom'` | when `post.set` turns bloom on |");
 		expect(page).toContain("| `'skinning'` |");
-		expect(page).toContain('status: generated');
+		expect(page).toContain('generated: true');
 	});
 });

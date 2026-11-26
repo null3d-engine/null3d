@@ -1,14 +1,10 @@
 ---
 id: guides/physics
 title: Using a physics library
-status: experimental
-since: "0.1"
 summary: "Running Rapier or cannon-es in the sketch worker; copying transforms."
 ---
 
 # Using a physics library
-
-> Roadmap step 0.1, first released in null3D 0.1.0. The API is experimental, so it can still change between versions.
 
 ```mermaid
 flowchart LR

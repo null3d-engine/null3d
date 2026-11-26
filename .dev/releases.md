@@ -30,21 +30,17 @@ The workflow lands the version on main, then tags, then publishes. Each step is 
 
 ## Versions
 
-The first release is 0.1.0, and it goes out as part of M4 ([D-108](decisions/D-108-first-release.md)). It holds the roadmap steps 0.1 to 0.3, the work of M1, M2 and M3. A final 0.2.0 release follows it, and 1.0.0 waits until the API is known to be stable. The rule for the roadmap labels and the docs' `since` values follows 0.1.0, by the owner's ruling, as [The version labels](#open-point-the-version-labels) says. The first release that carries the built shader set as a release asset is watched by hand: the archive builds, uploads to the same Release, and a project fetches it and verifies its hash.
+The first release is 0.1.0, and it goes out as part of M4 ([D-108](decisions/D-108-first-release.md)). It holds the roadmap steps 0.1 to 0.3, the work of M1, M2 and M3. A final 0.2.0 release follows it, and 1.0.0 waits until the API is known to be stable. The first release that carries the built shader set as a release asset is watched by hand: the archive builds, uploads to the same Release, and a project fetches it and verifies its hash.
 
-The roadmap has the steps 0.1, 0.2 and 0.3 before 1.0. Each names a set of features, and the docs pages' `since` values and the skills' version labels use those numbers. Release 0.1.0 holds all three steps. For 0.1.0, run the Release workflow with `minor`, which takes the packages from 0.0.0 to 0.1.0. After that, the `auto` release type always releases a patch, and you pick `minor` or `major` when a set of features is done. The release script refuses an x.y.0 version while a docs page with that `since` or an earlier one is still `planned` (hard rule 19).
+The roadmap has the steps 0.1, 0.2 and 0.3 before 1.0. Each names a set of features, and release 0.1.0 holds all three. For 0.1.0, run the Release workflow with `minor`, which takes the packages from 0.0.0 to 0.1.0. After that, the `auto` release type always releases a patch, and you pick `minor` or `major` when a set of features is done.
 
 0.1.0 is also the first public release. The roadmap is internal, so the README does not carry it. The release script refuses 0.1.0 and every later version while the README has a Roadmap section or a table of planned features by version ([D-108](decisions/D-108-first-release.md)).
 
 The README's "For AI agents" section gives the Claude Code plugin commands, and links [Working with AI agents](../docs/guides/agents.md) for the other agent tools. Each release writes its version and tag into `.claude-plugin/marketplace.json`, and attaches the skill zips to its GitHub Release.
 
-### Open point: the version labels
+### Docs labels
 
-Docs pages carry `since: "0.1"`, `"0.2"` or `"0.3"`, and the skills label calls with a version, such as (0.2) or "later in 0.1" (docs rule 6 in AGENTS.md). These labels name the roadmap's steps, but release 0.1.0 holds all three steps. So a page with `since: "0.2"` or `"0.3"` ships in 0.1.0. The release script reads the labels too: it refuses an x.y.0 version while a page with that `since` or an earlier one is `planned`. For 0.1.0 it checks only the pages with `since: "0.1"`.
-
-By the owner's ruling, 0.1.0 goes out before the rule for these labels is set ([D-108](decisions/D-108-first-release.md)). Once it is set, the release script's check, the gate's release step, the README's version labels and the skills change to match. Until then, the labels stay as they are, because the release script and the M1 exit gate's docs item read them.
-
-The note under a page's title opens with its page's step and release, such as "Roadmap step 0.2, first released in null3D 0.1.0." That wording lives in `tools/lib/steps.ts` alone. The docs check holds every written page's note to it. It refuses "null3D 0.2" or "null3D 0.3" in a page, because the steps 0.2 and 0.3 ship in 0.1.0, not in releases of those numbers. So when the rule for the labels is set, the wording changes in one place. The `since` rule is part of that rule.
+Docs pages carry no status or version labels, because the website shows them as tags ([D-397](decisions/D-397-docs-without-labels.md)). A release changes no page's front matter. Only the owner adds a `status` or a `since` label to a page.
 
 ## One-time setup
 

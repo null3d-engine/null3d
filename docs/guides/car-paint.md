@@ -1,14 +1,10 @@
 ---
 id: guides/car-paint
 title: Car paint
-status: experimental
-since: "0.3"
 summary: "A paint material over the clear coat, with glinting metal flakes that stop shimmering, panel seams that follow the pixel, and an optional carbon weave with direction-dependent shine."
 ---
 
 # Car paint
-
-> Roadmap step 0.3, first released in null3D 0.1.0. The API is experimental, so it can still change between versions.
 
 The car paint draws a metallic base under a clear coat. Three parts change the look: metal flakes,
 panel seams, and an optional carbon weave. Each part reads the mesh's texture coordinates, so the

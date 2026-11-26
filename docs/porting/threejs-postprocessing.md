@@ -1,14 +1,10 @@
 ---
 id: porting/threejs-postprocessing
 title: Porting post-processing
-status: experimental
-since: "0.2"
 summary: "EffectComposer passes and pmndrs effects to post.set settings; ShaderPass to post.addEffect; three.js tone mappings to custom tone curves."
 ---
 
 # Porting post-processing
-
-> Roadmap step 0.2, first released in null3D 0.1.0. The API is experimental, so it can still change between versions.
 
 three.js builds post-processing from passes in an `EffectComposer`. null3D has the chain built in. A port turns most passes into settings of `post.set`, and each custom `ShaderPass` into a custom effect with `post.addEffect`.
 

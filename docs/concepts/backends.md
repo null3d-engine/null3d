@@ -1,14 +1,10 @@
 ---
 id: concepts/backends
 title: GPU tiers and backends
-status: experimental
-since: "0.1"
 summary: "WebGPU core, compatibility mode and WebGL2; color, anti-aliasing and depth on each tier; capability flags; the portable budget; never branching on GPU names."
 ---
 
 # GPU tiers and backends
-
-> Roadmap step 0.1, first released in null3D 0.1.0. The API is experimental, so it can still change between versions.
 
 ```mermaid
 flowchart TD

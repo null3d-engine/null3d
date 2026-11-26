@@ -1,14 +1,10 @@
 ---
 id: porting/threejs-shaders
 title: "Porting shaders: GLSL, onBeforeCompile and TSL"
-status: experimental
-since: "0.3"
 summary: "GLSL to WGSL; three.js built-ins to engine built-ins; worked examples."
 ---
 
 # Porting shaders: GLSL, onBeforeCompile and TSL
-
-> Roadmap step 0.3, first released in null3D 0.1.0. The API is experimental, so it can still change between versions.
 
 ```mermaid
 flowchart LR

@@ -1,14 +1,10 @@
 ---
 id: api/engine
 title: "Page API: createEngine"
-status: experimental
-since: "0.1"
 summary: "createEngine options and start errors; memory; capabilities and mode; pausing, detaching, failures, measuring, captureFrame, messages, pointer lock and destroy."
 ---
 
 # Page API: createEngine
-
-> Roadmap step 0.1, first released in null3D 0.1.0. The API is experimental, so it can still change between versions.
 
 `createEngine` starts the engine on a canvas and runs a sketch. It returns an `Engine`, the page's handle on the running engine. The page keeps the HTML, and the sketch builds the scene in a worker of its own.
 

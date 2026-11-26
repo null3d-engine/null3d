@@ -1,14 +1,10 @@
 ---
 id: api/sketch
 title: "Sketch API: defineSketch and the context"
-status: experimental
-since: "0.1"
 summary: "The context object: scene, assets, materials, geometry, textures, input, time, engine, quality, post, render, page, ui, debug; the callbacks; the options, with the download list."
 ---
 
 # Sketch API: defineSketch and the context
-
-> Roadmap step 0.1, first released in null3D 0.1.0. The API is experimental, so it can still change between versions.
 
 In null3D, a 3D scene is called a sketch. A sketch module builds the scene and updates it every frame, and its default export is `defineSketch(setup)`. The engine loads the module, calls `setup` once with the sketch's context, and then calls the callbacks that `setup` returns.
 

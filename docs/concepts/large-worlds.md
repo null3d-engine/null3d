@@ -1,14 +1,10 @@
 ---
 id: concepts/large-worlds
 title: Large worlds and precision
-status: experimental
-since: "0.2"
 summary: "Cell-relative positions and per-frame camera-to-cell offsets; reversed depth; largeWorld mode; batch origins; floating-origin geometry."
 ---
 
 # Large worlds and precision
-
-> Roadmap step 0.2, first released in null3D 0.1.0. The API is experimental, so it can still change between versions.
 
 ```mermaid
 flowchart LR

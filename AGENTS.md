@@ -6,7 +6,7 @@ This repository holds the null3D engine, its tools, its documentation and its ag
 
 | Path | Contents |
 | --- | --- |
-| `docs/` | The user documentation as Markdown, one page per ID, with status front matter. It ships inside `@null3d/engine`. |
+| `docs/` | The user documentation as Markdown, one page per ID, with front matter. It ships inside `@null3d/engine`. |
 | `docs/data/threejs-mapping.json` | The single source of the three.js to null3D mapping |
 | `skills/` | Agent skills for building with null3D and for porting three.js apps (the source) |
 | `.claude/skills/` | A generated copy of `skills/` for Claude Code, which `bun install` writes. Git does not keep it. Never edit it. |
@@ -212,7 +212,7 @@ The owner set these rules. [D-52](.dev/decisions/D-52-intent-parity.md) gives th
 1. One source per fact. The API reference comes from TypeScript doc comments, the three.js mapping from `docs/data/threejs-mapping.json`, and the page inventory from `tools/lib/docs.ts`. Skills link to docs pages by ID and do not copy facts.
 2. Never commit a generated file, unless [D-105](.dev/decisions/D-105-generated-files-out-of-git.md) gives the reason to keep it. Git ignores each generated file, and a written page links to a generated page that it needs. [Generated files](.dev/pull-requests.md#generated-files) lists each one, its generator and the step that builds it. The install step, `bun install`, writes them. The git hooks write them again after each checkout, merge or rebase, and before each commit. Run `bun run docs` to see a change of a source at once. A new generator writes only into paths that `.gitignore` names.
 3. The page inventory lists only written pages. Add a page's entry in the branch that writes the page, and the docs check refuses a page whose status is `planned`.
-4. Every docs page has front matter: `id`, `title`, `status` (`experimental`, `stable` or `generated`), `since` and `summary`.
+4. Every docs page has front matter: `id`, `title` and `summary`. A page that a generator writes also carries `generated: true`. Pages carry no status or version labels, because the website shows them as tags. Only the owner adds one to a page: `status` (`experimental` or `stable`) or `since` (a release, such as `"1.2"`) ([D-397](.dev/decisions/D-397-docs-without-labels.md)).
 5. The API reference on the `api/` pages comes from the TSDoc comments on the engine's public exports. Each export needs a summary and a `@category api/<page>` tag that names its page. Each public member needs a summary too. A public declaration may name only types that the engine exports. The generator writes each written API page's reference on a page of its own, `docs/api/reference/<page>.md`. The written page links to it under its "API reference" heading, and the docs check refuses a written page without that link.
 6. The skills name only built calls, with no version markers. A TypeScript code block in a skill that exports `defineSketch(...)` is a complete sketch. The unit tests (`bun run test`) type check each one against the engine. The browser tests (`bun run test:browser`) draw each one in hold mode on every GPU tier.
 7. Every demo and showcase scene is a model of good visuals for other projects. Work on one's look or behavior may show a better way to use the engine, or a pitfall. The same change then adds that guidance to the docs and the skills, as part of done, not as a follow-up ([Branches and parallel work](.dev/pull-requests.md#guidance-from-demos-and-showcase-scenes)).

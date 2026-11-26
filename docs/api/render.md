@@ -1,14 +1,10 @@
 ---
 id: api/render
 title: Render graph API
-status: experimental
-since: "0.2"
 summary: "render.addPass for scene passes, reflection passes, full-screen passes and compute passes of your own WGSL that write into textures; half and quarter render sizes; the outline mask as an input; switching and removing passes; render.dumpGraph."
 ---
 
 # Render graph API
-
-> Roadmap step 0.2, first released in null3D 0.1.0. The API is experimental, so it can still change between versions.
 
 ```mermaid
 flowchart LR

@@ -1,14 +1,12 @@
 ---
 id: api/geometry
 title: Geometry
-status: experimental
-since: "0.1"
 summary: "Generators of common shapes; extra shapes in @null3d/geometry; meshes from arrays; morph targets; vertices that change; levels of detail that meshes plan on the job workers; vertex formats; large meshes."
 ---
 
 # Geometry
 
-> Roadmap step 0.1, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. No call skins a mesh that you build, so its joints and weights do not move its vertices.
+> No call skins a mesh that you build, so its joints and weights do not move its vertices.
 
 ```mermaid
 flowchart LR

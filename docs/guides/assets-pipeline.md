@@ -1,14 +1,10 @@
 ---
 id: guides/assets-pipeline
 title: "The asset pipeline (the `assets` command)"
-status: experimental
-since: "0.2"
 summary: "optimize, convert, pack-orm, normal-from-bump, env; LODs; texture compression; blockers and stored trees; budget reports."
 ---
 
 # The asset pipeline (the `assets` command)
-
-> Roadmap step 0.2, first released in null3D 0.1.0. The command is experimental, so it can still change between versions.
 
 ```mermaid
 flowchart LR

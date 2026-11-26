@@ -1,14 +1,10 @@
 ---
 id: api/vertex-draws
 title: Draws from a vertex count
-status: experimental
-since: "0.2"
 summary: "scene.createVertexDraw: a custom material and a vertex count with no mesh data, the vertex and instance index in the shader, a bounds sphere, and helpers that wrap positions around the camera."
 ---
 
 # Draws from a vertex count
-
-> Roadmap step 0.2, first released in null3D 0.1.0. The API is experimental, so it can still change between versions.
 
 ```mermaid
 flowchart LR

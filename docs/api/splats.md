@@ -1,14 +1,10 @@
 ---
 id: api/splats
 title: Gaussian splats (@null3d/splats)
-status: experimental
-since: "0.3"
 summary: "createSplats: SPZ files, streamed chunk files and KHR_gaussian_splatting models drawn as Gaussian splats, with detail levels, a budget that follows the preset and the GPU path, and a soft mix with meshes."
 ---
 
 # Gaussian splats
-
-> Roadmap step 0.3, first released in null3D 0.1.0. The API is experimental, so it can still change between versions.
 
 ```mermaid
 flowchart LR

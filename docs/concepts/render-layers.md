@@ -1,14 +1,12 @@
 ---
 id: concepts/render-layers
 title: Render layers
-status: experimental
-since: "0.1"
 summary: "32-bit layer masks that choose which cameras draw which objects and instance batches."
 ---
 
 # Render layers
 
-> Roadmap step 0.1, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. Raycasts, overlap queries and declared render passes take layer masks too. See [Raycasting and spatial queries](../api/raycast.md) and [Custom passes and render targets](../guides/custom-passes.md).
+> Raycasts, overlap queries and declared render passes take layer masks too. See [Raycasting and spatial queries](../api/raycast.md) and [Custom passes and render targets](../guides/custom-passes.md).
 
 ```mermaid
 flowchart LR

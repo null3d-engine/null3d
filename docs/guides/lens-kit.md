@@ -1,14 +1,10 @@
 ---
 id: guides/lens-kit
 title: Lens kit
-status: experimental
-since: "0.3"
 summary: "One look for the camera's marks: a grade, a sharpening, a vignette, film grain, color fringes, an anamorphic streak read from bloom, and a speed blur."
 ---
 
 # Lens kit
-
-> Roadmap step 0.3, first released in null3D 0.1.0. The API is experimental, so it can still change between versions.
 
 The lens kit gives a scene one camera look. It sets the engine's own grade, sharpening and
 vignette from one object. It draws the camera's smaller marks in a single full-screen effect: film

@@ -1,14 +1,10 @@
 ---
 id: guides/testing
 title: Testing your sketch
-status: experimental
-since: "0.1"
 summary: "Hold mode; image tests; reading results; frames that stay the same on every run; browser tests of a whole app."
 ---
 
 # Testing your sketch
-
-> Roadmap step 0.1, first released in null3D 0.1.0. The API is experimental, so it can still change between versions.
 
 ```mermaid
 flowchart LR

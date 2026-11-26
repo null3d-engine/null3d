@@ -1,14 +1,10 @@
 ---
 id: api/ui
 title: UI overlays and labels
-status: experimental
-since: "0.2"
 summary: "ui.trackLabel in the sketch; engine.labels.bind on the page."
 ---
 
 # UI overlays and labels
-
-> Roadmap step 0.2, first released in null3D 0.1.0. The API is experimental, so it can still change between versions.
 
 A label is an HTML element that follows a scene object, such as a name tag or a health bar above a unit. The sketch tracks a label on an object under an id, and the page binds an element to the same id. The engine then moves the element over the object in every frame on screen. No message goes between the sketch and the page per frame.
 

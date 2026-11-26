@@ -1,14 +1,10 @@
 ---
 id: getting-started/third-party-notices
 title: Third-party notices
-status: experimental
-since: "0.2"
 summary: "The third-party code in each null3D package, with its version and license, and the notices file that a build writes beside the page."
 ---
 
 # Third-party notices
-
-> Roadmap step 0.2, first released in null3D 0.1.0. The API is experimental, so it can still change between versions.
 
 Some null3D packages ship code from other projects, as the original file or as a port of it. Each license asks a copy to carry its notice, so every such package ships a `THIRD-PARTY-NOTICES.txt` file with the full text.
 

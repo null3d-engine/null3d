@@ -30,6 +30,18 @@ export function yamlString(value: string): string {
 }
 
 /** Front matter block for the given fields, in the given order. */
-export function renderFrontMatter(fields: [key: string, value: string][]): string {
-	return `---\n${fields.map(([key, value]) => `${key}: ${yamlString(value)}`).join('\n')}\n---\n`;
+export function renderFrontMatter(fields: [key: string, value: string | boolean][]): string {
+	const scalar = (value: string | boolean) =>
+		typeof value === 'boolean' ? String(value) : yamlString(value);
+	return `---\n${fields.map(([key, value]) => `${key}: ${scalar(value)}`).join('\n')}\n---\n`;
+}
+
+/** Front matter of a page that a generator writes: its id, title and summary, marked generated. */
+export function generatedFrontMatter(id: string, title: string, summary: string): string {
+	return renderFrontMatter([
+		['id', id],
+		['title', title],
+		['generated', true],
+		['summary', summary],
+	]);
 }

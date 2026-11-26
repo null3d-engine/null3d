@@ -1,14 +1,10 @@
 ---
 id: api/water
 title: "Water (@null3d/water)"
-status: experimental
-since: "0.3"
 summary: "createWater: a river and a lake from one shape, with waves that the current carries, ripples, caustics, foam, rain rings, a soft shore that reads the scene's depth or the shape's bed, a reflection whose cadence follows the preset, and createUnderwater for the view from below the surface. createWaterfall: a fall from a river's lip, with spray and mist. createOcean: an open sea of spectra transformed on the GPU."
 ---
 
 # Water (@null3d/water)
-
-> Roadmap step 0.3, first released in null3D 0.1.0. The API is experimental, so it can still change between versions.
 
 ```mermaid
 flowchart LR

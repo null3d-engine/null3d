@@ -1,14 +1,10 @@
 ---
 id: api/cameras
 title: Cameras
-status: experimental
-since: "0.1"
 summary: "Perspective and orthographic cameras; a perspective camera's focal length; screenToRay; worldToScreen; layers."
 ---
 
 # Cameras
-
-> Roadmap step 0.1, first released in null3D 0.1.0. The API is experimental, so it can still change between versions.
 
 A camera is the object that the engine draws the scene from. There are two kinds: `scene.createPerspectiveCamera` makes a perspective camera, and `scene.createOrthographicCamera` makes an orthographic one. `scene.setActiveCamera` picks the camera that the canvas shows.
 

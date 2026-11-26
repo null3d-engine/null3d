@@ -1,14 +1,10 @@
 ---
 id: getting-started/project-structure
 title: Project structure
-status: experimental
-since: "0.3"
 summary: "Starting from the `empty`, `product` or `game` template with `bunx @null3d/cli create`; page.ts, sketch.ts, AGENTS.md and the agent hook; what runs where."
 ---
 
 # Project structure
-
-> Roadmap step 0.3, first released in null3D 0.1.0. The API is experimental, so it can still change between versions.
 
 ```mermaid
 flowchart LR

@@ -9,8 +9,7 @@ const repoRoot = join(import.meta.dir, '../..');
 const skill = (body: string) =>
 	`---\nname: demo-skill\ndescription: Demonstrates the skills check.\n---\n\n# Demo\n\n${body}\n`;
 const EVALS = JSON.stringify({ skill_name: 'demo-skill', engine_version: '0.1', evals: [] });
-const PAGE =
-	'---\nid: concepts/handles\ntitle: Handles\nstatus: planned\nsince: "0.1"\nsummary: S\n---\n';
+const PAGE = '---\nid: concepts/handles\ntitle: Handles\nsummary: S\n---\n';
 
 describe('docIdsIn', () => {
 	it('finds doc IDs in backticks, only in real docs areas', () => {

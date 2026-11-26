@@ -1,14 +1,10 @@
 ---
 id: guides/loading-screens
 title: Loading screens and warm-up
-status: experimental
-since: "0.1"
 summary: "The download list; preload; onProgress; loads one after another; scene.warmUp; shader files that load up front; the preset check during play or before it; upload budgets; switching presets behind a loading screen."
 ---
 
 # Loading screens and warm-up
-
-> Roadmap step 0.1, first released in null3D 0.1.0. The API is experimental, so it can still change between versions.
 
 ```mermaid
 flowchart LR

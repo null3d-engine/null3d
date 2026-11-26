@@ -1,14 +1,12 @@
 ---
 id: api/materials
 title: Materials
-status: experimental
-since: "0.1"
 summary: "standard, unlit, shader, shadowCatcher; every option."
 ---
 
 # Materials
 
-> Roadmap step 0.1, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. `materials.shader` takes no standard texture maps. It takes up to 6 textures of its own.
+> `materials.shader` takes no standard texture maps. It takes up to 6 textures of its own.
 
 A material sets how the surfaces of the objects that use it look. `materials.standard` makes a lit material, and `materials.unlit` makes one that ignores lights. Create materials in the setup, and share each one between the objects that look alike.
 

@@ -1,14 +1,10 @@
 ---
 id: guides/add-ons
 title: Building an add-on
-status: experimental
-since: "0.3"
 summary: "One package with one entry; claim a namespace and the plugin interface range; import only the public entry points; compile the shaders on both paths; name a page; run the check."
 ---
 
 # Building an add-on
-
-> Roadmap step 0.3, first released in null3D 0.1.0. The API is experimental, so it can still change between versions.
 
 An add-on is a package that adds a feature above the engine's public API. It has one install and one import, and it reaches the engine only through the engine's public entry points. The engine's own add-ons work the same way. `bunx @null3d/cli check-addon` runs these rules on a folder before a listing publishes it.
 

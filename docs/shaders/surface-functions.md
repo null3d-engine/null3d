@@ -1,14 +1,10 @@
 ---
 id: shaders/surface-functions
 title: Surface functions
-status: experimental
-since: "0.1"
 summary: "The surface record; normals for the diffuse light and the sky's light; occlusion counted once; uniforms and textures; reflections; transmission; light through thin surfaces; clear coat and sheen; vertex-offset functions; the coverage of a shadow caster and where its lookup reads; a material's own lobe; values per row of a batch; second texture coordinates, pixel position and instance index."
 ---
 
 # Surface functions
-
-> Roadmap step 0.1, first released in null3D 0.1.0. The API is experimental, so it can still change between versions.
 
 A surface function changes how a material's surface looks, and keeps the engine's lighting. You write it in WGSL. For each pixel, the engine gives it a `SurfaceInput`, and it returns a `Surface`: the base color, roughness, metalness, normal and light of that point. The engine then lights the surface with the scene's lights and shadows, as it lights a standard material. The function works on every GPU path, because the null3D Vite plugin builds it into the standard material's shader for WebGPU and WebGL2.
 

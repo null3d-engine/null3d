@@ -1,14 +1,12 @@
 ---
 id: concepts/static-dynamic
 title: Static and dynamic objects
-status: experimental
-since: "0.1"
 summary: "When to mark objects static; setters versus direct array writes; dirty ranges."
 ---
 
 # Static and dynamic objects
 
-> Roadmap step 0.1, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. A single object takes no direct array writes: move it with its setters.
+> A single object takes no direct array writes: move it with its setters.
 
 ```mermaid
 flowchart TB

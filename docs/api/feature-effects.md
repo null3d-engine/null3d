@@ -1,14 +1,12 @@
 ---
 id: api/feature-effects
 title: Add-on feature effects
-status: experimental
-since: "0.3"
 summary: "post.addFeatureEffect turns a full-screen feature description into a pass of your WGSL over the scene's color, at the resolve point, on both GPU paths and in every thread mode, and draws it only while the feature is ready."
 ---
 
 # Add-on feature effects
 
-> Roadmap step 0.3, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. A full-screen effect records at the resolve point, in the main view alone.
+> A full-screen effect records at the resolve point, in the main view alone.
 
 ```mermaid
 flowchart LR

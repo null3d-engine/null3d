@@ -1,14 +1,10 @@
 ---
 id: porting/threejs-materials
 title: Porting materials and textures
-status: experimental
-since: "0.3"
 summary: "Parameter-by-parameter conversion; color spaces; approximations."
 ---
 
 # Porting materials and textures
-
-> Roadmap step 0.3, first released in null3D 0.1.0. The API is experimental, so it can still change between versions.
 
 Most three.js materials map to `materials.standard`, which follows the same glTF metallic-roughness model and the same formulas. So the values of a `MeshStandardMaterial` or a `MeshPhysicalMaterial` carry over. Lambert, Phong and Toon materials have no direct equivalent, so they become a standard material with converted values, or a surface function.
 

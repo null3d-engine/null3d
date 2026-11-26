@@ -1,14 +1,12 @@
 ---
 id: api/terrain
 title: "Terrain (@null3d/terrain)"
-status: experimental
-since: "0.2"
 summary: "createTerrain: a height field drawn as a camera-centered quadtree of blocks, lit per pixel from baked normals, with a height-blended splat surface, and heightAt and normalAt for placing objects."
 ---
 
 # Terrain (@null3d/terrain)
 
-> Roadmap step 0.2, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. The ground has no collision. A block morphs toward its parent block's surface before it gives way to it, and a skirt closes the seam between neighbours that differ by more than one level.
+> The ground has no collision. A block morphs toward its parent block's surface before it gives way to it, and a skirt closes the seam between neighbours that differ by more than one level.
 
 ```mermaid
 flowchart LR

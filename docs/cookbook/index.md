@@ -1,14 +1,10 @@
 ---
 id: cookbook/index
 title: Cookbook
-status: experimental
-since: "0.2"
 summary: "Short recipes; each is also a tested example."
 ---
 
 # Cookbook
-
-> Roadmap step 0.2, first released in null3D 0.1.0. The APIs that the recipes use are experimental, so they can still change between versions.
 
 ```mermaid
 flowchart LR

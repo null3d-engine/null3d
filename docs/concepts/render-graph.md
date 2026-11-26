@@ -1,14 +1,10 @@
 ---
 id: concepts/render-graph
 title: The render graph
-status: experimental
-since: "0.1"
 summary: "Declared reads and writes; automatic order; transient memory; validation errors; the text dump."
 ---
 
 # The render graph
-
-> Roadmap step 0.1, first released in null3D 0.1.0. The API is experimental, so it can still change between versions.
 
 ```mermaid
 flowchart LR

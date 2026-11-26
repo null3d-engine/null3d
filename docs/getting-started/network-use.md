@@ -1,14 +1,10 @@
 ---
 id: getting-started/network-use
 title: Network use
-status: experimental
-since: "0.2"
 summary: "What null3D downloads, when each file loads, the build's one download, and how to keep a page on its own origin."
 ---
 
 # Network use
-
-> Roadmap step 0.2, first released in null3D 0.1.0. The API is experimental, so it can still change between versions.
 
 null3D sends nothing to any server of its own. The engine and its add-ons have no telemetry, no analytics, no crash reporting and no update check. Every request they make is for a file that the page names, or a file that the build produced.
 

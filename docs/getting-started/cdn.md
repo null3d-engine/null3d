@@ -1,14 +1,10 @@
 ---
 id: getting-started/cdn
 title: Try null3D from a CDN
-status: experimental
-since: "0.2"
 summary: "The CDN build; its production and development entries; one HTML file with no bundler; import maps; the policy and CORS headers; both thread modes; what needs a build step."
 ---
 
 # Try null3D from a CDN
-
-> Roadmap step 0.2, first released in null3D 0.1.0. The API is experimental, so it can still change between versions.
 
 A page can draw a null3D scene with no build step: one HTML file that imports the engine from a CDN. This suits a quick trial, a documentation example or a CodePen-style page. A project that grows past a trial uses Vite and the plugin, as [Install null3D](install.md) shows.
 

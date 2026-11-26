@@ -1,14 +1,10 @@
 ---
 id: api/input
 title: Input
-status: experimental
-since: "0.1"
 summary: "Pointer, keyboard, touch and gamepad; action maps; pointer events on objects."
 ---
 
 # Input
-
-> Roadmap step 0.1, first released in null3D 0.1.0. The API is experimental, so it can still change between versions.
 
 ```mermaid
 flowchart LR

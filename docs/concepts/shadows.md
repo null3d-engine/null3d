@@ -1,14 +1,12 @@
 ---
 id: concepts/shadows
 title: Shadows
-status: experimental
-since: "0.1"
 summary: "Cascades that stay still as the camera turns and blend where they meet; contact shadows where small objects touch the ground; the shadow atlas of spot and point lights; update rates and filtering per preset; bias settings."
 ---
 
 # Shadows
 
-> Roadmap step 0.1, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. The first directional light, spot lights and point lights cast shadows. Instance batches cast and receive them, and the directional light draws contact shadows.
+> The first directional light, spot lights and point lights cast shadows. Instance batches cast and receive them, and the directional light draws contact shadows.
 
 ```mermaid
 flowchart LR

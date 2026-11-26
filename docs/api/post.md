@@ -1,14 +1,10 @@
 ---
 id: api/post
 title: Post-processing API
-status: experimental
-since: "0.1"
 summary: "post.set for tone mapping, exposure and a camera's EV100, automatic exposure, bloom, ambient occlusion, screen-space reflections, depth of field, outlines, color grading tables and controls, the vignette and sharpening; custom effects with post.addEffect, custom tone curves, and still views."
 ---
 
 # Post-processing API
-
-> Roadmap step 0.1, first released in null3D 0.1.0. The API is experimental, so it can still change between versions.
 
 `ctx.post` holds the settings that the engine applies to the scene's color on its way to the canvas. They are the tone mapping, the exposure, automatic exposure, bloom, ambient occlusion, screen-space reflections, depth of field, outlines, a color grading table, the vignette, the sharpening and the sketch's own effects. [Color management](../concepts/color-management.md) explains how the first two fit into the frame. [The post-processing chain](../concepts/post-processing.md) explains how bloom, ambient occlusion, screen-space reflections, depth of field and sharpening do.
 

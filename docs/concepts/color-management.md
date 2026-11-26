@@ -1,14 +1,10 @@
 ---
 id: concepts/color-management
 title: Color management
-status: experimental
-since: "0.1"
 summary: "Linear working space; sRGB hex colors and linear arrays; texture color spaces; HDR color; exposure and tone mapping; transparent canvases."
 ---
 
 # Color management
-
-> Roadmap step 0.1, first released in null3D 0.1.0. The API is experimental, so it can still change between versions.
 
 ```mermaid
 flowchart LR

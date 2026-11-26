@@ -1,14 +1,12 @@
 ---
 id: guides/custom-shaders
 title: Custom shaders
-status: experimental
-since: "0.1"
 summary: "WGSL in sketch code; shader errors; surface functions; full shaders; uniforms, textures and typed materials; hot reload."
 ---
 
 # Custom shaders
 
-> Roadmap step 0.1, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. Custom materials with surface functions, vertex offsets, uniforms, textures and full shaders are built, and so is hot reload on the dev server.
+> Custom materials with surface functions, vertex offsets, uniforms, textures and full shaders are built, and so is hot reload on the dev server.
 
 ```mermaid
 flowchart LR

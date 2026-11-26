@@ -1,14 +1,10 @@
 ---
 id: api/impostors
 title: Impostors (@null3d/impostors)
-status: experimental
-since: "0.2"
 summary: "createImpostors: far objects as camera-facing cards that blend the three stored views nearest the camera and light from baked normals; mergeFarGeometry: one mesh per far grid cell."
 ---
 
 # Impostors
-
-> Roadmap step 0.2, first released in null3D 0.1.0. The API is experimental, so it can still change between versions.
 
 The demo "Impostors" in `examples/impostors` draws a pine forest three ways by distance. Level-of-detail meshes stand near, one merged mesh stands per grid cell in the middle, and cards baked from the pine stand far out. Press L there to draw the far band as meshes instead, and compare. The near meshes and the cards share the hand-over band.
 

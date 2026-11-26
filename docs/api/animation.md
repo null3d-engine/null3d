@@ -1,14 +1,10 @@
 ---
 id: api/animation
 title: Animation
-status: experimental
-since: "0.2"
 summary: "The animator; play, crossFade, clip weights, start times, 1D blends, layers, joint masks, additive clips, joint overrides and look-at, events; property animation of lights, cameras and materials, glTF's KHR_animation_pointer; morph weights."
 ---
 
 # Animation
-
-> Roadmap step 0.2, first released in null3D 0.1.0. The API is experimental, so it can still change between versions.
 
 ```mermaid
 flowchart LR

@@ -3,7 +3,7 @@
 // Each feature's row says when its shaders download, from the descriptions below; a feature that
 // the manifest names and the descriptions lack fails the docs generator.
 import { readIfExists } from './files';
-import { renderFrontMatter } from './frontmatter';
+import { generatedFrontMatter } from './frontmatter';
 
 /** The generated page of the features whose shaders load on first use. */
 export const FIRST_USE_PAGE_ID = 'guides/first-use-shaders';
@@ -109,16 +109,7 @@ export function firstUsePage(features: readonly string[]): string {
 	const rows = features.map(
 		(feature) => `| \`'${feature}'\` | ${FIRST_USE_DOWNLOADS[feature] ?? 'not described'} |`,
 	);
-	return `${renderFrontMatter([
-		['id', FIRST_USE_PAGE_ID],
-		['title', 'Shaders that load on first use'],
-		['status', 'generated'],
-		['since', '0.1'],
-		[
-			'summary',
-			"The features whose shaders download on first use, which createEngine's preload takes.",
-		],
-	])}
+	return `${generatedFrontMatter(FIRST_USE_PAGE_ID, 'Shaders that load on first use', "The features whose shaders download on first use, which createEngine's preload takes.")}
 # Shaders that load on first use
 
 > [Loading screens](loading-screens.md#loading-everything-up-front) explains this table. The engine's shader manifest makes it, so it lists every feature of this version.

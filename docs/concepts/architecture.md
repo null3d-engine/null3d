@@ -1,14 +1,10 @@
 ---
 id: concepts/architecture
 title: "Architecture: threads and the frame"
-status: experimental
-since: "0.1"
 summary: "Main thread, sketch worker, render worker, job workers; where the sketch runs; the pipelined frame and its passes; grid cells; latency modes."
 ---
 
 # Architecture: threads and the frame
-
-> Roadmap step 0.1, first released in null3D 0.1.0. The API is experimental, so it can still change between versions.
 
 ```mermaid
 flowchart LR

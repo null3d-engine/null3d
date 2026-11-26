@@ -1,14 +1,12 @@
 ---
 id: api/features
 title: Add-on feature descriptions
-status: experimental
-since: "0.3"
 summary: "One description for an add-on's render work: the frame point, the reads and writes, the callbacks, the outputs with neutral defaults, the lighting slots, the order band and the view mask."
 ---
 
 # Add-on feature descriptions
 
-> Roadmap step 0.3, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. A description with `kind: 'draw'` can become a draw with [`scene.addFeatureDraw`](feature-draws.md). A description with `kind: 'fullscreen'` can become a pass over the scene's color with [`post.addFeatureEffect`](feature-effects.md). A description with `kind: 'compute'` can become a compute pass with [`render.addPass`](render.md#compute-passes). A registration checks the shape, and the adapters place the work that each kind declares. A feature's preset settings, budget, GPU scope and stats work today.
+> A description with `kind: 'draw'` can become a draw with [`scene.addFeatureDraw`](feature-draws.md). A description with `kind: 'fullscreen'` can become a pass over the scene's color with [`post.addFeatureEffect`](feature-effects.md). A description with `kind: 'compute'` can become a compute pass with [`render.addPass`](render.md#compute-passes). A registration checks the shape, and the adapters place the work that each kind declares. A feature's preset settings, budget, GPU scope and stats work today.
 
 ```mermaid
 flowchart LR

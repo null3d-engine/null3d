@@ -1,14 +1,10 @@
 ---
 id: concepts/culling
 title: Culling
-status: experimental
-since: "0.1"
 summary: "Frustum culling on the GPU on WebGPU, or on the job workers there when the device draws directly, and on the job workers on WebGL2; grid cells, whole cells out of view skipped first, positions relative to the camera, and occlusion culling: behind large opaque objects that the GPU picks on WebGPU, and behind marked blockers on WebGL2."
 ---
 
 # Culling
-
-> Roadmap step 0.1, first released in null3D 0.1.0. The API is experimental, so it can still change between versions.
 
 ```mermaid
 flowchart LR

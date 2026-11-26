@@ -1,14 +1,12 @@
 ---
 id: concepts/quality-presets
 title: "Quality presets, dynamic resolution and frame budgets"
-status: experimental
-since: "0.1"
 summary: "Low to Ultra; pixel-ratio caps; the preset check; switching presets; the frame-budget governor; quality events for sketch code."
 ---
 
 # Quality presets, dynamic resolution and frame budgets
 
-> Roadmap step 0.1, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. The engine chooses a preset and checks it in the first frames of play, or before play when the page asks. It applies the preset's pixel ratio cap, render scale range, shadow, texture and anti-aliasing settings, depth prepass, occlusion culling and memory maximum. During play, the frame-budget governor moves a sketch's budgets and the render scale in turn, a budget's step first, then the live shadow settings. A sketch can switch presets with `quality.setPreset`. The presets do not cap the count of point and spot lights. The camera lists up to 1,024 of them on every preset, and up to 128 in each cluster.
+> The engine chooses a preset and checks it in the first frames of play, or before play when the page asks. It applies the preset's pixel ratio cap, render scale range, shadow, texture and anti-aliasing settings, depth prepass, occlusion culling and memory maximum. During play, the frame-budget governor moves a sketch's budgets and the render scale in turn, a budget's step first, then the live shadow settings. A sketch can switch presets with `quality.setPreset`. The presets do not cap the count of point and spot lights. The camera lists up to 1,024 of them on every preset, and up to 128 in each cluster.
 
 ```mermaid
 flowchart TD

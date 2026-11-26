@@ -1,14 +1,10 @@
 ---
 id: porting/threejs-unsupported
 title: Unsupported three.js features
-status: experimental
-since: "0.3"
 summary: "three.js features with no null3D equivalent, with workarounds."
 ---
 
 # Unsupported three.js features
-
-> Roadmap step 0.3, first released in null3D 0.1.0. The API is experimental, so it can still change between versions.
 
 Most three.js features have a null3D equivalent, which the [three.js to null3D mapping](threejs-mapping.md) gives. This page lists the features that have none, and the parts of features that behave differently. Each entry gives the workaround.
 

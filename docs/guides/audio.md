@@ -1,14 +1,10 @@
 ---
 id: guides/audio
 title: Sound in a scene
-status: experimental
-since: "0.1"
 summary: "Sound that follows the scene with @null3d/sound: beds whose level the scene sets, sources at places, groups of many sources, and events."
 ---
 
 # Sound in a scene
-
-> Roadmap step 0.1, first released in null3D 0.1.0. The API is experimental, so it can still change between versions.
 
 ```mermaid
 flowchart LR

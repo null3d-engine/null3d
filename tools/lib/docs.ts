@@ -40,18 +40,15 @@ import {
 	firstUseProblems,
 	manifestFeatures,
 } from './first-use-docs';
-import { parseFrontMatter, renderFrontMatter } from './frontmatter';
+import { generatedFrontMatter, parseFrontMatter } from './frontmatter';
 import { checkLinkTree, linkedFiles } from './links';
 import { LIBRARY_PAGE_ID, libraryPage, readLibrary } from './shader-library';
-import { STEPS_NOTE, shipsSentence } from './steps';
 import { RECORD_TABLES_PAGE, readRecord, recordFiles, recordTablesPage } from './tested-devices';
 
 export interface PageEntry {
 	/** Path under docs/ without the .md extension. */
 	id: string;
 	title: string;
-	/** First engine version that ships the page's feature. */
-	since: string;
 	summary: string;
 }
 
@@ -68,126 +65,128 @@ export const AREAS: readonly (readonly [id: string, heading: string])[] = [
 	['cookbook', 'Cookbook'],
 ];
 
-export const STATUSES = ['experimental', 'stable', 'generated'] as const;
+/**
+ * Labels that a page may carry in its front matter. Pages carry none unless the owner chooses to
+ * mark one, and the website shows a page's labels as tags.
+ */
+export const STATUSES = ['experimental', 'stable'] as const;
 
-const SINCE_FORMAT = /^(\d+\.\d+|after \d+\.\d+)$/;
-
-/** A roadmap step named as a release, such as "null3D 0.2", which no release is called. */
-const STEP_AS_RELEASE = /\bnull3D (0\.[23])(?!\.?\d)/;
+/** A release version, such as "1.2", for a page's optional `since` label. */
+const SINCE_FORMAT = /^\d+\.\d+(\.\d+)?$/;
 
 /** Every page of the docs. The inventory lists only written pages, and the check reports one that is missing. */
 // biome-ignore format: one page per line keeps the inventory readable as a table
 export const PAGES: readonly PageEntry[] = [
-	{ id: 'index', title: 'null3D documentation', since: '0.1', summary: 'What null3D is; how the docs are organized; status labels.' },
-	{ id: 'getting-started/install', title: 'Install null3D', since: '0.1', summary: 'The npm packages; the Vite plugin; package versions always match; the optional `null3d` command.' },
-	{ id: 'getting-started/first-scene', title: 'Your first scene', since: '0.1', summary: 'page.ts with createEngine; sketch.ts with defineSketch; camera, light, mesh; running it with Vite.' },
-	{ id: 'getting-started/hosting', title: 'Hosting and cross-origin isolation', since: '0.1', summary: 'COOP and COEP headers; require-corp on Safari; CORS and CORP for assets; the single-threaded fallback.' },
-	{ id: 'getting-started/network-use', title: 'Network use', since: '0.2', summary: "What null3D downloads, when each file loads, the build's one download, and how to keep a page on its own origin." },
-	{ id: 'getting-started/third-party-notices', title: 'Third-party notices', since: '0.2', summary: 'The third-party code in each null3D package, its license, and the notices file that a build writes beside the page.' },
-	{ id: 'getting-started/cdn', title: 'Try null3D from a CDN', since: '0.2', summary: 'The CDN build; one HTML file with no bundler; import maps; the policy and CORS headers; both thread modes; what needs a build step.' },
-	{ id: 'getting-started/project-structure', title: 'Project structure', since: '0.3', summary: 'Starting from the `empty`, `product` or `game` template with `bunx @null3d/cli create`; page.ts, sketch.ts, AGENTS.md and the agent hook; what runs where.' },
+	{ id: 'index', title: 'null3D documentation', summary: 'What null3D is and how the docs are organized.' },
+	{ id: 'getting-started/install', title: 'Install null3D', summary: 'The npm packages; the Vite plugin; package versions always match; the optional `null3d` command.' },
+	{ id: 'getting-started/first-scene', title: 'Your first scene', summary: 'page.ts with createEngine; sketch.ts with defineSketch; camera, light, mesh; running it with Vite.' },
+	{ id: 'getting-started/hosting', title: 'Hosting and cross-origin isolation', summary: 'COOP and COEP headers; require-corp on Safari; CORS and CORP for assets; the single-threaded fallback.' },
+	{ id: 'getting-started/network-use', title: 'Network use', summary: "What null3D downloads, when each file loads, the build's one download, and how to keep a page on its own origin." },
+	{ id: 'getting-started/third-party-notices', title: 'Third-party notices', summary: 'The third-party code in each null3D package, its license, and the notices file that a build writes beside the page.' },
+	{ id: 'getting-started/cdn', title: 'Try null3D from a CDN', summary: 'The CDN build; one HTML file with no bundler; import maps; the policy and CORS headers; both thread modes; what needs a build step.' },
+	{ id: 'getting-started/project-structure', title: 'Project structure', summary: 'Starting from the `empty`, `product` or `game` template with `bunx @null3d/cli create`; page.ts, sketch.ts, AGENTS.md and the agent hook; what runs where.' },
 
-	{ id: 'concepts/architecture', title: 'Architecture: threads and the frame', since: '0.1', summary: 'Main thread, sketch worker, render worker, job workers; the pipelined frame; latency modes.' },
-	{ id: 'concepts/handles', title: 'Handles and objects', since: '0.1', summary: '30-bit handles; wrapper objects; stale-handle errors; keeping per-object data in your own arrays.' },
-	{ id: 'concepts/static-dynamic', title: 'Static and dynamic objects', since: '0.1', summary: 'When to mark objects static; setters versus direct array writes; dirty ranges.' },
-	{ id: 'concepts/instances', title: 'Instances and batching', since: '0.1', summary: 'createInstances; typed-array views; markDirty; automatic batching; per-instance attributes.' },
-	{ id: 'concepts/particle-buffer', title: 'The particle buffer', since: '0.2', summary: 'createParticleBuffer; 32-byte records; the values and the frame values; writing births; uploads and limits.' },
-	{ id: 'concepts/backends', title: 'GPU tiers and backends', since: '0.1', summary: 'WebGPU core, compatibility mode and WebGL2; capability flags; the portable budget; never branching on GPU names.' },
-	{ id: 'concepts/quality-presets', title: 'Quality presets, dynamic resolution and frame budgets', since: '0.1', summary: 'Low to Ultra; pixel-ratio caps; the preset check; switching presets; the frame-budget governor; quality events for sketch code.' },
-	{ id: 'concepts/color-management', title: 'Color management', since: '0.1', summary: 'Linear working space; sRGB hex colors and linear arrays; HDR color; exposure and tone mapping; transparent canvases.' },
-	{ id: 'concepts/materials', title: 'Materials and pipelines', since: '0.1', summary: 'Built-in materials; permutations; pipeline warm-up; why changing shader features can stall a frame.' },
-	{ id: 'concepts/lighting', title: 'Lighting and environment', since: '0.1', summary: 'Light types and units; clustered lighting; fog; environment maps and spherical harmonics.' },
-	{ id: 'concepts/shadows', title: 'Shadows', since: '0.1', summary: 'Cascades; update rates; filtering per preset; bias settings.' },
-	{ id: 'concepts/render-layers', title: 'Render layers', since: '0.1', summary: '32-bit layer masks on objects, cameras, raycasts and passes.' },
-	{ id: 'concepts/render-graph', title: 'The render graph', since: '0.1', summary: 'Declared reads and writes; automatic order; transient memory; validation errors; the text dump.' },
-	{ id: 'concepts/large-worlds', title: 'Large worlds and precision', since: '0.2', summary: 'Cell-relative positions and per-frame camera-to-cell offsets; reversed depth; largeWorld mode; batch origins; floating-origin geometry.' },
-	{ id: 'concepts/culling', title: 'Culling', since: '0.1', summary: 'Frustum culling on the GPU on WebGPU and on the job workers on WebGL2; grid cells and positions relative to the camera.' },
-	{ id: 'concepts/lod', title: 'Levels of detail', since: '0.2', summary: 'LOD groups; generated LODs; per-instance selection.' },
-	{ id: 'concepts/assets', title: 'Assets and prefabs', since: '0.2', summary: 'glTF, KTX2, meshopt; prefabs and instantiate; upload budgets; memory.' },
-	{ id: 'concepts/post-processing', title: 'The post-processing chain', since: '0.2', summary: 'HDR target; custom effects; bloom; ambient occlusion; the single final pass; custom tone curves.' },
+	{ id: 'concepts/architecture', title: 'Architecture: threads and the frame', summary: 'Main thread, sketch worker, render worker, job workers; the pipelined frame; latency modes.' },
+	{ id: 'concepts/handles', title: 'Handles and objects', summary: '30-bit handles; wrapper objects; stale-handle errors; keeping per-object data in your own arrays.' },
+	{ id: 'concepts/static-dynamic', title: 'Static and dynamic objects', summary: 'When to mark objects static; setters versus direct array writes; dirty ranges.' },
+	{ id: 'concepts/instances', title: 'Instances and batching', summary: 'createInstances; typed-array views; markDirty; automatic batching; per-instance attributes.' },
+	{ id: 'concepts/particle-buffer', title: 'The particle buffer', summary: 'createParticleBuffer; 32-byte records; the values and the frame values; writing births; uploads and limits.' },
+	{ id: 'concepts/backends', title: 'GPU tiers and backends', summary: 'WebGPU core, compatibility mode and WebGL2; capability flags; the portable budget; never branching on GPU names.' },
+	{ id: 'concepts/quality-presets', title: 'Quality presets, dynamic resolution and frame budgets', summary: 'Low to Ultra; pixel-ratio caps; the preset check; switching presets; the frame-budget governor; quality events for sketch code.' },
+	{ id: 'concepts/color-management', title: 'Color management', summary: 'Linear working space; sRGB hex colors and linear arrays; HDR color; exposure and tone mapping; transparent canvases.' },
+	{ id: 'concepts/materials', title: 'Materials and pipelines', summary: 'Built-in materials; permutations; pipeline warm-up; why changing shader features can stall a frame.' },
+	{ id: 'concepts/lighting', title: 'Lighting and environment', summary: 'Light types and units; clustered lighting; fog; environment maps and spherical harmonics.' },
+	{ id: 'concepts/shadows', title: 'Shadows', summary: 'Cascades; update rates; filtering per preset; bias settings.' },
+	{ id: 'concepts/render-layers', title: 'Render layers', summary: '32-bit layer masks on objects, cameras, raycasts and passes.' },
+	{ id: 'concepts/render-graph', title: 'The render graph', summary: 'Declared reads and writes; automatic order; transient memory; validation errors; the text dump.' },
+	{ id: 'concepts/large-worlds', title: 'Large worlds and precision', summary: 'Cell-relative positions and per-frame camera-to-cell offsets; reversed depth; largeWorld mode; batch origins; floating-origin geometry.' },
+	{ id: 'concepts/culling', title: 'Culling', summary: 'Frustum culling on the GPU on WebGPU and on the job workers on WebGL2; grid cells and positions relative to the camera.' },
+	{ id: 'concepts/lod', title: 'Levels of detail', summary: 'LOD groups; generated LODs; per-instance selection.' },
+	{ id: 'concepts/assets', title: 'Assets and prefabs', summary: 'glTF, KTX2, meshopt; prefabs and instantiate; upload budgets; memory.' },
+	{ id: 'concepts/post-processing', title: 'The post-processing chain', summary: 'HDR target; custom effects; bloom; ambient occlusion; the single final pass; custom tone curves.' },
 
-	{ id: 'api/engine', title: 'Page API: createEngine', since: '0.1', summary: 'createEngine options; engine.postToSketch, capture, labels, requestPointerLock, capabilities, destroy.' },
-	{ id: 'api/sketch', title: 'Sketch API: defineSketch and the context', since: '0.1', summary: 'The context object: scene, assets, materials, geometry, textures, input, time, engine, quality, post, render, page, ui, debug; the callbacks.' },
-	{ id: 'api/scene', title: 'Scene', since: '0.1', summary: 'Creating objects; find; background, environment, fog, sky; warmUp.' },
-	{ id: 'api/objects', title: 'Objects and transforms', since: '0.1', summary: 'Setters and getters; parents; flags; destroy.' },
-	{ id: 'api/cameras', title: 'Cameras', since: '0.1', summary: 'Perspective and orthographic cameras; screenToRay; worldToScreen; layers.' },
-	{ id: 'api/lights', title: 'Lights', since: '0.1', summary: 'Directional, point, spot, hemisphere and ambient lights; shadow options.' },
-	{ id: 'api/geometry', title: 'Geometry', since: '0.1', summary: 'Generators of common shapes; extra shapes in @null3d/geometry; meshes from arrays; vertices that change; vertex formats; large meshes.' },
-	{ id: 'api/three-compat', title: 'three.js compatibility (@null3d/three-compat)', since: '0.3', summary: "Reinhard and Cineon tone curves for post.set, and an outline with three.js OutlinePass's glow, pulse and blurred edge." },
-	{ id: 'api/materials', title: 'Materials', since: '0.1', summary: 'standard, unlit, shader, shadowCatcher; every option.' },
-	{ id: 'api/textures', title: 'Textures', since: '0.1', summary: 'loadTexture options; KTX2 files; fromData; fromImageBitmap; fromCanvas; fromVideo; fromPass.' },
-	{ id: 'api/assets', title: 'Assets', since: '0.1', summary: 'loadTexture, loadImageBitmap, loadJson, loadBinary, preload, onProgress; glTF models and environments.' },
-	{ id: 'api/animation', title: 'Animation', since: '0.2', summary: 'The animator; play, crossFade, layers, events; morph weights.' },
-	{ id: 'api/raycast', title: 'Raycasting and spatial queries', since: '0.2', summary: 'raycast, raycastAny, raycastAll, raycastBatch, overlap queries, pointer events on objects.' },
-	{ id: 'api/input', title: 'Input', since: '0.1', summary: 'Pointer, keyboard, touch and gamepad; action maps.' },
-	{ id: 'api/controls', title: 'Controls (@null3d/controls)', since: '0.1', summary: 'Orbit and map controls; fly and first-person controls, with pointer lock; drag, rotate and scale gizmos.' },
-	{ id: 'api/post', title: 'Post-processing API', since: '0.1', summary: 'post.set for tone mapping and exposure; the effects of 0.2; custom effects with post.addEffect and custom tone curves.' },
-	{ id: 'api/render', title: 'Render graph API', since: '0.2', summary: 'render.addPass for scene passes that draw into textures; switching and removing passes; render.dumpGraph.' },
-	{ id: 'api/features', title: 'Add-on feature descriptions', since: '0.3', summary: 'One description for an add-on feature: frame point, reads and writes, callbacks, outputs with neutral defaults, lighting slots, order band and view mask.' },
-	{ id: 'api/vertex-draws', title: 'Draws from a vertex count', since: '0.2', summary: 'scene.createVertexDraw: a custom material and a vertex count with no mesh data, the vertex and instance index in the shader, a bounds sphere, and helpers that wrap positions around the camera.' },
-	{ id: 'api/feature-draws', title: 'Add-on feature draws', since: '0.3', summary: 'scene.addFeatureDraw: a draw feature with its WGSL, vertices, uniforms and sort place, on both GPU paths and in every thread mode.' },
-	{ id: 'api/feature-effects', title: 'Add-on feature effects', since: '0.3', summary: 'post.addFeatureEffect: a full-screen feature with its WGSL and uniforms, at the resolve point, drawn only while the feature is ready.' },
-	{ id: 'api/feature-instances', title: 'Add-on instance draws', since: '0.3', summary: 'scene.addFeatureInstances: a draw of a capacity of instances whose live count the GPU writes, and the batch that the CPU fills on WebGL2.' },
-	{ id: 'api/quality', title: 'Quality API', since: '0.1', summary: 'quality.preset, quality.set, quality.setPreset, the preset check, frame budgets, quality events.' },
-	{ id: 'api/debug', title: 'Debug drawing and stats', since: '0.1', summary: 'debug.line, box, sphere, arrow, axes, grid, frustum and light; engine.measure and its figures; debug.view; debug.stats.' },
-	{ id: 'api/math', title: 'Math helpers', since: '0.1', summary: 'vec3, quat, mat4 and color on plain arrays; math.clamp, lerp, damp and a random generator that hold mode seeds; the maths entry and createMath for a deterministic simulation.' },
-	{ id: 'api/time', title: 'Time', since: '0.1', summary: 'dt, time.now, fixed steps.' },
-	{ id: 'api/sprites', title: 'Sprites', since: '0.2', summary: 'createSprites; world and screen size modes; atlases.' },
-	{ id: 'api/points', title: 'Points', since: '0.2', summary: 'createPoints; size attenuation; textures.' },
-	{ id: 'api/lines', title: 'Lines', since: '0.2', summary: 'createLines; pixel and world widths; dashes; edges from meshes.' },
-	{ id: 'api/particles', title: 'Particles (@null3d/particles)', since: '0.2', summary: 'createParticles: emitters, bursts and sub-emitters; closed-form GPU motion; soft particles; flipbooks made in code.' },
-	{ id: 'api/impostors', title: 'Impostors (@null3d/impostors)', since: '0.2', summary: 'createImpostors: far objects as camera-facing cards that show the stored view nearest the camera; mergeFarGeometry: one mesh per far grid cell.' },
-	{ id: 'api/terrain', title: 'Terrain (@null3d/terrain)', since: '0.2', summary: 'createTerrain: a height field drawn as a camera-centered quadtree of blocks, a splat-mapped surface, and heightAt and normalAt for placing objects.' },
-	{ id: 'api/grass', title: 'Grass (@null3d/grass)', since: '0.3', summary: "createGrass: tufts of bent blades over a ground, placed by integer hashes, built in a compute pass on WebGPU with near shadows, swaying in the wind add-on's field, with a share for each quality preset." },
-	{ id: 'api/splats', title: 'Gaussian splats (@null3d/splats)', since: '0.3', summary: 'createSplats: SPZ files and KHR_gaussian_splatting models drawn as Gaussian splats, with detail levels, a budget that follows the preset and the GPU path, and a soft mix with meshes.' },
-	{ id: 'api/sound', title: 'Sound (@null3d/sound)', since: '0.3', summary: 'createSound and connectSound: loops, groups and one-shots placed in the scene, played with the browser\'s audio and driven from the sketch on the audio thread.' },
-	{ id: 'api/water', title: 'Water (@null3d/water)', since: '0.3', summary: 'createWater: a river and a lake from one shape, with waves, ripples, caustics, foam, soft shores that read the scene depth, a reflection whose cadence follows the preset, and createUnderwater for the view from below the surface.' },
-	{ id: 'api/wind', title: 'Wind (@null3d/wind)', since: '0.3', summary: 'createWind: one field of air that plants, flags, smoke and water read, from an analytic wind of place and time with traveling gusts and pushes, held in a grid that follows the camera.' },
-	{ id: 'api/ui', title: 'UI overlays and labels', since: '0.2', summary: 'ui.trackLabel in the sketch; engine.labels.bind on the page.' },
-	{ id: 'api/page', title: 'Messages between sketch and page', since: '0.1', summary: 'page.post and page.onMessage in the sketch; engine.postToSketch and engine.onSketchMessage on the page.' },
-	{ id: 'api/tasks', title: 'Tasks on the job workers', since: '0.3', summary: 'runTask: an add-on declares a task module and its WebAssembly, which run in the job workers; shared memory; ordering with the frames; failures.' },
+	{ id: 'api/engine', title: 'Page API: createEngine', summary: 'createEngine options; engine.postToSketch, capture, labels, requestPointerLock, capabilities, destroy.' },
+	{ id: 'api/sketch', title: 'Sketch API: defineSketch and the context', summary: 'The context object: scene, assets, materials, geometry, textures, input, time, engine, quality, post, render, page, ui, debug; the callbacks.' },
+	{ id: 'api/scene', title: 'Scene', summary: 'Creating objects; find; background, environment, fog, sky; warmUp.' },
+	{ id: 'api/objects', title: 'Objects and transforms', summary: 'Setters and getters; parents; flags; destroy.' },
+	{ id: 'api/cameras', title: 'Cameras', summary: 'Perspective and orthographic cameras; screenToRay; worldToScreen; layers.' },
+	{ id: 'api/lights', title: 'Lights', summary: 'Directional, point, spot, hemisphere and ambient lights; shadow options.' },
+	{ id: 'api/geometry', title: 'Geometry', summary: 'Generators of common shapes; extra shapes in @null3d/geometry; meshes from arrays; vertices that change; vertex formats; large meshes.' },
+	{ id: 'api/three-compat', title: 'three.js compatibility (@null3d/three-compat)', summary: "Reinhard and Cineon tone curves for post.set, and an outline with three.js OutlinePass's glow, pulse and blurred edge." },
+	{ id: 'api/materials', title: 'Materials', summary: 'standard, unlit, shader, shadowCatcher; every option.' },
+	{ id: 'api/textures', title: 'Textures', summary: 'loadTexture options; KTX2 files; fromData; fromImageBitmap; fromCanvas; fromVideo; fromPass.' },
+	{ id: 'api/assets', title: 'Assets', summary: 'loadTexture, loadImageBitmap, loadJson, loadBinary, preload, onProgress; glTF models and environments.' },
+	{ id: 'api/animation', title: 'Animation', summary: 'The animator; play, crossFade, layers, events; morph weights.' },
+	{ id: 'api/raycast', title: 'Raycasting and spatial queries', summary: 'raycast, raycastAny, raycastAll, raycastBatch, overlap queries, pointer events on objects.' },
+	{ id: 'api/input', title: 'Input', summary: 'Pointer, keyboard, touch and gamepad; action maps.' },
+	{ id: 'api/controls', title: 'Controls (@null3d/controls)', summary: 'Orbit and map controls; fly and first-person controls, with pointer lock; drag, rotate and scale gizmos.' },
+	{ id: 'api/post', title: 'Post-processing API', summary: 'post.set for tone mapping and exposure; the built-in effects; custom effects with post.addEffect and custom tone curves.' },
+	{ id: 'api/render', title: 'Render graph API', summary: 'render.addPass for scene passes that draw into textures; switching and removing passes; render.dumpGraph.' },
+	{ id: 'api/features', title: 'Add-on feature descriptions', summary: 'One description for an add-on feature: frame point, reads and writes, callbacks, outputs with neutral defaults, lighting slots, order band and view mask.' },
+	{ id: 'api/vertex-draws', title: 'Draws from a vertex count', summary: 'scene.createVertexDraw: a custom material and a vertex count with no mesh data, the vertex and instance index in the shader, a bounds sphere, and helpers that wrap positions around the camera.' },
+	{ id: 'api/feature-draws', title: 'Add-on feature draws', summary: 'scene.addFeatureDraw: a draw feature with its WGSL, vertices, uniforms and sort place, on both GPU paths and in every thread mode.' },
+	{ id: 'api/feature-effects', title: 'Add-on feature effects', summary: 'post.addFeatureEffect: a full-screen feature with its WGSL and uniforms, at the resolve point, drawn only while the feature is ready.' },
+	{ id: 'api/feature-instances', title: 'Add-on instance draws', summary: 'scene.addFeatureInstances: a draw of a capacity of instances whose live count the GPU writes, and the batch that the CPU fills on WebGL2.' },
+	{ id: 'api/quality', title: 'Quality API', summary: 'quality.preset, quality.set, quality.setPreset, the preset check, frame budgets, quality events.' },
+	{ id: 'api/debug', title: 'Debug drawing and stats', summary: 'debug.line, box, sphere, arrow, axes, grid, frustum and light; engine.measure and its figures; debug.view; debug.stats.' },
+	{ id: 'api/math', title: 'Math helpers', summary: 'vec3, quat, mat4 and color on plain arrays; math.clamp, lerp, damp and a random generator that hold mode seeds; the maths entry and createMath for a deterministic simulation.' },
+	{ id: 'api/time', title: 'Time', summary: 'dt, time.now, fixed steps.' },
+	{ id: 'api/sprites', title: 'Sprites', summary: 'createSprites; world and screen size modes; atlases.' },
+	{ id: 'api/points', title: 'Points', summary: 'createPoints; size attenuation; textures.' },
+	{ id: 'api/lines', title: 'Lines', summary: 'createLines; pixel and world widths; dashes; edges from meshes.' },
+	{ id: 'api/particles', title: 'Particles (@null3d/particles)', summary: 'createParticles: emitters, bursts and sub-emitters; closed-form GPU motion; soft particles; flipbooks made in code.' },
+	{ id: 'api/impostors', title: 'Impostors (@null3d/impostors)', summary: 'createImpostors: far objects as camera-facing cards that show the stored view nearest the camera; mergeFarGeometry: one mesh per far grid cell.' },
+	{ id: 'api/terrain', title: 'Terrain (@null3d/terrain)', summary: 'createTerrain: a height field drawn as a camera-centered quadtree of blocks, a splat-mapped surface, and heightAt and normalAt for placing objects.' },
+	{ id: 'api/grass', title: 'Grass (@null3d/grass)', summary: "createGrass: tufts of bent blades over a ground, placed by integer hashes, built in a compute pass on WebGPU with near shadows, swaying in the wind add-on's field, with a share for each quality preset." },
+	{ id: 'api/splats', title: 'Gaussian splats (@null3d/splats)', summary: 'createSplats: SPZ files and KHR_gaussian_splatting models drawn as Gaussian splats, with detail levels, a budget that follows the preset and the GPU path, and a soft mix with meshes.' },
+	{ id: 'api/sound', title: 'Sound (@null3d/sound)', summary: 'createSound and connectSound: loops, groups and one-shots placed in the scene, played with the browser\'s audio and driven from the sketch on the audio thread.' },
+	{ id: 'api/water', title: 'Water (@null3d/water)', summary: 'createWater: a river and a lake from one shape, with waves, ripples, caustics, foam, soft shores that read the scene depth, a reflection whose cadence follows the preset, and createUnderwater for the view from below the surface.' },
+	{ id: 'api/wind', title: 'Wind (@null3d/wind)', summary: 'createWind: one field of air that plants, flags, smoke and water read, from an analytic wind of place and time with traveling gusts and pushes, held in a grid that follows the camera.' },
+	{ id: 'api/ui', title: 'UI overlays and labels', summary: 'ui.trackLabel in the sketch; engine.labels.bind on the page.' },
+	{ id: 'api/page', title: 'Messages between sketch and page', summary: 'page.post and page.onMessage in the sketch; engine.postToSketch and engine.onSketchMessage on the page.' },
+	{ id: 'api/tasks', title: 'Tasks on the job workers', summary: 'runTask: an add-on declares a task module and its WebAssembly, which run in the job workers; shared memory; ordering with the frames; failures.' },
 
-	{ id: 'guides/performance', title: 'Performance guide', since: '0.1', summary: 'Measuring; the frame budget; common causes of slow frames and their fixes.' },
-	{ id: 'guides/phones', title: 'Phones and tablets', since: '0.1', summary: 'Pixel-ratio caps; memory budgets; heat; testing on real devices.' },
-	{ id: 'guides/custom-shaders', title: 'Custom shaders', since: '0.1', summary: 'WGSL in sketch code; shader errors; surface functions; full shaders; uniforms and typed materials; hot reload.' },
-	{ id: 'guides/custom-passes', title: 'Custom passes and render targets', since: '0.2', summary: 'Custom effects and tone curves in WGSL; declaring passes; reading and writing named textures; layer masks.' },
-	{ id: 'guides/car-paint', title: 'Car paint', since: '0.3', summary: 'A paint material over the clear coat: metal flakes that stop shimmering, panel seams that follow the pixel, and an optional carbon weave with direction-dependent shine.' },
-	{ id: 'guides/lens-kit', title: 'Lens kit', since: '0.3', summary: 'One look for the camera\'s marks: the core grade, sharpening and vignette, and one effect with film grain, color fringes, a streak read from bloom and a speed blur.' },
-	{ id: 'guides/screens', title: 'In-world screens', since: '0.3', summary: 'Displays painted on an OffscreenCanvas in the sketch: a refresh rate for each screen, uploads of only the changed rectangles, an LCD look that changes with distance, a boot glitch, and clicks mapped back to the canvas\'s coordinates.' },
-	{ id: 'guides/loading-screens', title: 'Loading screens and warm-up', since: '0.1', summary: 'preload; onProgress; scene.warmUp; the preset check; upload budgets; switching presets behind a loading screen.' },
-	{ id: 'guides/start-time', title: 'A fast start', since: '0.1', summary: "Where a page's start goes; compression, cache headers and HTTP/2 on the host; the early core script; downloads that start together; a first frame before the large models; heavy work out of a sketch module's top level; testing and measuring a start." },
-	{ id: 'guides/accessibility', title: 'Accessibility', since: '0.1', summary: 'What the canvas tells assistive technology; keyboard use; reduced motion; pausing; loading and errors.' },
-	{ id: 'guides/content-pages', title: '3D scenes on content pages', since: '0.1', summary: 'Product and marketing pages: the fallback page, a load deadline, pausing off screen, scroll-driven cameras, second visits and crashes.' },
-	{ id: 'guides/ui-overlays', title: 'UI, HTML overlays and labels', since: '0.2', summary: 'HTML UI on the page; labels that follow objects; GUI panels.' },
-	{ id: 'guides/video-textures', title: 'Video textures', since: '0.3', summary: 'engine.registerVideo on the page and textures.fromVideo in the sketch; frame sizes and the upload budget; browser limits.' },
-	{ id: 'guides/audio', title: 'Sound in a scene', since: '0.1', summary: 'Sound that follows the scene with @null3d/sound: beds whose level the scene sets, sources at places, groups of many sources, and events.' },
-	{ id: 'guides/physics', title: 'Using a physics library', since: '0.1', summary: 'Running Rapier or cannon-es in the sketch worker; copying transforms.' },
-	{ id: 'guides/deterministic-simulation', title: 'Using null3D with a deterministic simulation', since: '0.3', summary: "The maths entry a simulation may import; createMath with an exact math library; input, picking and physics that decide a result stay out of the sketch; createEngine's input option; a camera that the player aims from recorded input; a production build of a game's engine files." },
-	{ id: 'guides/multiple-views', title: 'Multiple views', since: '0.3', summary: 'Split screens and picture in picture with scene.createView: a camera and a rectangle of the canvas, drawn after the camera\'s view in the same frame; per-view culling; the cost of each view.' },
-	{ id: 'guides/assets-pipeline', title: 'The asset pipeline (the `assets` command)', since: '0.2', summary: 'optimize, env, convert; LODs; texture compression; budget reports.' },
-	{ id: 'guides/baked-light-data', title: 'Baked light data', since: '0.3', summary: 'One JSON format for probe grids and light maps baked outside the engine: the members, the base64 payloads, the loading calls, the faults that the loader names, and the engine\'s own writer.' },
-	{ id: 'guides/testing', title: 'Testing your sketch', since: '0.1', summary: 'Hold mode; image tests; reading results; frames that stay the same on every run; browser tests of a whole app.' },
-	{ id: 'guides/add-ons', title: 'Building an add-on', since: '0.3', summary: 'One package with one entry; the namespace and the plugin interface range; public imports; shaders on both paths; first-use sizes; a page; the check.' },
-	{ id: 'guides/debugging', title: 'Debugging', since: '0.1', summary: 'Error codes; the render-graph dump; common failures.' },
-	{ id: 'guides/deploying', title: 'Deploying', since: '0.3', summary: 'Headers on common hosts; asset caching; size budgets.' },
-	{ id: 'guides/agents', title: 'Working with AI agents', since: '0.1', summary: 'Installing the null3D skills in Claude Code, claude.ai and other agent tools; docs by ID; the test loop.' },
+	{ id: 'guides/performance', title: 'Performance guide', summary: 'Measuring; the frame budget; common causes of slow frames and their fixes.' },
+	{ id: 'guides/phones', title: 'Phones and tablets', summary: 'Pixel-ratio caps; memory budgets; heat; testing on real devices.' },
+	{ id: 'guides/custom-shaders', title: 'Custom shaders', summary: 'WGSL in sketch code; shader errors; surface functions; full shaders; uniforms and typed materials; hot reload.' },
+	{ id: 'guides/custom-passes', title: 'Custom passes and render targets', summary: 'Custom effects and tone curves in WGSL; declaring passes; reading and writing named textures; layer masks.' },
+	{ id: 'guides/car-paint', title: 'Car paint', summary: 'A paint material over the clear coat: metal flakes that stop shimmering, panel seams that follow the pixel, and an optional carbon weave with direction-dependent shine.' },
+	{ id: 'guides/lens-kit', title: 'Lens kit', summary: 'One look for the camera\'s marks: the core grade, sharpening and vignette, and one effect with film grain, color fringes, a streak read from bloom and a speed blur.' },
+	{ id: 'guides/screens', title: 'In-world screens', summary: 'Displays painted on an OffscreenCanvas in the sketch: a refresh rate for each screen, uploads of only the changed rectangles, an LCD look that changes with distance, a boot glitch, and clicks mapped back to the canvas\'s coordinates.' },
+	{ id: 'guides/loading-screens', title: 'Loading screens and warm-up', summary: 'preload; onProgress; scene.warmUp; the preset check; upload budgets; switching presets behind a loading screen.' },
+	{ id: 'guides/start-time', title: 'A fast start', summary: "Where a page's start goes; compression, cache headers and HTTP/2 on the host; the early core script; downloads that start together; a first frame before the large models; heavy work out of a sketch module's top level; testing and measuring a start." },
+	{ id: 'guides/accessibility', title: 'Accessibility', summary: 'What the canvas tells assistive technology; keyboard use; reduced motion; pausing; loading and errors.' },
+	{ id: 'guides/content-pages', title: '3D scenes on content pages', summary: 'Product and marketing pages: the fallback page, a load deadline, pausing off screen, scroll-driven cameras, second visits and crashes.' },
+	{ id: 'guides/ui-overlays', title: 'UI, HTML overlays and labels', summary: 'HTML UI on the page; labels that follow objects; GUI panels.' },
+	{ id: 'guides/video-textures', title: 'Video textures', summary: 'engine.registerVideo on the page and textures.fromVideo in the sketch; frame sizes and the upload budget; browser limits.' },
+	{ id: 'guides/audio', title: 'Sound in a scene', summary: 'Sound that follows the scene with @null3d/sound: beds whose level the scene sets, sources at places, groups of many sources, and events.' },
+	{ id: 'guides/physics', title: 'Using a physics library', summary: 'Running Rapier or cannon-es in the sketch worker; copying transforms.' },
+	{ id: 'guides/deterministic-simulation', title: 'Using null3D with a deterministic simulation', summary: "The maths entry a simulation may import; createMath with an exact math library; input, picking and physics that decide a result stay out of the sketch; createEngine's input option; a camera that the player aims from recorded input; a production build of a game's engine files." },
+	{ id: 'guides/multiple-views', title: 'Multiple views', summary: 'Split screens and picture in picture with scene.createView: a camera and a rectangle of the canvas, drawn after the camera\'s view in the same frame; per-view culling; the cost of each view.' },
+	{ id: 'guides/assets-pipeline', title: 'The asset pipeline (the `assets` command)', summary: 'optimize, env, convert; LODs; texture compression; budget reports.' },
+	{ id: 'guides/baked-light-data', title: 'Baked light data', summary: 'One JSON format for probe grids and light maps baked outside the engine: the members, the base64 payloads, the loading calls, the faults that the loader names, and the engine\'s own writer.' },
+	{ id: 'guides/testing', title: 'Testing your sketch', summary: 'Hold mode; image tests; reading results; frames that stay the same on every run; browser tests of a whole app.' },
+	{ id: 'guides/add-ons', title: 'Building an add-on', summary: 'One package with one entry; the namespace and the plugin interface range; public imports; shaders on both paths; first-use sizes; a page; the check.' },
+	{ id: 'guides/debugging', title: 'Debugging', summary: 'Error codes; the render-graph dump; common failures.' },
+	{ id: 'guides/deploying', title: 'Deploying', summary: 'Headers on common hosts; asset caching; size budgets.' },
+	{ id: 'guides/agents', title: 'Working with AI agents', summary: 'Installing the null3D skills in Claude Code, claude.ai and other agent tools; docs by ID; the test loop.' },
 
-	{ id: 'shaders/wgsl-rules', title: 'WGSL rules for portable shaders', since: '0.1', summary: 'The three shared language features; optional features; flat interpolation; limits budget; rules the build cannot check.' },
-	{ id: 'shaders/surface-functions', title: 'Surface functions', since: '0.1', summary: 'The surface record; vertex-offset functions; per-instance attributes.' },
-	{ id: 'shaders/builtins', title: 'Built-in shader inputs', since: '0.1', summary: 'Camera, time, object, instance and light values available to custom shaders.' },
-	{ id: 'shaders/library', title: 'Shader library and imports', since: '0.1', summary: 'The WGSL modules that ship with the engine: math, noise, color, lighting, fog, vertex, depth and signed distance helpers, and how to import them.' },
+	{ id: 'shaders/wgsl-rules', title: 'WGSL rules for portable shaders', summary: 'The three shared language features; optional features; flat interpolation; limits budget; rules the build cannot check.' },
+	{ id: 'shaders/surface-functions', title: 'Surface functions', summary: 'The surface record; vertex-offset functions; per-instance attributes.' },
+	{ id: 'shaders/builtins', title: 'Built-in shader inputs', summary: 'Camera, time, object, instance and light values available to custom shaders.' },
+	{ id: 'shaders/library', title: 'Shader library and imports', summary: 'The WGSL modules that ship with the engine: math, noise, color, lighting, fog, vertex, depth and signed distance helpers, and how to import them.' },
 
-	{ id: 'porting/threejs-overview', title: 'Porting from three.js', since: '0.3', summary: 'The porting workflow; what gets faster; what needs rewriting.' },
-	{ id: 'porting/threejs-materials', title: 'Porting materials and textures', since: '0.3', summary: 'Parameter-by-parameter conversion; color spaces; approximations.' },
-	{ id: 'porting/threejs-shaders', title: 'Porting shaders: GLSL, onBeforeCompile and TSL', since: '0.3', summary: 'GLSL to WGSL; three.js built-ins to engine built-ins; worked examples.' },
-	{ id: 'porting/threejs-postprocessing', title: 'Porting post-processing', since: '0.2', summary: 'EffectComposer passes and pmndrs effects to post.set settings; ShaderPass to post.addEffect; three.js tone mappings to custom tone curves.' },
-	{ id: 'porting/threejs-loop-and-threads', title: 'The render loop, threads and the DOM', since: '0.3', summary: 'What moves to the sketch worker; what stays on the page; messages.' },
-	{ id: 'porting/react-three-fiber', title: 'Porting React Three Fiber', since: '0.3', summary: 'Canvas, useFrame, drei helpers; keeping React for the page UI.' },
-	{ id: 'porting/threejs-unsupported', title: 'Unsupported three.js features', since: '0.3', summary: 'three.js features with no null3D equivalent, with workarounds.' },
-	{ id: 'porting/verification', title: 'Verifying a port', since: '0.3', summary: 'Parity images per camera view; performance comparison; the WebGL2 path; phones.' },
+	{ id: 'porting/threejs-overview', title: 'Porting from three.js', summary: 'The porting workflow; what gets faster; what needs rewriting.' },
+	{ id: 'porting/threejs-materials', title: 'Porting materials and textures', summary: 'Parameter-by-parameter conversion; color spaces; approximations.' },
+	{ id: 'porting/threejs-shaders', title: 'Porting shaders: GLSL, onBeforeCompile and TSL', summary: 'GLSL to WGSL; three.js built-ins to engine built-ins; worked examples.' },
+	{ id: 'porting/threejs-postprocessing', title: 'Porting post-processing', summary: 'EffectComposer passes and pmndrs effects to post.set settings; ShaderPass to post.addEffect; three.js tone mappings to custom tone curves.' },
+	{ id: 'porting/threejs-loop-and-threads', title: 'The render loop, threads and the DOM', summary: 'What moves to the sketch worker; what stays on the page; messages.' },
+	{ id: 'porting/react-three-fiber', title: 'Porting React Three Fiber', summary: 'Canvas, useFrame, drei helpers; keeping React for the page UI.' },
+	{ id: 'porting/threejs-unsupported', title: 'Unsupported three.js features', summary: 'three.js features with no null3D equivalent, with workarounds.' },
+	{ id: 'porting/verification', title: 'Verifying a port', summary: 'Parity images per camera view; performance comparison; the WebGL2 path; phones.' },
 
-	{ id: 'cli/null3d', title: 'The `null3d` command', since: '0.1', summary: 'create, test, bench, check-addon, shot, upgrade, assets.' },
-	{ id: 'cookbook/index', title: 'Cookbook', since: '0.2', summary: 'Short recipes; each is also a tested example.' },
+	{ id: 'cli/null3d', title: 'The `null3d` command', summary: 'create, test, bench, check-addon, shot, upgrade, assets.' },
+	{ id: 'cookbook/index', title: 'Cookbook', summary: 'Short recipes; each is also a tested example.' },
 ];
 
 /** The generated page that lists every docs page. */
@@ -265,13 +264,7 @@ export function presetCheckTable(): string {
 
 /** The page of the quality presets' tables, from the chooser's constants and the preset table. */
 export function presetTablesPage(): string {
-	return `${renderFrontMatter([
-		['id', PRESET_TABLES_ID],
-		['title', 'Quality preset tables'],
-		['status', 'generated'],
-		['since', '0.1'],
-		['summary', "Each preset's starting devices, GPU path caps, check rules and settings."],
-	])}
+	return `${generatedFrontMatter(PRESET_TABLES_ID, 'Quality preset tables', "Each preset's starting devices, GPU path caps, check rules and settings.")}
 # Quality preset tables
 
 > [Quality presets](quality-presets.md) explains these tables. The engine's own constants make them.
@@ -323,13 +316,7 @@ export function referenceLink(id: string): string {
  * The generated reference page of a written API page: its exports, from their doc comments.
  */
 export function referencePage(page: PageEntry, reference: string): string {
-	return `${renderFrontMatter([
-		['id', referencePageId(page.id)],
-		['title', `${page.title}: API reference`],
-		['status', 'generated'],
-		['since', page.since],
-		['summary', `Every export of the ${page.title} API, from the engine's doc comments.`],
-	])}
+	return `${generatedFrontMatter(referencePageId(page.id), `${page.title}: API reference`, `Every export of the ${page.title} API, from the engine's doc comments.`)}
 # ${page.title}: API reference
 
 > [${page.title}](../${page.id.slice('api/'.length)}.md) explains these exports. The engine's doc comments make this page.
@@ -378,14 +365,12 @@ interface MappingEntry {
 	three: string;
 	target: string;
 	status: string;
-	since?: string;
 	notes?: string;
 	docs: string;
 }
 
 interface Mapping {
 	statusLegend: Record<string, string>;
-	sinceLegend: Record<string, string>;
 	entries: MappingEntry[];
 }
 
@@ -395,22 +380,17 @@ export function mappingMarkdown(mapping: Mapping, forSkill: boolean): string {
 		lines.push('# three.js to null3D mapping\n');
 	} else {
 		lines.push(
-			renderFrontMatter([
-				['id', 'porting/threejs-mapping'],
-				['title', 'three.js to null3D mapping'],
-				['status', 'generated'],
-				['since', '0.3'],
-				['summary', 'Every three.js API a port is likely to meet, with its null3D equivalent.'],
-			]),
+			generatedFrontMatter(
+				'porting/threejs-mapping',
+				'three.js to null3D mapping',
+				'Every three.js API a port is likely to meet, with its null3D equivalent.',
+			),
 		);
 		lines.push('# three.js to null3D mapping\n');
 	}
 	lines.push('Status values:\n');
 	for (const [key, text] of Object.entries(mapping.statusLegend))
 		lines.push(`- \`${key}\`: ${text}`);
-	lines.push(`\nThe "Since" column gives the roadmap step that adds the feature. ${STEPS_NOTE}\n`);
-	for (const [version, label] of Object.entries(mapping.sinceLegend))
-		lines.push(`- ${version}: ${label}`);
 	lines.push('');
 	const categories = [...new Set(mapping.entries.map((e) => e.category))];
 	if (forSkill) {
@@ -420,11 +400,11 @@ export function mappingMarkdown(mapping: Mapping, forSkill: boolean): string {
 	}
 	for (const c of categories) {
 		lines.push(`## ${c}\n`);
-		lines.push('| three.js | null3D | Status | Since | Notes | Docs |');
-		lines.push('| --- | --- | --- | --- | --- | --- |');
+		lines.push('| three.js | null3D | Status | Notes | Docs |');
+		lines.push('| --- | --- | --- | --- | --- |');
 		for (const e of mapping.entries.filter((x) => x.category === c)) {
 			lines.push(
-				`| ${tableCell(e.three)} | ${tableCell(e.target)} | ${e.status} | ${e.since ?? '-'} | ${tableCell(e.notes)} | \`${e.docs}\` |`,
+				`| ${tableCell(e.three)} | ${tableCell(e.target)} | ${e.status} | ${tableCell(e.notes)} | \`${e.docs}\` |`,
 			);
 		}
 		lines.push('');
@@ -434,13 +414,7 @@ export function mappingMarkdown(mapping: Mapping, forSkill: boolean): string {
 
 /** The docs page of one error code, generated from the engine's error table. */
 export function errorPage(code: string, entry: ErrorEntry): string {
-	return `${renderFrontMatter([
-		['id', `errors/${code}`],
-		['title', `${code}: ${entry.title}`],
-		['status', 'generated'],
-		['since', entry.since],
-		['summary', entry.cause],
-	])}
+	return `${generatedFrontMatter(`errors/${code}`, `${code}: ${entry.title}`, entry.cause)}
 # ${code}: ${entry.title}
 
 ## What happened
@@ -465,13 +439,7 @@ export function errorIndexPage(errors: Record<string, ErrorEntry>): string {
 		([code, entry]) =>
 			`| [${code}](${code}.md) | ${tableCell(entry.title)} | ${tableCell(entry.cause)} |`,
 	);
-	return `${renderFrontMatter([
-		['id', 'errors/index'],
-		['title', 'Error codes'],
-		['status', 'generated'],
-		['since', '0.1'],
-		['summary', 'Every EngineError code with its cause and fix.'],
-	])}
+	return `${generatedFrontMatter('errors/index', 'Error codes', 'Every EngineError code with its cause and fix.')}
 # Error codes
 
 Every error the engine throws is an \`EngineError\` with a code. Its message names the call and the object, says what failed and how to fix it, and links to the code's page here.
@@ -485,8 +453,6 @@ ${rows.join('\n')}
 export interface PageInfo {
 	id: string;
 	title: string;
-	status: string;
-	since: string;
 	summary: string;
 }
 
@@ -507,8 +473,6 @@ function collectPages(root: string, generated: Map<string, string>): PageInfo[] 
 		out.push({
 			id: String(data.id ?? ''),
 			title: String(data.title ?? ''),
-			status: String(data.status ?? ''),
-			since: String(data.since ?? ''),
 			summary: String(data.summary ?? ''),
 		});
 	}
@@ -526,17 +490,10 @@ export function pageList(pages: PageInfo[]): string {
 			.sort((a, b) => rank(a) - rank(b) || a.id.localeCompare(b.id));
 		if (inArea.length === 0) continue;
 		const rows = inArea.map(
-			(p) =>
-				`| [${tableCell(p.title)}](${p.id}.md) | ${tableCell(p.summary)} | ${p.status} | ${p.since} |`,
+			(p) => `| [${tableCell(p.title)}](${p.id}.md) | ${tableCell(p.summary)} |`,
 		);
 		sections.push(
-			[
-				`## ${heading}`,
-				'',
-				'| Page | What it covers | Status | Step |',
-				'| --- | --- | --- | --- |',
-				...rows,
-			].join('\n'),
+			[`## ${heading}`, '', '| Page | What it covers |', '| --- | --- |', ...rows].join('\n'),
 		);
 	}
 	return sections.join('\n\n');
@@ -545,16 +502,10 @@ export function pageList(pages: PageInfo[]): string {
 /** The generated page that lists every docs page by area, apart from the reference pages. */
 export function pageListPage(pages: PageInfo[]): string {
 	const listed = pages.filter((p) => !p.id.startsWith(`${REFERENCE_AREA}/`));
-	return `${renderFrontMatter([
-		['id', PAGE_LIST_ID],
-		['title', 'All pages'],
-		['status', 'generated'],
-		['since', '0.1'],
-		['summary', 'Every docs page by area, with its status and version.'],
-	])}
+	return `${generatedFrontMatter(PAGE_LIST_ID, 'All pages', 'Every docs page by area.')}
 # All pages
 
-> The docs generator writes this list from each page's front matter. [The docs home](index.md) explains the status labels. The step column gives the roadmap step that adds each page's feature. ${STEPS_NOTE}
+> The docs generator writes this list from each page's front matter.
 
 ${pageList(listed)}
 `;
@@ -640,28 +591,21 @@ export function frontMatterProblems(path: string, text: string, inventory: Set<s
 		problems.push(
 			`${path}: status "planned" is not allowed, because the docs name no feature that the engine lacks. Write the page, or take it out of the inventory and list it in .dev/gaps.md`,
 		);
-	} else if (!STATUSES.includes(data.status as (typeof STATUSES)[number])) {
+	} else if (
+		data.status !== undefined &&
+		!STATUSES.includes(data.status as (typeof STATUSES)[number])
+	) {
 		problems.push(`${path}: status "${String(data.status)}" must be one of ${STATUSES.join(', ')}`);
 	}
-	if (typeof data.since !== 'string' || !SINCE_FORMAT.test(data.since)) {
-		problems.push(
-			`${path}: since "${String(data.since)}" must be a quoted version such as "0.1", or "after 1.0"`,
-		);
-	}
-	const note = /^> .*/m.exec(text)?.[0] ?? '';
-	const ships = typeof data.since === 'string' ? shipsSentence(data.since) : '';
 	if (
-		(data.status === 'experimental' || data.status === 'stable') &&
-		id !== 'index' &&
-		!note.startsWith(`> ${ships}`)
-	)
-		problems.push(`${path}: the note under the title must start "${ships}"`);
-	const named = STEP_AS_RELEASE.exec(text)?.[0];
-	if (named)
-		problems.push(
-			`${path}: names ${named}, a roadmap step and not a release. ${STEPS_NOTE} Say "step ${named.slice(-3)}".`,
-		);
-	if (data.status !== 'generated' && !inventory.has(id)) {
+		data.since !== undefined &&
+		(typeof data.since !== 'string' || !SINCE_FORMAT.test(data.since))
+	) {
+		problems.push(`${path}: since "${String(data.since)}" must be a quoted release such as "1.2"`);
+	}
+	if (data.generated !== undefined && data.generated !== true)
+		problems.push(`${path}: generated must be true, or left out`);
+	if (data.generated !== true && !inventory.has(id)) {
 		problems.push(`${path}: page is not in the inventory in tools/lib/docs.ts`);
 	}
 	return problems;
@@ -714,7 +658,7 @@ export function checkDocs(root: string): string[] {
 	for (const [path, text] of linked) {
 		if (!path.startsWith('docs/') || !path.endsWith('.md')) continue;
 		problems.push(...frontMatterProblems(path, text, inventory));
-		if (/^status: generated$/m.test(text) && !generated.has(path)) {
+		if (/^generated: true$/m.test(text) && !generated.has(path)) {
 			problems.push(`${path} is marked generated, but nothing generates it any more: delete it`);
 		}
 	}

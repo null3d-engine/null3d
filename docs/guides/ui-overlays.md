@@ -1,14 +1,10 @@
 ---
 id: guides/ui-overlays
 title: "UI, HTML overlays and labels"
-status: experimental
-since: "0.2"
 summary: "HTML UI on the page; labels that follow objects; GUI panels."
 ---
 
 # UI, HTML overlays and labels
-
-> Roadmap step 0.2, first released in null3D 0.1.0. The API is experimental, so it can still change between versions.
 
 ```mermaid
 flowchart LR

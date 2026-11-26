@@ -18,14 +18,11 @@ const repoRoot = join(import.meta.dir, '../..');
 
 const MAPPING = JSON.stringify({
 	statusLegend: { direct: 'Same.' },
-	sinceLegend: { '0.1': 'the core renderer' },
 	entries: [],
 });
 const INDEX = `${renderFrontMatter([
 	['id', 'index'],
 	['title', 'Docs'],
-	['status', 'experimental'],
-	['since', '0.1'],
 	['summary', 'The docs.'],
 ])}\n# Docs\n\nSee [All pages](pages.md).\n`;
 const NO_API: ApiReference = { symbols: [], problems: [] };
@@ -43,8 +40,6 @@ const writtenObjects = (body: string) =>
 	`${renderFrontMatter([
 		['id', 'api/objects'],
 		['title', 'Objects'],
-		['status', 'experimental'],
-		['since', '0.1'],
 		['summary', 'Written.'],
 	])}\n# Objects\n\n${body}\n\nMore text.\n`;
 
@@ -62,8 +57,6 @@ describe('front matter', () => {
 			const fields = {
 				id: page.id,
 				title: page.title,
-				status: 'experimental',
-				since: page.since,
 				summary: page.summary,
 			};
 			expect(parseFrontMatter(renderFrontMatter(Object.entries(fields)))?.data).toEqual(fields);
@@ -75,73 +68,66 @@ describe('front matter', () => {
 	});
 });
 
-/** The written handles page with a status, and the note that the check asks under its title. */
-function writtenHandles(status: string): string {
+/** The written handles page, with optional labels in its front matter. */
+function writtenHandles(labels: [string, string][] = []): string {
 	const page = PAGES.find((p) => p.id === 'concepts/handles')!;
-	return `${renderFrontMatter([
-		['id', page.id],
-		['title', page.title],
-		['status', status],
-		['since', page.since],
-		['summary', page.summary],
-	])}
+	return `${renderFrontMatter([['id', page.id], ['title', page.title], ...labels, ['summary', page.summary]])}
 # ${page.title}
-
-> Roadmap step ${page.since}, first released in null3D 0.1.0. The API is experimental, so it can still change between versions.
 `;
 }
 
 describe('frontMatterProblems', () => {
 	const inventory = new Set(['concepts/handles']);
-	it('accepts a valid page', () => {
+	it('accepts a page with no labels, and one with labels the owner chose', () => {
+		expect(frontMatterProblems('docs/concepts/handles.md', writtenHandles(), inventory)).toEqual(
+			[],
+		);
 		expect(
-			frontMatterProblems('docs/concepts/handles.md', writtenHandles('experimental'), inventory),
+			frontMatterProblems(
+				'docs/concepts/handles.md',
+				writtenHandles([
+					['status', 'experimental'],
+					['since', '1.2'],
+				]),
+				inventory,
+			),
 		).toEqual([]);
 	});
 
-	it('reports a wrong id, a bad status, a bad version and a page outside the inventory', () => {
+	it('reports a wrong id, a bad label, a bad generated mark and a page outside the inventory', () => {
 		const text = renderFrontMatter([
 			['id', 'concepts/other'],
 			['title', 'T'],
 			['status', 'done'],
 			['since', 'soon'],
+			['generated', 'maybe'],
 			['summary', 'S'],
 		]);
 		const problems = frontMatterProblems('docs/concepts/other.md', text, inventory);
 		expect(problems.join('\n')).toContain('status "done"');
 		expect(
-			frontMatterProblems('docs/concepts/handles.md', writtenHandles('planned'), inventory).join(
-				'\n',
-			),
+			frontMatterProblems(
+				'docs/concepts/handles.md',
+				writtenHandles([['status', 'planned']]),
+				inventory,
+			).join('\n'),
 		).toContain('status "planned" is not allowed');
 		expect(problems.join('\n')).toContain('since "soon"');
+		expect(problems.join('\n')).toContain('generated must be true');
 		expect(problems.join('\n')).toContain('not in the inventory');
 		expect(frontMatterProblems('docs/concepts/x.md', text, inventory).join('\n')).toContain(
 			'id is "concepts/other"',
 		);
 	});
 
-	it('asks a written page to open its note with the release of its step', () => {
-		const page = (since: string, note: string) =>
-			`${renderFrontMatter([
-				['id', 'concepts/handles'],
-				['title', 'T'],
-				['status', 'experimental'],
-				['since', since],
-				['summary', 'S'],
-			])}\n# T\n\n> ${note}\n`;
-		const problems = (since: string, note: string) =>
-			frontMatterProblems('docs/concepts/handles.md', page(since, note), inventory).join('\n');
-		expect(problems('0.2', 'Roadmap step 0.2, first released in null3D 0.1.0. More.')).toBe('');
-		expect(problems('0.2', 'Ships in null3D 0.2.')).toContain(
-			'must start "Roadmap step 0.2, first released in null3D 0.1.0."',
-		);
-		expect(
-			problems(
-				'0.1',
-				'Roadmap step 0.1, first released in null3D 0.1.0, with picking from null3D 0.2.',
-			),
-		).toContain('names null3D 0.2, a roadmap step and not a release');
+	it('takes a generated page that the inventory leaves out', () => {
+		const text = renderFrontMatter([
+			['id', 'concepts/other'],
+			['title', 'T'],
+			['generated', true],
+			['summary', 'S'],
+		]);
+		expect(frontMatterProblems('docs/concepts/other.md', text, inventory)).toEqual([]);
 	});
 });
 
@@ -151,15 +137,11 @@ describe('pageList', () => {
 			{
 				id: 'concepts/handles',
 				title: 'Handles',
-				status: 'experimental',
-				since: '0.1',
 				summary: 'a | b',
 			},
 			{
 				id: 'concepts/architecture',
 				title: 'Architecture',
-				status: 'experimental',
-				since: '0.1',
 				summary: 'x',
 			},
 		]);
@@ -176,8 +158,6 @@ describe('generateDocs', () => {
 		const written = `${renderFrontMatter([
 			['id', 'concepts/handles'],
 			['title', 'Handles'],
-			['status', 'experimental'],
-			['since', '0.1'],
 			['summary', 'Written.'],
 		])}\n# Handles\n`;
 		const root = fixture({
@@ -190,11 +170,11 @@ describe('generateDocs', () => {
 		expect(out.has('docs/index.md')).toBe(false);
 		expect(out.has('docs/concepts/architecture.md')).toBe(false);
 		const pages = out.get('docs/pages.md') ?? '';
-		expect(pages).toContain('status: generated');
+		expect(pages).toContain('generated: true');
 		expect(pages).toContain('[Handles](concepts/handles.md)');
 		expect(pages).toContain('## Concepts');
 		expect(pages).not.toContain('(index.md) |');
-		expect(out.get('docs/porting/threejs-mapping.md')).toContain('status: generated');
+		expect(out.get('docs/porting/threejs-mapping.md')).toContain('generated: true');
 	});
 
 	it("puts each export on its page's reference page, and writes none for a page that is missing", () => {
@@ -209,7 +189,7 @@ describe('generateDocs', () => {
 		expect(out.has('docs/api/objects.md')).toBe(false);
 		const reference = out.get('docs/api/reference/objects.md') ?? '';
 		expect(reference).toContain('id: api/reference/objects');
-		expect(reference).toContain('status: generated');
+		expect(reference).toContain('generated: true');
 		expect(reference).toContain('# Objects and transforms: API reference');
 		expect(reference).toContain('## `Thing`');
 		expect(reference).toContain('[Objects and transforms](../objects.md)');
@@ -240,7 +220,7 @@ describe('the quality preset tables', () => {
 			'docs/data/threejs-mapping.json': MAPPING,
 		});
 		const page = generateDocs(root, NO_API).get('docs/concepts/quality-preset-tables.md') ?? '';
-		expect(page).toContain('status: generated');
+		expect(page).toContain('generated: true');
 		expect(page).toContain('## Starting preset of each device');
 		expect(page).toContain('| Phone | coarse | under 600 CSS pixels | Low |');
 		expect(page).toContain('| Desktop or laptop | fine | any | High |');
@@ -280,7 +260,7 @@ describe('error pages', () => {
 			expect(out.get(`docs/errors/${code}.md`)).toContain(`# ${code}: `);
 			expect(index).toContain(`[${code}](${code}.md)`);
 		}
-		expect(parseFrontMatter(index)?.data.status).toBe('generated');
+		expect(parseFrontMatter(index)?.data.generated).toBe(true);
 	});
 });
 

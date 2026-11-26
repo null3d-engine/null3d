@@ -1,14 +1,12 @@
 ---
 id: api/particles
 title: "Particles (@null3d/particles)"
-status: experimental
-since: "0.2"
 summary: "createParticles: emitters, bursts and sub-emitters; closed-form GPU motion; soft particles; flipbooks made in code."
 ---
 
 # Particles (@null3d/particles)
 
-> Roadmap step 0.2, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. Particles do not cast shadows, and lights do not light them. A system does not sort its own particles back to front.
+> Particles do not cast shadows, and lights do not light them. A system does not sort its own particles back to front.
 
 ```mermaid
 flowchart LR

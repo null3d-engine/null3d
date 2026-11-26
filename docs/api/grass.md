@@ -1,14 +1,10 @@
 ---
 id: api/grass
 title: "Grass (@null3d/grass)"
-status: experimental
-since: "0.3"
 summary: "createGrass: tufts of bent blades over a ground, placed by integer hashes, built in a compute pass on WebGPU with near shadows, swaying in the wind add-on's field, with a share for each quality preset."
 ---
 
 # Grass (@null3d/grass)
-
-> Roadmap step 0.3, first released in null3D 0.1.0. The API is experimental, so it can still change between versions.
 
 ```mermaid
 flowchart LR

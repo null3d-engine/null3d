@@ -1,9 +1,7 @@
 ---
 id: index
 title: null3D documentation
-status: experimental
-since: "0.1"
-summary: "What null3D is; how the docs are organized; status labels."
+summary: "What null3D is and how the docs are organized."
 ---
 
 # null3D documentation
@@ -17,21 +15,11 @@ Its core is Rust compiled to WebAssembly, and it runs on worker threads, so the 
 
 In null3D, a 3D scene is called a **sketch**. A sketch is a TypeScript module that builds its scene with `defineSketch` and updates it every frame. It runs in a worker of its own, while the page keeps the HTML.
 
-## Status labels
-
-Every page has a status in its front matter:
-
-| Status | Meaning |
-| --- | --- |
-| `experimental` | The feature works, but its API can still change between versions. |
-| `stable` | The API follows semantic versioning. |
-| `generated` | A tool writes the page from a single source, such as the engine's doc comments. |
+## How the pages work
 
 Each page names the limits of its feature, with a workaround where one exists. Coding agents use only the APIs that these pages and the engine's type declarations show. The null3D agent skills follow the same rule.
 
 Each `api/` page links to its API reference, which the engine's doc comments generate, so it always matches the code.
-
-The step column in [All pages](pages.md) gives the roadmap step that adds the page's feature. The steps 0.1, 0.2 and 0.3 all ship in the first release, null3D 0.1.0.
 
 ## Where to start
 
@@ -46,4 +34,4 @@ Coding agents can look pages up by ID. A page's ID is its path under `docs/` wit
 
 ## All pages
 
-[All pages](pages.md) lists every page by area, with its status and the roadmap step that adds its feature.
+[All pages](pages.md) lists every page by area.

@@ -1,14 +1,10 @@
 ---
 id: api/controls
 title: "Controls (@null3d/controls)"
-status: experimental
-since: "0.1"
 summary: "Orbit and map controls; fly and first-person controls, with pointer lock; drag, rotate and scale gizmos."
 ---
 
 # Controls (@null3d/controls)
-
-> Roadmap step 0.1, first released in null3D 0.1.0. The API is experimental, so it can still change between versions.
 
 ```mermaid
 flowchart LR

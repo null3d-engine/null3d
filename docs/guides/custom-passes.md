@@ -1,14 +1,10 @@
 ---
 id: guides/custom-passes
 title: Custom passes and render targets
-status: experimental
-since: "0.2"
 summary: "Custom effects and tone curves in WGSL; declaring passes; reading and writing named textures; layer masks; reflections and a water recipe; full-screen passes, a soft outline glow and effects that read textures."
 ---
 
 # Custom passes and render targets
-
-> Roadmap step 0.2, first released in null3D 0.1.0. The API is experimental, so it can still change between versions.
 
 ```mermaid
 flowchart LR

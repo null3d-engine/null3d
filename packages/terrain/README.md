@@ -90,7 +90,7 @@ with `normalAt(x, z, out)`. Both allocate nothing, so a frame can call them free
 ## Docs
 
 The [terrain docs page](https://github.com/null3d-engine/null3d/blob/generated/docs/api/terrain.md)
-describes every option. The API is experimental, so it can still change between versions.
+describes every option.
 
 ## License
 

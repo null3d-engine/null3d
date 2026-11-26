@@ -109,8 +109,7 @@ turned, stretched or mirrored copy keeps its shading and its outward faces.
 ## Docs
 
 The [impostors docs page](https://github.com/null3d-engine/null3d/blob/generated/docs/api/impostors.md)
-explains the atlases, the bake, the hand-over and the shadows. The API is experimental, so it can
-still change between versions.
+explains the atlases, the bake, the hand-over and the shadows.
 
 ## License
 

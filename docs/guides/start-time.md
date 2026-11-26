@@ -1,14 +1,10 @@
 ---
 id: guides/start-time
 title: A fast start
-status: experimental
-since: "0.1"
 summary: "Where a page's start goes, on a simulated phone link and on real phones; compression, cache headers, the compiled core and HTTP/2 on the host; the early core script; what the engine does while the core downloads; downloads of the first view and of the rest; the preset check; pipelines on phones; testing and measuring a start."
 ---
 
 # A fast start
-
-> Roadmap step 0.1, first released in null3D 0.1.0. The API is experimental, so it can still change between versions.
 
 ```mermaid
 flowchart LR
