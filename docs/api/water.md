@@ -6,6 +6,10 @@ summary: "createWater: a river and a lake from one shape, with waves that the cu
 
 # Water (@null3d/water)
 
+![A river with boulders running down a grassy valley under a hazy sky.](../images/api/water/water-demo.webp)
+
+The water demo.
+
 ```mermaid
 flowchart LR
     shape["A river's middle line,<br/>or a lake's shore"] --> body["The body: depth,<br/>current, bounds"]
@@ -208,6 +212,10 @@ raindrop rings the surface where it lands. A ring grows and fades in about a sec
 drift downstream with the current. They bend the surface's mirror and its highlights, as real rain
 does. A light rain rings a few of the surface's cells, and a downpour rings all of them.
 
+![Raindrop rings on a lake beside a pale post and a dark stone.](../images/api/water/water-rain.webp)
+
+Rain on the surface.
+
 ```ts
 const water = createWater(ctx, { shapes, rain: 0 });
 
@@ -278,6 +286,10 @@ horizon, and the light of the caustics. The surface seen from below shows the wo
 window overhead, and turns the light back past that window's edge.
 
 ## Waterfalls
+
+![A creek falling from a cliff's lip in a white column into mist.](../images/api/water/waterfall.webp)
+
+A waterfall.
 
 ```mermaid
 flowchart LR
@@ -378,6 +390,10 @@ A fall that lies past the edge of a water's surface does not show in that water'
 a layer that the water's `layers` option leaves out, so the reflection pass skips it.
 
 ## The ocean
+
+![An open sea with long swells under a cloudy evening sky.](../images/api/water/ocean.webp)
+
+The water add-on fills the sea's heights with compute passes every frame.
 
 ```mermaid
 flowchart LR

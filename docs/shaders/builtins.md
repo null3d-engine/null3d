@@ -22,6 +22,10 @@ fn surface(input: SurfaceInput) -> Surface {
 }
 ```
 
+![Five spheres share one material. Each takes its own hue from its position and has stripes and a world-space checker. A far plane of the same material is darker.](../images/shaders/builtins/builtins.webp)
+
+One material that reads frame, camera and object values. It is not the opening example.
+
 ## `frame`
 
 The values of the frame, the same for every draw in it.

@@ -59,6 +59,10 @@ A light's scale changes neither its range, its cone nor its size.
 
 A spot light can project a picture over its cone, as a stage light throws a gobo pattern, a window throws its frame, or a projector shows an image. The `map` option and `setMap` take an engine texture, or sRGB pixels, four bytes each, top row first, as a rectangle light's `image` does.
 
+![A rose window projected on a wall by a spot light, over spheres on plinths.](../images/api/lights/spot-cookies.webp)
+
+A spot light with a map. Its shadows cut the projected window.
+
 ```ts
 import { defineSketch } from '@null3d/engine';
 

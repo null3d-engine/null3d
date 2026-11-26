@@ -6,6 +6,10 @@ summary: "createTerrain: a height field drawn as a camera-centered quadtree of b
 
 # Terrain (@null3d/terrain)
 
+![A hilly valley at golden hour drawn by the terrain add-on, with snow on the far ridge.](../images/api/terrain/terrain-demo.webp)
+
+The terrain demo.
+
 ```mermaid
 flowchart LR
     height["A height field<br/>from a function or a map"] --> tree["A camera-centered quadtree<br/>picks the blocks"]

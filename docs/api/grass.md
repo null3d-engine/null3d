@@ -20,6 +20,10 @@ flowchart LR
 
 `@null3d/grass` draws tufts of bent blades over a square of ground. One seed places the same tufts on every device, and the blades bend in the air of the wind add-on's field. On WebGPU a compute pass builds the blade list each frame, culls it to the view and thins the far tufts. WebGL2 draws the same rows as an instance batch. The grass casts and receives the sun's shadows on both paths.
 
+![A grove of oaks, birches and firs at the edge of a grassy meadow, all swaying in one wind field.](../images/api/grass/grass-grove.webp)
+
+The plants in wind demo. On feature-instances: the grass add-on places and counts its blades with a compute pass on WebGPU.
+
 The package is built on the engine's public API. Its two shaders ship compiled, so your build does not compile them. It reads the field of `@null3d/wind`, which it lists as a peer dependency.
 
 ```sh
@@ -75,6 +79,10 @@ export default defineSketch(async (ctx) => {
 
 `await createGrass(ctx, options)` draws tufts of bent blades over a square of ground. Await the call in the sketch's setup, because WebGPU makes its draw then. The [`GrassOptions` table](reference/grass.md#grassoptions) lists every option with its default.
 
+![The same hill of grass at the Low, High and Ultra presets.](../images/api/grass/grass-presets.webp)
+
+Grass counts follow the preset.
+
 The tufts stand on `height(x, z)` and skip ground steeper than `maxSlope`. They also skip ground that `mask` refuses, such as water or a footprint, and ground that `where` refuses, such as a road. A tuft grows only where both allow it.
 
 `count` is the tufts at the High preset. Low, Medium and Ultra draw 0.35, 0.6 and 1.25 of it. `createGrass` fits the engine's starting preset, and `grass.fit(preset)` takes a new one.
@@ -120,6 +128,10 @@ The tuft meshes plan no levels of detail: the wind bends their blades in the sha
 ## Shadows and the sway distance
 
 The grass casts and receives the sun's shadows on both paths. Far shadow cascades draw only every few frames, unless a moving caster touches them. Swaying blades count as moving, so by default the far cascades draw in every frame ([Shadows](../concepts/shadows.md#update-rates)).
+
+![Long blade shadows on a hill under a low sun.](../images/api/grass/grass-shadow.webp)
+
+Near grass shadows.
 
 Give the grass a `swayDistance` to stop the blades past that distance. Then a far cascade that only the grass reaches keeps its turns. The default, 0, sways at every distance. Call `grass.setSwayDistance(distance)` when the preset changes.
 

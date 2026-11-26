@@ -366,6 +366,10 @@ const water = materials.shader({ wgsl: waterWgsl, textures: { mirror: textures.f
 
 For water in a scene, use [`@null3d/water`](../api/water.md): it draws a river and a lake from one shape, with the waves, the foam, the soft shore and the reflection that this recipe builds by hand. This recipe shows the pieces that the add-on builds on, for a water surface of your own.
 
+![Boxes and a ball mirror in rippled water through a reflection pass.](../images/guides/custom-passes/reflection-water.webp)
+
+A reflection pass read by a water material.
+
 This surface function makes a stream. It has ripples that move, a tint that deepens with the depth, foam at the banks, and the reflection of the banks and the sky.
 
 It needs the height of the bed under each point of the water. A terrain made in code gives it with the same function that shapes the terrain. A loaded terrain gives it with a height map texture, which the function samples instead.

@@ -408,6 +408,10 @@ const grass = materials.standard({
 
 The cascades spread their texels over the whole view, so a car, a character or a product in close-up gets shadows that are a few centimeters coarse. A hero shadow gives one object a shadow map of its own, fitted tightly to it, and surfaces near it read that map instead.
 
+![A red car on a launch yard at sunset, with a sharp hero shadow beside the stone blocks' cascade shadows.](../images/concepts/shadows/hero-shadow.webp)
+
+A hero shadow beside cascade shadows.
+
 ```mermaid
 flowchart LR
     object["The hero object,<br/>named by the light"] --> fit["A tile fitted<br/>along the light"]

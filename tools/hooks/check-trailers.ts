@@ -12,6 +12,7 @@ import { DOCS_ACK_RULE } from './check-docs-ack';
 import { type CommitWithFiles, gpuCheckProblem } from './check-gpu-ack';
 import { LIMITS_ACK_RULE } from './check-limits-ack';
 import { macReferencesProblem } from './check-mac-references';
+import { screenshotsProblem } from './check-screenshots-ack';
 import { scriptReferencesProblem } from './check-script-references';
 import { sizeGrowthProblems } from './check-size-growth';
 import { SKILLS_ACK_RULE } from './check-skills-ack';
@@ -121,6 +122,7 @@ function main(): void {
 		gpuCheckProblem(commits),
 		macReferencesProblem(commits),
 		scriptReferencesProblem(commits),
+		screenshotsProblem(commits),
 	])
 		if (problem) failures.push(problem);
 	if (failures.length === 0) {

@@ -18,6 +18,10 @@ A sprite is a flat picture that always faces the camera, such as a particle, a m
 
 A batch is one draw for the GPU, whatever its size. The engine culls the sprites and sorts blended sprites back to front, as it does for instance rows. This work runs on the job workers or on the GPU. The [sprites and lines demo](https://github.com/null3d-engine/null3d/tree/main/examples/sprites-lines) draws a fountain of 2,000 sparks in one batch.
 
+![A fountain of glowing sparks over a dark pool, ringed by a neon helix and a dashed loop of lines.](../images/api/sprites/sprites-lines.webp)
+
+Only the sparks are sprites; the helix and the loop are lines.
+
 ```ts
 import { defineSketch } from '@null3d/engine';
 

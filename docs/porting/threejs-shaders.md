@@ -251,6 +251,10 @@ const foliage = materials.shader({
 
 ### A dissolve from TSL
 
+![Four spheres from whole to nearly gone, with an orange glow along the edges of the holes.](../images/porting/threejs-shaders/dissolve.webp)
+
+The dissolve port at progress 0, 0.3, 0.5 and 0.7.
+
 ```js
 // three.js TSL
 const progress = uniform(0);

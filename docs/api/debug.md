@@ -10,6 +10,10 @@ Debug drawing shows where things are in the scene: lines, boxes, spheres, arrows
 
 ## Debug drawing
 
+![A grid, a box, a sphere, two sets of axes, an arrow, a line, a camera frustum and a light, drawn as thin lines over a small scene.](../images/api/debug/debug-shapes.webp)
+
+Debug drawing.
+
 ```mermaid
 flowchart LR
     calls["ctx.debug calls<br/>in onUpdate"] --> points["The frame's points:<br/>64-bit positions and colors"]
@@ -132,6 +136,10 @@ export default defineSketch(({ debug, input }) => {
 - `debug.cullingSpheres(true)` draws the bounding sphere that culling tests for each of the first 128 objects whose mesh has levels, until `debug.cullingSpheres(false)`. Use it beside the levels view to see why the size rule hid a copy.
 - It reads the mesh's own sphere around the object's origin, so it does not draw the sphere that `setBounds` gave an object. Instance batch rows draw no sphere. `debug.cullingSpheresDrawn()` gives the spheres that the last frame drew, which is zero while the switch is off, so a page can tell that the switch drew them rather than nothing.
 - Debug views work in development builds only. In a release build, `debug.view` does nothing, and the build holds none of the views' shaders or drawing code. A few small parts stay, because the engine shares them: the scene's traversal of objects whose meshes have levels, and the culling's level code. Together they add about 2.4 KB after Brotli to a single-threaded build, and less to a pipelined one. In a development build, a name that the engine does not know, and that no add-on feature registers, fails with [E1213](../errors/E1213.md).
+
+![Copies of one mesh at growing distances, each in its level's color: blue, green, yellow and orange.](../images/api/debug/levels-view.webp)
+
+The levels view.
 
 ### The view from the address
 

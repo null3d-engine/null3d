@@ -109,6 +109,10 @@ The first run of a new test fails, because the test has no reference yet. Open i
 
 ## Frames that stay the same on every run
 
+![Glossy balls bouncing in a stone pen, the frame that a hold at 3 seconds draws.](../images/guides/testing/hold-mode-frame.webp)
+
+A held frame is the same on every run.
+
 - Move things with `time.now`, the frame's step (`dt` or `time.dt`), or in `onFixedUpdate`. `Date.now()` and `performance.now()` change from run to run.
 - Use `math.random` or `Math.random`: hold mode seeds both. Random numbers from another source, such as `crypto.getRandomValues`, are not seeded.
 - Expect no input, unless the test gives a timed script. A plain hold reads none: every key and button stays up, and the pointer stays at the canvas's top-left corner. A script's key and pointer steps reach the sketch at their times.

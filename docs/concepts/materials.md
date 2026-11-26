@@ -95,6 +95,10 @@ The `blend` mode blends the surface over what lies behind it. Its `blending` cho
 
 ## The transparent pass
 
+![Crossing panes of stained glass and smoke in a pavilion, blended in any order.](../images/concepts/materials/weighted-transparency.webp)
+
+Weighted blending needs no sort.
+
 ```mermaid
 flowchart LR
     opaque["Opaque pass:<br/>any order, depth decides"] --> sort["Job workers: cull the blended<br/>objects and sort them far to near"]

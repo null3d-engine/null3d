@@ -21,6 +21,10 @@ Use it for rain, streaks, sparks, card effects and shapes that a formula makes. 
 
 ## Rain around the camera
 
+![Thousands of thin rain streaks fall through a dark night street with one distant lamp.](../images/api/vertex-draws/rain.webp)
+
+Fifty thousand rain streaks from one vertex draw.
+
 ```ts
 import { defineSketch } from '@null3d/engine';
 

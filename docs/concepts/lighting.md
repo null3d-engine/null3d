@@ -36,6 +36,10 @@ A scene pass ([Custom passes](../guides/custom-passes.md)) runs steps 3 and 4 ag
 
 Each kind of light takes its intensity in a physical unit:
 
+![Shop windows and a neon sign lit as area lights, their shapes stretched across a wet street.](../images/concepts/lighting/area-lights.webp)
+
+Rectangle and tube lights.
+
 | Light | What it models | Intensity | `intensityUnit` |
 | --- | --- | --- | --- |
 | Directional | The sun or the moon: parallel light from one direction | Lux: the light that reaches a surface facing it | `'lux'` |
@@ -192,6 +196,10 @@ The sky and the background can take the same fog as a surface at the camera's fa
 
 With the fog's `volumetric` option, the lights light the fog itself, through their shadows. A low sun shines through the gaps between trees in rays, and the trees' shadows cut dark lanes through the haze. A street lamp or a car's headlight casts a glowing cone, with the shadows of what stands in it. [Scene](../api/scene.md#volumetric-fog) lists the options.
 
+![Sun rays through a pine wood in haze, with the trunks' shadows in the fog.](../images/concepts/lighting/light-shafts.webp)
+
+Volumetric fog takes the sun's light.
+
 ```mermaid
 flowchart LR
     light["Light step<br/>each cell of the grid:<br/>fog density, sun through its cascades,<br/>lamps of its cluster through their tiles"] --> sum["Sum steps<br/>each cell adds up<br/>the cells in front of it,<br/>block by block"]
@@ -218,6 +226,10 @@ Surfaces that blend or let light through, such as water and glass, draw before t
 ## Environment maps
 
 An environment map holds the light that reaches a point from every direction, such as a sky, a street or a room. Metal and glossy surfaces reflect it, and every surface takes some of it as diffuse light. Metals need it most, since they have almost no diffuse color and show only what they reflect.
+
+![Plastic and metal spheres, from rough to smooth, over a polished floor, lit by the Venice sunset environment map.](../images/concepts/lighting/environment.webp)
+
+Light from an environment alone. The demo filters the HDR file at load, which gives the same map as the assets env command.
 
 ```ts
 import { defineSketch } from '@null3d/engine';
@@ -311,6 +323,10 @@ These times come from Chrome. The phones loaded a page with no shader cache. On 
 ## Reflection probes
 
 An environment map holds light from infinitely far away. In a room, a polished floor then reflects the sky, not the walls. A reflection probe holds the light around one point of the scene, and lights the surfaces inside its box in place of the environment:
+
+![A warm room and a cool room over one polished floor, each reflected in place.](../images/concepts/lighting/reflection-probes.webp)
+
+Two rooms, one probe each. The demo's B key turns box projection on and off.
 
 ```mermaid
 flowchart LR
@@ -526,6 +542,10 @@ Give the sheets the fog's color, and change it with `material.set({ air })` when
 ### The physical sky
 
 The physical sky models the earth's air: a layer 100 km deep over a planet of the earth's size. Its molecules scatter blue light more than red (Rayleigh scattering), its haze scatters every color and mostly forward (Mie scattering), and its ozone absorbs some orange. The engine follows Hillaire's method of 2020, which Unreal Engine and Bevy use. Three small tables hold what each pixel would otherwise work out along its ray:
+
+![A valley at sunset under the physical sky, with rose clouds and ridges fading into the evening air.](../images/concepts/lighting/atmosphere.webp)
+
+The physical sky.
 
 ```mermaid
 flowchart LR

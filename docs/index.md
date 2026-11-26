@@ -8,6 +8,10 @@ summary: "What null3D is and how the docs are organized."
 
 null3D is a high-performance browser 3D engine for coding agents and the developers who work with them. It is built for two things: speed, and scenes that work on every current device.
 
+![A hilly Mediterranean island with forests, a beach and a harbour town, drawn by null3D with WebGPU.](images/index/showcase-island.webp)
+
+The Island showcase.
+
 - **Faster than three.js.** null3D beats three.js in five of its six benchmark scenes, and loses S1-static, in which 100,000 boxes stand still. In the S2 benchmark, a scene graph of 5,096 objects, null3D takes 0.35 ms of CPU time per frame. three.js takes 3.18 ms. Both figures come from Chrome on a MacBook Pro. [What gets faster](porting/threejs-overview.md#what-gets-faster) lists every scene, and the [performance guide](guides/performance.md) shows how to keep your own scene fast.
 - **Wide device compatibility.** One sketch runs on current computers, tablets and phones. The engine draws with WebGPU, and with WebGL2 where WebGPU is missing, from the same code. [GPU tiers and backends](concepts/backends.md) lists the browsers, and [Quality presets](concepts/quality-presets.md) says how the engine fits its work to each device.
 

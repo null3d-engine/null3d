@@ -131,6 +131,10 @@ A value outside its range fails the start with [E1213](../errors/E1213.md), exce
 
 With `transparent: true`, the page shows through wherever no object draws. The canvas holds premultiplied alpha, the form that browsers composite. The sketch can still set a background with `scene.setBackground`, which makes the canvas opaque again.
 
+![Glass panes over an embedded web page that shows through a see-through canvas.](../images/api/engine/transparent-canvas.webp)
+
+A see-through canvas over a page, with a depth-only plane.
+
 ```ts
 const engine = await createEngine({
   canvas,

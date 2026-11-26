@@ -39,6 +39,10 @@ The recipes that load files name them as a project serves them from its `public`
 
 `object.on` casts a ray from the pointer for you, and calls the handler of the object under it. The pointer lights up the box under it, and a click outlines the box. A second click on it clears the outline.
 
+![Six pieces on a plinth in a dark gallery, with the red cube outlined after a click.](../images/cookbook/index/picking.webp)
+
+The picking demo.
+
 ```ts
 import { defineSketch, type Mesh } from '@null3d/engine';
 
@@ -354,6 +358,10 @@ The page shows the progress in its own HTML, and removes the loading screen when
 ## A sky with a moving sun and fog
 
 The sky's sun and the scene's sun move together. Height fog lies low over the ground, and glows toward the sun.
+
+![A lighthouse island at sunset with the sun on the horizon.](../images/cookbook/index/time-of-day.webp)
+
+The time of day demo.
 
 ```ts
 import { defineSketch } from '@null3d/engine';

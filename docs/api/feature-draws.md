@@ -71,6 +71,10 @@ export default defineSketch(async ({ scene }) => {
 
 This draws one point. For a cloud, put one square per point in the vertex arrays, or draw many copies of this shape with `scene.addFeatureInstances`, as [Many copies of one shape](#many-copies-of-one-shape) shows.
 
+![Two clouds of colored discs: small, firm discs behind and larger, soft discs in front.](../images/api/feature-draws/feature-draw-clouds.webp)
+
+An opaque and a blended feature draw.
+
 ## The description
 
 `addFeatureDraw` reads these fields of the description. The [feature description page](features.md) gives the others: `name`, `reads`, `writes`, `outputs`, `provides` and the callbacks.
