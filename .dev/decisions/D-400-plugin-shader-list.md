@@ -1,4 +1,4 @@
-# D-399: A project's build copies only the shader builds of its listed words
+# D-400: A project's build copies only the shader builds of its listed words
 
 Status: decided and built. The Vite plugin's `shaders.list` option narrows the copies of a production build, and `bunx @null3d/cli shaders record` writes the list. Task: none.
 
