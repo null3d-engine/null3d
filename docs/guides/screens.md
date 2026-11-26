@@ -25,43 +25,59 @@ It is not an npm package. Copy the folder into your project and import its entry
 ## Make a screen
 
 ```ts
+import { defineSketch } from '@null3d/engine';
 import { createScreen } from './addons/screens';
 
-const screen = createScreen(ctx, {
-  width: 512,
-  height: 256,
-  refreshHz: 12,
-  size: [2.4, 1.2],
-  draw: (context) => {
-    context.fillStyle = '#061019';
-    context.fillRect(0, 0, 512, 256);
-    context.fillStyle = '#9fe8ff';
-    context.font = 'bold 48px sans-serif';
-    context.fillText('REACTOR 62.0', 24, 90);
-  },
+export default defineSketch((ctx) => {
+  const screen = createScreen(ctx, {
+    width: 512,
+    height: 256,
+    refreshHz: 12,
+    size: [2.4, 1.2],
+    draw: (context) => {
+      context.fillStyle = '#061019';
+      context.fillRect(0, 0, 512, 256);
+      context.fillStyle = '#9fe8ff';
+      context.font = 'bold 48px sans-serif';
+      context.fillText('REACTOR 62.0', 24, 90);
+    },
+  });
+  screen.mesh.setPosition(0, 1.4, -3);
+
+  return { onUpdate() { /* below */ } };
 });
-screen.mesh.setPosition(0, 1.4, -3);
 ```
 
-`draw` runs in the setup, before the first upload, so a held frame shows the picture. A program that
-changes its reading each frame repaints only the part that changed:
+`draw` runs in the setup, before the first upload, so every frame shows the picture, a held frame too. `screen.paint(draw, changed)` draws and uploads the rectangle that changed. Without a rectangle it uploads the whole canvas.
+
+```ts
+screen.paint((context) => {
+  context.fillStyle = '#061019';
+  context.fillRect(24, 150, 464, 90);
+  context.fillStyle = '#9fe8ff';
+  context.fillText(`REACTOR ${reading.toFixed(1)}`, 24, 200);
+}, { x: 24, y: 150, width: 464, height: 90 });
+```
+
+A program that changes its reading each frame can draw straight on `screen.context`:
 
 ```ts
 return {
   onUpdate() {
-    paintTheReading(screen.context);   // the number, the bar and the lights
+    const context = screen.context;
+    context.fillStyle = '#061019';
+    context.fillRect(24, 150, 464, 90);
+    context.fillStyle = '#9fe8ff';
+    context.fillText(`REACTOR ${reading.toFixed(1)}`, 24, 200);
     screen.mark({ x: 24, y: 150, width: 464, height: 90 });
     screen.flush();                    // sends a change that the rate held back
   },
 };
 ```
 
-`screen.paint(draw, changed)` draws and uploads the rectangle that changed. Without a rectangle it
-uploads the whole canvas. `screen.mark(rect)` adds a rectangle without drawing, and `screen.flush()`
-uploads the marked rectangles as one change.
+`screen.mark(rect)` adds a rectangle without drawing, and `screen.flush()` uploads the marked rectangles as one change.
 
-A refresh that the rate or an upload in flight holds back returns false, and the change waits for
-the next call. Call `flush` from the frame's update so it goes out.
+A refresh that the rate or an upload in flight holds back returns false, and the change waits for the next call. Call `flush` from the frame's update so it goes out.
 
 ## The LCD look
 
@@ -112,7 +128,7 @@ that path's figures and its upload budget.
 
 - The shader draws on both GPU paths. It uses `fwidth`, which both paths have.
 - A screen's mesh needs texture coordinates, as `geometry.plane` gives.
-- A held frame runs no update. Paint the picture through `draw` or in the setup.
+- In hold mode, the held frame shows the canvas as of its last read. A change that the refresh rate held back in the last updates does not show. Paint the picture that a test checks through `draw` or in the setup.
 - A large canvas at a high refresh rate costs its rectangle's bytes each read. Give a screen only
   the rate that its content needs.
 

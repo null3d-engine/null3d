@@ -21,25 +21,28 @@ flowchart LR
     coat --> light
 ```
 
-The paint is an example add-on in the repository, in the `examples/addons/car-paint` folder. It is
-not an npm package. Copy the folder into your project and import its entry point.
+The paint is an example add-on in the repository, in the [examples/addons/car-paint](https://github.com/null3d-engine/null3d/tree/main/examples/addons/car-paint) folder. It is not an npm package. Copy the folder into your project and import its entry point. The null3D Vite plugin compiles the folder's WGSL file, as it does for your own shaders ([Add the Vite plugin](../getting-started/install.md#add-the-vite-plugin)). A page with no build step cannot use it.
 
 ## Use it
 
 ```ts
+import { defineSketch } from '@null3d/engine';
 import { createCarPaint } from './addons/car-paint';
 
-const paint = createCarPaint(ctx, {
-  color: '#9e0b16',
-  metalness: 0.72,
-  roughness: 0.34,
-  flakes: { cells: [120, 210], tilt: 0.25 },
-  seams: { spacing: [0.34, 0], width: 0.0022 },
-  clearcoat: 1,
-  clearcoatRoughness: 0.02,
-});
+export default defineSketch((ctx) => {
+  const paint = createCarPaint(ctx, {
+    color: '#9e0b16',
+    metalness: 0.72,
+    roughness: 0.34,
+    flakes: { cells: [120, 210], tilt: 0.25 },
+    seams: { spacing: [0.34, 0], width: 0.0022 },
+    clearcoat: 1,
+    clearcoatRoughness: 0.02,
+  });
 
-scene.createMesh({ mesh: body, material: paint });
+  // `body` is the car body's mesh, from your project's model or geometry.
+  ctx.scene.createMesh({ mesh: body, material: paint });
+});
 ```
 
 ## Options
@@ -53,7 +56,9 @@ scene.createMesh({ mesh: body, material: paint });
 | `clearcoatRoughness` | The coat's perceptual roughness, from 0 to 1 | `0.02` |
 | `flakes` | `{ cells, tilt, angle, max }`, or `false` | `{ cells: [120, 210], tilt: 0.25, angle: 0.25, max: 64 }` |
 | `seams` | `{ spacing, width, shade }`, or `false` | `{ spacing: [0.34, 0], width: 0.0022, shade: 0.85 }` |
-| `weave` | `{ cells, shine }`, or `false` | `false` |
+| `weave` | `{ cells, shine }`, or `false` | `false`; a weave object starts from `{ cells: [90, 150], shine: 0.85 }` |
+
+A part given as an object keeps the default for each field it leaves out.
 
 - `flakes.cells` counts flake cells across each texture coordinate.
 - `flakes.tilt` is how far the flakes' normals spread from the surface normal. It sets the width
@@ -66,19 +71,20 @@ scene.createMesh({ mesh: body, material: paint });
 - `seams.spacing` gives the interval between seams along each texture coordinate. A value of 0
   draws no seam along that coordinate.
 - `seams.width` is the groove's half width in the texture coordinates.
+- `seams.shade` is how dark the groove draws, from 0 for none to 1 for black.
 - `weave.cells` counts weave cells across each texture coordinate.
 - `weave.shine` is how strongly a tow's rounded cross-section shapes its highlight, from 0 to 1.
 
 ## How the parts draw
 
-The **flakes** are the metal's microfacets, drawn with the glint model of Deliot and Belcour. Each
-pixel covers a number of flake cells. The paint counts how many of the flakes in that footprint
-reflect a light into the eye, and uses that count in place of the smooth highlight. A pixel whose
-flakes miss the light draws no highlight, and one where a flake catches it draws a bright spot. The
-count's average is the smooth lobe, so a car far away draws as smooth metal, without shimmering as
-it moves. The spot stays where the light reflects, so the sparkle follows each light as the car
-turns. The clear coat keeps its own smooth normal, so the flakes never disturb the coat's
-reflection.
+The **flakes** are the metal's microfacets, drawn with the glint model of Deliot and Belcour. A pixel whose flakes miss the light draws no highlight, and one where a flake catches it draws a bright spot. A car far away draws as smooth metal, without shimmering as it moves. The spot stays where the light reflects, so the sparkle follows each light as the car turns. The clear coat keeps its own smooth normal, so the flakes never disturb the coat's reflection.
+
+<details>
+<summary>Technical details: the glint model</summary>
+
+Each pixel covers a number of flake cells. The paint counts how many of the flakes in that footprint reflect a light into the eye, and uses that count in place of the smooth highlight. The count's average is the smooth lobe, so a car far away draws as smooth metal.
+
+</details>
 
 The model replaces the base highlight of the main directional light and of each point and spot
 light. Area lights draw their own smooth highlight, with no glints.
@@ -93,11 +99,14 @@ their own way. The gaps between the tows draw darker and rougher.
 
 ## Cost
 
-The paint pays for the clear coat's lobe. The flakes cost the footprint's derivatives and one hash
-for each pixel, and the lobe adds two hashes and a short sum of terms for each pixel and each light
-that reaches it. The seams cost a few derivatives for each pixel. The weave adds its own pattern,
-slope and roughness change. A material without flakes, seams or a weave draws the same surface as a
-plain metallic paint.
+The flakes add a small cost for each light. The seams and the weave add a small cost for each pixel. A material without flakes, seams or a weave draws the same surface as a plain metallic paint.
+
+<details>
+<summary>Technical details: what each part costs</summary>
+
+The paint pays for the clear coat's lobe. The flakes cost the footprint's derivatives and one hash for each pixel, and the lobe adds two hashes and a short sum of terms for each pixel and each light that reaches it. The seams cost a few derivatives for each pixel. The weave adds its own pattern, slope and roughness change.
+
+</details>
 
 ## Limits
 
