@@ -1,14 +1,10 @@
 ---
 id: concepts/large-worlds
 title: Large worlds and precision
-status: experimental
-since: "0.2"
 summary: "Cell-relative positions and per-frame camera-to-cell offsets; reversed depth; largeWorld mode; batch origins; floating-origin geometry."
 ---
 
 # Large worlds and precision
-
-> Roadmap step 0.2, first released in null3D 0.1.0. The API is experimental, so it can still change between versions.
 
 ```mermaid
 flowchart LR
@@ -94,9 +90,16 @@ Sprite, point and line batches take the same `origin` option. Batch origins work
 
 A camera that moves far from the origin stays as smooth as one near it. Each frame, the engine computes the camera's offset to each cell in 64-bit numbers, so the offsets stay small and exact near the camera.
 
-A test checks this with a flight. A camera flies sideways past six squares, 4 m to 35 m away, 12 cm per frame for 16 frames. It flies at the origin, 1,000 km out and at the Earth's radius, in large-world mode. Each square's image moves from frame to frame as it does at the origin, within 0.0001 pixels. This holds on WebGPU, its compatibility mode and WebGL2.
+In large-world mode, a camera that flies past objects 1,000 km out or at the Earth's radius moves them on screen smoothly. It is as smooth as at the origin, on WebGPU, its compatibility mode and WebGL2. Without large-world mode, or when all 512 cells are in use ([Limits](#limits)), the same camera jitters. Positions then move in the coarse steps given at the top of this page.
 
-The same flight without large-world mode, or with no free cell, jitters. The camera's position then moves in steps of about 6 cm at 1,000 km and 0.5 m at the Earth's radius. So the squares jump by up to 3.5 pixels at 1,000 km and 7.8 pixels at the Earth's radius.
+<details>
+<summary>Technical details: how the engine tests a moving camera</summary>
+
+A test flies a camera sideways past six squares, 4 m to 35 m away, 12 cm per frame for 16 frames. It flies at the origin, 1,000 km out and at the Earth's radius, in large-world mode. Each square's image moves from frame to frame as it does at the origin, within 0.0001 pixels.
+
+The same flight without large-world mode jitters. The camera's position moves in steps of about 6 cm at 1,000 km and 0.5 m at the Earth's radius. So the squares jump by up to 3.5 pixels at 1,000 km and 7.8 pixels at the Earth's radius.
+
+</details>
 
 ## Floating-origin geometry
 
@@ -113,8 +116,10 @@ The engine does not use logarithmic depth, which writes depth from the fragment 
 ## Limits
 
 - At most 512 cells are in use at once, the origin's cell included. A cell is in use while an object or a row lies in it, and frees when the last one leaves. When all 512 are in use, an object or a row that enters a new cell goes into the origin's cell instead. There it has the precision of a 32-bit position. The engine then warns once in the console, as such content jitters far from the origin.
-- Dense content fills the most objects and rows that a scene can draw before it fills the cells. A city of 20,000 objects per square kilometer reaches that most at about 420 km² of flat ground: about 420 cells. Content spread thin can reach it, such as one marker in each of 1,000 towns. Keep such content in fewer cells. Put far objects under a few parent objects, as children share their root's cell. Or create and destroy them as the camera moves.
+- Dense content fills the most objects and rows that a scene can draw before it fills the cells. A city of 20,000 objects per square kilometer reaches that most at about 105 km² of flat ground. That needs a device with WebGPU's default limits, and it takes about 100 cells. On a device that allows the most, it reaches the limit at about 420 km², or about 400 cells. The property `engine.capabilities.maxInstances` gives the number for the device ([The portable budget](backends.md#the-portable-budget)).
+- Content spread thin can reach it, such as one marker in each of 1,000 towns. Keep such content in fewer cells. Put far objects under a few parent objects, as children share their root's cell. Or create and destroy them as the camera moves.
 - In large-world mode, positions reach about 2 × 10¹² m from the origin, the most whole cells that a 32-bit integer counts.
+- `getWorldPosition` and `getWorldMatrix` return 64-bit positions, so pass a plain array or a `Float64Array`.
 
 ## Related pages
 

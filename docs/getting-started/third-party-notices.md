@@ -1,24 +1,20 @@
 ---
 id: getting-started/third-party-notices
 title: Third-party notices
-status: experimental
-since: "0.2"
 summary: "The third-party code in each null3D package, with its version and license, and the notices file that a build writes beside the page."
 ---
 
 # Third-party notices
 
-> Roadmap step 0.2, first released in null3D 0.1.0. The API is experimental, so it can still change between versions.
-
-Some null3D packages ship code from other projects, as the original file or as a port of it. Each license asks a copy to carry its notice, so every such package ships a `THIRD-PARTY-NOTICES.txt` file with the full text.
+Some null3D packages ship code from other projects, as the original file or as a port of it. Each license asks a copy to carry its notice, so every such package ships a `THIRD-PARTY-NOTICES.txt` file with the full text. A production build with the Vite plugin collects these notices into `null3d-third-party-notices.txt` beside the page. Keep that file with the build when you publish it, or show its text in your game's credits ([Hosting](hosting.md#publish-the-third-party-notices)).
 
 ## Each package
 
 | Package | Third-party code | License | Where | Notices |
 | --- | --- | --- | --- | --- |
-| `@null3d/engine` | Basis Universal 2.50 with Zstandard, meshoptimizer 1.3.0, Draco 1.5.7, three.js 0.186.1, TinyEXR and OpenEXR, Linearly transformed cosines, Filament, KinoBokeh and Unity's post-processing stack v1, AMD FidelityFX FSR 1 and SSSR, Qualcomm Snapdragon GSR 1, SMAA 1x, and the core's Rust crates | Apache License 2.0, BSD 3-Clause and MIT | `vendor/`, the shader modules, `panorama-worker.js`, `dist/wasm` | `THIRD-PARTY-NOTICES.txt` |
-| `@null3d/cli` | Basis Universal 2.50 with Zstandard, ufbx 0.23.1, the `exr` and `lebe` crates, three.js 0.186.1, and the asset module's other crates | Apache License 2.0, BSD 3-Clause and MIT | `vendor/`, `dist/assets.wasm` | `THIRD-PARTY-NOTICES.txt` |
-| `@null3d/vite-plugin` | naga and naga-types 30.0.1, naga_oil 0.23.0, serde, serde_json, toml, the shader compiler's other crates, and the engine shaders it embeds: three.js 0.186.1, Filament, KinoBokeh and Unity's post-processing stack v1, AMD FidelityFX, Qualcomm Snapdragon GSR 1, SMAA 1x | MIT, Apache License 2.0, BSD 3-Clause and Zlib | `dist/shader-compiler.wasm` | `THIRD-PARTY-NOTICES.txt` |
+| `@null3d/engine` | 13 projects, among them Basis Universal, Draco, meshoptimizer and three.js. See [The engine](#the-engine). | Apache License 2.0, BSD 3-Clause and MIT | `vendor/`, the shader modules, `panorama-worker.js`, `dist/wasm` | `THIRD-PARTY-NOTICES.txt` |
+| `@null3d/cli` | Basis Universal, ufbx, three.js and the asset module's crates. See [The tools](#the-tools). | Apache License 2.0, BSD 3-Clause and MIT | `vendor/`, `dist/assets.wasm` | `THIRD-PARTY-NOTICES.txt` |
+| `@null3d/vite-plugin` | naga, naga_oil and the shader compiler's crates, and the engine shaders it embeds. See [The tools](#the-tools). | MIT, Apache License 2.0, BSD 3-Clause and Zlib | `dist/shader-compiler.wasm` | `THIRD-PARTY-NOTICES.txt` |
 | `@null3d/controls` | three.js 0.186.1, the math and the option names of its controls | MIT | `lib/index.js` | `THIRD-PARTY-NOTICES.txt` |
 | `@null3d/geometry` | three.js 0.186.1, its generators, curves, paths and shapes; earcut 3.0.2 | MIT and ISC | `lib/index.js` | `THIRD-PARTY-NOTICES.txt` |
 | `@null3d/three-compat` | three.js 0.186.1, its tone curves and its outline pass | MIT | `lib/index.js` | `THIRD-PARTY-NOTICES.txt` |
@@ -50,7 +46,7 @@ The null3D packages themselves are offered under the MIT License or the Apache L
 | Qualcomm Snapdragon GSR 1: the render-scale upscale | BSD 3-Clause | the shader library |
 | TinyEXR and OpenEXR, whose code the EXR decoders follow | BSD 3-Clause | `panorama-worker.js` |
 | Linearly transformed cosines, the area light tables | BSD 3-Clause | `vendor/ltc` |
-| SMAA, the subpixel morphological anti-aliasing that smooths the moment transparency layer's edges | MIT | the renderer's moment layer tables and shaders |
+| SMAA 1x, the anti-aliasing of the optional [moment transparency layer](../api/materials.md#moment-transparency) | MIT | the renderer's moment layer tables and shaders |
 | The Rust crates of the core: the standard library, wasm-bindgen, cfg-if, once_cell and dlmalloc | MIT or Apache License 2.0 | `dist/wasm` |
 
 The full texts are in the engine's `THIRD-PARTY-NOTICES.txt`.
@@ -91,4 +87,4 @@ The command-line tool and the Vite plugin put no code in a page. Their packages 
 
 Each package's `THIRD-PARTY-NOTICES.txt` holds the full text. The engine's copy is also at `node_modules/@null3d/engine/THIRD-PARTY-NOTICES.txt` after an install.
 
-A production build with the Vite plugin writes every package's notices into `null3d-third-party-notices.txt` beside the page. Keep that file with the build when you publish it, or show its text in your game's credits. The tools' notices stay out of that file, because a page ships none of their code.
+The tools' notices stay out of the build's notices file, because a page ships none of their code.

@@ -1,14 +1,10 @@
 ---
 id: api/sprites
 title: Sprites
-status: experimental
-since: "0.2"
 summary: "createSprites; world and screen size modes; atlases."
 ---
 
 # Sprites
-
-> Roadmap step 0.2, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. Sprites do not cast or receive shadows, and overlap queries do not find them.
 
 ```mermaid
 flowchart LR
@@ -142,13 +138,15 @@ With `sizeAttenuation: false`, sizes are in CSS pixels, at every distance and on
 
 ## Blending, sorting and depth
 
-Blended sprites draw after the opaque objects, farthest first, in the same transparent pass as other blended objects. The engine sorts each sprite by the depth of its position in the camera's view. It sorts the sprites of a batch among each other and among the scene's other blended objects and rows, every frame. Sorting costs time in large batches. For particles that add light, such as sparks and fire, `blending: 'additive'` with `depthWrite: false` needs no exact order to look right.
+Blended sprites draw after the opaque objects, farthest first, in the same transparent pass as other blended objects. The engine sorts each sprite by the depth of its position in the camera's view. It sorts the sprites of a batch among each other and among the scene's other blended objects and rows, every frame. Sorting costs time in large batches. For particles that add light, such as sparks and fire, `blending: 'additive'` with `depthWrite: false` needs no exact order to look right. Sprites do not cast or receive shadows.
 
 `alphaMode: 'mask'` draws sprites opaque, cut out by their alpha, with no sorting. Use it for foliage and other sharp edged pictures.
 
 ## Clicks and raycasts
 
-Raycasts hit a sprite where the ray crosses its quad. The hit's `object` is the batch, and its `instance` is the sprite. A sprite batch takes `sprites.on('click', handler)` and the other [pointer events on objects](input.md#pointer-events-on-objects), as an instance batch does. A ray hits the whole quad, also where the sprite's map is clear. [Raycasting](raycast.md#sprites-points-and-lines) has the details.
+Raycasts hit a sprite where the ray crosses its quad. The hit's `object` is the batch, and its `instance` is the sprite. A sprite batch takes `sprites.on('click', handler)` and the other [pointer events on objects](input.md#pointer-events-on-objects), as an instance batch does. A ray hits the whole quad, also where the sprite's map is clear.
+
+[Raycasting](raycast.md#sprites-points-and-lines) has the details. Overlap queries do not find sprites. Use a raycast.
 
 ```ts
 sprites.on('click', (event) => {

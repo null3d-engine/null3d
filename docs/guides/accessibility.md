@@ -1,14 +1,10 @@
 ---
 id: guides/accessibility
 title: Accessibility
-status: experimental
-since: "0.1"
 summary: "What the canvas tells assistive technology; keyboard use; reduced motion; pausing; loading and errors."
 ---
 
 # Accessibility
-
-> Roadmap step 0.1, first released in null3D 0.1.0. The API is experimental, so it can still change between versions.
 
 A screen reader sees a canvas as one element. It cannot see the objects drawn inside it. So the HTML around the canvas carries the meaning, and the sketch sends that HTML what it needs through messages.
 

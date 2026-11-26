@@ -1,14 +1,10 @@
 ---
 id: guides/testing
 title: Testing your sketch
-status: experimental
-since: "0.1"
 summary: "Hold mode; image tests; reading results; frames that stay the same on every run; browser tests of a whole app."
 ---
 
 # Testing your sketch
-
-> Roadmap step 0.1, first released in null3D 0.1.0. The API is experimental, so it can still change between versions.
 
 ```mermaid
 flowchart LR
@@ -22,32 +18,6 @@ flowchart LR
 ```
 
 An image test draws your sketch at a set time and compares the frame with a reference image. A live engine draws whenever the browser gives it a frame. The time and the steps of a live frame therefore change from run to run. Hold mode fixes both, and the same code then draws the same frame on every run.
-
-## Check every rendering mode
-
-A scene that looks right and runs well in one setup can fail in another. Before you call a scene done, check frame rate, memory and looks in each of these:
-
-| Switch | What it shows |
-|---|---|
-| `?gpu=webgpu&direct=off` | WebGPU with indirect draws |
-| `?gpu=webgpu&direct=on` | WebGPU with direct draws, which holds more memory on some devices |
-| `?gpu=compat` | WebGPU's compatibility mode, with fewer features |
-| `?gpu=webgl2` | WebGL2, where the CPU culls and the draw calls cost more |
-| `?preset=low` to `?preset=ultra` | Each quality preset. High on WebGL2 and compatibility runs at Medium. With no preset, the start-up check picks one |
-
-Follow these rules when you measure:
-
-- **Measure the whole camera path.** A part of it can read far better than the worst moment, so never quote a part as the whole.
-- **Repeat each run.** One run misleads: two like runs can differ by a third. Fix the pixel ratio, and note what else the machine is doing.
-- **Watch it move.** A held frame shows no popping, flicker or lag. Record a live camera and look at the frames.
-- **Test on real devices.** Use phones and tablets of different form factors, and large and small screens. [Phones and tablets](phones.md#testing-on-real-devices) says how.
-
-To read the numbers, open the stats overlay with `?stats=open`:
-
-- **Frames per second:** read the average and the slowest second, and count the seconds under your target. An average hides a stall.
-- **Frame work:** `Sketch`, `Drawing` and `GPU` say which side is slow. A bar past the mark is over the frame's budget.
-- **Scale:** under 1.00, the frame-budget governor has lowered the render scale to keep the time, so the frame rate alone flatters the scene.
-- **Memory:** read `GPU textures` and `GPU buffers` on each path, and the page's limit in [Phones and tablets](phones.md#memory).
 
 ## Hold mode
 
@@ -66,20 +36,105 @@ const { width, height, pixels } = await engine.captureFrame(); // RGBA8 rows, to
 In hold mode, the engine does this:
 
 1. It seeds the engine's random generator, [`math.random`](../api/math.md#random-numbers), in the sketch's thread, and makes `Math.random` draw from it too. This happens before the sketch module loads.
-2. It runs the sketch's setup. The sketch's `assets` calls run one at a time, each once the call before it has answered, in the order the sketch made them. A load makes its textures, meshes and materials when its files arrive, and files arrive in another order on each run. Loads that ran side by side would put the scene's content in another order each time. The held frame would then draw its objects in another order.
+2. It runs the sketch's setup. The sketch's `assets` calls run one at a time, in the order the sketch made them.
 3. It steps the sketch from time 0 to the held time. The first frame is at time 0 and its `onUpdate` gets a step of 0. Each later frame adds a fixed step of 1/60 second, and the last one lands on the held time exactly. The sketch's own fixed steps fall due from the sketch time, so every hold runs the same ones. At the default rate, each frame after the first runs one.
-4. It draws the last frame on the canvas, and reads its pixels back through its own GPU code. Motion vectors read the frame before, so with them it draws the frame before the last one too. A mirror or a light probe shows its result a frame late, so with one it draws one more frame at the held time. The GPU passes of the other frames never run, and [`time.drawn`](../api/time.md#the-time-object) is false in them.
+4. It draws the last frame on the canvas and reads its pixels back. The GPU passes of the other frames never run, and [`time.drawn`](../api/time.md#the-time-object) is false in them.
 5. It publishes the frame, or the error that stopped it, as `window.__null3dHold`.
 
 `createEngine` resolves once the frame is read back, and `engine.captureFrame()` returns that frame. `engine.mode.hold` gives the held time, and it is `null` for a live engine. After the held frame, the engine draws nothing more: it runs no frame loop, so `engine.measure()` finds no frames. The hold's result gives the held frame's own figures instead. The engine draws no frame before the held one, so the held frame creates every GPU object and uploads the whole scene.
 
-A hold at 1.5 seconds runs 91 frames: frame 1 at time 0, then 90 steps. In the last `onUpdate`, `time.now` is 1.5 and `time.frame` is 91. When a pass reads the frame before it, as screen-space bounce light does, the engine draws one more frame at the same sketch time after the held one, so the picture has the light that the earlier frame showed. That frame runs none of the sketch's code and adds no step, so the sketch still ends at frame 91 and the hold reports that number. It draws the debug lines of the last `onUpdate` again, so the picture shows the same lines as the held frame.
+A hold at 1.5 seconds runs 91 frames: frame 1 at time 0, then 90 steps. In the last `onUpdate`, `time.now` is 1.5 and `time.frame` is 91.
 
-Before it draws the held frame, hold mode waits for the tasks that the sketch queued on the job workers. It then runs one more frame at the held time, which draws what they wrote. It waits up to 10 seconds for a task, then warns and draws anyway. The levels of detail that meshes made in code plan are different. Hold mode waits for them until they are in, however long the plans take on a busy machine. It says every 10 seconds which meshes still plan. So the held frame always draws every planned level. A plan that has not answered after five minutes stops the hold with [E1408](../errors/E1408.md), which names the meshes. Give a mesh `levels: false` when a test should draw it without levels. Hold mode also waits for the tasks and plans that the setup started before the first step, with the same limits. So a mesh made in the setup has its levels in every held frame, and a task that never answers delays the hold twice. The plans hand over their levels one at a time in the order they started, whatever order the job workers answer in. So the steps find the same scene on every run, and the meshes of the levels take the same places in engine memory.
+Motion vectors need the frame before the last one, so with them the engine draws that frame too.
+
+Some effects show their result one frame late: screen-space bounce light, mirrors and light probes. Tasks on the job workers can also answer after the last step. In these cases the engine draws one more frame at the held time. That frame runs none of the sketch's code, so the hold still reports the last step's frame number.
+
+Hold mode waits for the sketch's tasks on the job workers, and for the levels of detail that meshes made in code plan. Each of its two waits for the tasks lasts up to 10 seconds, and then it warns and draws anyway. It waits up to five minutes for the plans, then stops with [E1408](../errors/E1408.md). Give a mesh `levels: false` when a test should draw it without levels.
+
+<details>
+<summary>Technical details: what hold mode waits for</summary>
+
+- Hold mode waits twice: once after the setup and before the first step, and once after the last step, before the extra frame. A task that never answers delays the hold twice.
+- While plans are still running, the console says every 10 seconds which meshes still plan.
+- The plans hand over their levels one at a time, in the order they started, whatever order the job workers answer in. So the steps find the same scene on every run, and the levels' meshes take the same places in engine memory.
+- The extra frame draws the debug lines of the last `onUpdate` again, so the picture shows the same lines as the frame before it.
+- The held frame creates every GPU object and uploads the whole scene.
+
+</details>
 
 The switch wins over the option. A bare `?hold` holds at the time of the `hold` option, or at 0 without one. The time must be from 0 to 600 seconds, or the start fails with [E1407](../errors/E1407.md).
 
 Hold mode works in every thread mode and on every GPU tier. The single-threaded build runs the sketch on the page's thread, so there the page's `math.random` is seeded too. The page's `Math.random` draws from it until the engine stops.
+
+## A held frame from the command line
+
+`bunx @null3d/cli shot` draws one held frame of your page, with no test code. It starts your project's own Vite dev server and opens the page with `?hold` in a headless browser. Then it saves the frame as a PNG file:
+
+```sh
+bunx @null3d/cli shot --out shot.png --time 1.5 --gpu webgl2
+```
+
+Beside the image, it saves `shot.json` with the frame's time, number, GPU tier and figures, and with what the page logged. When the hold fails, it prints the error and saves no image. [The `null3d` command](../cli/null3d.md) lists its options.
+
+A time on its own cannot show a state that a key press or a click causes. `--script` drives the page with a timed script. Its keys, pointer and property writes land at sketch times, and each shot step draws one image:
+
+```sh
+bunx @null3d/cli shot --script drive.script --out tour.png
+```
+
+[Timed scripts](../cli/null3d.md#timed-scripts) gives the steps and the addresses of objects and properties.
+
+## Image tests from the command line
+
+`bunx @null3d/cli test` runs your image tests with no test code. List them in `null3d.json` in your project's folder:
+
+```json
+{
+  "tests": [
+    { "name": "start", "sketch": "sketch.ts", "hold": 1.5 },
+    { "name": "harbor", "sketch": "sketch.ts?view=harbor", "hold": 4, "tiers": ["webgpu", "webgl2"] }
+  ]
+}
+```
+
+`test` type checks the project and runs its lint script. Then it holds each sketch at its time on each of its GPU tiers, 320 x 180 pixels unless the test gives a `size`. It compares each image with its reference in `tests/references/`, and prints one line per result, with the image files:
+
+```text
+PASS  start on webgl2: it matches the reference (image test-results/null3d/chrome-real-gpu/webgl2/start.png)
+```
+
+A test can give `script` instead of `hold`. It then draws each shot step of the script, under the name `<test>-<shot>`, and each state keeps its own reference.
+
+The first run of a new test fails, because the test has no reference yet. Open its image, and when it is right, keep it with `bunx @null3d/cli test --update-references`. [The `null3d` command](../cli/null3d.md#test) gives the settings of a test, where the files go, and what each line says.
+
+## Frames that stay the same on every run
+
+- Move things with `time.now`, the frame's step (`dt` or `time.dt`), or in `onFixedUpdate`. `Date.now()` and `performance.now()` change from run to run.
+- Use `math.random` or `Math.random`: hold mode seeds both. Random numbers from another source, such as `crypto.getRandomValues`, are not seeded.
+- Expect no input, unless the test gives a timed script. A plain hold reads none: every key and button stays up, and the pointer stays at the canvas's top-left corner. A script's key and pointer steps reach the sketch at their times.
+- Finish loading in the setup. Await every asset there, because the hold starts when the setup's promise resolves. A sketch that adds large models after the first frame on a live page waits for them when `engine.held` is true ([A fast start](start-time.md#draw-the-first-frame-before-the-large-models)).
+- Pass test settings in the sketch module's address, such as `new URL('./sketch.ts?view=harbor', import.meta.url)`, and read them in the sketch with `new URL(import.meta.url).searchParams`. The page's messages reach the sketch only after the hold, because `createEngine` resolves after it.
+- Keep a reference image per GPU tier, and force the tier with `?gpu=webgpu`, `?gpu=compat` or `?gpu=webgl2`. The tiers can differ slightly at edges.
+- Compare with a small tolerance. A software GPU in CI and a real GPU differ at object edges. `bunx @null3d/cli test` counts a pixel as different past 10% of the color range. It fails an image when more than 0.1% of its pixels differ ([References and results](../cli/null3d.md#references-and-results)).
+
+Loads that run side by side are safe in a held frame or a replay. The engine then runs the sketch's `assets` calls one at a time ([Hold mode](#hold-mode)), and a model makes its textures in the file's order.
+
+The [hold mode demo](https://github.com/null3d-engine/null3d/tree/main/examples/hold-mode) drops 400 balls from random places, and moves them by each frame's step. Every live run differs. With `?hold=3`, every run draws the same frame.
+
+## When a hold fails
+
+Hold mode stops at the first error and publishes it with `ok: false`:
+
+| Failure | What the result says |
+| --- | --- |
+| The time is not a number of seconds from 0 to 600 | [E1407](../errors/E1407.md) |
+| The sketch or the engine failed during a step | [E1408](../errors/E1408.md), with the sketch time and the frame of the failure |
+| The frame could not be drawn or read back | E1408, with the reason |
+| The sketch's setup threw, or a thread did not start | The same error that a live start gives, such as [E1405](../errors/E1405.md) |
+| The browser took the GPU away | [E1302](../errors/E1302.md). Hold mode draws on one device, so it does not start a new one. |
+| A level-of-detail plan did not answer after five minutes | [E1408](../errors/E1408.md), naming the meshes that still plan |
+
+A live engine logs an error in `onUpdate` and carries on. Hold mode stops instead, so a test fails at once. The console shows the sketch's error with its stack.
 
 ## Reading the result in a test
 
@@ -114,24 +169,6 @@ const pixels = Buffer.from(result.pixels, 'base64'); // compare with the referen
 
 The engine reads the pixels back with its own GPU code and takes no screenshot of the canvas. Some browsers change what a page reads from a canvas, to stop fingerprinting.
 
-## A held frame from the command line
-
-`bunx @null3d/cli shot` draws one held frame of your page, with no test code. It starts your project's own Vite dev server and opens the page with `?hold` in a headless browser. Then it saves the frame as a PNG file:
-
-```sh
-bunx @null3d/cli shot --out shot.png --time 1.5 --gpu webgl2
-```
-
-Beside the image, it saves `shot.json` with the frame's time, number, GPU tier and figures, and with what the page logged. When the hold fails, it prints the error and saves no image. [The `null3d` command](../cli/null3d.md) lists its options.
-
-A time on its own cannot show a state that a key press or a click causes. `--script` drives the page with a timed script. Its keys, pointer and property writes land at sketch times, and each shot step draws one image:
-
-```sh
-bunx @null3d/cli shot --script drive.script --out tour.png
-```
-
-[Timed scripts](../cli/null3d.md#timed-scripts) gives the steps and the addresses of objects and properties.
-
 ## Record a session that went wrong
 
 A bug on a phone can replay on this computer. Open your page with `?record`: the engine records each frame's step and the input that the sketch read, from the page's first frame, and a **Save recording** button appears. Reproduce the bug, tap it, and copy the file to the computer. The recording keeps the sketch's random seed and [start data](../api/page.md#start-data), so the setup builds the same scene on the replay.
@@ -144,60 +181,9 @@ bunx @null3d/cli shot --replay bug.n3dr --out bug.png
 
 The replay runs the recording's frames in order, with their recorded steps and input, and draws the last one. It reads no live input. Its pixels differ from the phone's as any two GPUs' do, so a replay proves the frames and not the picture. A recording stops at 600 seconds of sketch time.
 
-## Image tests from the command line
-
-`bunx @null3d/cli test` runs your image tests with no test code. List them in `null3d.json` in your project's folder:
-
-```json
-{
-  "tests": [
-    { "name": "start", "sketch": "sketch.ts", "hold": 1.5 },
-    { "name": "harbor", "sketch": "sketch.ts?view=harbor", "hold": 4, "tiers": ["webgpu", "webgl2"] }
-  ]
-}
-```
-
-`test` type checks the project and runs its lint script. Then it holds each sketch at its time on each of its GPU tiers, 320 x 180 pixels unless the test gives a `size`. It compares each image with its reference in `tests/references/`, and prints one line per result, with the image files:
-
-```text
-PASS  start on webgl2: it matches the reference (image test-results/null3d/chrome-real-gpu/webgl2/start.png)
-```
-
-A test can give `script` instead of `hold`. It then draws each shot step of the script, under the name `<test>-<shot>`, and each state keeps its own reference.
-
-The first run of a new test fails, because the test has no reference yet. Open its image, and when it is right, keep it with `bunx @null3d/cli test --update-references`. [The `null3d` command](../cli/null3d.md#test) gives the settings of a test, where the files go, and what each line says.
-
-## When a hold fails
-
-Hold mode stops at the first error and publishes it with `ok: false`:
-
-| Failure | What the result says |
-| --- | --- |
-| The time is not a number of seconds from 0 to 600 | [E1407](../errors/E1407.md) |
-| The sketch or the engine failed during a step | [E1408](../errors/E1408.md), with the sketch time and the frame of the failure |
-| The frame could not be drawn or read back | E1408, with the reason |
-| The sketch's setup threw, or a thread did not start | The same error that a live start gives, such as [E1405](../errors/E1405.md) |
-| The browser took the GPU away | [E1302](../errors/E1302.md). Hold mode draws on one device, so it does not start a new one. |
-
-A live engine logs an error in `onUpdate` and carries on. Hold mode stops instead, so a test fails at once. The console shows the sketch's error with its stack.
-
-## Frames that stay the same on every run
-
-- Move things with `time.now`, the frame's step (`dt` or `time.dt`), or in `onFixedUpdate`. `Date.now()` and `performance.now()` change from run to run.
-- Use `math.random` or `Math.random`: hold mode seeds both. Random numbers from another source, such as `crypto.getRandomValues`, are not seeded.
-- Expect no input, unless the test gives a timed script. A plain hold reads none: every key and button stays up, and the pointer stays at the canvas's top-left corner. A script's key and pointer steps reach the sketch at their times.
-- Finish loading in the setup. Await every asset there, because the hold starts when the setup's promise resolves. A sketch that adds large models after the first frame on a live page waits for them when `engine.held` is true ([A fast start](start-time.md#draw-the-first-frame-before-the-large-models)).
-- Pass test settings in the sketch module's address, such as `new URL('./sketch.ts?view=harbor', import.meta.url)`, and read them in the sketch with `new URL(import.meta.url).searchParams`. The page's messages reach the sketch only after the hold, because `createEngine` resolves after it.
-- Keep a reference image per GPU tier, and force the tier with `?gpu=webgpu`, `?gpu=compat` or `?gpu=webgl2`. The tiers can differ slightly at edges.
-- Compare with a small tolerance. A software GPU in CI and a real GPU differ at object edges. `bunx @null3d/cli test` counts a pixel as different past 10% of the color range. It fails an image when more than 0.1% of its pixels differ ([References and results](../cli/null3d.md#references-and-results)).
-
-Loads that run side by side are safe in a held frame. While the engine holds frames or replays, the sketch's `assets` calls run one at a time, in the order the sketch made them. A model makes its textures in the file's order. So a held scene puts its content together in the same order on every run, however its files arrive ([Hold mode](#hold-mode)).
-
-The [hold mode demo](https://github.com/null3d-engine/null3d/tree/main/examples/hold-mode) drops 400 balls from random places, and moves them by each frame's step. Every live run differs. With `?hold=3`, every run draws the same frame.
-
 ## Browser tests of a whole app
 
-Image tests check pictures. A game or an app also needs a suite that opens its real page in a browser, drives it and checks what it did. The null3d-develop agent skill's `references/e2e-testing.md` gives the whole setup, with a worked Playwright config and spec. Its main rules:
+Image tests check pictures. A game or an app also needs a suite that opens its real page in a browser, drives it and checks what it did. The null3d-develop agent skill's [`references/e2e-testing.md`](https://github.com/null3d-engine/null3d/blob/main/skills/null3d-develop/references/e2e-testing.md) gives the whole setup, with a worked Playwright config and spec. Its main rules:
 
 - Run Playwright Test with its own pinned Chromium, installed with `bunx playwright install chromium`. Use one browser version on every machine, and never the installed Google Chrome.
 - Start the real app with Playwright's `webServer`: the dev server, and the production build through `vite preview`. CI tests the production build.
@@ -213,29 +199,74 @@ Image tests check pictures. A game or an app also needs a suite that opens its r
 
 A suite that drives the game's states can also write the list of shader permutation words that a production build copies. Open the page with `withRecordingSwitch(address)` from `@null3d/cli/shaders`, drive it, then call `saveRecordedWords(page, 'shader-permutations.txt')`. It ends the page's recording and adds the words to the list. [Record from your browser tests](assets-pipeline.md#record-from-your-browser-tests) shows a spec.
 
+## Check every rendering mode
+
+A scene that looks right and runs well in one setup can fail in another. Before you call a scene done, check frame rate, memory and looks in each of these:
+
+| Switch | What it shows |
+|---|---|
+| `?gpu=webgpu&direct=off` | WebGPU with indirect draws |
+| `?gpu=webgpu&direct=on` | WebGPU with direct draws, which holds more memory on some devices |
+| `?gpu=compat` | WebGPU's compatibility mode, with fewer features |
+| `?gpu=webgl2` | WebGL2, where the CPU culls and the draw calls cost more |
+| `?preset=low` to `?preset=ultra` | Each quality preset. High on WebGL2 and compatibility runs at Medium. With no preset, the start-up check picks one |
+
+Follow these rules when you measure:
+
+- **Measure the whole camera path.** A part of it can read far better than the worst moment, so never quote a part as the whole.
+- **Repeat each run.** One run misleads: two like runs can differ by a third. Fix the pixel ratio, and note what else the machine is doing.
+- **Watch it move.** A held frame shows no popping, flicker or lag. Record a live camera and look at the frames.
+- **Test on real devices.** Use phones and tablets of different form factors, and large and small screens. [Phones and tablets](phones.md#testing-on-real-devices) says how.
+
+To read the numbers, open the stats overlay with `?stats=open`:
+
+- **Frames per second:** read the average and the slowest second, and count the seconds under your target. An average hides a stall.
+- **Frame work:** `Sketch`, `Drawing` and `GPU` say which side is slow. A bar past the mark is over the frame's budget.
+- **Scale:** under 1.00, the frame-budget governor has lowered the render scale to keep the time, so the frame rate alone flatters the scene.
+- **Memory:** read `GPU textures` and `GPU buffers` on each path, and the page's limit in [Phones and tablets](phones.md#memory).
+
 ## Switches for tests
 
-The engine reads these switches from the page's address in development builds. These are the dev server, the `null3d` command's runs and the CDN build's development entry, `lib-dev/index.js`. A production build ignores them, so a link cannot change how a shipped game runs. The CDN build's production entry, `lib/index.js`, ignores them too. To use them in a production build of test pages, turn on the Vite plugin's `urlSwitches` option: `null3d({ urlSwitches: true })`. For a benchmark page that loads the CDN build, `bun run build:cdn --url-switches` does the same ([Try null3D from a CDN](../getting-started/cdn.md#production-and-development-entries)).
+The engine reads these switches from the page's address in development builds: the dev server, the `null3d` command's runs and the CDN build's development entry, `lib-dev/index.js`. A production build and the CDN build's production entry, `lib/index.js`, ignore them.
+
+To use them in a production build of test pages, turn on the Vite plugin's `urlSwitches` option: `null3d({ urlSwitches: true })`. For a benchmark page that loads the CDN build, `bun run build:cdn --url-switches` does the same ([Try null3D from a CDN](../getting-started/cdn.md#production-and-development-entries)).
+
+### Common switches
 
 | Switch | Effect |
 | --- | --- |
 | `?hold=1.5` | Hold mode at 1.5 seconds of sketch time; a bare `?hold` holds at the `hold` option's time, or at 0 |
 | `?gpu=webgpu`, `?gpu=compat`, `?gpu=webgl2` | Force a GPU tier, where the device has it |
 | `?direct=on`, `?direct=off` | On WebGPU, force the direct or the indirect draw path on any device, in place of the start-up probe's choice, to compare GPU time. The probe runs only on an Apple GPU in WebKit. `engine.capabilities.directDraws` says which path the engine took, and `engine.capabilities.drawPath` says why ([Performance guide](performance.md#how-the-engine-batches-builds-pipelines-and-times-frames)) |
+| `?preset=low`, `?preset=medium`, `?preset=high`, `?preset=ultra` | Fix the quality preset, within the GPU path's highest; a crashed start still lowers it by one |
+| `?target-fps=display`, `?target-fps=90` | Set the frame rate that the preset check and the governor defend, in place of the `targetFps` option: the display's full rate, or at most that many frames per second ([The target frame rate](../concepts/quality-presets.md#the-target-frame-rate)) |
+| `?preset-check=during-play`, `?preset-check=before-play` | Set when the preset check measures, in place of the `presetCheck` option: in the first frames of play, or before play, with `createEngine` waiting for it ([The preset check](../concepts/quality-presets.md#the-preset-check)) |
+| `?check=fresh` | Measure the quality preset again, as on a first visit, instead of taking the stored result of an earlier [preset check](../concepts/quality-presets.md#repeat-visits) |
+| `?builds=fresh` | Start each pipeline build when the first frame asks for it, as on a first visit, instead of building the [stored list](loading-screens.md#repeat-visits) of an earlier start's first frame ahead of it |
+| `?latency=pipelined`, `?latency=low` | Pick the latency mode |
+| `?threads=off` | The single-threaded build |
+| `?view=levels` | Draw a debug view, here the levels of detail, with no code change ([Debug views](../api/debug.md#the-view-from-the-address)). The switch takes any view name that `debug.view` takes |
+
+### Act like another browser
+
+| Switch | Effect |
+| --- | --- |
 | `?depth=reversed`, `?depth=reversed-gl`, `?depth=standard` | Force a WebGL2 depth mode. `reversed-gl` draws as browsers without the `EXT_clip_control` extension do, such as Firefox |
 | `?uploads=copy` | On WebGL2, upload a copy of the data, as browsers that refuse to read shared memory need |
 | `?multidraw=off` | On WebGL2, draw as a browser without the `WEBGL_multi_draw` extension does: the engine probes none and draws the whole levels of a cluster tree in place of its patches ([Levels of detail](../concepts/lod.md#cluster-levels)) |
 | `?compile=wait` | On WebGL2, wait for each shader program's compile at its first draw, as browsers without the `KHR_parallel_shader_compile` extension do |
-| `?check=fresh` | Measure the quality preset again, as on a first visit, instead of taking the stored result of an earlier [preset check](../concepts/quality-presets.md#repeat-visits) |
-| `?builds=fresh` | Start each pipeline build when the first frame asks for it, as on a first visit, instead of building the [stored list](loading-screens.md#repeat-visits) of an earlier start's first frame ahead of it |
 | `?compression=bc`, `?compression=astc,etc2`, `?compression=none` | Keep KTX2 textures to the compressed formats that the list names, of those the device has, as on a device with only those. `none` gives every KTX2 texture `rgba8unorm` |
-| `?derived-cache=off` | Turn the [cache of derived data](../api/assets.md#the-cache-of-derived-data) off, so every load makes its data again, as on a first visit: KTX2 files transcode, and `assets.cache` keeps nothing |
-| `?threads=off` | The single-threaded build |
 | `?wake=message` | Make the worker threads wake each other with messages, as browsers without `Atomics.waitAsync` need, such as Firefox before 145 |
 | `?render=main` | Draw on the page's main thread |
+
+Other switches measure what one engine saving costs.
+
+<details>
+<summary>Technical details: switches that measure one engine saving</summary>
+
+| Switch | Effect |
+| --- | --- |
 | `?display-check=off` | Where the page's main thread draws, stop the checks of the display. While the frames run slower than the display, two frame callbacks now and then draw nothing, and the time between them measures the display's refresh rate. The switch measures what they cost |
-| `?sketch-thread=main` | Run the sketch on the page's main thread, over the `sketchThread` option |
-| `?latency=pipelined`, `?latency=low` | Pick the latency mode |
 | `?cells=off` | Cull every object, with no [grid cell](../concepts/culling.md) out of view skipped first, to measure what skipping cells saves |
 | `?skinning=compute` | On WebGPU, skin every skinned mesh once per frame in the skinning pass, a compute pass, instead of in the vertex shader of each pass that draws it, to compare the two ([Animation](../api/animation.md#skinned-meshes)) |
 | `?skinning=full`, `?skinning=skip`, `?skinning=narrow` | On WebGPU, skin in the skinning pass with fewer of its savings, to measure each one. `full` skins every character that a view draws in every frame, with normals and tangents as 32-bit floats. `skip` keeps only the skip of unchanged poses, and `narrow` keeps only the 8-bit normals and tangents |
@@ -243,7 +274,7 @@ The engine reads these switches from the page's address in development builds. T
 | `?shadowdepth=32` | Store the directional light's shadow map in 32-bit float depth, instead of 16-bit depth, to compare the two ([Shadows](../concepts/shadows.md#bias)) |
 | `?half=on`, `?half=off` | Do the scene shaders' color math at half precision, or at full precision. WebGPU needs the device feature `shader-f16`, and a device without it keeps full precision. `engine.capabilities.halfPrecision` says which one the engine took |
 | `?still-camera=off` | Draw every frame of a view that holds still, without the [still-camera accumulation](../concepts/post-processing.md#still-camera-accumulation): the view neither blends nor rests. Hold mode draws without it too |
-| `?preset=low`, `?preset=medium`, `?preset=high`, `?preset=ultra` | Fix the quality preset, within the GPU path's highest; the engine then ignores starts that crashed before |
-| `?target-fps=display`, `?target-fps=90` | Set the frame rate that the preset check and the governor defend, in place of the `targetFps` option: the display's full rate, or at most that many frames per second ([The target frame rate](../concepts/quality-presets.md#the-target-frame-rate)) |
-| `?preset-check=during-play`, `?preset-check=before-play` | Set when the preset check measures, in place of the `presetCheck` option: in the first frames of play, or before play, with `createEngine` waiting for it ([The preset check](../concepts/quality-presets.md#the-preset-check)) |
-| `?view=levels` | Draw a debug view, here the levels of detail, with no code change ([Debug views](../api/debug.md#the-view-from-the-address)). The switch takes any view name that `debug.view` takes |
+| `?derived-cache=off` | Turn the [cache of derived data](../api/assets.md#the-cache-of-derived-data) off, so every load makes its data again, as on a first visit: KTX2 files transcode, and `assets.cache` keeps nothing |
+| `?sketch-thread=main` | Run the sketch on the page's main thread, over the `sketchThread` option |
+
+</details>

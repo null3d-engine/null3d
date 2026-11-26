@@ -1,14 +1,10 @@
 ---
 id: porting/react-three-fiber
 title: Porting React Three Fiber
-status: experimental
-since: "0.3"
 summary: "Canvas, useFrame, drei helpers; keeping React for the page UI."
 ---
 
 # Porting React Three Fiber
-
-> Roadmap step 0.3, first released in null3D 0.1.0. The API is experimental, so it can still change between versions.
 
 React Three Fiber describes a three.js scene as React components that run on the main thread. In null3D, the scene lives in a sketch that runs in a worker. React keeps the page UI. A port moves the component tree inside `<Canvas>` into sketch code, and connects React to the sketch with messages.
 
@@ -180,7 +176,7 @@ Some parts behave differently:
 
 - Only the closest object and its parents get a pointer event. React Three Fiber also passes the event to the objects behind it.
 - `onPointerMissed` has no equivalent. Set a flag in the click handlers, and treat a release of the button without it as a miss.
-- `materials.shadowCatcher` shows the light's own shadow. drei's `<ContactShadows />` draws a blurred shadow from above, and null3D has no equivalent of that blur.
+- `materials.shadowCatcher` shows the light's own shadow. drei's `<ContactShadows />` draws a blurred shadow from above, and null3D has no equivalent of that blur. null3D's own [contact shadows](../concepts/shadows.md#contact-shadows) are another effect: the short dark line where an object meets the ground, cast toward the main directional light.
 
 ## Adaptive quality
 
@@ -233,6 +229,6 @@ To measure the scene's own cost while you port it, turn the governor off with `q
 - [Porting from three.js](threejs-overview.md)
 - [The render loop, threads and the DOM](threejs-loop-and-threads.md)
 - [Messages between sketch and page](../api/page.md)
-- [UI, HTML overlays and labels](../guides/ui-overlays.md)
+- [HTML UI around the scene](../guides/ui-overlays.md)
 - [Quality presets](../concepts/quality-presets.md)
 - [three.js to null3D mapping](threejs-mapping.md)

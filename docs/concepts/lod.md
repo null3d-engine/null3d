@@ -1,14 +1,12 @@
 ---
 id: concepts/lod
 title: Levels of detail
-status: experimental
-since: "0.2"
 summary: "LOD groups; levels that meshes made in code plan on the job workers; generated LODs; cluster patches; staged downloads; per-instance selection; small-object hiding."
 ---
 
 # Levels of detail
 
-> Roadmap step 0.2, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. Morphed objects, and materials that blend or let light through, draw their base mesh at every distance. A skinned object draws a level while the level names the base mesh's own vertices, as the asset tool's levels do. Masks with the `'hash'` alpha mode switch levels at once, with no fading band. A distance band cuts at once for them too.
+> Morphed objects, and materials that blend or let light through, draw their base mesh at every distance. A skinned object draws a level while the level names the base mesh's own vertices, as the asset tool's levels do. Masks with the `'hash'` alpha mode switch levels at once, with no fading band. A distance band cuts at once for them too.
 
 ```mermaid
 flowchart LR
@@ -26,7 +24,9 @@ A mesh with levels draws one of them per frame in every object and every instanc
 
 ## Levels of meshes made in code
 
-A mesh made in code plans its levels the first time the scene draws it, when it holds 4,096 triangles or more, or when it holds at least 256 triangles and its copies hold 65,536 triangles together, whether `geometry.fromArrays` or a generator made it. A page's meshes and an add-on's plan alike. A mesh that no object draws plans nothing, and the plan sees the material that draws the mesh first. The plan runs on the job workers, never in a frame, and the mesh draws its full shape until the levels arrive. It runs the planner that the asset tool's `--lod` runs, with the same build of meshoptimizer's simplifier, so the same mesh gets the same levels in code as in a file. The copies that already draw the mesh then pick their levels, as the streamed levels of a file refine in place.
+A mesh made in code plans its levels the first time the scene draws it. It plans when it holds 4,096 triangles or more, or when it holds at least 256 triangles and its copies hold 65,536 triangles together. This holds whether `geometry.fromArrays` or a generator made it. A page's meshes and an add-on's plan alike. A mesh that no object draws plans nothing, and the plan sees the material that draws the mesh first.
+
+The plan runs on the job workers, never in a frame, and the mesh draws its full shape until the levels arrive. It runs the same planner as the asset tool's `--lod`, with the same build of meshoptimizer's simplifier. So the same mesh gets the same levels in code as in a file. The copies that already draw the mesh then pick their levels, as the streamed levels of a file refine in place.
 
 ```ts
 const rock = geometry.fromArrays(rockArrays(20_000));
@@ -34,7 +34,9 @@ scene.createInstances(rock, 5_000, { material: stone }); // the first draw plans
 await rock.buildLevels(); // resolves with the levels once they are in
 ```
 
-Each level about halves the triangles of the level above, down to a few dozen, and keeps its measured error, so it switches in at once where the error covers less than the `lodThreshold` setting's pixels. The threshold is live, and the governor can raise it to 4 or 8 pixels, where such a switch shows; a measured level then fades, as [Fading between levels](#fading-between-levels) describes. The levels name the mesh's own vertices, so they cost indices alone, and the mesh keeps its vertex and triangle order: raycasts and `updateVertices` see the mesh as it was made. The [geometry page](../api/geometry.md#levels-of-detail) gives the `levels` option, which turns the plan off or on, and the meshes that plan none: meshes that pose or move, meshes that a shader shapes, meshes whose vertices change, and meshes whose levels you set by hand.
+Each level about halves the triangles of the level above, down to a few dozen. It keeps its measured error, so it switches in at once where the error covers less than the `lodThreshold` setting's pixels. The threshold is live. The [frame-budget governor](quality-presets.md#the-frame-budget-governor), which lowers quality when frames run late, can raise it to 4 or 8 pixels, where such a switch shows. A measured level then fades, as [Fading between levels](#fading-between-levels) describes.
+
+The levels name the mesh's own vertices, so they cost indices alone. The mesh keeps its vertex and triangle order, so raycasts and `updateVertices` see the mesh as it was made. The [geometry page](../api/geometry.md#levels-of-detail) gives the `levels` option, which turns the plan off or on. It also names the meshes that plan none. These are meshes that pose or move, meshes that a shader shapes, meshes whose vertices change, and meshes whose levels you set by hand.
 
 A mesh of separate quads plans as any other mesh unless it asks for cards with `levels: { cards: true }`. The walls of a building kit are separate quads too, and thinning them as cards would cut holes in them. Without cards, a level drops only whole small pieces, such as a shutter's slats, where they cover under a pixel.
 
@@ -45,6 +47,8 @@ A mesh of separate quads plans as any other mesh unless it asks for cards with `
 - `error`: the largest distance between its surface and the base mesh's, in the units of the base mesh's positions. An object's scale multiplies it, so a switch moves with the object's size.
 - `distance`: a distance in meters for an object of scale 1. It holds on every screen height and at every render scale.
 - `coverage`: the share of the render's height that the object's bounds cover, from 0 to 1. It holds on every screen height too.
+
+The levels of detail demo gives four kinds of tree made in code four levels each, with their errors, over 56,000 trees (8,000 on phones). Press B to turn the hero fir's bias on and off, and L to turn levels off.
 
 ```ts
 const tree = geometry.fromArrays(treeArrays(64));
@@ -90,13 +94,23 @@ bunx @null3d/cli assets optimize models/ public/models/ --lod --stages
 
 The model file then holds the full vertices and the coarsest level, and each finer level downloads from a file of its own. The engine draws each level as it arrives, and the copies that already draw the model refine in place.
 
-The loader also holds back a level that the camera never shows. It fetches the stage after the file's own level at once. Then it keeps each finer stage until a view has drawn the level that the mesh has now. It waits about two seconds of drawn frames for that pick. A level that never draws cannot lead to a finer one. So the loader sets that stage and the finer ones aside, and their files do not download. The engine decides from the levels that it picked, never from the device's name. The switch follows the camera, the render scale and the `lodThreshold` setting. What the loader set aside is not lost. It looks again about every second and a half. A camera that comes close enough to draw that level then brings the stage and the finer ones. So a level that the camera never draws costs no download, and a level that the camera starts to draw arrives.
+The loader also holds back a level that the camera never shows. It fetches the stage after the file's own level at once. Then it keeps each finer stage until a view has drawn the level that the mesh has now. It waits about two seconds of drawn frames for that pick. A level that never draws cannot lead to a finer one. So the loader sets that stage and the finer ones aside, and their files do not download.
+
+The engine decides from the levels that it picked, never from the device's name. The switch follows the camera, the render scale and the `lodThreshold` setting. What the loader set aside is not lost.
+
+It looks again about every second and a half. A camera that comes close enough to draw that level then brings the stage and the finer ones. So a level that the camera never draws costs no download, and a level that the camera starts to draw arrives.
 
 `assets.loadGltf` takes `maxLevels` to stop after that many levels, counting the file's own: a page whose objects never come close enough to show the finest level sets 1, and downloads less. [The asset pipeline](../guides/assets-pipeline.md#levels-as-separate-downloads) has the detail.
 
-Each level has about half the triangles of the level above, down to a few dozen triangles. A mesh of a million triangles takes 15 levels to get there. Each level shares the mesh's vertices. The loader stores each level over the base mesh's own vertices, so the level costs the GPU its indices alone. The tool orders the vertices coarsest level first, so a coarse level reads a stretch at the start of the vertex buffer. Some levels keep a copy of their vertices instead. A level of cards brings positions of its own, and a level whose base mesh the engine had to split into parts cannot share them. Each level stores its error in the units of the mesh's own positions. The tool stores the levels with the `MSFT_lod` glTF extension. Each node with levels keeps its errors in its extras, as `NULL3D_lod_error`. It also writes the screen coverage that each error implies, in `MSFT_screencoverage`, for a screen 1,080 pixels high. The loader reads the coverage that comes beside an error to tell a measured error from a hand-set one, and reads the coverage alone as the measure for a file that holds no errors. `assets.loadGltf` gives each mesh its levels. So a model's copies and its instance batches pick their levels with no code. Other glTF loaders draw the full mesh.
+Each level has about half the triangles of the level above, down to a few dozen triangles. A mesh of a million triangles takes 15 levels to get there. Each level shares the mesh's vertices. The loader stores each level over the base mesh's own vertices, so the level costs the GPU its indices alone. The tool orders the vertices coarsest level first, so a coarse level reads a stretch at the start of the vertex buffer.
 
-A measured error changes the picture by less than a pixel at a small threshold, so such a level switches at once there. The loader reads an error as measured only where the file also gives the coverage that the tool writes beside it. A file that gives errors alone holds switch distances that its author set by hand. Those levels fade, as levels given by a distance or a coverage do. A file may bring its own levels, such as levels made in Blender, with errors in the units of the mesh's positions. `assets optimize` keeps them. It stores each level's positions in its base mesh's integer steps, and converts their errors to those steps.
+Some levels keep a copy of their vertices instead. A level of cards brings positions of its own, and a level whose base mesh the engine had to split into parts cannot share them. Each level stores its error in the units of the mesh's own positions. The tool stores the levels with the `MSFT_lod` glTF extension. Each node with levels keeps its errors in its extras, as `NULL3D_lod_error`. It also writes the screen coverage that each error implies, in `MSFT_screencoverage`, for a screen 1,080 pixels high.
+
+The loader reads the coverage that comes beside an error to tell a measured error from a hand-set one. It reads the coverage alone as the measure for a file that holds no errors. `assets.loadGltf` gives each mesh its levels. So a model's copies and its instance batches pick their levels with no code. Other glTF loaders draw the full mesh.
+
+A measured error changes the picture by less than a pixel at a small threshold, so such a level switches at once there. The loader reads an error as measured only where the file also gives the coverage that the tool writes beside it. A file that gives errors alone holds switch distances that its author set by hand. Those levels fade, as levels given by a distance or a coverage do.
+
+A file may bring its own levels, such as levels made in Blender, with errors in the units of the mesh's positions. `assets optimize` keeps them. It stores each level's positions in its base mesh's integer steps, and converts their errors to those steps.
 
 ## Cluster levels
 
@@ -104,29 +118,63 @@ A level covers the whole mesh at one detail. A mesh that is close at one end and
 
 The asset tool builds the tree with `--clusters`, as [the asset pipeline](../guides/assets-pipeline.md#cluster-levels) explains. It splits a large static mesh into patches, then simplifies groups of patches into the patches above them. Every patch's indices name the mesh's own vertices, so the tree adds no vertex. It costs about twice the mesh's indices.
 
-A view draws a patch while the patch's own error passes its threshold and the error of the patch above it does not. Each error is tested at the distance to its own patch's bounds. A patch that fails the threshold is too coarse for that distance, so the walk descends into its children. The chosen patches are the frontier of that one rule. A patch's bounds hold its children's bounds, and its error is at least theirs. So a patch never passes where one of its children fails, and the patches cover the mesh once. Neighbours of different detail meet at their edges with no gap. The engine draws a tree from an older asset tool as whole levels, and in development it asks you to optimize the file again.
+A view draws a patch while the patch's own error passes its threshold and the error of the patch above it does not.
 
-The engine draws a tree's patches on both GPU paths, in the camera's view and in each shadow map. On WebGPU, a compute pass picks the patches that a view draws, copies their indices into a list of the view's own, and the view draws them in one draw. A view that sees none of a mesh's patches draws none of it. The pass runs three dispatches: one to test each patch, one to add the counts up, and one to copy the indices that draw. The list takes four bytes an index. The engine counts the indices that each view picks in each frame, and sizes the view's list to them with room to spare.
+Each error is tested at the distance to its own patch's bounds. A patch that fails the threshold is too coarse for that distance, so the walk descends into its children. The chosen patches are the frontier of that one rule.
 
-On WebGL2, the job workers walk the tree for each view with the same rule, where the device has `WEBGL_multi_draw` (Chrome and Safari). Each chosen patch is a range of the mesh's tree in one multi-draw call, so a frame uploads ranges and no triangles. Ranges that are neighbours in the tree's index list merge, so a frame makes fewer calls. A WebGL2 browser without `WEBGL_multi_draw`, such as Firefox, draws the mesh's whole levels instead. The tool writes them beside the tree. They are the levels that `--lod` makes, and other glTF viewers draw them too.
+A patch's bounds hold its children's bounds, and its error is at least theirs. So a patch never passes where one of its children fails, and the patches cover the mesh once. Neighbors of different detail meet at their edges with no gap. The engine draws a tree from an older asset tool as whole levels, and in development it asks you to optimize the file again.
 
-The engine splits a mesh of more than 65,535 vertices into parts, because a draw's 16-bit indices reach no further. On WebGPU such a mesh still draws its patches. The engine puts all of its parts in one vertex buffer, one after another. The tree's 32-bit indices reach every vertex there. That buffer holds at most 128 MiB, the default size of a storage binding: about 4 million vertices of 32 bytes. A larger mesh draws whole levels instead. The trees that a scene draws also share 128 MiB of indices, about 33 million. They share at most 65,535 patches too, which a mesh of about 4 million triangles fills. A tree that does not fit draws whole levels.
+The engine draws a tree's patches on both GPU paths, in the camera's view and in each shadow map. On WebGPU, a compute pass picks the patches that a view draws, copies their indices into a list of the view's own, and the view draws them in one draw. A view that sees none of a mesh's patches draws none of it.
 
-On WebGL2, a vertex buffer holds at most 65,535 vertices, so a mesh of more vertices lies in several buffers. Its tree then draws from a copy of the mesh's vertices that the tree keeps for itself, with 32-bit indices. The copy costs the mesh's vertex bytes a second time: 12 MB for a ground of a million vertices of 12 bytes. This needs the `WEBGL_provoking_vertex` extension, which Chrome offers, and WebKit, Safari's engine. Without the extension's first-vertex rule, Chrome on the Mac would copy the tree's whole index list before each range it draws. So a browser without the extension draws such a mesh's whole levels instead. A tree of a mesh in one buffer draws its patches either way.
+The pass runs three dispatches: one to test each patch, one to add the counts up, and one to copy the indices that draw. The list takes four bytes an index. The engine counts the indices that each view picks in each frame, and sizes the view's list to them with room to spare.
 
-A tree can stream as a model loads, with `--clusters --stages`. The model file then holds the tree's first band, and that band draws the first picture. Each later band downloads from a file of its own. A band appends its patches below the patches that already arrived, so the tree refines as the bands come and no new object appears. The patches that a page holds always form a whole tree from the root. A patch whose children have not arrived draws where the camera is close, so the first picture is coarse and still covers the whole surface. The loader holds a band until a view draws a patch of the band above it. `maxLevels` counts a band as it counts a level. [The asset pipeline](../guides/assets-pipeline.md#levels-as-separate-downloads) has the detail.
+On WebGL2, the job workers walk the tree for each view with the same rule, where the device has `WEBGL_multi_draw` (Chrome and Safari). Each chosen patch is a range of the mesh's tree in one multi-draw call, so a frame uploads ranges and no triangles. Ranges that are neighbors in the tree's index list merge, so a frame makes fewer calls.
 
-The patch path draws a mesh that one copy draws, and the file may still hold a tree for a mesh with more copies. A mesh that draws several copies at once draws its whole levels, because the walk picks the patches of one copy. An instance batch draws whole levels too, even with one row. The tool counts only the copies that the file places. A mesh that page code draws in an instance batch therefore still gets a tree, and its copies draw the whole levels. The levels go down to a few dozen triangles, so far copies stay cheap. The WebGPU path that draws objects directly also draws the whole levels, because it has no cluster pass. Meshes that a skin or a morph target bends, and meshes whose material blends or masks, keep whole levels too. A shadow map draws a caster's patches where the camera's view draws the same object's tree, and the caster's whole levels elsewhere.
+A WebGL2 browser without `WEBGL_multi_draw`, such as Firefox, draws the mesh's whole levels instead. The tool writes them beside the tree. They are the levels that `--lod` makes, and other glTF viewers draw them too.
+
+The engine splits a mesh of more than 65,535 vertices into parts, because a draw's 16-bit indices reach no further. On WebGPU such a mesh still draws its patches. The engine puts all of its parts in one vertex buffer, one after another. The tree's 32-bit indices reach every vertex there. That buffer holds at most 128 MiB, the default size of a storage binding: about 4 million vertices of 32 bytes. A larger mesh draws whole levels instead.
+
+The trees that a scene draws also share 128 MiB of indices, about 33 million. They share at most 65,535 patches too, which a mesh of about 4 million triangles fills. A tree that does not fit draws whole levels.
+
+On WebGL2, a vertex buffer holds at most 65,535 vertices, so a mesh of more vertices lies in several buffers. Its tree then draws from a copy of the mesh's vertices that the tree keeps for itself, with 32-bit indices. The copy costs the mesh's vertex bytes a second time: 12 MB for a ground of a million vertices of 12 bytes.
+
+This needs the `WEBGL_provoking_vertex` extension, which Chrome offers, and WebKit, Safari's engine. Without the extension's first-vertex rule, Chrome on the Mac would copy the tree's whole index list before each range it draws. So a browser without the extension draws such a mesh's whole levels instead. A tree of a mesh in one buffer draws its patches either way.
+
+A tree can stream as a model loads, with `--clusters --stages`. The model file then holds the tree's first band, and that band draws the first picture. Each later band downloads from a file of its own. A band appends its patches below the patches that already arrived, so the tree refines as the bands come and no new object appears. The patches that a page holds always form a whole tree from the root.
+
+A patch whose children have not arrived draws where the camera is close, so the first picture is coarse and still covers the whole surface. The loader holds a band until a view draws a patch of the band above it. `maxLevels` counts a band as it counts a level. [The asset pipeline](../guides/assets-pipeline.md#levels-as-separate-downloads) has the detail.
+
+The patch path draws a mesh that one copy draws, and the file may still hold a tree for a mesh with more copies. A mesh that draws several copies at once draws its whole levels, because the walk picks the patches of one copy. An instance batch draws whole levels too, even with one row.
+
+The tool counts only the copies that the file places. A mesh that page code draws in an instance batch therefore still gets a tree, and its copies draw the whole levels. The levels go down to a few dozen triangles, so far copies stay cheap.
+
+The WebGPU path that draws objects directly also draws the whole levels, because it has no cluster pass. Meshes that a skin or a morph target bends, and meshes whose material blends or masks, keep whole levels too. A shadow map draws a caster's patches where the camera's view draws the same object's tree, and the caster's whole levels elsewhere.
 
 ## Pieces of a large level
 
 A copy that the view cuts through, or that turns half its surface away from the camera, still draws every triangle of its level. So `--lod` also sorts each level of 32,768 triangles or more into 8 to 16 pieces. Each piece faces about one way and has its own bounds. The file stores them in `NULL3D_pieces`, and other viewers draw the same triangles in the new order.
 
-Each copy picks its level as before. It then skips each piece of that level that lies outside the view. In the camera's own view it also skips each piece whose triangles all face away from the camera. With GPU occlusion culling on, it skips each piece that the occluders hide as well. The picture is the same as without pieces. A material that draws both faces keeps every piece that faces away, and so does a copy that is mirrored or stretched. Each piece adds a draw to its level, so a smaller level keeps whole unless many copies draw it.
+Each copy picks its level as before. It then skips each piece of that level that lies outside the view. In the camera's own view it also skips each piece whose triangles all face away from the camera. With GPU occlusion culling on, it skips each piece that the occluders hide as well.
 
-A smaller list gets pieces only where the way it faces makes them pay, since the view seldom cuts a small copy. Many copies must draw it: a list of 1,024 to 32,767 triangles whose copies hold 65,536 triangles or more together. Its triangles must also fall into a few tight facing groups, as a building's sides, tops and undersides do. Such a list gets one piece for each of up to six ways that it faces. One more piece holds the triangles that face between them, such as a pot's or a sloped cap's. Each copy then skips the sides that face away from the camera. The group must let each copy skip a quarter of the list's triangles or more, over views from all around. A list that faces every way, such as a rough rock, gets no facing pieces, and neither does one whose material blends. The engine plans none for a material that draws both faces either, since the cone test would drop none of them. A file's stored pieces still cull by the view. A list that faces mostly one way, such as a ground, stays whole too, since a view sees its front. The asset tool stores such pieces whatever copies the file places, since a page may copy a file's mesh many times. The engine counts the copies that the scene draws of each mesh. Until they pay, the list draws whole, with no draw more. A file's mesh whose smaller list holds no pieces, as from an older file, plans them on the job workers once its copies pay.
+The picture is the same as without pieces. A material that draws both faces keeps every piece that faces away, and so does a copy that is mirrored or stretched. Each piece adds a draw to its level, so a smaller level keeps whole unless many copies draw it.
 
-A mesh made in code gets pieces with its planned levels. The plan on the job workers sorts the mesh and each of its levels of 32,768 triangles or more into pieces, as `--lod` does. The mesh keeps its own triangles in their order, so raycasts and `updateVertices` see it as it was made. A mesh that one object draws, such as a ground around the camera, gets pieces of its own too. They draw a sorted copy of its indices, which shares its vertices. Copies of a large mesh draw their full mesh only near the camera, so they keep the pieces of their levels and spare that copy. The copy of a smaller list's indices costs little, so a smaller mesh that many copies draw gets pieces of its own as well. A list whose triangles mostly face one way, such as a ground, a road or a wall, splits by space alone, so the view cuts the pieces that it leaves out. A mesh of more than 65,535 vertices, which the engine splits into parts, sorts each part's triangles into pieces of their own, and a mesh of more than 32 parts gets none. A mesh with `levels: false` gets no pieces. A mesh whose levels are set by hand plans no levels. It still plans facing pieces of its own list at its first draw when it holds under 32,768 triangles and many copies draw it. A town's house walls are such meshes. `levels: 'pieces'` asks for pieces alone: a mesh of 32,768 triangles or more sorts into pieces by space at its first draw, as the impostors' merged far cells do. A surface that blends or lets light through, such as water, draws whole in the transparent pass, so it takes no pieces.
+A smaller list gets pieces only where the way it faces makes them pay, since the view seldom cuts a small copy. Many copies must draw it: a list of 1,024 to 32,767 triangles whose copies hold 65,536 triangles or more together. Its triangles must also fall into a few tight facing groups, as a building's sides, tops and undersides do.
+
+Such a list gets one piece for each of up to six ways that it faces. One more piece holds the triangles that face between them, such as a pot's or a sloped cap's. Each copy then skips the sides that face away from the camera. The group must let each copy skip a quarter of the list's triangles or more, over views from all around.
+
+A list that faces every way, such as a rough rock, gets no facing pieces, and neither does one whose material blends. The engine plans none for a material that draws both faces either, since the cone test would drop none of them. A file's stored pieces still cull by the view. A list that faces mostly one way, such as a ground, stays whole too, since a view sees its front.
+
+The asset tool stores such pieces whatever copies the file places, since a page may copy a file's mesh many times. The engine counts the copies that the scene draws of each mesh. Until they pay, the list draws whole, with no draw more. A file's mesh whose smaller list holds no pieces, as from an older file, plans them on the job workers once its copies pay.
+
+A mesh made in code gets pieces with its planned levels. The plan on the job workers sorts the mesh and each of its levels of 32,768 triangles or more into pieces, as `--lod` does. The mesh keeps its own triangles in their order, so raycasts and `updateVertices` see it as it was made.
+
+A mesh that one object draws, such as a ground around the camera, gets pieces of its own too. They draw a sorted copy of its indices, which shares its vertices. Copies of a large mesh draw their full mesh only near the camera, so they keep the pieces of their levels and spare that copy. The copy of a smaller list's indices costs little, so a smaller mesh that many copies draw gets pieces of its own as well.
+
+A list whose triangles mostly face one way, such as a ground, a road or a wall, splits by space alone, so the view cuts the pieces that it leaves out. A mesh of more than 65,535 vertices, which the engine splits into parts, sorts each part's triangles into pieces of their own, and a mesh of more than 32 parts gets none. A mesh with `levels: false` gets no pieces.
+
+A mesh whose levels are set by hand plans no levels. It still plans facing pieces of its own list at its first draw when it holds under 32,768 triangles and many copies draw it. A town's house walls are such meshes.
+
+`levels: 'pieces'` asks for pieces alone: a mesh of 32,768 triangles or more sorts into pieces by space at its first draw, as the impostors' merged far cells do. A surface that blends or lets light through, such as water, draws whole in the transparent pass, so it takes no pieces.
 
 ## How the engine picks a level
 
@@ -136,13 +184,26 @@ A level given by its error switches in where that error covers fewer pixels than
 pixels = error × scale × render height / (2 × distance × tan(field of view / 2))
 ```
 
-The factor is the render height in pixels times the projection's `P[1][1]`, over twice the threshold in pixels. The setting is 1 pixel from Medium up, and 2 on Low. The render height includes the render scale. So on a taller screen, or at a higher render scale, such a level switches in farther away. When the frame-budget governor lowers the render scale, coarser levels draw. When frames still take too long, the governor doubles this threshold and the shadow maps' threshold together, twice at most.
+The engine folds the render height, the field of view and the threshold into one number per view, the factor. A level switches in where error × scale × factor / distance falls under 1. The threshold is 1 pixel from Medium up, and 2 on Low. The render height includes the render scale. So on a taller screen, or at a higher render scale, such a level switches in farther away.
+
+When the frame-budget governor lowers the render scale, coarser levels draw. When frames still take too long, the governor doubles this threshold and the shadow maps' threshold together, twice at most.
+
+<details>
+<summary>Technical details: the factor and the distance</summary>
+
+The factor is the render height in pixels times the projection's `P[1][1]`, over twice the threshold in pixels. `P[1][1]` is 1 / tan(field of view / 2), so this form equals the formula above.
+
+For a level given by its error, the distance runs from the camera to the center of the object's bounding sphere, less half the sphere's radius. It is capped at twice the distance to the sphere's nearest point. A level's error is its largest anywhere on the mesh. A large object therefore switches at a point between its near side and its middle. It does not turn coarse too early, and its far side does not keep detail that only its near side shows.
+
+The cap keeps a camera standing on a large mesh measuring the surface below it. Half the radius of a ground two kilometers across would be hundreds of meters. The near side then shows an error of up to two pixels rather than one.
+
+</details>
 
 A level given by its distance switches where the camera is that far from the object's nearest point. The camera's field of view, the screen height and the render scale do not move it. A level given by its coverage switches where the object's bounds cover that share of the render's height. A taller screen does not move that switch either.
 
 An orthographic camera's pixels do not shrink with distance. So its levels given by an error follow the object's scale and the camera's zoom alone. A level given by a distance, and a distance band, measure the camera's distance to the object's nearest point in every view, so an orthographic camera still switches and hides them by that distance.
 
-For a level given by its error, the distance runs from the camera to the center of the object's bounding sphere, less half the sphere's radius, and is capped at twice the distance to the sphere's nearest point. A level's error is its largest anywhere on the mesh. A large object therefore switches at a point between its near side and its middle: it does not turn coarse too early, and its far side does not keep detail that only its near side shows. The cap keeps a camera standing on a large mesh measuring the surface below it. Half the radius of a ground two kilometers across would be hundreds of meters. The near side then shows an error of up to two pixels rather than one. A level given by its distance or its coverage measures to the nearest point of the bounding sphere, as its author set it. Turning the camera never changes a level. A camera inside the bounds, or near its middle, measures almost no distance, so the object keeps its full detail. A view with a camera of its own, such as a render pass, picks with that camera. Mirrors and the outline effect pick as the main camera does.
+A level given by its distance or its coverage measures to the nearest point of the bounding sphere, as its author set it. Turning the camera never changes a level. A camera inside the bounds, or near its middle, measures almost no distance, so the object keeps its full detail. A view with a camera of its own, such as a render pass, picks with that camera. Mirrors and the outline effect pick as the main camera does.
 
 The same threshold hides an object of a mesh with levels that has nothing left to show. A bound that covers fewer pixels than the threshold draws nothing, and the mesh's last level holds no geometry. [Small objects](#small-objects) gives the distance and the fade.
 
@@ -150,7 +211,7 @@ Levels add no second copy of each object's data. Each view keeps about the room 
 
 ## The bias of one object
 
-`setLevelBias` raises or lowers the threshold for one object, as Godot's `lod_bias` does. The bias divides the factor that picks the levels. A bias above 1 draws each switch at a nearer distance, and a bias below 1 keeps the object's detail:
+`setLevelBias` raises or lowers the threshold for one object, as the inverse of Godot's `lod_bias`: a Godot bias of 2 is about a null3D bias of 0.5. The bias divides the factor that picks the levels. A bias above 1 draws each switch at a nearer distance, and a bias below 1 keeps the object's detail:
 
 ```ts
 hero.setLevelBias(0.5); // the hero keeps its detail twice as far out
@@ -163,10 +224,14 @@ The same factor moves the distance at which the object hides. A detailed hero ob
 
 A level that switches in at once can pop. The engine fades only where a switch would show:
 
-- A level with a measured error, which the asset tool writes and a mesh made in code plans, changes the picture by under a pixel at a small threshold. It switches at once there, so it pays for no second draw. When the governor raises the threshold above about one and a half pixels, the switch shows, and the level fades then. A preset's own threshold, Low's two pixels among them, never makes it fade. A file's error counts as measured only where the file also gives the coverage that the tool writes beside it.
+- A level with a measured error, which the asset tool writes and a mesh made in code plans, changes the picture by under a pixel at a small threshold. It switches at once there, so it pays for no second draw.
+
+  When the governor raises the threshold above about one and a half pixels, the switch shows, and the level fades then. A preset's own threshold, Low's two pixels among them, never makes it fade. A file's error counts as measured only where the file also gives the coverage that the tool writes beside it.
 - A level given by a distance, by a coverage or by a hand-set error changes the picture more. It fades at every threshold.
 
-A fading level hands over in a short band past its switch distance. The band is 8% of the distance long, and the old level and the new one both draw in it. A 4 × 4 dither pattern gives each pixel to one of them, and the share of the new level grows across the band. Each copy shifts the pattern by a phase from a hash of the copy, so neighboring copies do not line up into one grid. The two levels of a band take the same phase, so no pixel draws twice. Nothing sorts.
+A fading level hands over in a short band past its switch distance. The band is 8% of the distance long, and the old level and the new one both draw in it. A 4 × 4 dither pattern gives each pixel to one of them, and the share of the new level grows across the band.
+
+Each copy shifts the pattern by a phase from a hash of the copy, so neighboring copies do not line up into one grid. The two levels of a band take the same phase, so no pixel draws twice. Nothing sorts.
 
 ```ts
 // A hand-set error fades by default. This one switches at once while the threshold stays small.
@@ -181,7 +246,9 @@ The fragments that the dither drops cost a tile GPU, such as a phone's or an App
 
 [Custom materials](../shaders/surface-functions.md) fade too, through their own builds, which download with the material's first use. Three kinds switch at once: a material that tests its mask by the [alpha hash](../api/materials.md#alpha-modes), a skinned material, and a material whose displacement moves its vertices.
 
-One add-on morphs a level instead of fading it. The terrain add-on moves each block's vertices toward its parent block's surface over the last part of the approach. The block then matches its parent when the selection hands over. It writes the target in the mesh's four-number vertex record, which its own custom material's `vertexOffset` reads. The morph adds no draw and writes no vertex in a frame. The impostors add-on's hand-over from meshes to cards fades with the dither instead. The cards stand at full coverage before the meshes thin out, so no pixel drops out of both. File meshes keep the dither too: the asset tool's simplifier records no mapping between one level's vertices and the next.
+One add-on morphs a level instead of fading it. The terrain add-on moves each block's vertices toward its parent block's surface over the last part of the approach. The block then matches its parent when the selection hands over. It writes the target in the mesh's four-number vertex record, which its own custom material's `vertexOffset` reads. The morph adds no draw and writes no vertex in a frame.
+
+The impostors add-on's hand-over from meshes to cards fades with the dither instead. The cards stand at full coverage before the meshes thin out, so no pixel drops out of both. File meshes keep the dither too: the asset tool's simplifier records no mapping between one level's vertices and the next.
 
 ## Small objects
 
@@ -190,10 +257,10 @@ An object far away can cover less than a pixel. Its levels then save vertex work
 The rule reads the object's bounding sphere, at the distance that a level given by its error measures. The number of pixels that its world diameter covers follows from the same factor as every level's switch distance:
 
 ```text
-pixels = diameter × factor × threshold / distance
+pixels = diameter × factor / distance
 ```
 
-The object hides where that diameter covers fewer pixels than the `lodThreshold` setting. The render height, the render scale and the governor's doubled threshold all feed the factor, so they move the hide distance too. An orthographic camera hides an object by its diameter and the camera's zoom alone.
+The object hides where its diameter gives fewer pixels than the `lodThreshold` setting, that is past the distance diameter × factor. The render height, the render scale and the governor's doubled threshold all feed the factor, so they move the hide distance too. An orthographic camera hides an object by its diameter and the camera's zoom alone.
 
 The object draws nothing past the band that follows the hide distance. That band, 8% of the hide distance long, thins the coarsest level out with the same dither. A shrinking object then fades away instead of popping. The band needs a fading build, which a level that fades has. A mesh whose levels all switch at once, which a small threshold keeps, disappears at the hide distance.
 
@@ -208,11 +275,15 @@ stone.setDrawRange(8, 120); // nothing nearer than 8 m, nothing past 120 m
 grass.setDrawRange(0, 60); // a far edge only
 ```
 
-The mesh draws only while the camera's distance to its nearest point lies inside the band. Each edge fades inside the range over an 8% band, through the same dither. A stone then fades in as it comes near and out as it passes. A mesh that lies outside its band costs no draw on either GPU path. The `lodFade` quality setting turns these edges off on Low, where the dither costs tile GPUs their hidden-surface removal. A row's own range, in the array that `ranges: true` makes for a batch, overrides the batch's.
+The mesh draws only while the camera's distance to its nearest point lies inside the band. Each edge fades inside the range over an 8% band, through the same dither. A stone then fades in as it comes near and out as it passes.
+
+A mesh that lies outside its band costs no draw on either GPU path. The `lodFade` quality setting turns these edges off on Low, where the dither costs tile GPUs their hidden-surface removal. A row's own range, in the array that `ranges: true` makes for a batch, overrides the batch's.
 
 ## See the levels
 
-The development build draws a levels view: `debug.view('levels')` from the sketch, or `?view=levels` in a page's address. Each draw takes a color for its level, from blue for the base mesh to cyan for the sixth lower level. Every level past it draws gray. Where two levels hand over in a fading band, the view dithers the two colors, so the band shows. A source that the size rule or a draw range hid draws at its base level in a checked magenta marker, at the place it would have drawn. The view then shows what the culling dropped, rather than a hole.
+The development build draws a levels view: `debug.view('levels')` from the sketch, or `?view=levels` in a page's address. Each draw takes a color for its level, from blue for the base mesh to cyan for the sixth lower level. Every level past it draws gray.
+
+Where two levels hand over in a fading band, the view dithers the two colors, so the band shows. A source that the size rule or a draw range hid draws at its base level in a checked magenta marker, at the place it would have drawn. The view then shows what the culling dropped, rather than a hole.
 
 The view reads the level that the culling picks, so it needs no shader for each material. `debug.cullingSpheres(true)` draws the bounding sphere that culling tests for each object whose mesh has levels, up to the first 128 objects, so a sphere that hid by its size shows where it lies. It draws in a development build only. An add-on registers a view of its own through the `debugViews` field of its [feature description](../api/features.md#the-fields).
 
@@ -230,12 +301,31 @@ Distance bands, and levels given by a distance or by screen coverage, keep the c
 
 ## Cards beyond the levels
 
-A level of detail keeps one draw and one mesh per object. Far past the last level, an object can draw as a card instead: a quad that stands upright, turns to the eye, and shows a picture of the object. The picture should come from a bake of several views with the engine's baker, so the card holds the object from every side; a hand-painted side view belongs only on a card that never covers more than a few pixels. The `@null3d/impostors` add-on draws those cards, and a distance band on the meshes hands the object over to them. [Impostors](../api/impostors.md#bake-several-views-not-one-side) shows the bake.
+A level of detail keeps one draw and one mesh per object. Far past the last level, an object can draw as a card instead: a quad that stands upright, turns to the eye, and shows a picture of the object.
 
-A bake stores the object from many directions, folded onto an octahedral grid, in a color atlas and a surface atlas of normals and depths. Each card blends the three stored views nearest the direction from the card toward the eye, so the picture changes smoothly as the camera moves rather than jumping between views. The card's light comes from the scene, through the stored normal, so a sun that moves relights the cards exactly as it relights the meshes. A copy's turn about the world's up turns its views and its light too, so a turned tree hands over to a card whose crown matches it. A camera that moves around the tree does not turn its light: the card turns to the eye, and the stored normal turns only with the tree. A card casts the crown's shape, and takes the shadows that fall on the surface it shows, when the sketch asks for it.
+The picture should come from a bake of several views with the engine's baker, so the card holds the object from every side. A hand-painted side view belongs only on a card that never covers more than a few pixels. The `@null3d/impostors` add-on draws those cards, and a distance band on the meshes hands the object over to them. [Impostors](../api/impostors.md#bake-several-views-not-one-side) shows the bake.
 
-`setDrawRange` fades a band's edges with the dither, so the hand-over from a mesh to its cards need not pop. The impostors add-on's `handOverToCards` sets the two bands for a batch of meshes and its cards. It starts the cards early enough that their own dithered edge finishes first. The mesh and the card are different sources, so their dither phases differ. The card must already cover every pixel that the mesh will drop. [Impostors](../api/impostors.md#hand-the-near-meshes-over-to-the-cards) gives the calls, and the demo `examples/impostors` draws a forest three ways by distance.
+The card's light comes from the scene, through the stored normal, so a sun that moves relights the cards exactly as it relights the meshes. A copy's turn about the world's up turns its views and its light too, so a turned tree hands over to a card whose crown matches it.
 
-## API reference
+A camera that moves around the tree does not turn its light. The card turns to the eye, and the stored normal turns only with the tree. A card casts the crown's shape, and takes the shadows that fall on the surface it shows, when the sketch asks for it.
 
-`mesh.setLevels`, `mesh.buildLevels` and the options they take are on the [geometry page's reference](../api/reference/geometry.md). The quality settings are on [the quality page](../api/quality.md).
+<details>
+<summary>Technical details: how a card stores the object</summary>
+
+The bake folds the views onto an octahedral grid, in a color atlas and a surface atlas of normals and depths. Each card blends the three stored views nearest the direction from the card toward the eye, so the picture changes smoothly as the camera moves rather than jumping between views.
+
+</details>
+
+`setDrawRange` fades a band's edges with the dither, so the hand-over from a mesh to its cards need not pop. The impostors add-on's `handOverToCards` sets the two bands for a batch of meshes and its cards. It starts the cards early enough that their own dithered edge finishes first.
+
+The mesh and the card are different sources, so their dither phases differ. The card must already cover every pixel that the mesh will drop. [Impostors](../api/impostors.md#hand-the-near-meshes-over-to-the-cards) gives the calls. The impostors demo draws a forest three ways by distance.
+
+## Related pages
+
+- [The geometry reference](../api/reference/geometry.md): `setLevels`, `buildLevels` and their options.
+- [Quality and the governor](../api/quality.md): the `lodThreshold` and related settings.
+- [The asset pipeline](../guides/assets-pipeline.md#levels-of-detail): the levels that `assets optimize` writes.
+- [Impostors](../api/impostors.md): cards beyond the last level.
+- [Shadows](shadows.md): the shadow threshold that follows the level threshold.
+- The forest demo: trees made in code with levels given by hand.
+- The impostors demo: a forest drawn three ways by distance.

@@ -1,14 +1,12 @@
 ---
 id: concepts/shadows
 title: Shadows
-status: experimental
-since: "0.1"
 summary: "Cascades that stay still as the camera turns and blend where they meet; contact shadows where small objects touch the ground; the shadow atlas of spot and point lights; update rates and filtering per preset; bias settings."
 ---
 
 # Shadows
 
-> Roadmap step 0.1, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. The first directional light, spot lights and point lights cast shadows. Instance batches cast and receive them, and the directional light draws contact shadows.
+> The first directional light, spot lights and point lights cast shadows. Instance batches cast and receive them, and the directional light draws contact shadows.
 
 ```mermaid
 flowchart LR
@@ -26,7 +24,9 @@ A directional light casts shadows when you create it with `castShadows: true` or
 
 An [instance batch](instances.md) takes the same two options in `scene.createInstances`, and the setters `setCastShadows` and `setReceiveShadows`. They hold for every row. Each cascade and each light's tile culls the rows one by one, as the camera's view does. A dynamic batch that casts counts as a moving caster: a far cascade that its rows touch draws in every frame while `followMovingCasters` is on. Sprite, point and line batches cast and receive no shadows.
 
-The engine splits the camera's view by distance into cascades. Each cascade is a box along the light that holds one slice of the view. Near slices are short and far slices long, so each cascade covers about the same share of the screen. Shadows near the camera then stay sharp. When a cascade draws, it culls the casters in its box and draws their depth from the light into its layer of the shadow map. A surface that receives shadows then finds its cascade by its distance from the camera. It compares its depth from the light with the depth in the map.
+The engine splits the camera's view by distance into cascades. Each cascade is a box along the light that holds one slice of the view. Near slices are short and far slices long, so each cascade covers about the same share of the screen. Shadows near the camera then stay sharp.
+
+When a cascade draws, it culls the casters in its box and draws their depth from the light into its layer of the shadow map. A surface that receives shadows then finds its cascade by its distance from the camera. It compares its depth from the light with the depth in the map.
 
 ```ts
 import { defineSketch } from '@null3d/engine';
@@ -73,7 +73,9 @@ flowchart LR
 
 A spot or point light casts shadows when you create it with `castShadows: true` or call `setCastShadows(true)`. Casters and receivers need `castShadows` and `receiveShadows`, as for the directional light.
 
-Spot and point lights share one shadow atlas: a depth texture of equal tiles. A spot light takes one tile, a view from the light that holds its cone. A cone wider than 85 degrees from its direction casts shadows over its middle part alone. A point light takes six tiles, one for each face of a cube around it. A surface reads the tile of the face that its direction from the light points through. Each tile's view keeps 3 texels inside each edge, as far as the 5 x 5 filter reads. So the filter never reads past what the tile drew, and no seam shows where two faces meet.
+Spot and point lights share one shadow atlas: a depth texture of equal tiles. A spot light takes one tile, a view from the light that holds its cone. A cone wider than 85 degrees from its direction casts shadows over its middle part alone. A point light takes six tiles, one for each face of a cube around it.
+
+A surface reads the tile of the face that its direction from the light points through. Each tile's view keeps 3 texels inside each edge, as far as the 5 x 5 filter reads. So the filter never reads past what the tile drew, and no seam shows where two faces meet.
 
 Point light shadows cost six times as much as a spot light's, so the quality preset's `pointLightShadows` setting turns them on for High and Ultra alone. The `pointLightShadows` option of `createEngine` turns them on or off on any preset. Where they are off, point lights still light surfaces.
 
@@ -112,7 +114,9 @@ export default defineSketch(({ scene, geometry, materials }) => {
 
 ### Which lights get tiles
 
-The quality preset's `shadowTiles` setting caps the tiles, and `shadowTileSize` sets the texels on each side of each tile. [Quality presets](quality-presets.md) lists their values. The atlas grows to as many tiles as the lights that cast shadows can fill, and one more while the sun names a [hero shadow](#a-hero-shadow). A hero's tile size above `shadowTileSize` sets the size of every layer. It keeps them when a light stops casting, so a light whose shadows turn off and on again does not make the atlas again. It goes when no light casts shadows and no light names a hero.
+The quality preset's `shadowTiles` setting caps the tiles, and `shadowTileSize` sets the texels on each side of each tile. [Quality presets](quality-presets.md) lists their values. The atlas grows to as many tiles as the lights that cast shadows can fill, and one more while the sun names a [hero shadow](#a-hero-shadow).
+
+A hero's tile size above `shadowTileSize` sets the size of every layer. It keeps them when a light stops casting, so a light whose shadows turn off and on again does not make the atlas again. It goes when no light casts shadows and no light names a hero.
 
 Each frame, the spot and point lights in the camera's view compete for the tiles. A light's size on screen is its range over its distance from the camera, and the largest lights get tiles first. A point light needs six free tiles, so a smaller spot light can take the last tile that a point light cannot use. A light keeps its tile from frame to frame while it still gets one. The other lights cast no shadows in that frame, and they still light surfaces.
 
@@ -152,13 +156,17 @@ The `shadow` option of `createDirectionalLight` and the light's `setShadow` call
 
 The quality preset gives the default cascade count and map size: the lighter presets draw fewer cascades and smaller maps ([Quality presets](quality-presets.md#the-settings-of-each-preset)). A light that names its own keeps them on every preset. So leave both out, unless your scene needs other values on every device.
 
-A shorter `distance` gives the cascades smaller boxes, so shadows get sharper. Set it to the distance at which shadows still matter in your scene. The default, `'auto'`, does this for you. The engine finds the farthest surface that receives shadows in the camera's view each frame. It rounds that distance up on a ladder of 1.25 times per step. Shadows in a small scene then get much finer texels than a fixed 200 m. The distance holds for one step before it falls, so a raw distance that moves across a step does not flicker. A light that names a number keeps it, as a port of a scene with a fixed shadow distance does.
+A shorter `distance` gives the cascades smaller boxes, so shadows get sharper. Set it to the distance at which shadows still matter in your scene. The default, `'auto'`, does this for you.
+
+The engine finds the farthest surface that receives shadows in the camera's view each frame. It rounds that distance up on a ladder of 1.25 times per step. Shadows in a small scene then get much finer texels than a fixed 200 m. The distance holds for one step before it falls, so a raw distance that moves across a step does not flicker. A light that names a number keeps it, as a port of a scene with a fixed shadow distance does.
 
 `'auto'` grows with the farthest receiver in view. It measures to the far side of each receiver's bounding sphere. So one large ground mesh sets a long distance, even when the camera sees only a small part of it. Where the ground stretches far, such as a valley seen end to end, the shadows near the camera then turn coarse. Give far scenery that needs no shadows, such as distant hills, `receiveShadows: false`. Split a large ground into tiles, so that only the tiles in view count.
 
 ### A fixed distance and a camera that zooms
 
-A fixed `distance` suits a camera that stays near its subject. An orbit camera that zooms out carries the whole subject past the distance at once. Its shadows then vanish, and they come back when the camera zooms in again. Use `'auto'` for such a camera, or set the distance in every frame from the camera's distance to the subject. Round it up on a ladder of steps, and let it fall only a whole step later, as `'auto'` does. Then a camera that hovers at a step does not flicker between two distances:
+A fixed `distance` suits a camera that stays near its subject. An orbit camera that zooms out carries the whole subject past the distance at once. Its shadows then vanish, and they come back when the camera zooms in again.
+
+Use `'auto'` for such a camera, or set the distance in every frame from the camera's distance to the subject. Round it up on a ladder of steps, and let it fall only a whole step later, as `'auto'` does. Then a camera that hovers at a step does not flicker between two distances:
 
 ```ts
 const BASE = 30; // The distance close up, in meters.
@@ -189,9 +197,9 @@ The `shadow` option and `setShadow` of spot and point lights take `bias`, `norma
 The split distances blend two spreads. An even spread gives each cascade the same length. A logarithmic spread makes each cascade a fixed number of times longer than the one before it. The engine leans 65% toward the logarithmic spread. This is a balance between two kinds of view:
 
 - A camera at eye height sees the ground a few meters ahead. Shadows there need the finest texels.
-- A camera high above a town, as in the S4 benchmark scene 42 m up, sees no ground nearer than about 40 m.
+- A camera high above a town, as in the [S4 benchmark](../guides/performance.md#phones-and-tablets), a town whose camera flies 42 m up, sees no ground nearer than about 40 m.
 
-With the default settings, a 60 degree view and a 16:9 canvas, one texel of each cascade covers this much of the ground:
+With `distance: 200`, three cascades, a 2,048 map (the Medium and High presets), a 60 degree view and a 16:9 canvas, one texel of each cascade covers this much of the ground:
 
 | Lean toward logarithmic | First cascade | Second cascade | Third cascade |
 | --- | --- | --- | --- |
@@ -205,7 +213,16 @@ The last cascade always ends at `distance`, so its texels depend only on `distan
 
 ## Stable cascades
 
-Shadow edges stay still while the camera turns and moves. Each cascade's box holds a sphere around its slice of the view, so the box keeps its size as the camera turns. The box also moves only in steps of whole texels of the shadow map, on a grid fixed to the world. So a caster always covers the same texels, and its shadow's edge does not crawl or shimmer. Along the light, the box moves only in whole steps of the map's 16-bit depth. So each caster's stored depth rounds the same way in every frame. A surface near a caster then does not flicker between light and shadow as the camera moves. To see it, draw the `'shadows'` debug view from a still camera while `debug.shadowCamera` places the cascades from a moving one ([Debug drawing and stats](../api/debug.md#watch-the-shadow-cascades-from-elsewhere)).
+Shadow edges stay still while the camera turns and moves. To see it, draw the `'shadows'` debug view from a still camera while `debug.shadowCamera` places the cascades from a moving one ([Debug drawing and stats](../api/debug.md#watch-the-shadow-cascades-from-elsewhere)).
+
+<details>
+<summary>Technical details: how cascades stay stable</summary>
+
+Each cascade's box holds a sphere around its slice of the view, so the box keeps its size as the camera turns. The box also moves only in steps of whole texels of the shadow map, on a grid fixed to the world. So a caster always covers the same texels, and its shadow's edge does not crawl or shimmer.
+
+Along the light, the box moves only in whole steps of the map's 16-bit depth. So each caster's stored depth rounds the same way in every frame. A surface near a caster then does not flicker between light and shadow as the camera moves.
+
+</details>
 
 The sphere wastes some of each layer's texels, so these shadows are a little softer than a box fitted tightly to each frame. Shorten `distance` or raise `mapSize` for sharper shadows.
 
@@ -221,9 +238,11 @@ flowchart LR
     band --> far["Next cascade:<br/>coarser texels"]
 ```
 
-Each cascade's texels are larger than those of the cascade before it, so its shadows are softer. Where one cascade hands over to the next, a shadow's edge would change its softness at once, and a line could show across the ground. So over a band at the far end of each cascade but the last, a surface blends the shadows of both cascades. At the band's start the surface takes its own cascade's shadow, and at the cascade's end the next cascade's. Between them the blend changes linearly with the distance from the camera.
+Each cascade's texels are larger than those of the cascade before it, so its shadows are softer. Where one cascade hands over to the next, a shadow's edge would change its softness at once, and a line could show across the ground.
 
-The `shadowCascadeBlend` quality setting gives the band as a share of each cascade's length: 0.1 on every preset. With the default settings, the first cascade blends into the second from about 21.6 m to 24 m. 0 hands over at once. Only the band's pixels read a second cascade, so a wider band costs a little more. It changes during play:
+So over a band at the far end of each cascade but the last, a surface blends the shadows of both cascades. At the band's start the surface takes its own cascade's shadow, and at the cascade's end the next cascade's. Between them the blend changes linearly with the distance from the camera.
+
+The `shadowCascadeBlend` quality setting gives the band as a share of each cascade's length: 0.1 on every preset. With `distance: 200` and three cascades, the first cascade blends into the second from about 21.6 m to 24 m. 0 hands over at once. Only the band's pixels read a second cascade, so a wider band costs a little more. It changes during play:
 
 ```ts
 import { defineSketch } from '@null3d/engine';
@@ -240,7 +259,9 @@ Each cascade's box starts at the band of the cascade before it, so it holds the 
 
 The nearest cascade draws in every frame. The far cascades draw once every few frames, in turn, and keep their layers of the shadow map in between. Each frame then draws fewer casters. In S4 on a MacBook Pro, with far cascades every 2nd frame, that saves 0.19 ms of GPU time per frame.
 
-A kept layer shows each caster where it stood when the layer drew. So on every preset, a far cascade draws in every frame while a moving caster touches its box. A moving caster is a dynamic object, or an object under a dynamic one. Its shadow then follows it in every frame. The cascade draws once more after the caster leaves, so no old shadow stays behind. Far cascades that hold only still casters keep their turns. A town whose cars drive through every cascade, as in S4, draws every cascade in every frame, as three.js's cascaded shadows always do. A character near the camera keeps the far cascades' saving.
+A kept layer shows each caster where it stood when the layer drew. So on every preset, a far cascade draws in every frame while a moving caster touches its box. A moving caster is a dynamic object, or an object under a dynamic one. Its shadow then follows it in every frame. The cascade draws once more after the caster leaves, so no old shadow stays behind.
+
+Far cascades that hold only still casters keep their turns. A town whose cars drive through every cascade, as in S4, draws every cascade in every frame, as three.js's cascaded shadows always do. A character near the camera keeps the far cascades' saving.
 
 A camera high above a scene can see nothing near enough for the nearest cascade. S4's camera flies 42 m up, and Low's nearest cascade ends 38 m from the camera. So every shadow on screen comes from the far cascade. That is why far cascades follow moving casters on Low too.
 
@@ -272,9 +293,13 @@ A cascade that waits keeps the box it drew with. When the camera moves or turns,
 
 ## Filtering
 
-The filter softens each shadow's edge over a square of shadow map texels. The `shadowFilter` quality setting gives the texels on each side: 3 on Low, and 5 on Medium, High and Ultra. Each read takes four texels. So a 3 x 3 square takes 4 reads, and a 5 x 5 square takes 9. A larger square gives softer edges and costs more on every pixel that receives shadows. `quality.set({ shadowFilter: 3 })` changes it during play. The tiles of spot and point lights use the same filter, over texels of the tile.
+The filter softens each shadow's edge over a square of shadow map texels. The `shadowFilter` quality setting gives the texels on each side: 3 on Low, and 5 on Medium, High and Ultra. Each read takes four texels. So a 3 x 3 square takes 4 reads, and a 5 x 5 square takes 9. A larger square gives softer edges and costs more on every pixel that receives shadows.
 
-Each read weights the texels by where the point falls between them, so an edge moves smoothly as the point moves. But each texel holds only "lit" or "shadowed". Where one texel covers several pixels, an edge at a shallow angle to the texel grid still shows soft steps, one texel apart. The 5 x 5 filter makes the steps fainter, and no filter of a few texels removes them. More texels per meter remove them. For the directional light, use a shorter `distance`, a larger `mapSize` or another cascade. For spot and point lights, use a larger `shadowTileSize`.
+`quality.set({ shadowFilter: 3 })` changes it during play. The tiles of spot and point lights use the same filter, over texels of the tile.
+
+Each read weights the texels by where the point falls between them, so an edge moves smoothly as the point moves. But each texel holds only "lit" or "shadowed". Where one texel covers several pixels, an edge at a shallow angle to the texel grid still shows soft steps, one texel apart. The 5 x 5 filter makes the steps fainter, and no filter of a few texels removes them.
+
+More texels per meter remove them. For the directional light, use a shorter `distance`, a larger `mapSize` or another cascade. For spot and point lights, use a larger `shadowTileSize`.
 
 ## Bias
 
@@ -289,7 +314,16 @@ A bias in meters keeps its size in every cascade. So where a shadow meets its ca
 
 The biases of spot and point lights work the same way, in meters. One texel of the light's tile at the surface's distance from the light caps them.
 
-The shadow map stores each depth in 16 bits. So it holds 65,535 steps of depth from each cascade's face toward the light to its far face. A cascade's box reaches far toward the light, to hold every caster that can shadow its slice. A step is then a few millimeters in a near cascade. In the last cascade of the S4 benchmark, which ends 200 m out, it is about 14 mm. A stored depth can sit up to one step from the caster's true depth. So in each cascade, `bias` and the plane margin that [Flat casters](#flat-casters) describes cover at least one and a half steps. Where the setting is smaller, the engine uses that floor. It changes nothing in the near cascades, where a step is shorter than the defaults.
+In far cascades, the engine raises `bias` to a floor set by the map's depth precision, so a smaller setting has no effect there.
+
+<details>
+<summary>Technical details: depth precision and the bias floor</summary>
+
+The shadow map stores each depth in 16 bits. So it holds 65,535 steps of depth from each cascade's face toward the light to its far face. A cascade's box reaches far toward the light, to hold every caster that can shadow its slice. A step is then a few millimeters in a near cascade. In the last cascade of the S4 benchmark, which ends 200 m out, it is about 14 mm.
+
+A stored depth can sit up to one step from the caster's true depth. So in each cascade, `bias` and the plane margin that [Flat casters](#flat-casters) describes cover at least one and a half steps. It changes nothing in the near cascades, where a step is shorter than the defaults.
+
+</details>
 
 Values that are too large make shadows start a little away from their casters. A thin lit line then shows at each object's base. Raise the biases in small steps if a surface shows acne. A bias above one texel acts as one texel.
 
@@ -297,7 +331,9 @@ Values that are too large make shadows start a little away from their casters. A
 
 A box's bottom face lies on the ground, and it points away from the light, so it draws into the map at the ground's depth. Near the box's base, some of the filter's reads land under the box. There the ground and the bottom face have equal depths, and those reads come out lit. A thin lit line would then show at the base, even with no bias.
 
-So the engine moves each caster's faces that point away from the light toward the light before it draws them. The move is up to one texel of the map at the face, and at most 5 cm. A face that points straight away from the light, such as a box's bottom under a high sun, moves the most. A face that the light only grazes moves little, so the caster's lit faces keep their light up to their edges. A double-sided material's faces stay in place, because they hold the caster's lit side. Spot and point lights move faces by texels of their tiles in the same way.
+So the engine moves each caster's faces that point away from the light toward the light before it draws them. The move is up to one texel of the map at the face, and at most 5 cm.
+
+A face that points straight away from the light, such as a box's bottom under a high sun, moves the most. A face that the light only grazes moves little, so the caster's lit faces keep their light up to their edges. A double-sided material's faces stay in place, because they hold the caster's lit side. Spot and point lights move faces by texels of their tiles in the same way.
 
 The engine's contact check measures the light between a box's base and the start of its shadow, in pixels of full light. For car-sized boxes under S4's sun, in Chrome on a Mac with WebGPU, the move took it from 0.16 to 0.02 pixels near the camera. In the last cascade, it took it from 0.20 to 0.08 pixels. In S4's own frame, it halved the figure.
 
@@ -307,7 +343,11 @@ The 5 cm cap protects floors that cast shadows. Such a floor compares its lit to
 
 A low flat caster, such as a pavement slab, holds its bottom face in the map under its lit top. The top and the bottom are parallel. So across the filter's square, the bottom rises toward the light as fast as the top does. Suppose every read compared with the depth at the surface's own point. The reads on the side toward the light would then find parts of the bottom nearer the light than that point. The top would shadow itself in stripes and rings.
 
-So the directional light's filter compares each texel with the receiving surface's own plane at that texel's center. The plane comes from the mesh's triangle, so a normal map's tilt leaves it alone. The filter uses the plane where it is nearer the light than the surface's point. The plane lies 1 cm below the surface, or one and a half steps of the map's stored depth where those are longer. So a caster just under the surface stays under the plane. A caster below the plane, such as the slab's own bottom, then leaves the top lit, however large the texels are. A caster on the plane or above it, such as a box that stands on the slab, still shadows it. So the shadow still meets the box's base. The filter reads four texels at once and compares each with its own depth. So it takes as many reads as a filter that compares them all with one depth.
+So the directional light's filter compares each texel with the receiving surface's own plane at that texel's center. The plane comes from the mesh's triangle, so a normal map's tilt leaves it alone. The filter uses the plane where it is nearer the light than the surface's point. The plane lies 1 cm below the surface, or one and a half steps of the map's stored depth where those are longer.
+
+So a caster just under the surface stays under the plane. A caster below the plane, such as the slab's own bottom, then leaves the top lit, however large the texels are. A caster on the plane or above it, such as a box that stands on the slab, still shadows it. So the shadow still meets the box's base.
+
+The filter reads four texels at once and compares each with its own depth. So it takes as many reads as a filter that compares them all with one depth.
 
 The tiles of spot and point lights compare each read with the depth at the surface's own point. Their views are not orthographic, so a surface's plane is not a plane in the tile.
 
@@ -340,7 +380,14 @@ They follow these rules:
 - They come from what the camera sees. An object off the screen, or hidden behind another, casts no contact shadow. They fade out at the screen's edges.
 - A longer `contactDistance` finds larger contacts, with the same steps further apart. Keep it short, under a meter, and use the cascades for long shadows.
 
-The rays run at half the render size each way, in the same full-screen step as [ambient occlusion](post-processing.md#ambient-occlusion). They read its copy of the depth prepass. Each pixel then takes the result of the four nearest texels whose depth is close to its own, so the shadows keep to their surfaces at edges. A masked surface draws no depth in the prepass, so it takes contact shadows only where a texel lies at its own depth. A petal in front of grass does not take the grass's contact shadows. The steps start at a different point at each texel, which turns banding into a fine grain that this blend softens.
+The rays run at half the render size each way, in the same full-screen step as [ambient occlusion](post-processing.md#ambient-occlusion). They read its copy of the depth prepass.
+
+<details>
+<summary>Technical details: how the rays read the depth</summary>
+
+Each pixel takes the result of the four nearest texels whose depth is close to its own, so the shadows keep to their surfaces at edges. A masked surface draws no depth in the prepass, so it takes contact shadows only where a texel lies at its own depth. A petal in front of grass does not take the grass's contact shadows. The steps start at a different point at each texel, which turns banding into a fine grain that this blend softens.
+
+</details>
 
 ### Grass and other thin surfaces
 
@@ -389,7 +436,7 @@ It follows these rules:
 - The object casts shadows (`castShadows: true`) and the light shares its layers. A hero that does not cast draws an empty tile.
 - The box fits the object's bounding sphere. A mesh takes its mesh's bounds; a group has none of its own, so give it a `setBounds` sphere. An object with no bounds draws no hero shadow.
 - The tile is square across the light around the object's bounding sphere. It reaches along the light from the sphere's side toward the light to fifteen radii past its far side, where its shadow lands. A surface of the object, or one within that distance below it, reads the tile. Further out, the cascades shadow it.
-- The tile spreads its texels over the object's bounds. A larger tile gives a larger object finer shadows. `heroTileSize` sets the size. The preset chooses the default: 1,024 on Low, 2,048 on Medium and High, and 4,096 on Ultra. At those defaults the demo's 4.4 m car gets at least four times the texel density of the cascade that holds 10 m, on every preset. A bigger object needs a bigger tile for the same ratio, and a page can name one.
+- The tile spreads its texels over the object's bounds. A larger tile gives a larger object finer shadows. `heroTileSize` sets the size. The preset chooses the default: 1,024 on Low, 2,048 on Medium and High, and 4,096 on Ultra. At those defaults the hero shadow demo's 4.4 m car gets at least four times the texel density of the cascade that holds 10 m, on every preset. A bigger object needs a bigger tile for the same ratio, and a page can name one.
 - The tile comes from `shadowTiles`, the atlas that point and spot lights share. Naming a hero adds a layer to the atlas for it, so the lights keep their tiles; only an atlas already at its limit of 24 layers gives one up, to the light that looks smallest. A hero makes the atlas while no spot or point light casts.
 - Every layer of a texture array takes the same size, so the tile sets the atlas's size. A tile larger than the preset's `shadowTileSize` makes every tile of the atlas that size, which takes more memory and draws each light's tile with more texels. An atlas above 1 GiB fails the frame with [E1501](../errors/E1501.md), which names the megabytes it would take; name a smaller `heroTileSize` or fewer `shadowTiles`.
 - The tile draws when the light, the object or a caster that touches its box moves, and rests otherwise. A tile holds 4 bytes per texel: 4 MiB at 1,024 texels on each side, 16 MiB at 2,048 and 64 MiB at 4,096.
@@ -417,16 +464,20 @@ The box holds the object's bounding sphere and fifteen radii of space below it, 
 
 Each cascade that draws in a frame has a render pass that draws its casters' depth. It culls its casters too:
 
-- On WebGPU, a culling pass on the GPU runs before each cascade's render pass. The CPU does the same small amount of work per cascade whatever the number of casters. On a device that draws directly, the job workers test the casters on the CPU, as on WebGL2.
+- On WebGPU, a culling pass on the GPU runs before each cascade's render pass. The CPU does the same small amount of work per cascade whatever the number of casters. A start-up measurement can pick direct draws on an Apple GPU in Safari, or in any browser on iPhone and iPad ([Culling](culling.md#how-each-path-culls)). There the job workers test the casters on the CPU, as on WebGL2.
 - On WebGL2, the job workers test each caster against each cascade's box, as they test each object against the camera's view. They first skip the still casters of the grid cells out of the box. That CPU work grows with the number of casters.
 
 Each cascade and tile draws its casters at the level of detail that its own texels pick, and a large mesh with a cluster tree draws the patches that they pick ([Levels of detail](lod.md#shadows)). A cascade whose texels are large draws far fewer triangles than the camera's view. The `lodShadowThreshold` quality setting moves that choice: a larger value draws coarser casters, at the cost of the shadow's accuracy.
 
 A masked caster runs a fragment shader that tests its alpha, where other casters run none. So cut-out foliage costs more GPU time in each shadow pass than solid shapes. Its shader builds load the first time a masked caster draws, and it casts no shadow until they are ready. To load them before the first frame instead, pass `preload: ['cutout']` to `createEngine`.
 
-Each layer of the shadow map takes 2 bytes per texel: 8 MiB at 2,048 texels on each side. That is half of what 32-bit depth takes, and each cascade's pass writes half the bytes. On a phone's GPU, which keeps a pass's depth in its own fast memory and then writes it out, those writes cost bandwidth. Each read of the map fetches half the bytes too. [Quality presets](quality-presets.md#the-settings-of-each-preset) gives the memory of each preset. Surfaces that receive shadows read the map 4 or 9 times per pixel, as the filter's size says. On WebGL2 they read each texel on its own: 16 or 36 reads. Surfaces in a band between two cascades read both cascades, so twice as many.
+Each layer of the shadow map takes 2 bytes per texel: 8 MiB at 2,048 texels on each side. That is half of what 32-bit depth takes, and each cascade's pass writes half the bytes. On a phone's GPU, which keeps a pass's depth in its own fast memory and then writes it out, those writes cost bandwidth. Each read of the map fetches half the bytes too.
 
-A tile costs a render pass and its culling, but only in the frames in which it draws. A point light draws the tiles of the faces that a moving caster touches, and at most 12 tiles draw again in a frame. Its culling runs on the GPU on WebGPU, and on the job workers on WebGL2. Each tile takes 4 bytes per texel: 4 MiB at 1,024 texels on each side. A receiving surface reads one tile for each shadowed light that reaches it, 4 or 9 times per pixel, as for the cascades.
+[Quality presets](quality-presets.md#the-settings-of-each-preset) gives the memory of each preset. Surfaces that receive shadows read the map 4 or 9 times per pixel, as the filter's size says. On WebGL2 they read each texel on its own: 16 or 36 reads. Surfaces in a band between two cascades read both cascades, so twice as many.
+
+A tile costs a render pass and its culling, but only in the frames in which it draws. A point light draws the tiles of the faces that a moving caster touches, and at most 12 tiles draw again in a frame. Its culling runs on the GPU on WebGPU, and on the job workers on WebGL2.
+
+Each tile takes 4 bytes per texel: 4 MiB at 1,024 texels on each side. A receiving surface reads one tile for each shadowed light that reaches it, 4 or 9 times per pixel, as for the cascades.
 
 A hero shadow adds one more tile pass, which draws only the casters in its box. It draws in the frames where the hero moves, like a moving caster's light tile. Surfaces in the hero's box read one more layer of the atlas, 4 or 9 times per pixel. The surfaces outside it pay one matrix multiply and a comparison, and read nothing.
 
@@ -436,7 +487,20 @@ To make shadows cheaper, use fewer cascades, a smaller map, a shorter distance, 
 
 ## On each GPU path
 
-WebGPU and WebGL2 draw the same shadows. Both keep the shadow map as a depth texture array of 16-bit depths, `depth16unorm` on WebGPU and `DEPTH_COMPONENT16` on WebGL2. Both keep the shadow atlas as a depth texture array of 32-bit floats. A tile's view is a perspective view, which spends most of its depth's steps near its light. In 16 bits, one step near a tile's far end would be about 1.5% of the distance from the light: 15 cm at 10 m. The atlas is read with the GPU's depth comparison, which blends the tests of the four nearest texels, and the filter blends several comparisons. On WebGL2 the shaders read it as a `sampler2DArrayShadow` through a comparison sampler. The directional light's filter reads the depths of the shadow map's texels and compares them itself. WebGPU reads four texels at once. WebGL2's shading language has no such read, so there it reads each texel on its own, four times as many reads. Each comparison on WebGL2 reads the map at its own level, which Apple's GPUs run faster than a read at a set level. [Depth on each tier](backends.md#depth-on-each-tier) explains how WebGL2 keeps WebGPU's depth values.
+WebGPU and WebGL2 draw the same shadows. On WebGL2, the directional light's filter reads each shadow map texel on its own, so it takes four times as many reads per pixel. [Depth on each tier](backends.md#depth-on-each-tier) explains how WebGL2 keeps WebGPU's depth values.
+
+<details>
+<summary>Technical details: shadow formats and reads on each path</summary>
+
+Both keep the shadow map as a depth texture array of 16-bit depths, `depth16unorm` on WebGPU and `DEPTH_COMPONENT16` on WebGL2. Both keep the shadow atlas as a depth texture array of 32-bit floats.
+
+A tile's view is a perspective view, which spends most of its depth's steps near its light. In 16 bits, one step near a tile's far end would be about 1.5% of the distance from the light: 15 cm at 10 m.
+
+The atlas is read with the GPU's depth comparison, which blends the tests of the four nearest texels, and the filter blends several comparisons. On WebGL2 the shaders read it as a `sampler2DArrayShadow` through a comparison sampler. The directional light's filter reads the depths of the shadow map's texels and compares them itself. WebGPU reads four texels at once.
+
+WebGL2's shading language has no such read, so there it reads each texel on its own. Each comparison on WebGL2 reads the map at its own level, which Apple's GPUs run faster than a read at a set level.
+
+</details>
 
 ## Related pages
 

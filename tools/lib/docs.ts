@@ -33,165 +33,228 @@ import {
 import { QUALITY_PRESETS } from '../../packages/engine/src/quality/presets.ts';
 import type { Tier } from '../../packages/engine/src/shared/tier.ts';
 import { type ApiReference, readApi, renderReference, tableCell } from './api-docs';
-import { docsFiles, readIfExists, walkFiles } from './files';
+import { readIfExists, walkFiles } from './files';
 import {
 	FIRST_USE_PAGE_ID,
 	firstUsePage,
 	firstUseProblems,
 	manifestFeatures,
 } from './first-use-docs';
-import { parseFrontMatter, renderFrontMatter } from './frontmatter';
+import { generatedFrontMatter, type PageText, parseFrontMatter } from './frontmatter';
 import { checkLinkTree, linkedFiles } from './links';
 import { LIBRARY_PAGE_ID, libraryPage, readLibrary } from './shader-library';
-import { STEPS_NOTE, shipsSentence } from './steps';
 import { RECORD_TABLES_PAGE, readRecord, recordFiles, recordTablesPage } from './tested-devices';
 
-export interface PageEntry {
+/** A page that the navigation shows. A written page's title and summary are its front matter's. */
+export type PageEntry = {
 	/** Path under docs/ without the .md extension. */
 	id: string;
+	/** The group of the page's area that holds it, for an area that has groups. */
+	group?: string;
+} & (
+	| { generated?: undefined }
+	| {
+			/** A generator writes the page, with this title and summary. */
+			generated: true;
+			title: string;
+			summary: string;
+	  }
+);
+
+export interface AreaEntry {
+	/** The first path segment of the area's pages. */
+	id: string;
+	/** The area's heading in the page list and the website's navigation. */
 	title: string;
-	/** First engine version that ships the page's feature. */
-	since: string;
-	summary: string;
+	/** The area's groups in reading order. An area without groups lists its pages directly. */
+	groups?: readonly string[];
 }
 
-/** Docs areas in reading order, with the heading each gets in the page list. */
-export const AREAS: readonly (readonly [id: string, heading: string])[] = [
-	['getting-started', 'Getting started'],
-	['concepts', 'Concepts'],
-	['api', 'API reference'],
-	['guides', 'Guides'],
-	['shaders', 'Shaders'],
-	['porting', 'Porting from three.js'],
-	['cli', 'Command-line tool'],
-	['errors', 'Errors'],
-	['cookbook', 'Cookbook'],
+/** Docs areas in reading order: learning and doing first, reference last. */
+export const AREAS: readonly AreaEntry[] = [
+	{
+		id: 'getting-started',
+		title: 'Getting started',
+		groups: ['First steps', 'Hosting and licenses'],
+	},
+	{
+		id: 'concepts',
+		title: 'Concepts',
+		groups: ['How the engine runs', 'Drawing a frame', 'Large scenes', 'Effects after the scene'],
+	},
+	{
+		id: 'guides',
+		title: 'Guides',
+		groups: [
+			'Performance and loading',
+			'Shaders and rendering',
+			'Pages and UI',
+			'Game systems',
+			'Example add-ons',
+			'Testing and debugging',
+			'Building and shipping',
+			'Agents and add-ons',
+		],
+	},
+	{ id: 'cookbook', title: 'Cookbook' },
+	{ id: 'shaders', title: 'Shaders' },
+	{ id: 'porting', title: 'Porting from three.js' },
+	{
+		id: 'api',
+		title: 'API reference',
+		groups: [
+			'Page and sketch',
+			'Scene and objects',
+			'Sprites, points, lines and vertex draws',
+			'Interaction',
+			'Rendering and quality',
+			'Utilities',
+			'Add-on packages',
+			'Building add-ons',
+		],
+	},
+	{ id: 'cli', title: 'Command-line tool' },
+	{ id: 'errors', title: 'Errors' },
 ];
 
-export const STATUSES = ['experimental', 'stable', 'generated'] as const;
+/**
+ * Labels that a page may carry in its front matter. Pages carry none unless the owner chooses to
+ * mark one, and the website shows a page's labels as tags.
+ */
+export const STATUSES = ['experimental', 'stable'] as const;
 
-const SINCE_FORMAT = /^(\d+\.\d+|after \d+\.\d+)$/;
+/** A release version, such as "1.2", for a page's optional `since` label. */
+const SINCE_FORMAT = /^\d+\.\d+(\.\d+)?$/;
 
-/** A roadmap step named as a release, such as "null3D 0.2", which no release is called. */
-const STEP_AS_RELEASE = /\bnull3D (0\.[23])(?!\.?\d)/;
-
-/** Every page of the docs. The inventory lists only written pages, and the check reports one that is missing. */
+/**
+ * Every page that the navigation shows, in reading order: each written page, and the generated
+ * pages that sit among them. The check reports a written page that is missing.
+ */
 // biome-ignore format: one page per line keeps the inventory readable as a table
 export const PAGES: readonly PageEntry[] = [
-	{ id: 'index', title: 'null3D documentation', since: '0.1', summary: 'What null3D is; how the docs are organized; status labels.' },
-	{ id: 'getting-started/install', title: 'Install null3D', since: '0.1', summary: 'The npm packages; the Vite plugin; package versions always match; the optional `null3d` command.' },
-	{ id: 'getting-started/first-scene', title: 'Your first scene', since: '0.1', summary: 'page.ts with createEngine; sketch.ts with defineSketch; camera, light, mesh; running it with Vite.' },
-	{ id: 'getting-started/hosting', title: 'Hosting and cross-origin isolation', since: '0.1', summary: 'COOP and COEP headers; require-corp on Safari; CORS and CORP for assets; the single-threaded fallback.' },
-	{ id: 'getting-started/network-use', title: 'Network use', since: '0.2', summary: "What null3D downloads, when each file loads, the build's one download, and how to keep a page on its own origin." },
-	{ id: 'getting-started/third-party-notices', title: 'Third-party notices', since: '0.2', summary: 'The third-party code in each null3D package, its license, and the notices file that a build writes beside the page.' },
-	{ id: 'getting-started/cdn', title: 'Try null3D from a CDN', since: '0.2', summary: 'The CDN build; one HTML file with no bundler; import maps; the policy and CORS headers; both thread modes; what needs a build step.' },
-	{ id: 'getting-started/project-structure', title: 'Project structure', since: '0.3', summary: 'Starting from the `empty`, `product` or `game` template with `bunx @null3d/cli create`; page.ts, sketch.ts, AGENTS.md and the agent hook; what runs where.' },
+	{ id: 'index' },
 
-	{ id: 'concepts/architecture', title: 'Architecture: threads and the frame', since: '0.1', summary: 'Main thread, sketch worker, render worker, job workers; the pipelined frame; latency modes.' },
-	{ id: 'concepts/handles', title: 'Handles and objects', since: '0.1', summary: '30-bit handles; wrapper objects; stale-handle errors; keeping per-object data in your own arrays.' },
-	{ id: 'concepts/static-dynamic', title: 'Static and dynamic objects', since: '0.1', summary: 'When to mark objects static; setters versus direct array writes; dirty ranges.' },
-	{ id: 'concepts/instances', title: 'Instances and batching', since: '0.1', summary: 'createInstances; typed-array views; markDirty; automatic batching; per-instance attributes.' },
-	{ id: 'concepts/particle-buffer', title: 'The particle buffer', since: '0.2', summary: 'createParticleBuffer; 32-byte records; the values and the frame values; writing births; uploads and limits.' },
-	{ id: 'concepts/backends', title: 'GPU tiers and backends', since: '0.1', summary: 'WebGPU core, compatibility mode and WebGL2; capability flags; the portable budget; never branching on GPU names.' },
-	{ id: 'concepts/quality-presets', title: 'Quality presets, dynamic resolution and frame budgets', since: '0.1', summary: 'Low to Ultra; pixel-ratio caps; the preset check; switching presets; the frame-budget governor; quality events for sketch code.' },
-	{ id: 'concepts/color-management', title: 'Color management', since: '0.1', summary: 'Linear working space; sRGB hex colors and linear arrays; HDR color; exposure and tone mapping; transparent canvases.' },
-	{ id: 'concepts/materials', title: 'Materials and pipelines', since: '0.1', summary: 'Built-in materials; permutations; pipeline warm-up; why changing shader features can stall a frame.' },
-	{ id: 'concepts/lighting', title: 'Lighting and environment', since: '0.1', summary: 'Light types and units; clustered lighting; fog; environment maps and spherical harmonics.' },
-	{ id: 'concepts/shadows', title: 'Shadows', since: '0.1', summary: 'Cascades; update rates; filtering per preset; bias settings.' },
-	{ id: 'concepts/render-layers', title: 'Render layers', since: '0.1', summary: '32-bit layer masks on objects, cameras, raycasts and passes.' },
-	{ id: 'concepts/render-graph', title: 'The render graph', since: '0.1', summary: 'Declared reads and writes; automatic order; transient memory; validation errors; the text dump.' },
-	{ id: 'concepts/large-worlds', title: 'Large worlds and precision', since: '0.2', summary: 'Cell-relative positions and per-frame camera-to-cell offsets; reversed depth; largeWorld mode; batch origins; floating-origin geometry.' },
-	{ id: 'concepts/culling', title: 'Culling', since: '0.1', summary: 'Frustum culling on the GPU on WebGPU and on the job workers on WebGL2; grid cells and positions relative to the camera.' },
-	{ id: 'concepts/lod', title: 'Levels of detail', since: '0.2', summary: 'LOD groups; generated LODs; per-instance selection.' },
-	{ id: 'concepts/assets', title: 'Assets and prefabs', since: '0.2', summary: 'glTF, KTX2, meshopt; prefabs and instantiate; upload budgets; memory.' },
-	{ id: 'concepts/post-processing', title: 'The post-processing chain', since: '0.2', summary: 'HDR target; custom effects; bloom; ambient occlusion; the single final pass; custom tone curves.' },
+	{ id: 'getting-started/install', group: 'First steps' },
+	{ id: 'getting-started/first-scene', group: 'First steps' },
+	{ id: 'getting-started/project-structure', group: 'First steps' },
+	{ id: 'getting-started/hosting', group: 'Hosting and licenses' },
+	{ id: 'getting-started/cdn', group: 'Hosting and licenses' },
+	{ id: 'getting-started/network-use', group: 'Hosting and licenses' },
+	{ id: 'getting-started/third-party-notices', group: 'Hosting and licenses' },
 
-	{ id: 'api/engine', title: 'Page API: createEngine', since: '0.1', summary: 'createEngine options; engine.postToSketch, capture, labels, requestPointerLock, capabilities, destroy.' },
-	{ id: 'api/sketch', title: 'Sketch API: defineSketch and the context', since: '0.1', summary: 'The context object: scene, assets, materials, geometry, textures, input, time, engine, quality, post, render, page, ui, debug; the callbacks.' },
-	{ id: 'api/scene', title: 'Scene', since: '0.1', summary: 'Creating objects; find; background, environment, fog, sky; warmUp.' },
-	{ id: 'api/objects', title: 'Objects and transforms', since: '0.1', summary: 'Setters and getters; parents; flags; destroy.' },
-	{ id: 'api/cameras', title: 'Cameras', since: '0.1', summary: 'Perspective and orthographic cameras; screenToRay; worldToScreen; layers.' },
-	{ id: 'api/lights', title: 'Lights', since: '0.1', summary: 'Directional, point, spot, hemisphere and ambient lights; shadow options.' },
-	{ id: 'api/geometry', title: 'Geometry', since: '0.1', summary: 'Generators of common shapes; extra shapes in @null3d/geometry; meshes from arrays; vertices that change; vertex formats; large meshes.' },
-	{ id: 'api/three-compat', title: 'three.js looks (@null3d/three-compat)', since: '0.3', summary: "Reinhard and Cineon tone curves for post.set, and an outline with three.js OutlinePass's glow, pulse and blurred edge. It runs no three.js code." },
-	{ id: 'api/materials', title: 'Materials', since: '0.1', summary: 'standard, unlit, shader, shadowCatcher; every option.' },
-	{ id: 'api/textures', title: 'Textures', since: '0.1', summary: 'loadTexture options; KTX2 files; fromData; fromImageBitmap; fromCanvas; fromVideo; fromPass.' },
-	{ id: 'api/assets', title: 'Assets', since: '0.1', summary: 'loadTexture, loadImageBitmap, loadJson, loadBinary, preload, onProgress; glTF models and environments.' },
-	{ id: 'api/animation', title: 'Animation', since: '0.2', summary: 'The animator; play, crossFade, layers, events; morph weights.' },
-	{ id: 'api/raycast', title: 'Raycasting and spatial queries', since: '0.2', summary: 'raycast, raycastAny, raycastAll, raycastBatch, overlap queries, pointer events on objects.' },
-	{ id: 'api/input', title: 'Input', since: '0.1', summary: 'Pointer, keyboard, touch and gamepad; action maps.' },
-	{ id: 'api/controls', title: 'Controls (@null3d/controls)', since: '0.1', summary: 'Orbit and map controls; fly and first-person controls, with pointer lock; drag, rotate and scale gizmos.' },
-	{ id: 'api/post', title: 'Post-processing API', since: '0.1', summary: 'post.set for tone mapping and exposure; the effects of 0.2; custom effects with post.addEffect and custom tone curves.' },
-	{ id: 'api/render', title: 'Render graph API', since: '0.2', summary: 'render.addPass for scene passes that draw into textures; switching and removing passes; render.dumpGraph.' },
-	{ id: 'api/features', title: 'Add-on feature descriptions', since: '0.3', summary: 'One description for an add-on feature: frame point, reads and writes, callbacks, outputs with neutral defaults, lighting slots, order band and view mask.' },
-	{ id: 'api/vertex-draws', title: 'Draws from a vertex count', since: '0.2', summary: 'scene.createVertexDraw: a custom material and a vertex count with no mesh data, the vertex and instance index in the shader, a bounds sphere, and helpers that wrap positions around the camera.' },
-	{ id: 'api/feature-draws', title: 'Add-on feature draws', since: '0.3', summary: 'scene.addFeatureDraw: a draw feature with its WGSL, vertices, uniforms and sort place, on both GPU paths and in every thread mode.' },
-	{ id: 'api/feature-effects', title: 'Add-on feature effects', since: '0.3', summary: 'post.addFeatureEffect: a full-screen feature with its WGSL and uniforms, at the resolve point, drawn only while the feature is ready.' },
-	{ id: 'api/feature-instances', title: 'Add-on instance draws', since: '0.3', summary: 'scene.addFeatureInstances: a draw of a capacity of instances whose live count the GPU writes, and the batch that the CPU fills on WebGL2.' },
-	{ id: 'api/quality', title: 'Quality API', since: '0.1', summary: 'quality.preset, quality.set, quality.setPreset, the preset check, frame budgets, quality events.' },
-	{ id: 'api/debug', title: 'Debug drawing and stats', since: '0.1', summary: 'debug.line, box, sphere, arrow, axes, grid, frustum and light; engine.measure and its figures; debug.view; debug.stats.' },
-	{ id: 'api/math', title: 'Math helpers', since: '0.1', summary: 'vec3, quat, mat4 and color on plain arrays; math.clamp, lerp, damp and a random generator that hold mode seeds; the maths entry and createMath for a deterministic simulation.' },
-	{ id: 'api/time', title: 'Time', since: '0.1', summary: 'dt, time.now, fixed steps.' },
-	{ id: 'api/sprites', title: 'Sprites', since: '0.2', summary: 'createSprites; world and screen size modes; atlases.' },
-	{ id: 'api/points', title: 'Points', since: '0.2', summary: 'createPoints; size attenuation; textures.' },
-	{ id: 'api/lines', title: 'Lines', since: '0.2', summary: 'createLines; pixel and world widths; dashes; edges from meshes.' },
-	{ id: 'api/particles', title: 'Particles (@null3d/particles)', since: '0.2', summary: 'createParticles: emitters, bursts and sub-emitters; closed-form GPU motion; soft particles; flipbooks made in code.' },
-	{ id: 'api/impostors', title: 'Impostors (@null3d/impostors)', since: '0.2', summary: 'createImpostors: far objects as camera-facing cards that show the stored view nearest the camera; mergeFarGeometry: one mesh per far grid cell.' },
-	{ id: 'api/terrain', title: 'Terrain (@null3d/terrain)', since: '0.2', summary: 'createTerrain: a height field drawn as a camera-centered quadtree of blocks, a splat-mapped surface, and heightAt and normalAt for placing objects.' },
-	{ id: 'api/grass', title: 'Grass (@null3d/grass)', since: '0.3', summary: "createGrass: tufts of bent blades over a ground, placed by integer hashes, built in a compute pass on WebGPU with near shadows, swaying in the wind add-on's field, with a share for each quality preset." },
-	{ id: 'api/splats', title: 'Gaussian splats (@null3d/splats)', since: '0.3', summary: 'createSplats: SPZ files and KHR_gaussian_splatting models drawn as Gaussian splats, with detail levels, a budget that follows the preset and the GPU path, and a soft mix with meshes.' },
-	{ id: 'api/sound', title: 'Sound (@null3d/sound)', since: '0.3', summary: 'createSound and connectSound: loops, groups and one-shots placed in the scene, played with the browser\'s audio and driven from the sketch on the audio thread.' },
-	{ id: 'api/water', title: 'Water (@null3d/water)', since: '0.3', summary: 'createWater: a river and a lake from one shape, with waves, ripples, caustics, foam, soft shores that read the scene depth, a reflection whose cadence follows the preset, and createUnderwater for the view from below the surface.' },
-	{ id: 'api/wind', title: 'Wind (@null3d/wind)', since: '0.3', summary: 'createWind: one field of air that plants, flags, smoke and water read, from an analytic wind of place and time with traveling gusts and pushes, held in a grid that follows the camera.' },
-	{ id: 'api/ui', title: 'UI overlays and labels', since: '0.2', summary: 'ui.trackLabel in the sketch; engine.labels.bind on the page.' },
-	{ id: 'api/page', title: 'Messages between sketch and page', since: '0.1', summary: 'page.post and page.onMessage in the sketch; engine.postToSketch and engine.onSketchMessage on the page; start data that the setup reads as ctx.data.' },
-	{ id: 'api/tasks', title: 'Tasks on the job workers', since: '0.3', summary: 'runTask: an add-on declares a task module and its WebAssembly, which run in the job workers; shared memory; ordering with the frames; failures.' },
+	{ id: 'concepts/architecture', group: 'How the engine runs' },
+	{ id: 'concepts/handles', group: 'How the engine runs' },
+	{ id: 'concepts/static-dynamic', group: 'How the engine runs' },
+	{ id: 'concepts/instances', group: 'How the engine runs' },
+	{ id: 'concepts/particle-buffer', group: 'How the engine runs' },
+	{ id: 'concepts/assets', group: 'How the engine runs' },
+	{ id: 'concepts/backends', group: 'How the engine runs' },
+	{ id: 'concepts/quality-presets', group: 'How the engine runs' },
+	{ id: 'concepts/quality-preset-tables', title: 'Quality preset tables', summary: "Each preset's starting devices, GPU path caps, check rules and settings.", group: 'How the engine runs', generated: true },
+	{ id: 'concepts/color-management', group: 'Drawing a frame' },
+	{ id: 'concepts/materials', group: 'Drawing a frame' },
+	{ id: 'concepts/lighting', group: 'Drawing a frame' },
+	{ id: 'concepts/shadows', group: 'Drawing a frame' },
+	{ id: 'concepts/render-layers', group: 'Drawing a frame' },
+	{ id: 'concepts/render-graph', group: 'Drawing a frame' },
+	{ id: 'concepts/large-worlds', group: 'Large scenes' },
+	{ id: 'concepts/culling', group: 'Large scenes' },
+	{ id: 'concepts/lod', group: 'Large scenes' },
+	{ id: 'concepts/post-processing', group: 'Effects after the scene' },
 
-	{ id: 'guides/performance', title: 'Performance guide', since: '0.1', summary: 'Measuring; the frame budget; common causes of slow frames and their fixes.' },
-	{ id: 'guides/phones', title: 'Phones and tablets', since: '0.1', summary: 'Pixel-ratio caps; memory budgets; heat; testing on real devices.' },
-	{ id: 'guides/custom-shaders', title: 'Custom shaders', since: '0.1', summary: 'WGSL in sketch code; shader errors; surface functions; full shaders; uniforms and typed materials; hot reload.' },
-	{ id: 'guides/custom-passes', title: 'Custom passes and render targets', since: '0.2', summary: 'Custom effects and tone curves in WGSL; declaring passes; reading and writing named textures; layer masks.' },
-	{ id: 'guides/car-paint', title: 'Car paint', since: '0.3', summary: 'A paint material over the clear coat: metal flakes that stop shimmering, panel seams that follow the pixel, and an optional carbon weave with direction-dependent shine.' },
-	{ id: 'guides/lens-kit', title: 'Lens kit', since: '0.3', summary: 'One look for the camera\'s marks: the core grade, sharpening and vignette, and one effect with film grain, color fringes, a streak read from bloom and a speed blur.' },
-	{ id: 'guides/screens', title: 'In-world screens', since: '0.3', summary: 'Displays painted on an OffscreenCanvas in the sketch: a refresh rate for each screen, uploads of only the changed rectangles, an LCD look that changes with distance, a boot glitch, and clicks mapped back to the canvas\'s coordinates.' },
-	{ id: 'guides/loading-screens', title: 'Loading screens and warm-up', since: '0.1', summary: 'preload; onProgress; scene.warmUp; the preset check; upload budgets; switching presets behind a loading screen.' },
-	{ id: 'guides/start-time', title: 'A fast start', since: '0.1', summary: "Where a page's start goes; compression, cache headers and HTTP/2 on the host; the early core script; downloads that start together; a first frame before the large models; heavy work out of a sketch module's top level; testing and measuring a start." },
-	{ id: 'guides/accessibility', title: 'Accessibility', since: '0.1', summary: 'What the canvas tells assistive technology; keyboard use; reduced motion; pausing; loading and errors.' },
-	{ id: 'guides/content-pages', title: '3D scenes on content pages', since: '0.1', summary: 'Product and marketing pages: the fallback page, a load deadline, pausing off screen, scroll-driven cameras, second visits and crashes.' },
-	{ id: 'guides/ui-overlays', title: 'UI, HTML overlays and labels', since: '0.2', summary: 'HTML UI on the page; labels that follow objects; GUI panels.' },
-	{ id: 'guides/video-textures', title: 'Video textures', since: '0.3', summary: 'engine.registerVideo on the page and textures.fromVideo in the sketch; frame sizes and the upload budget; browser limits.' },
-	{ id: 'guides/audio', title: 'Sound in a scene', since: '0.1', summary: 'Sound that follows the scene with @null3d/sound: beds whose level the scene sets, sources at places, groups of many sources, and events.' },
-	{ id: 'guides/physics', title: 'Using a physics library', since: '0.1', summary: 'Running Rapier or cannon-es in the sketch worker; copying transforms.' },
-	{ id: 'guides/deterministic-simulation', title: 'Using null3D with a deterministic simulation', since: '0.3', summary: "The maths entry a simulation may import; createMath with an exact math library; input, picking and physics that decide a result stay out of the sketch; createEngine's input option; a camera that the player aims from recorded input; a production build of a game's engine files." },
-	{ id: 'guides/multiple-views', title: 'Multiple views', since: '0.3', summary: 'Split screens and picture in picture with scene.createView: a camera and a rectangle of the canvas, drawn after the camera\'s view in the same frame; per-view culling; the cost of each view.' },
-	{ id: 'guides/assets-pipeline', title: 'The asset pipeline (the `assets` command)', since: '0.2', summary: 'optimize, env, convert; LODs; texture compression; budget reports.' },
-	{ id: 'guides/baked-light-data', title: 'Baked light data', since: '0.3', summary: 'One JSON format for probe grids and light maps baked outside the engine: the members, the base64 payloads, the loading calls, the faults that the loader names, and the engine\'s own writer.' },
-	{ id: 'guides/testing', title: 'Testing your sketch', since: '0.1', summary: 'Hold mode; image tests; reading results; frames that stay the same on every run; browser tests of a whole app.' },
-	{ id: 'guides/add-ons', title: 'Building an add-on', since: '0.3', summary: 'One package with one entry; the namespace and the plugin interface range; public imports; shaders on both paths; first-use sizes; a page; the check.' },
-	{ id: 'guides/debugging', title: 'Debugging', since: '0.1', summary: 'Error codes; the render-graph dump; common failures.' },
-	{ id: 'guides/deploying', title: 'Deploying', since: '0.3', summary: 'Headers on common hosts; asset caching; size budgets.' },
-	{ id: 'guides/agents', title: 'Working with AI agents', since: '0.1', summary: 'Installing the null3D skills in Claude Code, claude.ai and other agent tools; docs by ID; the test loop.' },
+	{ id: 'guides/performance', group: 'Performance and loading' },
+	{ id: 'guides/phones', group: 'Performance and loading' },
+	{ id: 'guides/loading-screens', group: 'Performance and loading' },
+	{ id: 'guides/first-use-shaders', title: 'Shaders that load on first use', summary: "The features whose shaders download on first use, which createEngine's preload takes.", group: 'Performance and loading', generated: true },
+	{ id: 'guides/start-time', group: 'Performance and loading' },
+	{ id: 'guides/custom-shaders', group: 'Shaders and rendering' },
+	{ id: 'guides/custom-passes', group: 'Shaders and rendering' },
+	{ id: 'guides/baked-light-data', group: 'Shaders and rendering' },
+	{ id: 'guides/ui-overlays', group: 'Pages and UI' },
+	{ id: 'guides/content-pages', group: 'Pages and UI' },
+	{ id: 'guides/accessibility', group: 'Pages and UI' },
+	{ id: 'guides/multiple-views', group: 'Pages and UI' },
+	{ id: 'guides/video-textures', group: 'Pages and UI' },
+	{ id: 'guides/physics', group: 'Game systems' },
+	{ id: 'guides/deterministic-simulation', group: 'Game systems' },
+	{ id: 'guides/audio', group: 'Game systems' },
+	{ id: 'guides/car-paint', group: 'Example add-ons' },
+	{ id: 'guides/lens-kit', group: 'Example add-ons' },
+	{ id: 'guides/screens', group: 'Example add-ons' },
+	{ id: 'guides/testing', group: 'Testing and debugging' },
+	{ id: 'guides/debugging', group: 'Testing and debugging' },
+	{ id: 'guides/assets-pipeline', group: 'Building and shipping' },
+	{ id: 'guides/deploying', group: 'Building and shipping' },
+	{ id: 'guides/agents', group: 'Agents and add-ons' },
+	{ id: 'guides/add-ons', group: 'Agents and add-ons' },
 
-	{ id: 'shaders/wgsl-rules', title: 'WGSL rules for portable shaders', since: '0.1', summary: 'The three shared language features; optional features; flat interpolation; limits budget; rules the build cannot check.' },
-	{ id: 'shaders/surface-functions', title: 'Surface functions', since: '0.1', summary: 'The surface record; vertex-offset functions; per-instance attributes.' },
-	{ id: 'shaders/builtins', title: 'Built-in shader inputs', since: '0.1', summary: 'Camera, time, object, instance and light values available to custom shaders.' },
-	{ id: 'shaders/library', title: 'Shader library and imports', since: '0.1', summary: 'The WGSL modules that ship with the engine: math, noise, color, lighting, fog, vertex, depth and signed distance helpers, and how to import them.' },
+	{ id: 'cookbook/index' },
 
-	{ id: 'porting/threejs-overview', title: 'Porting from three.js', since: '0.3', summary: 'A port is a rewrite; the limits a port meets; the porting workflow; what gets faster; what needs rewriting.' },
-	{ id: 'porting/threejs-materials', title: 'Porting materials and textures', since: '0.3', summary: 'Parameter-by-parameter conversion; color spaces; approximations.' },
-	{ id: 'porting/threejs-shaders', title: 'Porting shaders: GLSL, onBeforeCompile and TSL', since: '0.3', summary: 'GLSL to WGSL; three.js built-ins to engine built-ins; worked examples.' },
-	{ id: 'porting/threejs-postprocessing', title: 'Porting post-processing', since: '0.2', summary: 'EffectComposer passes and pmndrs effects to post.set settings; ShaderPass to post.addEffect; three.js tone mappings to custom tone curves.' },
-	{ id: 'porting/threejs-loop-and-threads', title: 'The render loop, threads and the DOM', since: '0.3', summary: 'What moves to the sketch worker; what stays on the page; messages.' },
-	{ id: 'porting/react-three-fiber', title: 'Porting React Three Fiber', since: '0.3', summary: 'Canvas, useFrame, drei helpers; keeping React for the page UI.' },
-	{ id: 'porting/threejs-unsupported', title: 'Unsupported three.js features', since: '0.3', summary: 'three.js features with no null3D equivalent, with workarounds.' },
-	{ id: 'porting/verification', title: 'Verifying a port', since: '0.3', summary: 'Parity images per camera view; performance comparison; the WebGL2 path; phones.' },
+	{ id: 'shaders/surface-functions' },
+	{ id: 'shaders/builtins' },
+	{ id: 'shaders/library', title: 'Shader library and imports', summary: 'The WGSL modules that ship with the engine: math, noise, color, lighting, fog, vertex, depth and signed distance helpers, and how to import them.', generated: true },
+	{ id: 'shaders/wgsl-rules' },
 
-	{ id: 'cli/null3d', title: 'The `null3d` command', since: '0.1', summary: 'create, test, bench, check-addon, shot, upgrade, assets.' },
-	{ id: 'cookbook/index', title: 'Cookbook', since: '0.2', summary: 'Short recipes; each is also a tested example.' },
+	{ id: 'porting/threejs-overview' },
+	{ id: 'porting/threejs-mapping', title: 'three.js to null3D mapping', summary: 'Every three.js API a port is likely to meet, with its null3D equivalent.', generated: true },
+	{ id: 'porting/threejs-loop-and-threads' },
+	{ id: 'porting/threejs-materials' },
+	{ id: 'porting/threejs-shaders' },
+	{ id: 'porting/threejs-postprocessing' },
+	{ id: 'porting/react-three-fiber' },
+	{ id: 'porting/threejs-unsupported' },
+	{ id: 'porting/verification' },
+
+	{ id: 'api/engine', group: 'Page and sketch' },
+	{ id: 'api/sketch', group: 'Page and sketch' },
+	{ id: 'api/page', group: 'Page and sketch' },
+	{ id: 'api/scene', group: 'Scene and objects' },
+	{ id: 'api/objects', group: 'Scene and objects' },
+	{ id: 'api/cameras', group: 'Scene and objects' },
+	{ id: 'api/lights', group: 'Scene and objects' },
+	{ id: 'api/geometry', group: 'Scene and objects' },
+	{ id: 'api/materials', group: 'Scene and objects' },
+	{ id: 'api/textures', group: 'Scene and objects' },
+	{ id: 'api/assets', group: 'Scene and objects' },
+	{ id: 'api/animation', group: 'Scene and objects' },
+	{ id: 'api/sprites', group: 'Sprites, points, lines and vertex draws' },
+	{ id: 'api/points', group: 'Sprites, points, lines and vertex draws' },
+	{ id: 'api/lines', group: 'Sprites, points, lines and vertex draws' },
+	{ id: 'api/vertex-draws', group: 'Sprites, points, lines and vertex draws' },
+	{ id: 'api/input', group: 'Interaction' },
+	{ id: 'api/raycast', group: 'Interaction' },
+	{ id: 'api/ui', group: 'Interaction' },
+	{ id: 'api/controls', group: 'Interaction' },
+	{ id: 'api/post', group: 'Rendering and quality' },
+	{ id: 'api/render', group: 'Rendering and quality' },
+	{ id: 'api/quality', group: 'Rendering and quality' },
+	{ id: 'api/debug', group: 'Rendering and quality' },
+	{ id: 'api/time', group: 'Utilities' },
+	{ id: 'api/math', group: 'Utilities' },
+	{ id: 'api/particles', group: 'Add-on packages' },
+	{ id: 'api/impostors', group: 'Add-on packages' },
+	{ id: 'api/terrain', group: 'Add-on packages' },
+	{ id: 'api/grass', group: 'Add-on packages' },
+	{ id: 'api/splats', group: 'Add-on packages' },
+	{ id: 'api/water', group: 'Add-on packages' },
+	{ id: 'api/wind', group: 'Add-on packages' },
+	{ id: 'api/sound', group: 'Add-on packages' },
+	{ id: 'api/three-compat', group: 'Add-on packages' },
+	{ id: 'api/features', group: 'Building add-ons' },
+	{ id: 'api/feature-draws', group: 'Building add-ons' },
+	{ id: 'api/feature-effects', group: 'Building add-ons' },
+	{ id: 'api/feature-instances', group: 'Building add-ons' },
+	{ id: 'api/tasks', group: 'Building add-ons' },
+
+	{ id: 'cli/null3d' },
+
+	{ id: 'errors/index', title: 'Error codes', summary: 'Every EngineError code with its cause and fix.', generated: true },
 ];
 
 /** The generated page that lists every docs page. */
 export const PAGE_LIST_ID = 'pages';
+/** The generated navigation that the website reads: areas, their groups and their pages. */
+export const NAV_FILE = 'docs/nav.json';
 /** The folder of the generated reference pages of written API pages. */
 const REFERENCE_AREA = 'api/reference';
 /** The generated page of the quality presets' tables. */
@@ -264,15 +327,9 @@ export function presetCheckTable(): string {
 }
 
 /** The page of the quality presets' tables, from the chooser's constants and the preset table. */
-export function presetTablesPage(): string {
-	return `${renderFrontMatter([
-		['id', PRESET_TABLES_ID],
-		['title', 'Quality preset tables'],
-		['status', 'generated'],
-		['since', '0.1'],
-		['summary', "Each preset's starting devices, GPU path caps, check rules and settings."],
-	])}
-# Quality preset tables
+export function presetTablesPage(text: PageText): string {
+	return `${generatedFrontMatter(PRESET_TABLES_ID, text.title, text.summary)}
+# ${text.title}
 
 > [Quality presets](quality-presets.md) explains these tables. The engine's own constants make them.
 
@@ -299,11 +356,13 @@ ${presetSettingsTable()}
  * from it, so edit it and never the copies.
  */
 export const MAPPING_SOURCE = 'docs/data/threejs-mapping.json';
-const MAPPING_PAGE = 'docs/porting/threejs-mapping.md';
+const MAPPING_PAGE_ID = 'porting/threejs-mapping';
+/** The generated list of every error code. */
+const ERROR_INDEX_ID = 'errors/index';
 const SKILL_MAPPING_DIR = 'skills/null3d-port-threejs/references';
 
 /** Docs areas: the first path segment of every page ID. */
-export const DOC_AREAS = new Set(AREAS.map(([id]) => id));
+export const DOC_AREAS = new Set(AREAS.map((area) => area.id));
 
 export function pagePath(id: string): string {
 	return `docs/${id}.md`;
@@ -321,18 +380,13 @@ export function referenceLink(id: string): string {
 
 /**
  * The generated reference page of a written API page: its exports, from their doc comments.
+ * `title` is the written page's title.
  */
-export function referencePage(page: PageEntry, reference: string): string {
-	return `${renderFrontMatter([
-		['id', referencePageId(page.id)],
-		['title', `${page.title}: API reference`],
-		['status', 'generated'],
-		['since', page.since],
-		['summary', `Every export of the ${page.title} API, from the engine's doc comments.`],
-	])}
-# ${page.title}: API reference
+export function referencePage(id: string, title: string, reference: string): string {
+	return `${generatedFrontMatter(referencePageId(id), `${title}: API reference`, `Every export of the ${title} API, from the engine's doc comments.`)}
+# ${title}: API reference
 
-> [${page.title}](../${page.id.slice('api/'.length)}.md) explains these exports. The engine's doc comments make this page.
+> [${title}](../${id.slice('api/'.length)}.md) explains these exports. The engine's doc comments make this page.
 
 ${reference}
 `;
@@ -374,43 +428,53 @@ export function referenceProblems(api: ApiReference): string[] {
 }
 
 interface MappingEntry {
+	id: string;
 	category: string;
 	three: string;
 	target: string;
 	status: string;
-	since?: string;
 	notes?: string;
+	/** Detail that the note leaves out, shown in a block under the section's table. */
+	details?: string;
 	docs: string;
 }
 
 interface Mapping {
 	statusLegend: Record<string, string>;
-	sinceLegend: Record<string, string>;
 	entries: MappingEntry[];
 }
 
-export function mappingMarkdown(mapping: Mapping, forSkill: boolean): string {
+/**
+ * Links a page ID in parentheses to its page, as a note reads it, for a page that a reader opens.
+ * An ID that the inventory does not list stays plain text, so "(three/webgpu)" is left alone.
+ */
+function linkNotePages(notes: string, titles: ReadonlyMap<string, string>): string {
+	return notes.replace(
+		/\(([a-z0-9-]+\/[a-z0-9-]+)((?:,[^)]*)?)\)/g,
+		(whole, id: string, rest: string) => {
+			const title = titles.get(id);
+			if (title === undefined) return whole;
+			return `([${title}](../${id}.md)${rest})`;
+		},
+	);
+}
+
+/**
+ * The mapping as a docs page, or as the port skill's copy, which has no front matter. The docs
+ * page links each page, where the skill reads pages by ID; `titles` gives each page's title.
+ */
+export function mappingMarkdown(
+	mapping: Mapping,
+	text: PageText,
+	forSkill: boolean,
+	titles: ReadonlyMap<string, string> = new Map(),
+): string {
 	const lines: string[] = [];
-	if (forSkill) {
-		lines.push('# three.js to null3D mapping\n');
-	} else {
-		lines.push(
-			renderFrontMatter([
-				['id', 'porting/threejs-mapping'],
-				['title', 'three.js to null3D mapping'],
-				['status', 'generated'],
-				['since', '0.3'],
-				['summary', 'Every three.js API a port is likely to meet, with its null3D equivalent.'],
-			]),
-		);
-		lines.push('# three.js to null3D mapping\n');
-	}
+	if (!forSkill) lines.push(generatedFrontMatter(MAPPING_PAGE_ID, text.title, text.summary));
+	lines.push(`# ${text.title}\n`);
 	lines.push('Status values:\n');
 	for (const [key, text] of Object.entries(mapping.statusLegend))
 		lines.push(`- \`${key}\`: ${text}`);
-	lines.push(`\nThe "Since" column gives the roadmap step that adds the feature. ${STEPS_NOTE}\n`);
-	for (const [version, label] of Object.entries(mapping.sinceLegend))
-		lines.push(`- ${version}: ${label}`);
 	lines.push('');
 	const categories = [...new Set(mapping.entries.map((e) => e.category))];
 	if (forSkill) {
@@ -418,145 +482,303 @@ export function mappingMarkdown(mapping: Mapping, forSkill: boolean): string {
 		for (const c of categories) lines.push(`- ${c}`);
 		lines.push('');
 	}
+	const docsCell = (e: MappingEntry) => {
+		if (forSkill) return `\`${e.docs}\``;
+		const title = titles.get(e.docs);
+		return title === undefined ? `\`${e.docs}\`` : `[${tableCell(title)}](../${e.docs}.md)`;
+	};
+	const notesCell = (e: MappingEntry) => {
+		const notes = forSkill ? (e.notes ?? '') : linkNotePages(e.notes ?? '', titles);
+		return e.details ? `${notes} Details below the table.` : notes;
+	};
 	for (const c of categories) {
+		const rows = mapping.entries.filter((x) => x.category === c);
 		lines.push(`## ${c}\n`);
-		lines.push('| three.js | null3D | Status | Since | Notes | Docs |');
-		lines.push('| --- | --- | --- | --- | --- | --- |');
-		for (const e of mapping.entries.filter((x) => x.category === c)) {
+		lines.push('| three.js | null3D | Status | Notes | Docs |');
+		lines.push('| --- | --- | --- | --- | --- |');
+		for (const e of rows)
 			lines.push(
-				`| ${tableCell(e.three)} | ${tableCell(e.target)} | ${e.status} | ${e.since ?? '-'} | ${tableCell(e.notes)} | \`${e.docs}\` |`,
+				`| ${tableCell(e.three)} | ${tableCell(e.target)} | ${e.status} | ${tableCell(notesCell(e))} | ${docsCell(e)} |`,
 			);
-		}
 		lines.push('');
+		for (const e of rows) {
+			if (!e.details) continue;
+			const details = forSkill ? e.details : linkNotePages(e.details, titles);
+			lines.push(detailsBlock(`Technical details: ${tableCell(e.three)}`, details));
+			lines.push('');
+		}
 	}
 	return lines.join('\n');
 }
 
-/** The docs page of one error code, generated from the engine's error table. */
-export function errorPage(code: string, entry: ErrorEntry): string {
-	return `${renderFrontMatter([
-		['id', `errors/${code}`],
-		['title', `${code}: ${entry.title}`],
-		['status', 'generated'],
-		['since', entry.since],
-		['summary', entry.cause],
-	])}
-# ${code}: ${entry.title}
-
-## What happened
-
-${entry.cause}
-
-## How to fix it
-
-${entry.fix}
-
-## Example
-
-\`\`\`text
-${entry.example}
-\`\`\`
-`;
+/** A collapsible block of dense detail, with blank lines around its body. */
+function detailsBlock(summary: string, body: string): string {
+	return `<details>\n<summary>${summary}</summary>\n\n${body.trim()}\n\n</details>`;
 }
 
-/** The list of every error code, generated from the engine's error table. */
-export function errorIndexPage(errors: Record<string, ErrorEntry>): string {
-	const rows = Object.entries(errors).map(
-		([code, entry]) =>
-			`| [${code}](${code}.md) | ${tableCell(entry.title)} | ${tableCell(entry.cause)} |`,
+/** The docs page of one error code, generated from the engine's error table. */
+export function errorPage(
+	code: string,
+	entry: ErrorEntry,
+	pages: ReadonlyMap<string, PageInfo> = new Map(),
+): string {
+	const parts = [
+		generatedFrontMatter(`errors/${code}`, `${code}: ${entry.title}`, entry.cause),
+		`# ${code}: ${entry.title}`,
+		'',
+		'## What happened',
+		'',
+		entry.cause,
+	];
+	if (entry.reaches) parts.push('', entry.reaches);
+	if (entry.cases?.length) {
+		parts.push('');
+		for (const one of entry.cases) parts.push(`- ${one}`);
+	}
+	if (entry.details)
+		parts.push(
+			'',
+			detailsBlock(
+				`Technical details: ${entry.detailsSummary ?? 'limits and edge cases'}`,
+				entry.details,
+			),
+		);
+	parts.push('', '## How to fix it', '', entry.fix);
+	if (/\breport (it|the error)\b/i.test(entry.fix)) {
+		parts.push(
+			'',
+			'Report engine bugs on [GitHub Issues](https://github.com/null3d-engine/null3d/issues). Add the full message and [engine.report](../guides/debugging.md#how-the-engine-runs-on-this-device).',
+		);
+	}
+	if (entry.fixCases?.length) {
+		parts.push('');
+		for (const one of entry.fixCases) parts.push(`- ${one}`);
+	}
+	if (entry.fixDetails)
+		parts.push(
+			'',
+			detailsBlock(
+				`Technical details: ${entry.fixDetailsSummary ?? 'fixes for each case'}`,
+				entry.fixDetails,
+			),
+		);
+	parts.push(
+		'',
+		'[Where problems appear](../guides/debugging.md#where-problems-appear) says where each kind of error reaches your code.',
+		'',
+		'## Example message',
+		'',
+		'The engine prints the part below, then the fix above and a link to this page.',
+		'',
+		'```text',
+		entry.example,
+		'```',
+		'',
+		'## See also',
+		'',
 	);
-	return `${renderFrontMatter([
-		['id', 'errors/index'],
-		['title', 'Error codes'],
-		['status', 'generated'],
-		['since', '0.1'],
-		['summary', 'Every EngineError code with its cause and fix.'],
-	])}
-# Error codes
+	const related = [...new Set([...(entry.see ?? []), ERROR_INDEX_ID, 'guides/debugging'])];
+	for (const id of related) {
+		if (id === ERROR_INDEX_ID) {
+			parts.push('- [Error codes](index.md)');
+			continue;
+		}
+		const title = pages.get(id)?.title ?? id;
+		parts.push(`- [${title}](../${id}.md)`);
+	}
+	return `${parts.join('\n')}\n`;
+}
 
-Every error the engine throws is an \`EngineError\` with a code. Its message names the call and the object, says what failed and how to fix it, and links to the code's page here.
+/** The headings of the error index, by the first two digits of each code. */
+const ERROR_GROUPS: readonly [string, string][] = [
+	['11', 'Objects, handles and engine memory'],
+	['12', 'Values passed to calls'],
+	['13', 'Browsers and GPUs'],
+	['14', 'Setup, loading and runtime'],
+	['15', 'Render graph'],
+];
 
-| Code | Error | What happened |
-| --- | --- | --- |
-${rows.join('\n')}
-`;
+/** The list of every error code, generated from the engine's error table. */
+export function errorIndexPage(errors: Record<string, ErrorEntry>, text: PageText): string {
+	const groups = new Map<string, [string, ErrorEntry][]>();
+	for (const [code, entry] of Object.entries(errors).sort(([a], [b]) => a.localeCompare(b))) {
+		const prefix = code.slice(1, 3);
+		const rows = groups.get(prefix) ?? [];
+		rows.push([code, entry]);
+		groups.set(prefix, rows);
+	}
+	const parts = [
+		generatedFrontMatter(ERROR_INDEX_ID, text.title, text.summary),
+		`# ${text.title}`,
+		'',
+		"Every error the engine reports is an `EngineError` with a code. Its message names the call and the object, says what failed and how to fix it, and links to the code's page here. [Where problems appear](../guides/debugging.md#where-problems-appear) says where each kind of error reaches your code.",
+		'',
+		"Codes from E2000 to E9999 belong to add-ons. An add-on's message starts with its name, such as `splats E2101`, and the add-on's page lists its codes: [Gaussian splats](../api/splats.md), [Sound](../api/sound.md).",
+	];
+	const known = new Set(ERROR_GROUPS.map(([prefix]) => prefix));
+	for (const [prefix, title] of ERROR_GROUPS) {
+		const rows = groups.get(prefix);
+		if (!rows?.length) continue;
+		parts.push('', `## ${title}`, '', '| Code | Error | What happened |', '| --- | --- | --- |');
+		for (const [code, entry] of rows)
+			parts.push(
+				`| [${code}](${code}.md) | ${tableCell(entry.title)} | ${tableCell(entry.cause)} |`,
+			);
+	}
+	const rest = [...groups.entries()].filter(([prefix]) => !known.has(prefix));
+	for (const [, rows] of rest) {
+		parts.push(
+			'',
+			'## Other errors',
+			'',
+			'| Code | Error | What happened |',
+			'| --- | --- | --- |',
+		);
+		for (const [code, entry] of rows)
+			parts.push(
+				`| [${code}](${code}.md) | ${tableCell(entry.title)} | ${tableCell(entry.cause)} |`,
+			);
+	}
+	return `${parts.join('\n')}\n`;
 }
 
 export interface PageInfo {
 	id: string;
 	title: string;
-	status: string;
-	since: string;
 	summary: string;
 }
 
-/** Front matter of every docs page, preferring content about to be generated over the file on disk. */
-function collectPages(root: string, generated: Map<string, string>): PageInfo[] {
-	const paths = new Set([
-		...docsFiles(root),
-		...[...generated.keys()].filter((p) => p.startsWith('docs/') && p.endsWith('.md')),
-	]);
-	paths.delete(pagePath('index'));
-	paths.delete(pagePath(PAGE_LIST_ID));
-	const out: PageInfo[] = [];
-	for (const path of paths) {
-		const text = generated.get(path) ?? readIfExists(root, path);
-		if (text === null) continue;
-		const data = parseFrontMatter(text)?.data;
-		if (!data) continue;
-		out.push({
-			id: String(data.id ?? ''),
-			title: String(data.title ?? ''),
-			status: String(data.status ?? ''),
-			since: String(data.since ?? ''),
-			summary: String(data.summary ?? ''),
-		});
+/** One area of the website's navigation: its groups, each with its pages in reading order. */
+export interface NavArea {
+	id: string;
+	title: string;
+	groups: { title: string | null; pages: string[] }[];
+}
+
+/**
+ * The navigation, from the areas and the inventory: each area's groups in order, or one group
+ * with no title for an area without groups. The docs home is not in an area.
+ */
+export function navigation(): NavArea[] {
+	return AREAS.map((area) => {
+		const inArea = PAGES.filter((p) => p.id.split('/')[0] === area.id);
+		const groups = area.groups
+			? area.groups.map((title) => ({
+					title,
+					pages: inArea.filter((p) => p.group === title).map((p) => p.id),
+				}))
+			: [{ title: null, pages: inArea.map((p) => p.id) }];
+		return { id: area.id, title: area.title, groups };
+	});
+}
+
+/**
+ * Problems with the areas and the inventory: a page outside every area, in no group or a wrong
+ * one, a group with no pages, and a written page's entry that carries a title or summary, which
+ * its front matter holds.
+ */
+export function inventoryProblems(
+	pages: readonly PageEntry[] = PAGES,
+	areas: readonly AreaEntry[] = AREAS,
+): string[] {
+	const problems: string[] = [];
+	const seen = new Set<string>();
+	for (const page of pages) {
+		if (seen.has(page.id)) problems.push(`${page.id} is in the inventory twice`);
+		seen.add(page.id);
+		if (!page.generated && ('title' in page || 'summary' in page))
+			problems.push(
+				`${page.id} is a written page; its title and summary belong in its front matter`,
+			);
+		if (page.id === 'index') continue;
+		const area = areas.find((a) => a.id === page.id.split('/')[0]);
+		if (!area) problems.push(`${page.id} is in no area of AREAS`);
+		else if (area.groups && !area.groups.includes(page.group ?? ''))
+			problems.push(`${page.id} needs a group of ${area.id}: ${area.groups.join(', ')}`);
+		else if (!area.groups && page.group)
+			problems.push(`${page.id} has a group, but ${area.id} has no groups`);
+	}
+	for (const area of areas)
+		for (const group of area.groups ?? [])
+			if (!pages.some((p) => p.group === group && p.id.startsWith(`${area.id}/`)))
+				problems.push(`the group ${group} of ${area.id} has no pages`);
+	return problems;
+}
+
+/** The title and summary of a generated page in the inventory. */
+function generatedText(id: string): PageText {
+	const page = PAGES.find((p) => p.id === id);
+	if (!page?.generated) throw new Error(`${id} needs an inventory entry with generated: true`);
+	return { title: page.title, summary: page.summary };
+}
+
+/** The title of each page that the inventory lists, from its generator or its front matter. */
+function collectTitles(root: string): Map<string, string> {
+	const out = new Map<string, string>();
+	for (const page of PAGES) {
+		if (page.generated) {
+			out.set(page.id, page.title);
+			continue;
+		}
+		const text = readIfExists(root, pagePath(page.id));
+		const title = text === null ? undefined : parseFrontMatter(text)?.data.title;
+		if (typeof title === 'string') out.set(page.id, title);
 	}
 	return out;
 }
 
-/** The list of pages: every page by area, in inventory order. */
-export function pageList(pages: PageInfo[]): string {
-	const order = new Map(PAGES.map((p, i) => [p.id, i]));
-	const rank = (p: PageInfo) => order.get(p.id) ?? Number.MAX_SAFE_INTEGER;
-	const sections: string[] = [];
-	for (const [area, heading] of AREAS) {
-		const inArea = pages
-			.filter((p) => p.id.split('/')[0] === area)
-			.sort((a, b) => rank(a) - rank(b) || a.id.localeCompare(b.id));
-		if (inArea.length === 0) continue;
-		const rows = inArea.map(
-			(p) =>
-				`| [${tableCell(p.title)}](${p.id}.md) | ${tableCell(p.summary)} | ${p.status} | ${p.since} |`,
-		);
-		sections.push(
-			[
-				`## ${heading}`,
-				'',
-				'| Page | What it covers | Status | Step |',
-				'| --- | --- | --- | --- |',
-				...rows,
-			].join('\n'),
-		);
+/** The title and summary of each page, from front matter, preferring content about to be generated. */
+function collectPages(root: string, generated: Map<string, string>): Map<string, PageInfo> {
+	const out = new Map<string, PageInfo>();
+	for (const page of PAGES) {
+		const path = pagePath(page.id);
+		const text = generated.get(path) ?? readIfExists(root, path);
+		const data = text === null ? undefined : parseFrontMatter(text)?.data;
+		if (data)
+			out.set(page.id, {
+				id: page.id,
+				title: String(data.title ?? ''),
+				summary: String(data.summary ?? ''),
+			});
 	}
-	return sections.join('\n\n');
+	return out;
 }
 
-/** The generated page that lists every docs page by area, apart from the reference pages. */
-export function pageListPage(pages: PageInfo[]): string {
-	const listed = pages.filter((p) => !p.id.startsWith(`${REFERENCE_AREA}/`));
-	return `${renderFrontMatter([
-		['id', PAGE_LIST_ID],
-		['title', 'All pages'],
-		['status', 'generated'],
-		['since', '0.1'],
-		['summary', 'Every docs page by area, with its status and version.'],
-	])}
+/** The list of pages: each area of the navigation, its groups, and a row for each page. */
+export function pageList(nav: readonly NavArea[], pages: ReadonlyMap<string, PageInfo>): string {
+	const table = (ids: readonly string[]) => [
+		'| Page | What it covers |',
+		'| --- | --- |',
+		...ids.flatMap((id) => {
+			const p = pages.get(id);
+			return p ? [`| [${tableCell(p.title)}](${id}.md) | ${tableCell(p.summary)} |`] : [];
+		}),
+	];
+	return nav
+		.map((area) =>
+			[
+				`## ${area.title}`,
+				...area.groups.flatMap((g) => [
+					'',
+					...(g.title ? [`### ${g.title}`, ''] : []),
+					...table(g.pages),
+				]),
+			].join('\n'),
+		)
+		.join('\n\n');
+}
+
+/** The generated page that lists every page of the navigation, by area and group. */
+export function pageListPage(
+	nav: readonly NavArea[],
+	pages: ReadonlyMap<string, PageInfo>,
+): string {
+	return `${generatedFrontMatter(PAGE_LIST_ID, 'All pages', 'The docs pages of each area and group.')}
 # All pages
 
-> The docs generator writes this list from each page's front matter. [The docs home](index.md) explains the status labels. The step column gives the roadmap step that adds each page's feature. ${STEPS_NOTE}
+> The docs generator writes this list from the docs inventory and each page's front matter. [Error codes](errors/index.md) lists every error code.
 
-${pageList(listed)}
+${pageList(nav, pages)}
 `;
 }
 
@@ -570,40 +792,50 @@ export function generateDocs(root: string, api: ApiReference = readApi(root)): M
 
 	const byPage = Map.groupBy(api.symbols, (s) => s.page);
 	for (const page of PAGES) {
-		if (page.id === 'index' || page.id === LIBRARY_PAGE_ID) continue;
-		const path = pagePath(page.id);
 		const symbols = byPage.get(page.id);
-		if (symbols && readIfExists(root, path) !== null)
+		const written = page.generated || !symbols ? null : readIfExists(root, pagePath(page.id));
+		const title = written === null ? undefined : parseFrontMatter(written)?.data.title;
+		if (symbols && typeof title === 'string')
 			out.set(
 				pagePath(referencePageId(page.id)),
-				referencePage(page, renderReference(symbols, '##')),
+				referencePage(page.id, title, renderReference(symbols, '##')),
 			);
 	}
 
-	const library = PAGES.find((page) => page.id === LIBRARY_PAGE_ID);
-	if (library)
-		out.set(
-			pagePath(LIBRARY_PAGE_ID),
-			libraryPage(readLibrary(root).modules, library.title, library.summary),
-		);
-	out.set(pagePath(PRESET_TABLES_ID), presetTablesPage());
-	out.set(pagePath(FIRST_USE_PAGE_ID), firstUsePage(manifestFeatures(root)));
+	const library = generatedText(LIBRARY_PAGE_ID);
+	out.set(
+		pagePath(LIBRARY_PAGE_ID),
+		libraryPage(readLibrary(root).modules, library.title, library.summary),
+	);
+	out.set(pagePath(PRESET_TABLES_ID), presetTablesPage(generatedText(PRESET_TABLES_ID)));
+	out.set(
+		pagePath(FIRST_USE_PAGE_ID),
+		firstUsePage(manifestFeatures(root), generatedText(FIRST_USE_PAGE_ID)),
+	);
 
 	const mappingText = readIfExists(root, MAPPING_SOURCE);
 	if (mappingText === null) throw new Error(`${MAPPING_SOURCE} is missing`);
 	const mapping = JSON.parse(mappingText) as Mapping;
-	out.set(MAPPING_PAGE, mappingMarkdown(mapping, false));
-	out.set(`${SKILL_MAPPING_DIR}/api-mapping.md`, mappingMarkdown(mapping, true));
+	const mappingPage = generatedText(MAPPING_PAGE_ID);
+	const titles = collectTitles(root);
+	out.set(pagePath(MAPPING_PAGE_ID), mappingMarkdown(mapping, mappingPage, false, titles));
+	out.set(
+		`${SKILL_MAPPING_DIR}/api-mapping.md`,
+		mappingMarkdown(mapping, mappingPage, true, titles),
+	);
 	out.set(`${SKILL_MAPPING_DIR}/threejs-mapping.json`, `${JSON.stringify(mapping, null, 2)}\n`);
 
+	const pages = collectPages(root, out);
 	for (const [code, entry] of Object.entries(ERRORS))
-		out.set(pagePath(`errors/${code}`), errorPage(code, entry));
-	out.set(pagePath('errors/index'), errorIndexPage(ERRORS));
+		out.set(pagePath(`errors/${code}`), errorPage(code, entry, pages));
+	out.set(pagePath(ERROR_INDEX_ID), errorIndexPage(ERRORS, generatedText(ERROR_INDEX_ID)));
 
 	const record = recordFiles(root);
 	if (record.size > 0) out.set(RECORD_TABLES_PAGE, recordTablesPage(readRecord(record).rows));
 
-	out.set(pagePath(PAGE_LIST_ID), pageListPage(collectPages(root, out)));
+	const nav = navigation();
+	out.set(pagePath(PAGE_LIST_ID), pageListPage(nav, pages));
+	out.set(NAV_FILE, `${JSON.stringify({ areas: nav }, null, 2)}\n`);
 	return out;
 }
 
@@ -640,31 +872,98 @@ export function frontMatterProblems(path: string, text: string, inventory: Set<s
 		problems.push(
 			`${path}: status "planned" is not allowed, because the docs name no feature that the engine lacks. Write the page, or take it out of the inventory and list it in .dev/gaps.md`,
 		);
-	} else if (!STATUSES.includes(data.status as (typeof STATUSES)[number])) {
+	} else if (
+		data.status !== undefined &&
+		!STATUSES.includes(data.status as (typeof STATUSES)[number])
+	) {
 		problems.push(`${path}: status "${String(data.status)}" must be one of ${STATUSES.join(', ')}`);
 	}
-	if (typeof data.since !== 'string' || !SINCE_FORMAT.test(data.since)) {
-		problems.push(
-			`${path}: since "${String(data.since)}" must be a quoted version such as "0.1", or "after 1.0"`,
-		);
-	}
-	const note = /^> .*/m.exec(text)?.[0] ?? '';
-	const ships = typeof data.since === 'string' ? shipsSentence(data.since) : '';
 	if (
-		(data.status === 'experimental' || data.status === 'stable') &&
-		id !== 'index' &&
-		!note.startsWith(`> ${ships}`)
-	)
-		problems.push(`${path}: the note under the title must start "${ships}"`);
-	const named = STEP_AS_RELEASE.exec(text)?.[0];
-	if (named)
-		problems.push(
-			`${path}: names ${named}, a roadmap step and not a release. ${STEPS_NOTE} Say "step ${named.slice(-3)}".`,
-		);
-	if (data.status !== 'generated' && !inventory.has(id)) {
+		data.since !== undefined &&
+		(typeof data.since !== 'string' || !SINCE_FORMAT.test(data.since))
+	) {
+		problems.push(`${path}: since "${String(data.since)}" must be a quoted release such as "1.2"`);
+	}
+	if (data.generated !== undefined && data.generated !== true)
+		problems.push(`${path}: generated must be true, or left out`);
+	if (data.generated !== true && !inventory.has(id)) {
 		problems.push(`${path}: page is not in the inventory in tools/lib/docs.ts`);
 	}
 	return problems;
+}
+
+/** The committed map of old page IDs to new ones, which the website turns into redirects. */
+export const MOVES_FILE = 'docs/moves.json';
+
+/**
+ * Problems with the moves file: an entry whose old ID is a page again, or whose new ID leads to
+ * no page. `previous` is the file on main, whose entries must all stay, because old engine builds
+ * and package READMEs link to old IDs for good.
+ */
+export function movesProblems(
+	text: string | null,
+	isPage: (id: string) => boolean,
+	previous: string | null = null,
+): string[] {
+	if (text === null) return [`${MOVES_FILE} is missing; it holds {} when no page has moved`];
+	let moves: Record<string, unknown>;
+	try {
+		moves = JSON.parse(text);
+	} catch (e) {
+		return [`${MOVES_FILE} is not valid JSON (${(e as Error).message})`];
+	}
+	const problems: string[] = [];
+	for (const [from, to] of Object.entries(moves)) {
+		if (typeof to !== 'string') {
+			problems.push(`${MOVES_FILE}: ${from} must map to a page ID`);
+			continue;
+		}
+		if (isPage(from))
+			problems.push(`${MOVES_FILE}: ${from} is a page again; a moved ID stays free`);
+		let target = to;
+		const seen = new Set([from]);
+		while (typeof moves[target] === 'string' && !seen.has(target)) {
+			seen.add(target);
+			target = moves[target] as string;
+		}
+		if (!isPage(target))
+			problems.push(`${MOVES_FILE}: ${from} leads to ${target}, which is not a page`);
+	}
+	if (previous !== null) {
+		let before: Record<string, unknown> = {};
+		try {
+			before = JSON.parse(previous);
+		} catch (e) {
+			problems.push(`${MOVES_FILE} on main is not valid JSON (${(e as Error).message})`);
+		}
+		for (const from of Object.keys(before))
+			if (!(from in moves))
+				problems.push(`${MOVES_FILE}: the entry for ${from} was removed; keep it`);
+	}
+	return problems;
+}
+
+/**
+ * Generated pages that the inventory does not place, and inventory entries marked generated that
+ * no generator writes. The API reference pages, the error code pages and the page list stay out.
+ */
+export function placementProblems(generated: ReadonlyMap<string, string>): string[] {
+	const placed = new Set(PAGES.filter((p) => p.generated).map((p) => p.id));
+	const unplaced = [...generated.keys()]
+		.filter((path) => path.startsWith('docs/') && path.endsWith('.md'))
+		.map((path) => path.slice('docs/'.length, -'.md'.length))
+		.filter(
+			(id) =>
+				!placed.has(id) &&
+				id !== PAGE_LIST_ID &&
+				!id.startsWith(`${REFERENCE_AREA}/`) &&
+				!/^errors\/E\d+$/.test(id),
+		)
+		.map((id) => `${id} is generated, but the inventory does not place it`);
+	const unwritten = [...placed]
+		.filter((id) => !generated.has(pagePath(id)))
+		.map((id) => `${id} is marked generated in the inventory, but no generator writes it`);
+	return [...unplaced, ...unwritten];
 }
 
 /** Written API pages that do not link to their generated reference page. */
@@ -682,10 +981,11 @@ export function referenceLinkProblems(
 /**
  * Every problem with the docs: exports the API reference cannot show, library items without doc
  * comments, missing pages, bad front matter, broken links, and files of the record of tested
- * devices that break its rules. Generated files count with the content the generator gives them
- * now, so the check needs no generated file on disk.
+ * devices that break its rules, the inventory's areas and groups, and the moves file. Generated
+ * files count with the content the generator gives them now, so the check needs no generated file
+ * on disk. `previousMoves` is the moves file on main, whose entries must stay.
  */
-export function checkDocs(root: string): string[] {
+export function checkDocs(root: string, previousMoves: string | null = null): string[] {
 	const problems: string[] = [];
 	let generated = new Map<string, string>();
 	try {
@@ -704,7 +1004,16 @@ export function checkDocs(root: string): string[] {
 	const linked = linkedFiles(root);
 	for (const [path, content] of generated)
 		if (linked.has(path) || path.startsWith('docs/')) linked.set(path, content);
-	problems.push(...referenceLinkProblems(linked, generated));
+	problems.push(
+		...referenceLinkProblems(linked, generated),
+		...inventoryProblems(),
+		...placementProblems(generated),
+		...movesProblems(
+			readIfExists(root, MOVES_FILE),
+			(id) => generated.has(pagePath(id)) || existsSync(join(root, pagePath(id))),
+			previousMoves,
+		),
+	);
 	const inventory = new Set(PAGES.map((p) => p.id));
 	for (const page of PAGES) {
 		const path = pagePath(page.id);
@@ -714,7 +1023,7 @@ export function checkDocs(root: string): string[] {
 	for (const [path, text] of linked) {
 		if (!path.startsWith('docs/') || !path.endsWith('.md')) continue;
 		problems.push(...frontMatterProblems(path, text, inventory));
-		if (/^status: generated$/m.test(text) && !generated.has(path)) {
+		if (/^generated: true$/m.test(text) && !generated.has(path)) {
 			problems.push(`${path} is marked generated, but nothing generates it any more: delete it`);
 		}
 	}

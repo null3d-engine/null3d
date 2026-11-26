@@ -1,14 +1,10 @@
 ---
 id: api/animation
 title: Animation
-status: experimental
-since: "0.2"
 summary: "The animator; play, crossFade, clip weights, start times, 1D blends, layers, joint masks, additive clips, joint overrides and look-at, events; property animation of lights, cameras and materials, glTF's KHR_animation_pointer; morph weights."
 ---
 
 # Animation
-
-> Roadmap step 0.2, first released in null3D 0.1.0. The API is experimental, so it can still change between versions.
 
 ```mermaid
 flowchart LR
@@ -49,7 +45,7 @@ A model's morph targets load with their default weights, and its clips animate t
 
 The engine keeps each clip at one fixed rate of keys. The loader hands every clip to the job workers, which put it at that rate between frames. A track whose keys already sit at the rate is copied, and the job workers resample the others. A model's clips are ready when `loadGltf` resolves. In the single-threaded mode, the sketch's thread does this work a few milliseconds at a time.
 
-Files from `bunx @null3d/cli assets optimize` store every clip at the engine's rate, so they load with copies alone. [The asset pipeline](../guides/assets-pipeline.md#what-it-does-to-clips) says how. On the engine's test page, the KayKit Knight's 76 clips took 16.5 ms on two job workers from its source file. From the command's output they took 8 ms, and the output's binary part is 46% smaller.
+Files from `bunx @null3d/cli assets optimize` store every clip at the engine's rate, so they load with copies alone. [The asset pipeline](../guides/assets-pipeline.md#what-it-does-to-clips) says how. In Chrome on a MacBook Pro, on the engine's test page, the KayKit Knight's 76 clips took 16.5 ms on two job workers from its source file. From the command's output they took 8 ms, and the output's binary part is 46% smaller.
 
 ## Seeing the skeleton
 
@@ -94,11 +90,20 @@ return {
 | `weight` | 1 | The clip's own weight, 0 or more. A play with a weight joins the other clips of its layer instead of fading them out, as [Clip weights](#clip-weights) shows. |
 | `transition` | `'blend'` | How a play with a fade switches what its layer plays. `'blend'` cross-fades the layer's old clips with the new one, and samples both while the fade runs. `'inertial'` samples only the new clip: the pose the layer leaves carries on at its own speed and eases into the new clip, as [Inertial transitions](#inertial-transitions) shows. It needs a fade above 0, no `weight`, a clip to switch from, and a new clip that does not already play on the layer. An additive play always cross-fades. |
 
-`crossFade(name, duration, options)` is `play` with a fade of `duration` seconds, and takes `play`'s other options, such as `layer`, `loop` and `weight`. It always cross-fades, whatever its `transition`, so it shows the mix of the clips while the fade runs. A cross-fade always takes over its layer, with a weight too. A clip that already plays on its layer keeps its time when you play it again, and fades back in from its current weight. So calling `play` with the same clip again does no harm. A clip that played once and reached its end starts again.
+`crossFade(name, duration, options)` is `play` with a fade of `duration` seconds, and takes `play`'s other options, such as `layer`, `loop` and `weight`. It always cross-fades, whatever its `transition`, so it shows the mix of the clips while the fade runs. A cross-fade always takes over its layer, with a weight too.
+
+A clip that already plays on its layer keeps its time when you play it again, and fades back in from its current weight. So calling `play` with the same clip again does no harm. A clip that played once and reached its end starts again.
 
 A plain play fades out only the plain clips of its layer, and an additive play only the additive clips. So a walk keeps playing when a breath starts on its layer as an additive clip.
 
-Keep the options of the plays that a game repeats in frozen constants. The animator reads a frozen options object once and keeps what it read, so a clip switch allocates nothing. From an object that is not frozen, the animator reads at every play. The browser then makes a new 12-byte number for each fraction it reads. The same holds for the points of `playBlend`.
+Keep the options of the plays that a game repeats in frozen constants. The animator reads a frozen options object once and keeps what it read, so a clip switch allocates nothing. The same holds for the points of `playBlend`.
+
+<details>
+<summary>Technical details: why a frozen options object allocates nothing</summary>
+
+From an object that is not frozen, the animator reads at every play. The browser then makes a new 12-byte number for each fraction it reads.
+
+</details>
 
 ```ts
 const TO_RUN = Object.freeze({ fade: 0.3, weight: 0.75 });
@@ -173,14 +178,20 @@ An animation of a material changes every object that uses the material, as a cha
 
 ### Files with KHR_animation_pointer
 
-The loader reads a pointer to a node's transform, its morph weights, or its visibility under `KHR_node_visibility`. It also reads a pointer to a material's values, and to a light's intensity, color or range. A base color factor moves the material's color, and its fourth number moves the opacity. The offset and scale of a base color texture's or an emissive texture's `KHR_texture_transform` move that map's own transform, and leave the material's other maps as the file places them. Each track joins its clip, so `animator().play(name)` plays it with the clip's other tracks. A clip at less than full weight mixes the value with the value that the file gave the property.
+The loader reads a pointer to a node's transform, its morph weights, or its visibility under `KHR_node_visibility`. It also reads a pointer to a material's values, and to a light's intensity, color or range. A base color factor moves the material's color, and its fourth number moves the opacity. The offset and scale of a base color texture's or an emissive texture's `KHR_texture_transform` move that map's own transform, and leave the material's other maps as the file places them.
+
+Each track joins its clip, so `animator().play(name)` plays it with the clip's other tracks. A clip at less than full weight mixes the value with the value that the file gave the property.
 
 ```ts
 const copy = scene.instantiate(await assets.loadGltf(url));
 copy.animator().play('Cube Animation');
 ```
 
-A pointer that the engine does not read leaves the value as the file has it. Development builds warn about each one. The names show the kind. The engine leaves out a camera's values, because it reads no cameras from files. It leaves out an animated texture transform's rotation, and an animated transform of every texture but a base color or an emissive one. It leaves out a light's inner cone angle. It also leaves out `normalTexture/scale`, and the pointers of `KHR_materials_ior`, `KHR_materials_volume`'s attenuation color and distance, and `KHR_materials_iridescence`'s thickness range. It leaves out the values of extensions that it does not draw. A file's own transforms stay per map, so a file that places its maps differently draws that way.
+A pointer that the engine does not read leaves the value as the file has it. Development builds warn about each one. The names show the kind.
+
+The engine leaves out a camera's values, because it reads no cameras from files. It leaves out an animated texture transform's rotation, and an animated transform of every texture but a base color or an emissive one. It leaves out a light's inner cone angle. It also leaves out `normalTexture/scale`, and the pointers of `KHR_materials_ior`, `KHR_materials_volume`'s attenuation color and distance, and `KHR_materials_iridescence`'s thickness range.
+
+It leaves out the values of extensions that it does not draw. A file's own transforms stay per map, so a file that places its maps differently draws that way.
 
 ## Clip weights
 
@@ -239,7 +250,9 @@ never uses one pays nothing, and a transition that starts allocates nothing.
 
 ## 1D blends
 
-A 1D blend mixes clips by one value, such as the character's speed. `playBlend(points, options)` gives each clip a point on a line. At a clip's point, that clip plays in full. Between two points, the two clips around the value share it. Past the first or the last point, that point's clip plays in full. `setBlend(value, layer)` moves the value. It writes engine memory, so you can call it every frame at no cost.
+A 1D blend mixes clips by one value, such as the character's speed. `playBlend(points, options)` gives each clip a point on a line. At a clip's point, that clip plays in full. Between two points, the two clips around the value share it. Past the first or the last point, that point's clip plays in full.
+
+`setBlend(value, layer)` moves the value. It writes engine memory, so you can call it every frame at no cost.
 
 ```ts
 const anim = knight.animator();
@@ -265,7 +278,9 @@ The clips of a blend share one phase, as PlayCanvas's blend trees and Godot's cy
 | `layer` | 0 | The layer, from 0 to 3. |
 | `phase` | the layer's phase | The share of the cycle, from 0 to 1, at which the clips start. |
 
-A blend holds 1 to 8 clips, each at a point of its own. Without a `phase`, a blend starts at the phase of the layer's blend. Failing that, it takes the phase of the first of its clips that the layer plays. So a switch from a walk to a blend with the walk keeps the step. `play` or `crossFade` on the layer ends the blend. Each of its clips then keeps the weight and the rate it had, and fades out. A call to `setWeight` on a clip of a blend multiplies its share of the blend.
+A blend holds 1 to 8 clips, each at a point of its own. Without a `phase`, a blend starts at the phase of the layer's blend. Failing that, it takes the phase of the first of its clips that the layer plays. So a switch from a walk to a blend with the walk keeps the step.
+
+`play` or `crossFade` on the layer ends the blend. Each of its clips then keeps the weight and the rate it had, and fades out. A call to `setWeight` on a clip of a blend multiplies its share of the blend.
 
 ## Layers and joint masks
 
@@ -355,7 +370,12 @@ In each frame, the clips blend first, then each joint rotation applies in the or
 
 A scene that never calls a joint call pays nothing: the engine makes the table of joint overrides at the first call. After that, an object without overrides costs a few reads in each frame. A joint rotation costs one quaternion blend. A look-at costs a few matrix products for each joint between the skeleton's root and the chain's last joint.
 
-The calls allocate nothing, but a weight that changes in each frame can. The browser inlines a small call into the function that makes it. In a large frame step, it may stop doing so, and then it passes each fraction as a new 12-byte number object. One knight per frame does not matter; a crowd of them makes garbage for the collector. The rotation and the target cross in arrays, so they never box. To keep a crowd's weights from boxing, call the joint calls from a small function of its own. Give it only objects and whole numbers, such as the animator and its index, and let it read the frame's fractions from an array:
+The calls allocate nothing, but in a crowd, a weight that is a fraction and changes in each frame can make garbage for the collector. To stop this, call the joint calls from a small function of its own that takes only objects and whole numbers. The default weight, 1, never allocates. The same holds for every engine call that takes a fraction, such as `setPosition` or `setLayerWeight`.
+
+<details>
+<summary>Technical details: why a fraction can allocate, and how to stop it</summary>
+
+The browser inlines a small call into the function that makes it. In a large frame step, it may stop doing so, and then it passes each fraction as a new 12-byte number object. One knight per frame does not matter; a crowd of them makes garbage for the collector. The rotation and the target cross in arrays, so they never box. Give the small function only objects and whole numbers, such as the animator and its index, and let it read the frame's fractions from an array:
 
 ```ts
 const now = new Float64Array(1);
@@ -371,7 +391,7 @@ return {
 };
 ```
 
-The default weight, 1, is a small whole number, which never boxes. The same holds for every engine call that takes a fraction, such as `setPosition` or `setLayerWeight`.
+</details>
 
 ## Events
 
@@ -403,7 +423,9 @@ A cubic spline track, as glTF stores one, keeps an in-tangent and an out-tangent
 
 ## Blending
 
-An object blends up to eight clips in a frame, each at its own time and weight. Two layers that each cross-fade between two clips, with an additive clip on top, fit with room to spare. So does a three-clip blend that cross-fades to another while a second layer cross-fades between two clips. When all eight are busy, a new clip takes the place of a clip that fades out, the one that counts least. Only when no clip fades out does it take the place of the clip that counts least at that moment.
+An object blends up to eight clips in a frame, each at its own time and weight. Two layers that each cross-fade between two clips, with an additive clip on top, fit with room to spare. So does a three-clip blend that cross-fades to another while a second layer cross-fades between two clips.
+
+When all eight are busy, a new clip takes the place of a clip that fades out, the one that counts least. Only when no clip fades out does it take the place of the clip that counts least at that moment.
 
 Within a layer, the engine blends clips joint by joint:
 
@@ -417,15 +439,30 @@ Rotations between keys and rotations in a blend use a corrected form of normaliz
 
 A skinned mesh's vertices follow the joints of an animated object. Each vertex names up to four joints, with a weight for each. Its skinned place is the sum of its joints' skinning matrices applied to it, each times its weight. The mesh's own world matrix then places it.
 
-On both paths, the vertex shader of each pass that draws a skinned mesh skins it. The shadow passes skin it again. On the devices that the engine was measured on, this was as fast as skinning once per frame, or faster. On WebGPU that was a compute pass, and on WebGL2 transform feedback. Each frame uploads the animated objects' skinning matrices to one float texture, 48 bytes per joint. Every material skins in the vertex shader, custom materials included. Skinned meshes that share a mesh and a material draw in one instanced draw in each pass, so a crowd costs few draw calls. On WebGPU, a custom material's skinning builds download the first time the material draws a skinned mesh. A page whose custom materials never draw one never downloads them. The mesh draws once they have arrived, so call `await scene.warmUp()` in the setup to load them before play.
+On both GPU paths, the vertex shader of each pass that draws a skinned mesh skins it. The shadow passes skin it again. Each frame uploads the animated objects' skinning matrices to one float texture, 48 bytes per joint. Every material skins in the vertex shader, custom materials included. Skinned meshes that share a mesh and a material draw in one instanced draw in each pass, so a crowd costs few draw calls.
 
-On WebGPU, a compute pass, the skinning pass, skins two kinds of mesh once per frame instead. It runs before the shadow passes and the scene passes. The first kind is morphed meshes, which it morphs first. The second is meshes that a debug view draws, or that a [full shader](../guides/custom-shaders.md#full-shaders) of the sketch's draws. Neither has a skinning build of its vertex shader. The passes then draw the skinned vertices as a plain mesh. Each mesh that the pass skins draws on its own, as it has vertices of its own. The pass skips a mesh that no view draws in a frame, neither the camera nor a shadow cascade. It also skips a mesh whose pose and morph weights did not change since its last skin. The `?skinning=compute` switch makes the pass skin every skinned mesh, to compare the two ways ([Testing](../guides/testing.md#switches-for-tests)).
+On WebGPU, a custom material's [skinning builds](../guides/custom-shaders.md) download the first time the material draws a skinned mesh. A page whose custom materials never draw one never downloads them. The mesh draws once they have arrived, so call `await scene.warmUp()` in the setup to load them before play.
+
+<details>
+<summary>Technical details: why the vertex shader skins</summary>
+
+On the devices that the engine was measured on, skinning in each pass's vertex shader was as fast as skinning once per frame, or faster. Those measurements skinned once per frame with a compute pass on WebGPU and with transform feedback on WebGL2. `?skinning=compute` makes WebGPU skin every skinned mesh in its compute pass, so you can compare the two methods on your device ([Testing](../guides/testing.md#switches-for-tests)).
+
+</details>
+
+On WebGPU, a compute pass, the skinning pass, skins two kinds of mesh once per frame instead. It runs before the shadow passes and the scene passes. The first kind is morphed meshes, which it morphs first. The second is meshes that a debug view draws, or that a [full shader](../guides/custom-shaders.md#full-shaders) of the sketch's draws. Neither has a skinning build of its vertex shader.
+
+The passes then draw the skinned vertices as a plain mesh. Each mesh that the pass skins draws on its own, as it has vertices of its own. The pass skips a mesh that no view draws in a frame, neither the camera nor a shadow cascade. It also skips a mesh whose pose and morph weights did not change since its last skin.
+
+The `?skinning=compute` switch makes the pass skin every skinned mesh, to compare the two ways ([Testing](../guides/testing.md#switches-for-tests)).
 
 A skinned mesh culls with a sphere that its pose moves. The engine keeps a sphere for each joint around the vertices it moves. Each frame it moves those spheres with the pose and takes the sphere around them all. So a limb that swings out never leaves the mesh's bounds. The work is one matrix product per joint, however many vertices the mesh has. Skinned meshes cast and receive shadows that follow their poses.
 
 ## Crowds
 
-A crowd of copies of one model draws in one instanced draw per part. Its cost is the work of its animation and its vertices. `animator.setUpdateInterval(frames)` sets the frames between two updates of one character's pose. The value 1, the default, updates it in every frame. A larger number, up to 64, samples and composes it once every that many frames. It holds the last pose in between. `animator.updateInterval` reads the value back.
+A crowd of copies of one model draws in one instanced draw per part. Its cost is the work of its animation and its vertices.
+
+`animator.setUpdateInterval(frames)` sets the frames between two updates of one character's pose. The value 1, the default, updates it in every frame. A larger number, up to 64, samples and composes it once every that many frames. It holds the last pose in between. `animator.updateInterval` reads the value back.
 
 Give a character the camera sees from far more frames between its updates. Hold the ones near the camera at 1, so they never step. The `farAnimationInterval` quality setting, which the [governor](quality.md#the-frame-budget-governor) may raise, gives the interval for far characters:
 
@@ -439,11 +476,15 @@ return {
 };
 ```
 
-The clips keep their real speed. Each update covers the frames that it skipped, so a slower rate does not slow a character down. Its pose holds between updates, so a far character steps a little. Its events reach your handlers on its next update, up to `frames` frames late. A scene that never calls `setUpdateInterval` updates every character in every frame. A character that stands still is posed again in every frame at 1. At 1 it costs the job workers as much as a moving one. What it saves is the upload of the joint matrices: no frame repeats it while no pose changes. Its skinning work also stays, because the vertex shader of each pass that draws it skins it again, shadows included. Only a mesh that the skinning pass skins skips a pose that did not change. Those are morphed meshes, and meshes that a debug view or a full shader of the sketch draws ([Limits of skinning](#limits-of-skinning)).
+The clips keep their real speed. Each update covers the frames that it skipped, so a slower rate does not slow a character down. Its pose holds between updates, so a far character steps a little. Its events reach your handlers on its next update, up to `frames` frames late.
+
+A scene that never calls `setUpdateInterval` updates every character in every frame. A character that stands still is posed again in every frame at 1. At 1 it costs the job workers as much as a moving one. What it saves is the upload of the joint matrices: no frame repeats it while no pose changes.
+
+Its skinning work also stays, because the vertex shader of each pass that draws it skins it again, shadows included. Only a mesh that the skinning pass skins skips a pose that did not change. Those are morphed meshes, and meshes that a debug view or a full shader of the sketch draws ([Limits of skinning](#limits-of-skinning)).
 
 ### Limits of skinning
 
-- On WebGPU, each copy that the skinning pass skins or morphs keeps its skinned vertices in GPU memory, even when copies share a mesh. Positions take 32-bit floats. Normals and tangents take 8 bits per component, as unit directions, which is as precise as the asset tool's optimized meshes store them. The other attributes keep their types. With `?skinning=compute`, a knight of the S5 benchmark takes 20 bytes per vertex, so its 500 knights of about 5,000 vertices take about 50 MB.
+- On WebGPU, each copy that the skinning pass skins or morphs keeps its skinned vertices in GPU memory, even when copies share a mesh. Positions take 32-bit floats. Normals and tangents take 8 bits per component, as unit directions, which is as precise as the asset tool's optimized meshes store them. The other attributes keep their types. With `?skinning=compute`, a knight of the [S5 benchmark](../porting/threejs-overview.md#what-gets-faster) takes 20 bytes per vertex, so its 500 knights of about 5,000 vertices take about 50 MB.
 - Those vertices fill at most 8 GPU buffers, each as large as the device lets a shader read. That is 1 GiB in all at WebGPU's default limit of 128 MiB per buffer.
 - Skinned meshes fill at most 32 mesh buffers. Each mesh buffer holds meshes with one set of vertex attributes, up to that same size.
 - A scene past either limit draws nothing in its frames, and gives [E1501](../errors/E1501.md), which names the limit. The canvas keeps the last whole frame, and the scene draws again once it fits.
@@ -452,7 +493,11 @@ The clips keep their real speed. Each update covers the frames that it skipped, 
 
 ## Morph targets
 
-A morph target is another shape of a mesh, such as a smile or a blink. Each object of a mesh with targets blends them in by its own weights. A weight of 0 leaves a target out, 1 adds all of it, and other numbers scale it. The call `setMorphWeight` sets a weight by the target's number or name. The call `getMorphWeight` reads it back. The mesh geometry's `morphTargetNames` lists the names in target order, such as `prefab.find('Face')?.mesh?.morphTargetNames`. A target can move positions, normals and tangents, and change vertex colors, as a glTF file's `COLOR_0` targets do. A morphed vertex color stays between 0 and 1, as the glTF specification asks. A target that leaves out `COLOR_0` while another target of the mesh has it changes no color. A mesh from a glTF file has the file's targets and default weights. A mesh that you build takes its targets from `morphTargets` in [geometry.fromArrays](geometry.md#morph-targets).
+A morph target is another shape of a mesh, such as a smile or a blink. Each object of a mesh with targets blends them in by its own weights. A weight of 0 leaves a target out, 1 adds all of it, and other numbers scale it.
+
+The call `setMorphWeight` sets a weight by the target's number or name. The call `getMorphWeight` reads it back. The mesh geometry's `morphTargetNames` lists the names in target order, such as `prefab.find('Face')?.mesh?.morphTargetNames`.
+
+A target can move positions, normals and tangents, and change vertex colors, as a glTF file's `COLOR_0` targets do. A morphed vertex color stays between 0 and 1, as the glTF specification asks. A target that leaves out `COLOR_0` while another target of the mesh has it changes no color. A mesh from a glTF file has the file's targets and default weights. A mesh that you build takes its targets from `morphTargets` in [geometry.fromArrays](geometry.md#morph-targets).
 
 ```ts
 const head = scene.instantiate(face).find('Head') as Mesh;
@@ -462,7 +507,14 @@ head.setMorphWeight(1, Math.sin(time.now) * 0.5 + 0.5);
 
 A clip of a glTF file can animate a mesh's weights. While it plays, it blends its weights with the object's own. A clip at full weight sets the weights, and a fade blends the two. The object's own weights hold when no clip animates them. The call `setMorphWeight` sets the object's own weight, so a weight that you set shows in full only where no clip animates it. Layers and joint masks work on weights too: a layer masked to a node's name takes that node's weights.
 
-On WebGPU, the skinning pass morphs each morphed mesh once per frame, before its joints skin it. On WebGL2, the vertex shader of each pass morphs it. Each object then keeps only its largest weights, by the `morphTargets` quality setting: 8 on Low, 16 on Medium, 32 on High and 64 on Ultra. WebGPU keeps every weight. The first morphed mesh that a WebGL2 page draws loads the morph shaders, about 20 KB after compression, and draws once they arrive. On WebGPU, it loads the skinning pass's shaders. `createEngine`'s `preload` option loads either before the first frame ([Loading screens](../guides/loading-screens.md#loading-everything-up-front)).
+On WebGPU, the skinning pass morphs each morphed mesh once per frame, before its joints skin it. On WebGL2, the vertex shader of each pass morphs it.
+
+<details>
+<summary>Technical details: how each backend morphs</summary>
+
+Each object then keeps only the weights farthest from 0, by the `morphTargets` quality setting: 8 on Low, 16 on Medium, 32 on High and 64 on Ultra. WebGPU keeps every weight. The first morphed mesh that a WebGL2 page draws loads the morph shaders, about 20 KB after compression, and draws once they arrive. On WebGPU, it loads the skinning pass's shaders. `createEngine`'s `preload` option loads either before the first frame ([Loading screens](../guides/loading-screens.md#loading-everything-up-front)).
+
+</details>
 
 A morphed object culls with a sphere that its weights grow: each target's longest move times the size of its weight. On WebGL2, a custom material draws a morphed mesh in its shape at rest.
 
@@ -486,6 +538,8 @@ The engine takes animation off the main thread, and does less work and stores le
 | [E1416](../errors/E1416.md) | A glTF file whose skins or clips break glTF's rules, such as key times that fall back or a skin that names a node twice, or whose skins and clips move more than 1,024 nodes |
 | [E1101](../errors/E1101.md) | An animator call after its object was destroyed |
 | [E1501](../errors/E1501.md) | A crowd of skinned meshes past WebGPU skinning's limits (see [Limits of skinning](#limits-of-skinning)) |
+
+Development builds run every check in this table. Release builds keep only the checks that guard engine memory, such as a clip name that the object does not have, and skip the rest, such as range checks and `setWeight` on a clip that does not play.
 
 ## API reference
 

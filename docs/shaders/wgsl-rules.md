@@ -1,14 +1,12 @@
 ---
 id: shaders/wgsl-rules
 title: WGSL rules for portable shaders
-status: experimental
-since: "0.1"
 summary: "The three shared language features; optional features; flat interpolation; a warning for atomic compare-exchange; limits budget; rules the build cannot check."
 ---
 
 # WGSL rules for portable shaders
 
-> Roadmap step 0.1, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. The engine draws custom materials with [surface functions](surface-functions.md) and [full shaders](../guides/custom-shaders.md#full-shaders). It draws no other shader of your own.
+> The engine draws WGSL of your own in custom materials (surface functions and full shaders), custom effects and tone curves, sky layers, and the passes of `render.addPass`. Every one follows the rules on this page.
 
 One WGSL shader runs on every null3D path: WebGPU, WebGPU's compatibility mode and WebGL2. For WebGL2, null3D's shader build translates it to GLSL ES 3.00. A shader can therefore use only what every path and every target browser supports.
 
@@ -52,7 +50,14 @@ For WebGL2, the build rejects code that GLSL ES 3.00 cannot express, such as a s
 
 The build also rejects a copy of an array out of a uniform buffer. Such a copy is an array, or a struct that holds one, read whole into a `let` or passed to a function. Some phone GPUs leave such a copy's arrays empty on WebGL2. Read one element at a time, such as `params.weights[i]`, or hold the vectors in named fields. The message names the function.
 
-Some phone GPUs store each value in a GLSL struct at half precision on WebGL2. So for WebGL2, the build splits each struct value into its members. This covers struct parameters, results and variables, and `private` struct variables with their initial values. A function can take a pointer to a whole struct variable in the `function` or `private` address space: the build then passes a pointer to each member. The build splits the results of `modf` and `frexp` too. An array of structs stays whole, so keep the values in such an array within half precision's range, from about 6.1e-5 to 65504. When the build cannot split a struct, it fails and names the function.
+Some phone GPUs store each value in a GLSL struct at half precision on WebGL2. The build works around this for most structs. An array of structs stays whole, so keep the values in such an array within half precision's range, from about 6.1e-5 to 65504. When the build cannot work around a struct, it fails and names the function.
+
+<details>
+<summary>Technical details: how the build splits structs for WebGL2</summary>
+
+For WebGL2, the build splits each struct value into its members. This covers struct parameters, results and variables, and `private` struct variables with their initial values. A function can take a pointer to a whole struct variable in the `function` or `private` address space: the build then passes a pointer to each member. The build splits the results of `modf` and `frexp` too.
+
+</details>
 
 The build rejects a GLSL name that starts with `gl_` and is not one of GLSL's own, because GLSL ES reserves such names. So do not give anything a name that starts with `gl_`, and do not name anything `gl`: when two names `gl` meet in one shader, the build names the second one `gl_1`. The message names the pipeline and the shader stage.
 
@@ -62,7 +67,9 @@ Write flat interpolation as `@interpolate(flat, either)`, so that any vertex of 
 
 ## Atomic compare-exchange
 
-The build warns when a shader calls `atomicCompareExchangeWeak`. Safari 27.0 cannot compile such a shader, on atomics in any address space, so it fails to load on every Apple device with that version. Other browsers run it. WebKit has fixed the fault (321006@main), but no Safari release that has the fix is out yet. The shader still builds, so you choose whether to keep the call. The engine's own shaders never call it.
+The build warns when a shader calls `atomicCompareExchangeWeak`. Safari 27.0 cannot compile such a shader, on atomics in any address space. The shader fails to load on every Apple device with that version. Later Safari 27 releases can fail the same way until they include WebKit's fix, so test such a shader on each Safari version you support.
+
+The build warning names the WebKit fix. Other browsers run it. The shader still builds, so you choose whether to keep the call. The engine's own shaders never call it.
 
 To claim a slot, store your value into a free slot with `atomicStore`. Then call `workgroupBarrier()`, and read which value the slot holds with `atomicLoad`. `atomicExchange`, `atomicMin` and `atomicMax` also compile on every target browser.
 

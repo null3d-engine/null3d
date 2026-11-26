@@ -1,14 +1,10 @@
 ---
 id: guides/phones
 title: Phones and tablets
-status: experimental
-since: "0.1"
 summary: "Pixel-ratio caps; memory budgets; heat; testing on real devices."
 ---
 
 # Phones and tablets
-
-> Roadmap step 0.1, first released in null3D 0.1.0. The API is experimental, so it can still change between versions.
 
 A null3D sketch runs on current phones and tablets with no changes, on WebGPU or on WebGL2. Phones have small GPUs, sharp screens and little memory, and they slow down when they heat up. The quality presets set how much work the engine does on each device. This guide says what the engine does on a phone or a tablet, and how to test your sketch on one.
 
@@ -26,7 +22,7 @@ export default defineSketch(({ quality }) => {
 });
 ```
 
-Do not force a heavier preset on phones. When a player picks one in a menu, pass it to `createEngine` with the `preset` option.
+Do not force a heavier preset on phones. When a player picks one in a menu, switch to it with `quality.setPreset` in the sketch ([Quality API](../api/quality.md#switching-presets)). The GPU path still caps it, and `quality.highest` names the cap. To start at a choice that the page remembers, pass it to `createEngine` with the `preset` option.
 
 Low, the phone's preset, leaves out the costliest work:
 
@@ -54,13 +50,26 @@ The engine caps the ratio at the preset's value, which is lowest on the Low pres
 
 When frames take too long, the engine draws the scene at a lower render scale: a part of the canvas's width and height. It then scales the image up to the canvas. On the Low preset, the scale can drop to 0.5, a quarter of the pixels. It rises again when the frames have time to spare. [Quality presets](../concepts/quality-presets.md#dynamic-resolution) explains when the scale moves.
 
-Text and fine lines in the scene get softer at a lower scale. The scaling also takes the place of FXAA, which Low uses to smooth edges. Draw your interface in HTML over the canvas, where it stays sharp. To keep the whole canvas on a device, set `quality.set({ minRenderScale: 1 })`. The savings of the pixel ratio cap and the render scale multiply. At a ratio of 1.5 and a scale of 0.5, the phone above fills 0.19 million pixels.
+Text and fine lines in the scene get softer at a lower scale. On Low, the final pass still smooths edges with FXAA at the render size. It then scales the image up to the canvas with an edge-aware upscaler.
+
+Draw your interface in HTML over the canvas, where it stays sharp. To keep the whole canvas on a device, set `quality.set({ minRenderScale: 1 })`. The savings of the pixel ratio cap and the render scale multiply. At a ratio of 1.5 and a scale of 0.5, the phone above fills 0.19 million pixels.
 
 ## Shadows
 
-A directional light's shadows draw the shadow casters once for each cascade, into a map whose texels the GPU fills each frame. The preset sets the cascade count and the map size of each light whose options name neither. Low draws fewer cascades than Medium, with smaller maps, and blends fewer texels at each shadow's edge. So leave `cascades` and `mapSize` out of the light's `shadow` options, and phones draw lighter shadows by themselves. [Shadows](../concepts/shadows.md#settings) lists the options, and [Quality presets](../concepts/quality-presets.md#the-settings-of-each-preset) each preset's values. The shadow map stores each depth in 16 bits, which takes half the memory of 32-bit depths.
+A directional light's shadows draw the shadow casters once for each cascade, into a map whose texels the GPU fills each frame. The preset sets the cascade count and the map size of each light whose options name neither. Low draws fewer cascades than Medium, with smaller maps, and blends fewer texels at each shadow's edge.
+
+So leave `cascades` and `mapSize` out of the light's `shadow` options, and phones draw lighter shadows by themselves. [Shadows](../concepts/shadows.md#settings) lists the options, and [Quality presets](../concepts/quality-presets.md#the-settings-of-each-preset) each preset's values.
+
+<details>
+<summary>Technical details: how a shadow map stores depth</summary>
+
+The shadow map stores each depth in 16 bits, which takes half the memory of 32-bit depths.
+
+</details>
 
 ## Memory
+
+### How much memory a tab gets
 
 A phone closes a tab that uses too much memory, with no warning. The engine's tab memory test grew one kind of GPU memory in a tab, in steps of 32 MiB, until the tab died:
 
@@ -70,25 +79,65 @@ A phone closes a tab that uses too much memory, with no warning. The engine's ta
 | 11-inch iPad Pro, Safari, WebGL2 | 2,528 MiB | 2,496 MiB |
 | Galaxy S24+, Chrome, WebGL2 | 7,296 MiB | 7,616 MiB |
 
-No allocation failed first, and no error came. A scene holds its textures, buffers, render targets and WebAssembly memory at once, and a device with less memory gives a tab less. So the quality preset's texture memory budget keeps textures under 256 MiB on Low and 512 MiB on Medium. On phones and tablets, no preset gives textures more than 1,008 MiB. The iPad's WebGPU path can stop answering at 512 MiB of GPU buffers, though not in every run. Keep a scene's GPU buffers under half the point in the table.
+No allocation failed first, and no error came. A scene holds its textures, buffers, render targets and WebAssembly memory at once, and a device with less memory gives a tab less.
+
+So the quality preset's texture memory budget keeps textures under 256 MiB on Low and 512 MiB on Medium. On phones and tablets, no preset gives textures more than 1,008 MiB. The iPad's WebGPU path can stop answering at 512 MiB of GPU buffers, though not in every run. Keep a scene's GPU buffers under half the point in the table.
+
+### The engine's WebAssembly memory
 
 On a page with worker threads, the engine's threads share one WebAssembly memory, whose maximum the preset sets. The browser reserves address space for the whole maximum, and every other engine and WebAssembly module on the page shares what is left. [Page API: createEngine](../api/engine.md#memory) says when to ask for more.
 
+### Use less memory
+
 To use less memory, share meshes and materials, draw many copies with instance batches, and create objects during setup. `engine.measure` reports the WebAssembly memory in use. [Performance: memory peak](performance.md#memory-peak) shows how to read a scene's distance from its limit.
 
-Textures take GPU memory too. A texture of 1024 x 1024 texels takes about 5.3 MiB with its mip levels. When the textures pass their budget, the engine drops the largest mip levels of textures from files, and loads them again once room returns. The sketch reads the memory and the dropped levels in `quality.textureMemory`, and [Quality presets](../concepts/quality-presets.md#texture-memory) explains the order. A texture that the sketch makes from an image or from data keeps its levels, so free one that the scene no longer needs with `texture.destroy()`. The engine keeps no copy of an image once its upload is done. [Textures](../api/textures.md#gpu-memory) gives the sizes.
+### Textures
 
-Load large textures from KTX2 files. `bunx @null3d/cli assets optimize` encodes them ([The asset pipeline](assets-pipeline.md)). Phones and tablets have the ASTC and ETC2 formats, so a KTX2 texture stays compressed on the GPU. The same 1024 x 1024 texture then takes about 1.3 MiB, or 0.7 MiB in ETC2 without alpha. Encode its mip levels into the file, as `basisu -mipmap` does, because the GPU cannot make them for compressed texels. Use UASTC for normal maps and detailed color maps, and ETC1S where the download must stay small. `texture.format` tells which format the device got. [Textures](../api/textures.md#ktx2-files) covers KTX2 files.
+Textures take GPU memory too. A texture of 1024 x 1024 texels takes about 5.3 MiB with its mip levels. When the textures pass their budget, the engine drops the largest mip levels of textures from files, and loads them again once room returns. The sketch reads the memory and the dropped levels in `quality.textureMemory`, and [Quality presets](../concepts/quality-presets.md#texture-memory) explains the order.
+
+A texture that the sketch makes from an image or from data keeps its levels, so free one that the scene no longer needs with `texture.destroy()`. The engine keeps no copy of an image once its upload is done. [Textures](../api/textures.md#gpu-memory) gives the sizes.
+
+Load large textures from KTX2 files. `bunx @null3d/cli assets optimize` encodes them ([The asset pipeline](assets-pipeline.md)). Phones and tablets have the ASTC and ETC2 formats, so a KTX2 texture stays compressed on the GPU. The same 1024 x 1024 texture then takes about 1.3 MiB. [Textures](../api/textures.md#ktx2-files) covers KTX2 files.
+
+<details>
+<summary>Technical details: encoding KTX2 textures by hand</summary>
+
+The same texture takes 0.7 MiB in ETC2 without alpha. Encode the mip levels into the file, as `basisu -mipmap` does, because the GPU cannot make them for compressed texels. Use UASTC for normal maps and detailed color maps, and ETC1S where the download must stay small. `texture.format` tells which format the device got.
+
+</details>
+
+### A second engine on the page
 
 A page that starts a second engine, for example in a single-page app, waits for the first engine's `destroy()` promise. The page keeps the first engine's shared memory for about 30 seconds, and the second engine takes it. So the browser need not give new memory. When the browser refuses memory at the start, the engine tries again for about 45 seconds. Then it fails with [E1109](../errors/E1109.md). `onProgress` reports `memory-wait` after 10 seconds, so the page can tell the user ([Engine](../api/engine.md#the-running-engine)).
 
-The scene's object tables start small and double as the scene grows. On a Galaxy S25 or a Pixel 9, a growth from 16,383 to 32,767 objects took 2.4 to 5.3 ms. For a large scene, set `createEngine`'s `expectedObjects` option, so the tables never grow during play.
+### Large scenes
+
+The scene's object tables start small and double as the scene grows. On a Galaxy S25 or a Pixel 9, a growth from 16,383 to 32,767 objects took 2.4 to 5.3 ms. For a large scene, set `createEngine`'s `expectedObjects` option, so the tables never grow during play ([Objects during play](performance.md#objects-during-play)).
+
+### After a crash
 
 When the tab crashes during a start, the next start of the sketch runs one preset lower. A second crash in a row starts it at Low. [Quality presets](../concepts/quality-presets.md#starts-that-crashed-the-tab) explains the note that the engine keeps for this. The page reads the count in `engine.mode.crashedStarts`.
 
+### A page in the back-forward cache
+
+On phones and tablets, the engine gives back its GPU device while the browser keeps the page in its back-forward cache. It starts a new one when the page comes back ([Page API](../api/engine.md#the-running-engine)).
+
 ## Heat
 
-A phone lowers its clock speeds when it heats up, often after a few minutes of play. Leave room for it: aim for about 70% of the frame budget, and test runs of 10 minutes. When frames still take too long, the frame-budget governor lowers a sketch's budgets and the render scale in turn, a budget's step first. Then it lowers the live shadow settings, bloom's base and the size of ambient occlusion. The `quality.onChange` handlers run after each step that follows the render scale, so the sketch can lighten its own work too ([Quality presets](../concepts/quality-presets.md#the-frame-budget-governor)). In the engine's benchmarks, a warm Galaxy S24+ took about 70% longer per frame than a cool one ([Performance guide](performance.md#phones-and-tablets)). Tablets heat up too. A warm 11-inch iPad Pro took about 17 ms of GPU time per S4 frame at Medium, against about 12.6 ms a minute earlier. It then ran at about 45 frames per second. At Low, it held 60 frames per second after 5 minutes of warm-up ([Quality presets](../concepts/quality-presets.md#how-the-engine-chooses-a-preset)). The [Performance guide](performance.md) also shows how to measure the frame.
+A phone lowers its clock speeds when it heats up, often after a few minutes of play. Leave room for it: aim for about 70% of the frame budget, and test runs of 10 minutes. In the engine's benchmarks, a warm Galaxy S24+ took about 70% longer per frame than a cool one. The [Performance guide](performance.md#phones-and-tablets) also shows how to measure the frame.
+
+When frames still take too long, the frame-budget governor lowers the quality step by step. The `quality.onChange` handlers run after each shadow step, so the sketch can lighten its own work too ([Quality presets](../concepts/quality-presets.md#the-frame-budget-governor)).
+
+Tablets heat up too. A warm iPad can drop from 60 to about 45 frames per second at Medium, and Low holds 60 ([Quality presets](../concepts/quality-presets.md#how-the-engine-chooses-a-preset)).
+
+<details>
+<summary>Technical details: what the governor lowers, and measured heat on an iPad</summary>
+
+The governor lowers a sketch's budgets and the render scale first. It then lowers the level of detail threshold, the far shadow cascades, the shadow filter, bloom's base and ambient occlusion's size. After those, it lowers screen-space reflections, contact shadows, far characters' update interval and the volumetric fog.
+
+The warm 11-inch iPad Pro took about 17 ms of GPU time per S4 frame at Medium, against about 12.6 ms a minute earlier. It ran at about 45 frames per second. At Low, it held 60 frames per second after 5 minutes of warm-up.
+
+</details>
 
 ## Power
 
@@ -96,7 +145,13 @@ A view that holds still stops drawing after about a second. The engine first ble
 
 ## Touch input
 
-The engine reads touches as it reads the mouse: the first finger presses `Mouse0`, and `input.touches` lists every finger on the canvas. A canvas that takes touch gestures needs `touch-action: none` in its CSS. Without it, the browser scrolls or zooms the page, and it cancels the touch. [Input](../api/input.md#touches) explains touches and pinches. A tap on an object calls its `click` handler, as a mouse click does ([Pointer events on objects](../api/input.md#pointer-events-on-objects)).
+The engine reads touches as it reads the mouse: the first finger presses `Mouse0`, and `input.touches` lists every finger on the canvas. A tap on an object calls its `click` handler, as a mouse click does ([Pointer events on objects](../api/input.md#pointer-events-on-objects)).
+
+A canvas that takes touch gestures needs `touch-action: none` in its CSS. Without it, the browser scrolls or zooms the page, and it cancels the touch. [Input](../api/input.md#touches) explains touches and pinches.
+
+```css
+canvas { touch-action: none; }
+```
 
 ## Networks and repeat visits
 
@@ -108,10 +163,7 @@ Phones often lose their network. A game that must play offline caches the engine
 
 A phone's GPU driver can refuse to build one pipeline, such as a custom material's, though the shader is valid. The engine then builds that pipeline once more, alone. When the driver refuses it again, the engine leaves that pipeline's objects out of the frame and draws on. It reports [E1307](../errors/E1307.md) once, which does not stop the engine. A validation error, and a refused pipeline of a full-screen pass, still stop drawing with [E1404](../errors/E1404.md) ([Debugging](debugging.md)).
 
-On a Galaxy Tab A9 Plus, the driver refused the island demo's far tree cards, and the island then drew on without them. The creek demo reached its first frame at 71 seconds there, but the tablet ran out of GPU memory 4 seconds later ([E1302](../errors/E1302.md)).
-
-On phones and tablets, the engine also gives back its GPU device while the browser keeps the page in its back-forward cache. It starts a new one when the page comes back ([Page API](../api/engine.md#the-running-engine)).
-
+On a Galaxy Tab A9 Plus, the driver refused the island demo's far tree cards, and the island drew on without them ([A fast start](start-time.md#where-the-time-goes)).
 ## Browsers on iPhone and iPad
 
 Every browser on iPhone and iPad runs Safari's WebKit engine. null3D needs Safari 18 or later there, and `createEngine` fails with [E1306](../errors/E1306.md) on an older version. [GPU tiers and backends](../concepts/backends.md#minimum-browsers) says why.
@@ -122,7 +174,7 @@ Check every rendering mode and the whole camera path, with repeats, as [Testing 
 
 Desktop browsers that emulate a phone show neither its GPU nor its heat, so test on the phones and tablets that your audience uses.
 
-- Serve the page over HTTPS, or reach it as `localhost` over USB. A secure origin is what makes WebGPU, and so the High and Ultra presets, available. On a network address over plain HTTP, the engine silently falls back to WebGL2 at Medium. [Hosting and cross-origin isolation](../getting-started/hosting.md#during-development) shows both.
+- Serve the page over HTTPS, or reach it as `localhost` over USB. A secure origin is what makes WebGPU, and so the High and Ultra presets, available. On a network address over plain HTTP, the engine silently falls back to WebGL2, which caps the preset at Medium. [Hosting and cross-origin isolation](../getting-started/hosting.md#during-development) shows both.
 - Install the root of the page's certificate on the device. Chrome keeps no file in its cache from a site whose certificate it accepted after a warning. Every load is then as slow as a first visit.
 - Check the preset that the engine chose in `engine.mode.preset`. The capability report in `engine.report` holds the facts that it chose from: `coarsePointer`, `screenMinEdge` and `deviceMemoryGB`.
 - Add `?preset=low`, `?preset=medium`, `?preset=high` or `?preset=ultra` to the page's address to test each preset on one device. The GPU path still caps the preset.

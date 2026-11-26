@@ -103,7 +103,7 @@ describe('libraryPage', () => {
 		const page = libraryPage([module], 'Shader library', 'The modules.');
 		expect(parseFrontMatter(page)?.data).toMatchObject({
 			id: 'shaders/library',
-			status: 'experimental',
+			generated: true,
 		});
 		expect(page).toContain(
 			'| [`null3d::demo`](#null3ddemo) | Demo helpers: one of each kind of item. |',

@@ -1,14 +1,10 @@
 ---
 id: concepts/instances
 title: Instances and batching
-status: experimental
-since: "0.1"
 summary: "createInstances; typed-array views; markDirty; automatic batching; per-row colors and values."
 ---
 
 # Instances and batching
-
-> Roadmap step 0.1, first released in null3D 0.1.0. The API is experimental, so it can still change between versions.
 
 ```mermaid
 flowchart LR
@@ -54,6 +50,10 @@ export default defineSketch(({ scene, geometry, materials }) => {
 | `values` | `false` | `true` adds a `values` array: four numbers for each row, which a custom material reads |
 | `layers` | `1`, layer 0 | The [layers](render-layers.md) of every row, as a 32-bit mask |
 | `origin` | `[0, 0, 0]` | The point that every row's position is relative to, kept at full precision: [Batch origins](large-worlds.md#batch-origins) |
+| `castShadows` | `false` | `true` makes every row cast shadows: [Shadows](shadows.md) |
+| `receiveShadows` | `false` | `true` makes shadows fall on every row |
+| `occluder` | `true` | `false` keeps rows from hiding what lies behind them in GPU occlusion culling on WebGPU: [Which objects hide others](culling.md#which-objects-hide-others) |
+| `ranges` | `false` | `true` adds a `ranges` array: a start and an end distance for each row, so each row draws in a band of its own: [Distance bands](lod.md#distance-bands) |
 
 `count` is the batch's capacity, which never changes. All rows draw at first. A new batch computes every row in its first frame, so rows that you write before that frame need no mark.
 
@@ -66,12 +66,13 @@ export default defineSketch(({ scene, geometry, materials }) => {
 | `scales` | 3 | The scale on each axis | 1, 1, 1 |
 | `colors` | 4 | A linear color (r, g, b, a), with `colors: true` only | 1, 1, 1, 1 |
 | `values` | 4 | Four numbers of your own, with `values: true` only | 0, 0, 0, 0 |
+| `ranges` | 2 | A start and an end distance, with `ranges: true` only | 0 and infinity |
 
 Row `i` starts at index `i * 3` in an array of 3 floats per row, and at `i * 4` in an array of 4. Rows have no parent, so each position is in world space, relative to the batch's `origin`. Far from the world's origin, give the batch an origin near its rows, so their 32-bit positions stay small and precise.
 
 The arrays are `Float32Array` views of engine memory. The engine's memory can grow when the scene grows: new meshes, batches, materials and lights, and textures made or updated from data. In the single-threaded build, growth empties every older view, and a write to an empty view does nothing. So read the arrays from the batch each time you use them, such as at the start of `onUpdate`. Do not keep them from the setup. A read allocates nothing while the memory keeps its size.
 
-To turn rows, write quaternions. The engine scales a rotation whose length is more than about one per cent from unit length. A quaternion inside that band is used exactly as written, so a rounded rotation is not moved, but one that is wrong all the same can shear its row by up to about four per cent. Well outside the band, a mistyped quaternion is scaled and only turns its row. The [math helpers](../api/math.md) make them without allocating:
+To turn rows, write unit quaternions, whose length is 1. The engine uses a quaternion within about one per cent of unit length exactly as written, so a rounded rotation such as `[0, 0.38, 0, 0.92]` does not move. The engine does not correct an error inside that band: it can stretch or shear the row by up to about four per cent. The engine scales a quaternion further from unit length to unit length, so a mistyped one turns its row without stretching it. The [math helpers](../api/math.md) make unit quaternions without allocating:
 
 ```ts
 import { defineSketch, quat } from '@null3d/engine';
@@ -127,19 +128,14 @@ trees.rotations.set(q, 42 * 4);
 trees.markDirty(42, 1); // recompute and upload row 42 only
 ```
 
-A mark past the batch's capacity throws [E1108](../errors/E1108.md). Development builds check the rule. Before each batch update, they note the marked rows, and compare up to 4,096 drawn rows a frame, over all static batches, with the values they read before. The next frame takes the next rows, so the check finds a write within a few frames, and costs a bounded time per frame. A row that changed without a mark raises [E1110](../errors/E1110.md), which names the row. Sprite and point batches get the same check. Release builds leave it out. A dynamic batch needs no marks, because it recomputes every row in use in every frame. [Static and dynamic objects](static-dynamic.md) compares what each kind uploads.
+A mark past the batch's capacity throws [E1108](../errors/E1108.md). Development builds also find rows that changed without a mark and raise [E1110](../errors/E1110.md), which names the row. Sprite and point batches get the same check, and release builds leave it out. A dynamic batch needs no marks, because it recomputes every row in use in every frame. [Static and dynamic objects](static-dynamic.md) compares what each kind uploads.
 
-## Rows that arrive in chunks
+<details>
+<summary>Technical details: how the unmarked-write check works</summary>
 
-An add-on can hand the engine rows that arrive in pieces. A cloud of Gaussian splats is one such
-add-on. Call `batch.createChunkRows()` to make a writer. The writer stores a chunk's arrays in the
-engine's memory once, at load. Call `writer.reserve(count)` with the number of chunks. Then call
-`writer.write(slot, chunk)` for each chunk as it arrives. In each frame that the chosen rows
-change, call `writer.pack(counts)` with one chosen count for each slot. The writer writes the first
-`counts[slot]` rows of each chunk into the batch, in slot order, and sets the batch's active count.
-The pack runs in the engine's core, so the sketch copies no rows and runs no loop over them. The
-batch must own its rows' transforms: a part of a model, or a sprite or line batch, takes no chunked
-rows. The writer's code loads on first use. `writer.destroy()` frees its chunks.
+Before each batch update the check notes the marked rows. It then compares up to 4,096 drawn rows a frame, over all static batches, with the values it read before. The next frame takes the next rows, so a write is found within a few frames at a bounded cost per frame.
+
+</details>
 
 ## Pools: draw only the rows in use
 
@@ -177,11 +173,30 @@ Keep each row's own data, such as a velocity, in your own typed arrays in the sa
 
 ## Culling
 
-Each row has its own bounding sphere. The sphere's center is the row's position, and its radius is the mesh's radius times the row's largest scale. `setBoundingRadius(r)` gives one batch's rows a radius of their own. Use it for a vertex shader that moves rows far from their origins, as traffic along a lane does. Without it, the engine culls rows that are still on the screen. A call builds the engine's draw tables again, so make it at setup. The engine culls row by row in each view, and skips the rows outside the view. On WebGPU a compute pass on the GPU culls. On a device that draws directly, the job workers cull on the CPU there too. The rows of a batch whose material blends are the exception. On both paths, the job workers cull them one by one and sort them back to front. On WebGL2 the job workers cull. They test a static batch at rest in groups of 64 nearby rows, each group inside one grid cell. A group that is partly in view draws whole, and the GPU clips the rows outside. In a scene over several grid cells, both paths skip the rows of static batches in the cells out of view ([Culling](culling.md)). On WebGL2, a frame where you mark a static batch's rows tests the batch row by row, with no cell skipped. So does the frame after it.
+Each row has its own bounding sphere: its center is the row's position, and its radius is the mesh's radius times the row's largest scale. A vertex shader that moves rows far from their origins, as traffic along a lane does, needs `setBoundingRadius(r)`. Without it, the engine culls rows that are still on the screen. The call rebuilds the engine's draw tables, so make it at setup. [Culling](culling.md#how-each-path-culls) explains how each GPU path culls.
+
+<details>
+<summary>Technical details: how rows are culled</summary>
+
+- Each view culls row by row.
+- On WebGPU a compute pass culls, and on direct-draw devices the job workers cull.
+- The rows of a blended material are culled one by one on the job workers, on both paths, and sorted back to front.
+- On WebGL2 a static batch at rest is tested in groups of 64 nearby rows inside one grid cell. A group that is partly in view draws whole, and the GPU clips the rows outside.
+- Both paths skip the rows of static batches in grid cells out of view.
+- On WebGL2, a frame that marks a static batch, and the frame after it, test that batch row by row with no cell skipped.
+
+</details>
 
 ## Automatic batching
 
-The engine groups what it draws by mesh and material. Objects from `scene.createMesh` and batch rows that share a mesh and a material draw together. They share instanced or indirect draws. So 500 crates from `createMesh` with one mesh and one material draw as cheaply as a batch of 500 rows. Some groups split. On WebGPU, an object with bounds of its own from `setBounds` draws apart from the others. Objects that are never culled draw apart from the culled ones, in a group of their own for each mesh and material. Objects and rows that receive shadows draw with other pipelines than those that do not, so they draw apart from them. On WebGL2, the rows of a dynamic batch and of a static batch at rest draw apart from objects with the same mesh and material. Blended objects and rows draw in the transparent pass, sorted back to front.
+The engine groups what it draws by mesh and material. Objects from `scene.createMesh` and batch rows that share a mesh and a material draw together. They share instanced or indirect draws. So 500 crates from `createMesh` with one mesh and one material draw as cheaply as a batch of 500 rows. Some groups split:
+
+- On WebGPU, an object with bounds of its own from `setBounds` draws apart from the others.
+- Objects that are never culled draw apart from the culled ones, in a group of their own for each mesh and material.
+- Objects and rows that receive shadows draw with other pipelines than those that do not, so they draw apart from them.
+- On WebGL2, the rows of a dynamic batch and of a static batch at rest draw apart from objects with the same mesh and material.
+
+Blended objects and rows draw in the transparent pass, sorted back to front.
 
 The difference is the sketch's own work on the CPU:
 
@@ -191,7 +206,21 @@ The difference is the sketch's own work on the CPU:
 | Hierarchy | Parents and children | None: each row is in world space |
 | Identity | A name and a handle each | A row number |
 
-Some calls change the scene's structure: creating or destroying a batch or an object of any kind, lights included, and `setMaterial`, `setMesh`, `setParent`, `setDynamic`, `setBounds`, `setFrustumCulled`, `setCastShadows` and `setReceiveShadows`, on an object or a batch. So do `texture.destroy()`, and `texture.update()` with an image of another size. So does turning shadows on or off, and in development builds a new [debug view](../api/debug.md). The next frame then rebuilds the engine's draw tables, which costs more than a normal frame. These calls rebuild even when the value does not change, apart from a batch's `setCastShadows` and `setReceiveShadows`. Transform setters, row writes, `setVisible`, `setLayers`, `setActiveCount` and `setRenderOrder` never rebuild the tables. Neither do the other setters of lights and cameras, or `material.set`. So create batches in the setup, and pool rows during play instead of creating batches.
+Some calls change the scene's structure. The next frame then rebuilds the engine's draw tables, which costs more than a normal frame. These calls rebuild:
+
+- creating or destroying a batch or an object of any kind, lights included
+- `setMaterial`, `setMesh`, `setParent`, `setDynamic`, `setBounds`, `setFrustumCulled`, `setCastShadows` and `setReceiveShadows`, on an object or a batch
+- `texture.destroy()`, and `texture.update()` with an image of another size
+- turning shadows on or off
+- in development builds, a new [debug view](../api/debug.md)
+
+They rebuild even when the value does not change, apart from a batch's `setCastShadows` and `setReceiveShadows`. These never rebuild the tables:
+
+- transform setters and row writes
+- `setVisible`, `setLayers`, `setActiveCount` and `setRenderOrder`
+- the other setters of lights and cameras, and `material.set`
+
+So create batches in the setup, and pool rows during play instead of creating batches.
 
 ## Limits
 
@@ -201,7 +230,7 @@ Some calls change the scene's structure: creating or destroying a batch or an ob
 - Each row takes about 210 bytes of engine memory, or about 300 with colors or values. When the engine cannot get more memory, `createInstances` throws [E1109](../errors/E1109.md). Rows with colors or values also take 32 bytes each of GPU memory.
 - On WebGL2 the limit follows the largest texture the device allows. A device whose textures reach only 2,048 pixels, the least that WebGL2 allows, draws 1,048,576. That leaves 1,047,552 rows for batches beside a scene of up to 1,023 objects. [GPU tiers and backends](backends.md#the-portable-budget) gives the numbers.
 - Development builds warn once in the console when a scene passes the number that every device of its GPU path draws. On WebGPU that is 2,097,152, the most that devices with WebGPU's default limits draw. On WebGL2 it is 1,048,576. The engine picks the GPU path for each device, so test a scene past 1,048,576 on both paths.
-- A row costs the mesh's vertices in every pass that draws it. Many rows of a detailed mesh therefore cost more than their pixels suggest. A hull of 72 vertices drawn 30,000 times is 2,165,760 vertex shader runs for one pass, and a depth prepass draws the rows again: the reflections and ambient occlusion turn one on. Share each vertex between the faces that meet at it where the shading allows a smooth surface: the same mesh with 24 vertices does a third of that work.
+- A row costs the mesh's vertices in every pass that draws it. Many rows of a detailed mesh therefore cost more than their pixels suggest. A hull of 72 vertices drawn 30,000 times is 2,160,000 vertex shader runs for one pass. A depth prepass draws the rows again, because the reflections and ambient occlusion turn one on. Share each vertex between the faces that meet at it where the shading allows a smooth surface. The same mesh with 24 vertices does a third of that work.
 
 ## Per-row colors
 
@@ -273,11 +302,23 @@ Rows with colors or values draw with shader builds of their own, which a page do
 
 A custom material also reads each row's place in its batch as `input.instance`, from 0, in its `vertexOffset` and `surface` functions. It needs no `values` array: a hue, a phase or a size that follows from the row's place costs the sketch nothing. Every row reads its batch's id as `object.id`, which is `batch.shaderId` in the sketch. [Built-in shader inputs](../shaders/builtins.md#object) describes both.
 
+## Rows that arrive in chunks
+
+An add-on can give the engine rows that arrive in pieces, such as the chunks of a Gaussian splat cloud. A chunk row writer stores each chunk in the engine's memory once. In each frame it then packs the rows that you choose into the batch, in the engine's core. So the sketch copies no rows and runs no loop over them.
+
+1. `const writer = await batch.createChunkRows()` makes the writer. Its code loads on first use.
+2. `writer.reserve(count)` makes room for `count` chunks. Call it again when the cloud gets more chunks.
+3. `writer.write(slot, chunk)` stores one chunk when it arrives. Do not call it in a frame.
+4. `writer.pack(counts)`, in each frame where the chosen rows change, takes one count for each slot. It writes the first `counts[slot]` rows of each chunk into the batch, in slot order, sets the batch's active count and returns that count.
+5. `writer.destroy()` frees the chunks.
+
+The batch must own its rows' transforms. A part of a model, or a sprite or line batch, takes no chunked rows.
+
 ## Related pages
 
 - [Static and dynamic objects](static-dynamic.md): what each kind recomputes and uploads.
 - [Handles and objects](handles.md): separate objects, and per-object data in your own arrays.
-- [Scene](../api/scene.md): `createInstances` and the reference of instance batches.
+- [Scene](../api/scene.md): `createInstances`. [The API reference of instance batches](../api/reference/scene.md#instancebatch) lists every member of `InstanceBatch` and every option of `createInstances`.
 - [Math helpers](../api/math.md): vectors, quaternions and colors for rows.
 - [Sprites](../api/sprites.md): batches of quads that face the camera, with the same rows, marks and limits.
 - [Points](../api/points.md): batches of squares of one size that face the camera, made of sprite rows.

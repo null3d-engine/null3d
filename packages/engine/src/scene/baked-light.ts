@@ -53,7 +53,7 @@ export interface BakedLightMap {
 	 * little-endian half floats. Rows run along v from the first texel at u = 0, v = 0.
 	 */
 	readonly radiance: Uint8Array;
-	/** Three signed bytes per texel, each axis divided by 127, or undefined without one. */
+	/** Three signed bytes per texel, each axis times 127, or undefined without one. */
 	readonly direction: Int8Array | undefined;
 }
 
@@ -74,7 +74,7 @@ export interface LightMapData {
 	/** The radiance, as a texture that a material takes as `lightMap`. */
 	readonly texture: Texture;
 	/**
-	 * Three signed bytes per texel, from -127 to 127, each axis a direction divided by 127. It runs
+	 * Three signed bytes per texel, from -127 to 127: each axis of the direction times 127. It runs
 	 * from the same first texel as the radiance, and it is undefined for a light map without a
 	 * direction.
 	 */

@@ -1,14 +1,12 @@
 ---
 id: api/geometry
 title: Geometry
-status: experimental
-since: "0.1"
 summary: "Generators of common shapes; extra shapes in @null3d/geometry; meshes from arrays; morph targets; vertices that change; levels of detail that meshes plan on the job workers; vertex formats; large meshes."
 ---
 
 # Geometry
 
-> Roadmap step 0.1, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. No call skins a mesh that you build, so its joints and weights do not move its vertices.
+> No call skins a mesh that you build, so its joints and weights do not move its vertices.
 
 ```mermaid
 flowchart LR
@@ -109,7 +107,7 @@ scene.createMesh({ mesh: quad, material: materials.unlit({ color: '#ffffff' }) }
 | `tangents` | 4: the direction in which u grows, then 1 or -1 for the direction of v |
 | `joints` | 4 joint indices, for skinned meshes |
 | `weights` | 4: how much each joint moves the vertex, which add up to 1 |
-| `targets` | 4: the position that the vertex takes at a coarser level of detail, and that level's error, which a generated shape's material reads |
+| `targets` | 4 numbers that a custom material's vertex offset reads, such as the position that the vertex takes at the next coarser level and that level's error |
 
 The arrays follow these rules:
 
@@ -117,6 +115,7 @@ The arrays follow these rules:
 - `indices` takes a `Uint16Array`, a `Uint32Array` or an array of numbers, with three indices per triangle. Without indices, each three vertices in a row make one triangle.
 - `joints` and `weights` come together. A mesh keeps them for [skinning](animation.md#skinned-meshes). A mesh that you build draws in the pose that its positions give.
 - `targets` takes floats only, and a mesh takes it or `morphTargets`, never both: the two share one vertex record.
+- `targets` is for a shape whose material moves its vertices between levels of detail, as the [terrain](terrain.md#how-it-works) does. The material's vertex offset reads the four numbers as `input.vertexRecord` ([Vertex offsets](../shaders/surface-functions.md#vertex-offsets)). Leave it out unless your vertex offset reads it.
 - A triangle's front face has its vertices in counter-clockwise order.
 - Each array's length must fit the vertex count, and its type must be one that its attribute takes. Each index must name a vertex, and each value must be a finite number. Otherwise the call throws [E1206](../errors/E1206.md).
 - The engine copies the arrays. You can change or drop them after the call.
@@ -158,7 +157,9 @@ Integer positions keep their own units. Give the object the scale and the positi
 
 ## Morph targets
 
-A morph target is another shape of a mesh, such as a smile on a face. The `morphTargets` option gives a mesh its targets, as glTF stores them. Each target is an array of three numbers per vertex: how far the target moves the vertex at weight 1. The list `positions` moves the vertices, `normals` turns their normals, and `tangents` turns their tangents. The list `colors` changes the mesh's vertex colors, with as many numbers per vertex as `colors` has, three or four. Every list holds the same number of targets, from 1 to 256. The list `names` names the targets.
+A morph target is another shape of a mesh, such as a smile on a face. The `morphTargets` option gives a mesh its targets, as glTF stores them. Each target is an array of three numbers per vertex: how far the target moves the vertex at weight 1. The list `positions` moves the vertices, `normals` turns their normals, and `tangents` turns their tangents.
+
+The list `colors` changes the mesh's vertex colors, with as many numbers per vertex as `colors` has, three or four. Every list holds the same number of targets, from 1 to 256. The list `names` names the targets.
 
 ```ts
 const count = positions.length / 3;
@@ -175,7 +176,18 @@ const head = scene.createMesh({ mesh: face, material });
 head.setMorphWeight('Smile', 0.8);
 ```
 
-Each object of the mesh has weights of its own, which start at 0. `setMorphWeight` sets them, and clips from glTF files animate them ([Morph targets](animation.md#morph-targets)). The [morph targets demo](https://github.com/null3d-engine/null3d/tree/main/examples/morph-flowers) makes tulips with one target, which opens the petals, turns their normals and changes their color. Each tulip has a weight of its own. The engine stores, for each vertex, only the targets that move it. So a face whose targets each move a small part of it takes far less memory than a copy of every vertex for every target. A vertex can take up to 255 targets. The targets of every mesh together can take up to 4,194,304 deltas, 32 MiB of GPU memory. Each of a vertex's positions, normals, tangents and colors counts once. Past those limits, `fromArrays` throws E1206. The GPU keeps each delta in a 16-bit float, which is exact to 1/2048 of the delta's size, and each weight in a 32-bit float. A morphed color stays between 0 and 1, as the glTF specification asks.
+Each object of the mesh has weights of its own, which start at 0. `setMorphWeight` sets them, and clips from glTF files animate them ([Morph targets](animation.md#morph-targets)). The [morph targets demo](https://github.com/null3d-engine/null3d/tree/main/examples/morph-flowers) makes tulips with one target, which opens the petals, turns their normals and changes their color. Each tulip has a weight of its own.
+
+The targets of a mesh have size limits. Past them, `fromArrays` throws [E1206](../errors/E1206.md).
+
+<details>
+<summary>Technical details: how morph targets are stored</summary>
+
+The engine stores, for each vertex, only the targets that move it. So a face whose targets each move a small part of it takes far less memory than a copy of every vertex for every target. A vertex can take up to 255 targets.
+
+The targets of every mesh together can take up to 4,194,304 deltas, 32 MiB of GPU memory. Each of a vertex's positions, normals, tangents and colors counts once. The GPU keeps each delta in a 16-bit float, which is exact to 1/2048 of the delta's size, and each weight in a 32-bit float. A morphed color stays between 0 and 1, as the glTF specification asks.
+
+</details>
 
 ## Vertices that change
 
@@ -201,11 +213,13 @@ The call follows these rules:
 - `start` and `count` pick the vertices that change. By default every vertex changes. The next frame uploads only the bytes of those vertices.
 - Values that do not fit the mesh throw [E1206](../errors/E1206.md), and so does a mesh with joints or morph targets.
 - The first call takes away the levels of detail that the mesh planned, which measured the old shape, and the mesh plans no levels on its own again. Give a mesh whose vertices change in every frame `levels: false`, so it plans none.
-- The call allocates nothing, so a call in every frame makes no garbage. `bun run bench:allocation --calls` checks it.
+- The call allocates nothing, so a call in every frame makes no garbage. The engine's allocation benchmark checks it in every frame.
 
 Change the normals with the positions when the shape changes, because the engine does not compute them again. The [vertex updates demo](https://github.com/null3d-engine/null3d/tree/main/examples/vertex-updates) moves rings over a pool of water this way.
 
-The mesh keeps the bounding sphere of the vertices that it was made with. Culling tests that sphere. When the new vertices reach outside it, give each object that draws the mesh bounds that hold every shape, with [`setBounds`](objects.md#mesh-calls). Raycasts and overlap queries always test the new vertices. The first query after an update builds the mesh's tree again. So a scene that updates a large mesh and raycasts in each frame pays for a build in each frame. Shadows of point and spot lights draw again when a mesh that casts them changes.
+The mesh keeps the bounding sphere of the vertices that it was made with. Culling tests that sphere. When the new vertices reach outside it, give each object that draws the mesh bounds that hold every shape, with [`setBounds`](objects.md#mesh-calls). Raycasts and overlap queries always test the new vertices.
+
+The first query after an update builds the mesh's tree again. So a scene that updates a large mesh and raycasts in each frame pays for a build in each frame. Shadows of point and spot lights draw again when a mesh that casts them changes.
 
 The first update of a mesh rebuilds the draw tables once, as `setMesh` does, so make it at setup or behind a loading screen. Later updates cost only the copy and the upload. On WebGL2, a mesh whose positions changed no longer hides the objects behind it from software occlusion culling. For many objects that move as wholes, use [instance batches](../concepts/instances.md) instead: they move each object with one matrix, not each vertex.
 
@@ -225,7 +239,9 @@ Meshes of one vertex format share GPU buffers, so the engine draws them with few
 
 ## Levels of detail
 
-A mesh made in code plans its own levels of detail the first time the scene draws it, when it holds 4,096 triangles or more, or when its copies hold 65,536 triangles together and it holds at least 256, as a batch of pebbles does. Meshes from `geometry.fromArrays` and from the generators both plan. The plan runs on the job workers, never in a frame. It uses the planner of the asset tool's `--lod`, with the same simplifier, so a mesh made in code gets the levels that the same mesh in a file gets. The mesh draws its full shape until the levels arrive, a few frames later. Then every object and instance batch that draws it picks its level:
+A mesh made in code plans its own levels of detail the first time the scene draws it, when it holds 4,096 triangles or more, or when its copies hold 65,536 triangles together and it holds at least 256, as a batch of pebbles does. Meshes from `geometry.fromArrays` and from the generators both plan. The plan runs on the job workers, never in a frame.
+
+It uses the planner of the asset tool's `--lod`, with the same simplifier, so a mesh made in code gets the levels that the same mesh in a file gets. The mesh draws its full shape until the levels arrive, a few frames later. Then every object and instance batch that draws it picks its level:
 
 ```ts
 // 32,768 triangles: the first draw plans about six levels, down to a few hundred triangles.
@@ -235,9 +251,33 @@ scene.createInstances(ground, 400, { material: grass });
 const levels = await ground.buildLevels();
 ```
 
-Each level about halves the triangles of the level above and keeps the largest distance between its surface and the mesh's as its error. So it switches in at once, with no fade, while that distance covers less than the `lodThreshold` setting's pixels. The governor can raise that threshold past about one and a half pixels, where the switch shows, and the level then fades. A preset's own threshold never makes it fade. The levels name the mesh's own vertices: a level costs its indices alone, and the mesh keeps its vertices and triangles in their order. A mesh of more than 65,535 vertices, which the engine splits into parts, shares its vertices part by part. Only the few triangles that cross from one part to another copy their vertices. A plan of 130,000 triangles takes about half a second of one job worker, and a plan of a million about six seconds; the frames go on meanwhile. A large mesh spreads its work over frames, so no frame waits for it. The engine reads one part of the mesh in each frame for the plan. It makes one level in each frame when the plan is done. It gives the scene the whole set once, so its draw tables rebuild once. The planner, about 23 KB after Brotli, downloads with the first mesh that plans.
+Each level about halves the triangles of the level above and keeps the largest distance between its surface and the mesh's as its error. So it switches in at once, with no fade, while that distance covers less than the `lodThreshold` setting's pixels. The governor can raise that threshold past about one and a half pixels, where the switch shows, and the level then fades. A preset's own threshold never makes it fade.
 
-The plan also sorts the mesh and each level of 32,768 triangles or more into 8 to 16 pieces, and each copy skips the pieces that lie outside the view or face away from the camera ([Pieces of a large level](../concepts/lod.md#pieces-of-a-large-level)). A mesh that one object draws gets pieces of its own too, over a sorted copy of its indices that arrives in the frame after the last level, so the mesh keeps its triangles in their order. Copies of a large mesh draw their full mesh only near the camera, so only their levels get pieces. A list that faces mostly one way, such as a ground, splits by space. A smaller list of 1,024 triangles or more that many copies draw gets facing pieces where its triangles face a few ways. A building's walls are such a list: they get one piece for each way, and one for the rest. A mesh whose levels are set by hand plans such pieces of its own list too. They draw only once the scene's copies of the mesh hold 65,536 triangles together.
+A level costs only its indices. The plan runs on the job workers, and the frames go on meanwhile.
+
+<details>
+<summary>Technical details: how the planner works</summary>
+
+The levels name the mesh's own vertices: the mesh keeps its vertices and triangles in their order, and a level costs its indices alone. A mesh of more than 65,535 vertices, which the engine splits into parts, shares its vertices part by part. Only the few triangles that cross from one part to another copy their vertices.
+
+A plan of 130,000 triangles takes about half a second of one job worker, and a plan of a million about six seconds. A large mesh spreads its work over frames, so no frame waits for it.
+
+The engine reads one part of the mesh in each frame for the plan. It makes one level in each frame when the plan is done. It gives the scene the whole set once, so its draw tables rebuild once. The planner, about 23 KB after Brotli, downloads with the first mesh that plans.
+
+</details>
+
+The plan also sorts large levels into pieces, so each copy skips the pieces that lie outside the view or face away from the camera. [Pieces of a large level](../concepts/lod.md#pieces-of-a-large-level) gives the rules.
+
+<details>
+<summary>Technical details: how the planner builds and splits levels</summary>
+
+The plan sorts the mesh and each level of 32,768 triangles or more into 8 to 16 pieces. A mesh that one object draws gets pieces of its own too, over a sorted copy of its indices that arrives in the frame after the last level, so the mesh keeps its triangles in their order. Copies of a large mesh draw their full mesh only near the camera, so only their levels get pieces.
+
+A list that faces mostly one way, such as a ground, splits by space. A smaller list of 1,024 triangles or more that many copies draw gets facing pieces where its triangles face a few ways. A building's walls are such a list: they get one piece for each way, and one for the rest.
+
+A mesh whose levels are set by hand plans such pieces of its own list too. They draw only once the scene's copies of the mesh hold 65,536 triangles together.
+
+</details>
 
 The `levels` option of `fromArrays` and of every generator controls the plan:
 
@@ -274,9 +314,15 @@ rock.setLevels([
 ]);
 ```
 
-An `error` level draws while it covers fewer pixels than the `lodThreshold` quality setting. A `distance` level draws while the camera lies farther than that distance. A `coverage` level draws while the bounds cover less than that share of the render's height. A level given by a distance, by a coverage or by a hand-set error fades over a short band. A level with a measured error switches at once, and fades once the governor raises the threshold above about one and a half pixels. A glTF file marks a measured error with the screen coverage that the asset tool writes beside it. An error alone is hand-set, and it fades. `setLevels(levels, { fade: false })` switches every level at once while the threshold stays small.
+An `error` level draws while it covers fewer pixels than the `lodThreshold` quality setting. A `distance` level draws while the camera lies farther than that distance. A `coverage` level draws while the bounds cover less than that share of the render's height. A level given by a distance, by a coverage or by a hand-set error fades over a short band.
 
-Each level must have the mesh's vertex attributes, as it draws with the same pipelines. A level may name a `material` of its own, so a far level shades more cheaply. A level without one draws with the material of the level before it. The base level draws with the object's or the instance batch's material. An empty list takes the levels away, and destroying a level's mesh takes every level away. `mesh.levels` lists them as you gave them. A mesh whose bound covers fewer pixels than the threshold draws nothing: its last level holds no geometry. Wrong levels throw [E1221](../errors/E1221.md). [Levels of detail](../concepts/lod.md) explains the three measures, the hide distance, the fading bands and the shadows. It also explains how glTF files from the asset tool bring their levels.
+A level with a measured error switches at once, and fades once the governor raises the threshold above about one and a half pixels. A glTF file marks a measured error with the screen coverage that the asset tool writes beside it. An error alone is hand-set, and it fades. `setLevels(levels, { fade: false })` switches every level at once while the threshold stays small.
+
+Each level must have the mesh's vertex attributes, as it draws with the same pipelines. A level may name a `material` of its own, so a far level shades more cheaply. A level without one draws with the material of the level before it. The base level draws with the object's or the instance batch's material.
+
+An empty list takes the levels away, and destroying a level's mesh takes every level away. `mesh.levels` lists them as you gave them. A mesh whose bound covers fewer pixels than the threshold draws nothing: its last level holds no geometry. Wrong levels throw [E1221](../errors/E1221.md).
+
+[Levels of detail](../concepts/lod.md) explains the three measures, the hide distance, the fading bands and the shadows. It also explains how glTF files from the asset tool bring their levels.
 
 A far object that draws as a card follows its own rules. A card that lights unlike its mesh reads as
 another tree. [Impostors](impostors.md#make-a-card-read-as-its-mesh) says which mesh to bake, the
@@ -300,7 +346,14 @@ While an object or an instance batch still uses the mesh, `destroy` throws [E111
 
 ## Large meshes
 
-A mesh can have any number of vertices. The engine uses 16-bit indices. WebGL2 always reads the largest one, 65,535, as the end of a primitive, so one draw reaches 65,535 vertices. A mesh with more vertices splits into parts that draw one after another. Each part holds a copy of the vertices that it shares with the part before it. For the fewest draw calls, keep meshes under 65,535 vertices. A mesh that draws a cluster tree is the exception. Its patches draw in one draw across all its parts, as [cluster levels](../concepts/lod.md#cluster-levels) describes.
+A mesh can have any number of vertices. A mesh of more than 65,535 vertices splits into parts that draw one after another. For the fewest draw calls, keep meshes under 65,535 vertices. A mesh that draws a cluster tree is the exception. Its patches draw in one draw across all its parts, as [cluster levels](../concepts/lod.md#cluster-levels) describes.
+
+<details>
+<summary>Technical details: why large meshes split</summary>
+
+The engine uses 16-bit indices, and WebGL2 always reads the largest one, 65,535, as the end of a primitive, so one draw reaches 65,535 vertices. Each part holds a copy of the vertices that it shares with the part before it.
+
+</details>
 
 ## API reference
 

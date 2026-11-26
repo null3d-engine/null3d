@@ -1,14 +1,10 @@
 ---
 id: guides/content-pages
 title: 3D scenes on content pages
-status: experimental
-since: "0.1"
 summary: "Product and marketing pages: the fallback page, a load deadline, pausing off screen, scroll-driven cameras, second visits and crashes."
 ---
 
 # 3D scenes on content pages
-
-> Roadmap step 0.1, first released in null3D 0.1.0. The API is experimental, so it can still change between versions.
 
 On a product page or a marketing page, the visitor came for the page. The 3D scene supports it. So the page must work without the scene, show its content on time, and spend nothing on a scene that nobody can see.
 
@@ -85,6 +81,8 @@ try {
 
 For a game, the late state has no page content to show. There it changes the message, and opens the menus and settings that do not need the scene.
 
+Later page blocks run after a successful start, inside that `try`.
+
 ## Mark a decorative canvas
 
 A scene that only decorates gets `aria-hidden="true"`, so screen readers skip it. It takes no keyboard focus. Give it `pointer-events: none` when it does not react to the pointer, so clicks reach the page. [Accessibility](accessibility.md) covers a canvas the visitor operates.
@@ -157,6 +155,7 @@ export default defineSketch<{ scroll: number }>(({ data, page, preferences }) =>
   let target = data?.scroll ?? 0;
   let current = target;
   let placed = false;
+  let toldPage = false;
   page.onMessage((type, value) => {
     if (type !== 'scroll') return;
     target = value as number;
@@ -170,10 +169,27 @@ export default defineSketch<{ scroll: number }>(({ data, page, preferences }) =>
       current += (target - current) * k;
       if (Math.abs(target - current) < 0.0001) current = target;
       placeCamera(current);
+      if (!toldPage) {
+        toldPage = true;
+        page.post('placed');
+      }
     },
   };
 });
 ```
+
+The sketch posts `placed` once, after it first places the camera. The page then waits for both that message and the first frame:
+
+```ts
+// page.ts
+const placed = new Promise<void>((resolve) =>
+  engine.onSketchMessage((type) => { if (type === 'placed') resolve(); }),
+);
+await Promise.all([engine.firstFrame, placed]);
+root.classList.add('ready');
+```
+
+A page without scroll-driven cameras awaits only `engine.firstFrame`.
 
 A canvas behind the page's text often wants its subject beside the text, not under it. Shift the lens rather than turn the camera: `camera.setLensShift(-0.25, 0)` puts the camera's target three quarters of the way across, and upright lines stay upright. A section can change the shift as the scroll moves, in the same `onUpdate` ([Cameras](../api/cameras.md#lens-shift)).
 

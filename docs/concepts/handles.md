@@ -1,14 +1,10 @@
 ---
 id: concepts/handles
 title: Handles and objects
-status: experimental
-since: "0.1"
 summary: "30-bit handles; wrapper objects; stale-handle errors; keeping per-object data in your own arrays."
 ---
 
 # Handles and objects
-
-> Roadmap step 0.1, first released in null3D 0.1.0. The API is experimental, so it can still change between versions.
 
 ```mermaid
 flowchart LR
@@ -72,7 +68,18 @@ crate.setPosition(0, 0, 0); // development build: throws E1101
 
 In development builds, every call on an object apart from `describe` checks that the object still lives. A call on a destroyed object throws an `EngineError` with the code [E1101](../errors/E1101.md), which names the object and the frame it was destroyed in. Release builds leave this check out, so a transform setter costs only its memory writes.
 
-A call on a destroyed object never changes the object that takes its slot, in any build. When you destroy an object, its wrapper stops pointing at the slot. In a release build, its setters then write to a row that no object uses, and its light setters reach no light. A second `destroy()` frees nothing. The engine core checks the generation of each change that waits for the next frame. It logs E1101 for a change to a destroyed object. An instance batch's arrays throw E1101 in every build once the batch is gone. The world getters throw it in every build from the frame after the destroy, and at once in development builds. The call is still a bug in your sketch, so find it in a development build.
+A call on a destroyed object never changes the object that takes its slot, in any build. The call is still a bug in your sketch, so find it in a development build.
+
+<details>
+<summary>Technical details: what each build does with a destroyed object</summary>
+
+Slot 0 is never used, so handle 0 means no object. When you destroy an object, its wrapper's setters switch to row 0. Its handle gets a generation that no live object gets, so it never matches a later object in its slot. In a release build, its setters then write to that unused row, and its light setters reach no light. A second `destroy()` frees nothing.
+
+The engine core checks the generation of each change that waits for the next frame, and logs E1101 for a change to a destroyed object.
+
+</details>
+
+An instance batch's arrays throw [E1101](../errors/E1101.md) in every build once the batch is gone. The world getters throw it in every build from the frame after the destroy, and at once in development builds.
 
 ## Keep per-object data in your own arrays
 

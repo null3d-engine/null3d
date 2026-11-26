@@ -12,7 +12,7 @@ import type { OctahedralAtlas } from './octahedral';
  * @category api/impostors
  */
 export interface LoadedImpostorAtlas {
-	/** The colour atlas, in sRGB, with no mipmaps. */
+	/** The color atlas, in sRGB, with no mipmaps. */
 	readonly color: Texture;
 	/** The surface atlas, linear, with no mipmaps. */
 	readonly surface: Texture;

@@ -63,7 +63,7 @@ test('reads a light map that a tool outside the engine baked', () => {
 	expect([file.width, file.height]).toEqual([2, 2]);
 	expect(file.encoding).toBe('rgb8');
 	expect(Array.from(file.radiance)).toEqual([255, 0, 0, 0, 255, 0, 0, 0, 255, 255, 255, 255]);
-	// The direction is three signed bytes per texel: each axis divided by 127.
+	// The direction is three signed bytes per texel: each axis times 127.
 	expect(Array.from(file.direction ?? [])).toEqual([0, 127, 0, 127, 0, 0, 0, 0, 127, -127, 0, 0]);
 });
 

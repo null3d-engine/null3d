@@ -5,7 +5,7 @@
 // a chain of butterfly passes, and this module gives the tests and a page's own queries the field
 // the GPU should draw.
 
-/** The metres a second squared that gravity adds to a falling object. */
+/** The meters a second squared that gravity adds to a falling object. */
 export const GRAVITY = 9.81;
 /** The texels of a band's tile across each way, which the butterfly passes run on. */
 export const GRID = 128;
@@ -20,7 +20,7 @@ export const PASSES = STAGES * 2;
  * @category api/water
  */
 export interface OceanBand {
-	/** The metres that one tile covers each way. */
+	/** The meters that one tile covers each way. */
 	readonly tile: number;
 	/** The significant wave height of the band, in meters: about four times its own spread. */
 	readonly height: number;
@@ -61,7 +61,7 @@ export function signedIndex(texel: number, n: number): number {
 	return texel < n / 2 ? texel : texel - n;
 }
 
-/** The wave number that a texel holds on each axis, in radians a metre. */
+/** The wave number that a texel holds on each axis, in radians a meter. */
 function waveNumber(texel: number, n: number, tile: number): number {
 	return (2 * Math.PI * signedIndex(texel, n)) / tile;
 }
@@ -69,7 +69,7 @@ function waveNumber(texel: number, n: number, tile: number): number {
 /**
  * The waves of `band` as four numbers a texel: the real and imaginary parts of the spectrum, then
  * two channels that hold zero, in rows from the tile's near edge. The field is scaled so that its
- * time-averaged height has a spread of one metre, which the ocean then scales to the band's height.
+ * time-averaged height has a spread of one meter, which the ocean then scales to the band's height.
  */
 export function spectrum(band: OceanBand, n: number = GRID): Float32Array {
 	const data = new Float32Array(n * n * 4);

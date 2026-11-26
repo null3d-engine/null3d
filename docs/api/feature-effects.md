@@ -1,25 +1,25 @@
 ---
 id: api/feature-effects
 title: Add-on feature effects
-status: experimental
-since: "0.3"
 summary: "post.addFeatureEffect turns a full-screen feature description into a pass of your WGSL over the scene's color, at the resolve point, on both GPU paths and in every thread mode, and draws it only while the feature is ready."
 ---
 
 # Add-on feature effects
 
-> Roadmap step 0.3, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. A full-screen effect records at the resolve point, in the main view alone.
+> A full-screen effect records at the resolve point, in the main view alone.
 
 ```mermaid
 flowchart LR
-    description["defineFeature<br/>frame 'resolve', kind 'fullscreen'"] --> call["post.addFeatureEffect"]
-    shader["Your WGSL"] --> call
-    uniforms["Your uniforms"] --> call
-    call --> chain["The chain of custom effects<br/>HDR color, before bloom"]
+    description["defineFeature<br/>frame 'resolve', kind 'fullscreen'"] --> create["post.addFeatureEffect"]
+    shader["Your WGSL"] --> create
+    uniforms["Your uniforms"] --> create
+    create --> chain["The chain of custom effects<br/>HDR color, before bloom"]
     chain --> gpu["WebGPU or WebGL2"]
 ```
 
-`post.addFeatureEffect` runs an add-on's pass over the whole image. The add-on gives the WGSL, its uniforms and its textures, as it would to [`post.addEffect`](post.md). The description says where the pass records. It says what the pass reads and writes, and whether it draws at all. The engine places it in the chain of custom effects. That chain runs on the scene's high dynamic range color, after the exposure and before bloom and the tone curve. The pass therefore reaches WebGPU and WebGL2, in every thread mode, with the same picture.
+`post.addFeatureEffect` runs an add-on's pass over the whole image. The add-on gives the WGSL, its uniforms and its textures, as it would to [`post.addEffect`](post.md). The description says where the pass records. It says what the pass reads and writes, and whether it draws at all.
+
+The engine places it in the chain of custom effects. That chain runs on the scene's high dynamic range color, after the exposure and before bloom and the tone curve. The pass therefore reaches WebGPU and WebGL2, in every thread mode, with the same picture.
 
 This is the adapter for a [feature description](features.md) with `kind: 'fullscreen'`. The description carries the place, the resources and the readiness; the shader and its values are the pass's own declaration, which this call takes.
 

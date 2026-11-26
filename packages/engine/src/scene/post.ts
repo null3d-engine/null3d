@@ -42,8 +42,9 @@ export type {
  * AgX, the curve of Blender and Filament. The `'agx-punchy'` curve is AgX with Filament's punchy
  * look, which adds contrast and color. The `'neutral'` curve is Khronos PBR Neutral, which keeps
  * base colors as they are until they near white. The `'aces'` curve is a fit of the ACES filmic
- * curve, which first scales the color by 1 / 0.6 and shifts the hues of bright colors. The value
- * `'none'` clips the exposed color at 1.
+ * curve, which first scales the color by 1 / 0.6 and shifts the hues of bright colors.
+ *
+ * The value `'none'` clips the exposed color at 1.
  *
  * @category api/post
  */

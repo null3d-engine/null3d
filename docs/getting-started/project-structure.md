@@ -1,14 +1,10 @@
 ---
 id: getting-started/project-structure
 title: Project structure
-status: experimental
-since: "0.3"
 summary: "Starting from the `empty`, `product` or `game` template with `bunx @null3d/cli create`; page.ts, sketch.ts, AGENTS.md and the agent hook; what runs where."
 ---
 
 # Project structure
-
-> Roadmap step 0.3, first released in null3D 0.1.0. The API is experimental, so it can still change between versions.
 
 ```mermaid
 flowchart LR
@@ -67,12 +63,28 @@ The folder must not exist, or it must be empty. A folder with files stays as it 
 
 ## The agent files
 
-`AGENTS.md` names the installed null3D version and the `null3d-develop` skill. The project does not hold a copy of the skill today. When the project has `.claude/skills/null3d-develop/SKILL.md`, an agent reads that file. Otherwise the agent reads the engine docs in `node_modules/@null3d/engine/docs/`, which match the installed version.
+`AGENTS.md` names the installed null3D version and the `null3d-develop` skill. The template holds no copy of the skill. [Working with AI agents](../guides/agents.md) shows how to install it: as a Claude Code plugin, with `bunx skills add`, or by a copy of its folder. When the project has `.claude/skills/null3d-develop/SKILL.md`, an agent reads that file. Otherwise the agent reads the engine docs in `node_modules/@null3d/engine/docs/`, which match the installed version.
 
 Claude Code runs the hook through `.claude/settings.json`, and Codex runs it through `.codex/hooks.json`. Both run the same file, `.agent/agent-hook.mjs`. Codex runs the hooks of a folder that you trust.
 
-The hook refuses three commands, so they do not run. They are a command that waits with `sleep`, one that stops a process by name, and one that follows a log. The message gives the fix.
+The hook is optional. To stop its checks, delete its entries in `.claude/settings.json` and `.codex/hooks.json`.
 
-The hook flags three source rules and lets the edit go on. It flags an object, array or string made in `onUpdate`. It flags a DOM name in the sketch module. It flags an import of a name that the installed engine does not export. The message names the file, the line and the fix.
+The hook refuses some commands so that they do not run. It flags some source rules and lets the edit go on.
 
-The hook takes every rule from `@null3d/cli/agent-rules`. That module holds each rule and its message once, so a project and any other null3D tool agree. The hook reads the module from the installed packages, and `bun install` writes them. Before that install, the hook cannot check a call. It tells the agent to install the packages, and the call goes on.
+| Rule | What the hook does | What the message gives |
+| --- | --- | --- |
+| A command that waits with `sleep` | Refuses the command | The fix |
+| A command that stops a process by name | Refuses the command | The fix |
+| A command that follows a log | Refuses the command | The fix |
+| An object, array or string made in `onUpdate` | Flags it; the edit goes on | The file, the line and the fix |
+| A DOM name in the sketch module | Flags it; the edit goes on | The file, the line and the fix |
+| An import of a name that the installed engine does not export | Flags it; the edit goes on | The file, the line and the fix |
+
+The hook reads its rules from the installed packages, which `bun install` writes. Before that install, the hook cannot check a call. It tells the agent to install the packages, and the call goes on.
+
+<details>
+<summary>Technical details: where the hook's rules come from</summary>
+
+The hook takes every rule from `@null3d/cli/agent-rules`. That module holds each rule and its message once, so a project and any other null3D tool agree.
+
+</details>

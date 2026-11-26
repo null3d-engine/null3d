@@ -212,9 +212,11 @@ const LEVEL_FRAME_POLL_MS = 2;
  * A lower level of detail of a mesh: a simpler mesh that draws in the base mesh's place. Give its
  * `error`, the `distance` at which it switches in, or the screen `coverage` under which it draws.
  * A level with a measured error, which the asset tool writes, changes the picture by under a pixel
- * at a small threshold and switches at once. When the governor raises the threshold above about
- * one and a half pixels, that switch shows, and such a level then fades too. A level given by a distance, by
- * a coverage or by a hand-set error fades over a short band, so its switch does not pop.
+ * at a small threshold and switches at once.
+ *
+ * When the governor raises the threshold above about one and a half pixels, that switch shows, and
+ * such a level then fades too. A level given by a distance, by a coverage or by a hand-set error
+ * fades over a short band, so its switch does not pop.
  *
  * @category api/geometry
  */
@@ -343,8 +345,10 @@ export interface BuildLevelsOptions {
  * The levels of detail that a mesh made in code plans on its own. By default it plans them the
  * first time the scene draws it, when it holds `geometry.automaticLevelTriangles` triangles or
  * more, or when it holds at least `geometry.automaticCopyTriangles` triangles and its copies hold `geometry.automaticDrawnTriangles` together; `false` plans none,
- * and `true` or options plan them when the mesh is made, at any size. `'pieces'` plans no lower
- * levels, and sorts a mesh of 32,768 triangles or more into pieces by space at its first draw, as
+ * and `true` or options plan them when the mesh is made, at any size.
+ *
+ * `'pieces'` plans no lower levels, and sorts a mesh of 32,768 triangles or more into pieces by
+ * space at its first draw, as
  * a merged far cell or a large ground whose levels come from elsewhere gains from.
  *
  * @category api/geometry
@@ -1811,8 +1815,10 @@ export interface MaterialOptions {
 /**
  * How a material uses its alpha: its opacity, times its base color map's alpha, and times its
  * mesh's vertex alpha with `vertexColors`. The `opaque` mode ignores the alpha. The `mask` mode
- * draws nothing where the alpha falls below `alphaCutoff`, and draws the rest opaque. The `hash`
- * mode draws each point of the surface opaque or not at all, by a pattern that stays on the mesh.
+ * draws nothing where the alpha falls below `alphaCutoff`, and draws the rest opaque.
+ *
+ * The `hash` mode draws each point of the surface opaque or not at all, by a pattern that stays on
+ * the mesh.
  * The alpha then sets how much of the surface draws. The `blend` mode blends the surface over what
  * lies behind it. Blended objects draw after the opaque ones, farthest first.
  *
@@ -2135,8 +2141,8 @@ export interface StandardMaps {
 	/**
 	 * The thickness of the volume under the surface, in green, in linear color. Its green
 	 * multiplies `thickness`. Only a material created with `transmission` takes it. It keeps a row
-	 * slot of its own and samples the specular color map's texture array at its own layer, so a
-	 * specular color map may draw beside it when the two textures share an array. A material with
+	 * slot of its own and samples the specular color map's texture array at its own layer, so it
+	 * takes no specular color map, whose sRGB texture never shares that array. A material with
 	 * layers keeps it unless a layer map fills that slot: the sheen's maps and an anisotropy map do.
 	 */
 	thicknessMap?: Texture;

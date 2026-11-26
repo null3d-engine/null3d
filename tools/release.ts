@@ -27,7 +27,6 @@ import {
 	notesProblems,
 	type ParsedCommit,
 	packageFolders,
-	pageStatuses,
 	prependChangelog,
 	RELEASE_TEXT_LIMIT,
 	type ReleaseType,
@@ -141,11 +140,7 @@ async function main(): Promise<void> {
 	}
 	const version = nextVersion(tag ?? '0.0.0', bump);
 
-	const problems = releaseProblems(
-		version,
-		pageStatuses(root),
-		readIfExists(root, 'README.md') ?? '',
-	);
+	const problems = releaseProblems(version, readIfExists(root, 'README.md') ?? '');
 	if (problems.length > 0)
 		fail(`${version} cannot be released yet:\n${problems.map((p) => `  ${p}`).join('\n')}`);
 

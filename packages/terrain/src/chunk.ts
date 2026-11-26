@@ -1,6 +1,6 @@
 // One block of the ground: a grid of vertices whose heights come from the height field, with a
 // skirt around its edge. The skirt hangs a little below the block, so the seam between two
-// neighbours that draw at different levels shows no gap. Positions are relative to the block's low
+// neighbors that draw at different levels shows no gap. Positions are relative to the block's low
 // corner, and the object that draws it stands there, so its bounds stay small and it culls well.
 //
 // Every block of one grid has the same vertices, texture coordinates and triangles, so those are

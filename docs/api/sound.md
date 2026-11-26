@@ -1,14 +1,10 @@
 ---
 id: api/sound
 title: "Sound (@null3d/sound)"
-status: experimental
-since: "0.3"
 summary: "createSound and connectSound: loops, groups and one-shots placed in the scene, played with the browser's audio and driven from the sketch on the audio thread."
 ---
 
 # Sound (@null3d/sound)
-
-> Roadmap step 0.3, first released in null3D 0.1.0. The API is experimental, so it can still change between versions.
 
 ```mermaid
 flowchart LR
@@ -21,7 +17,14 @@ flowchart LR
 
 `@null3d/sound` plays sound that follows the scene. A sketch makes its sounds and moves them as it moves its objects. The page plays them with the browser's audio, through the add-on's page half. A sound can come from a place, such as a waterfall or a car. It can also play in both ears alike, such as wind or rain.
 
-The browser offers its audio only on the page's main thread, and the sketch runs in a worker. The add-on bridges the two. The sketch writes each sound's place, level, playback rate and tone into a table that the page shares. A mixer on the browser's audio thread, compiled from Rust to WebAssembly, reads that table and drives every voice. Where the page shares its memory with its workers, no frame sends a message, and the page's thread does no work while the sounds play. Only a shot sends one, once for each play.
+The browser offers its audio only on the page's main thread, and the sketch runs in a worker. The add-on bridges the two.
+
+<details>
+<summary>Technical details: how the sketch reaches the audio thread</summary>
+
+The sketch writes each sound's place, level, playback rate and tone into a table that the page shares. A mixer on the browser's audio thread, compiled from Rust to WebAssembly, reads that table and drives every voice. Where the page shares its memory with its workers, no frame sends a message, and the page's thread does no work while sounds play. A shot sends one message for each play.
+
+</details>
 
 ```sh
 bun add @null3d/sound
@@ -74,7 +77,7 @@ Call `sound.update()` once a frame, in `onLateUpdate`. It reads the listener's p
 
 | Call | What it does |
 | --- | --- |
-| `createSound(ctx, options)` | Makes the sketch's sounds. `listener` is required: the camera, or another object that hears. `capacity` is the emitters that the sounds hold together, 256 by default and 4,096 at most. `volume` sets every sound's volume, from 0 to 1. A sketch has one sound system at a time: a second call while the first lives throws error 2504. |
+| `createSound(ctx, options)` | Makes the sketch's sounds. `listener` is required: the camera, or another object that hears. `capacity` is the emitters that the sounds hold together, 256 by default and 4,096 at most. `volume` sets every sound's volume, from 0 to 1. A sketch has one sound system at a time: a second call while the first lives throws E2504. |
 | `loop(options)` | A sound that plays its file over and over. `positional: false` makes a bed that plays in both ears. `level`, `rate`, `tone` and `position` give its first values. |
 | `group(options)` | `count` sounds that play one file, of which the loudest `voices` sound at once. Use it for the cars in a street or the bees of a swarm. |
 | `shot(options)` | A sound that plays its file once for each call of its `play`, such as thunder. `voices` plays that many at once, 2 by default. A play past that count fades the oldest out quickly. Each play starts about 20 ms after the call, at its own level, place and pitch, or about 80 ms after it when it replaces a play that still sounds. |
@@ -83,7 +86,9 @@ Call `sound.update()` once a frame, in `onLateUpdate`. It reads the listener's p
 | `destroy()` | Stops every sound and closes the link to the page. The page then waits for the sketch's next sound system. |
 | `connected` | True once the page's half has opened its link. |
 
-A loop has `setLevel`, `setRate`, `setTone`, `setPosition` and `destroy`. A group has the same setters with a member's index first, such as `setPosition(index, x, y, z)`. A group also has the arrays `positions`, `levels`, `rates` and `tones`, which are views of the table. A sketch that keeps its places in one array copies them in one call, as in `cars.positions.set(places)`. A shot has `play(x, y, z, level, rate)` and `destroy`. A destroyed sound's setters do nothing. Its arrays may then serve another sound, so a sketch drops them with the group.
+A loop has `setLevel`, `setRate`, `setTone`, `setPosition` and `destroy`. A group has the same setters with a member's index first, such as `setPosition(index, x, y, z)`. A group also has the arrays `positions`, `levels`, `rates` and `tones`, which are views of the table. A sketch that keeps its places in one array copies them in one call, as in `cars.positions.set(places)`.
+
+A shot has `play(x, y, z, level, rate)` and `destroy`. A destroyed sound's setters do nothing. Its arrays may then serve another sound, so a sketch drops them with the group.
 
 The setters write numbers into the table and make no object, so a sketch may call them in every frame. `update` makes no object either. A sound made before the page connects plays once it does, and a sketch may make sounds at any time.
 
@@ -112,13 +117,15 @@ A sound with neither distance keeps the level that the sketch gives it wherever 
 
 ## Groups and their voices
 
-A browser mixes a few dozen voices well, and a scene may have hundreds of sources of one kind. A group gives its members a few voices. The mixer ranks the members by their loudness where the listener stands, from their level and distance. It gives each voice to one of the loudest. A voice keeps its member while that member stays close to the cut. So a voice does not flap between two members at the same distance. A voice that moves to another member fades out first, so its sound never jumps across the scene. It takes the new member's pitch before it fades in.
+A browser mixes a few dozen voices well, and a scene may have hundreds of sources of one kind. A group gives its members a few voices. The mixer ranks the members by their loudness where the listener stands, from their level and distance. It gives each voice to one of the loudest.
+
+A voice keeps its member while that member stays close to the cut. So a voice does not flap between two members at the same distance. A voice that moves to another member fades out first, so its sound never jumps across the scene. It takes the new member's pitch before it fades in.
 
 A group's voices add as power: three at full level sound about 5 dB louder than one. Give a group's points lower levels than a loop's. Write a mass of like sources as one loop, whose level follows the density around the camera, not one source for each object.
 
 A group's voices play one file, each from a point of its own, so the copies never sound in step. Rates that differ for each member add no richness that the offsets do not already give. They also make the group's pitch change as the camera moves and the nearest members change. Keep the members at one rate, and use `setRate` for a source whose own speed differs, such as a car's engine.
 
-The page plays 32 voices at most. A loop takes one voice, a group takes its `voices`, and a shot takes its `voices`, wherever free voices sit. A sketch that asks for more than 32 at once gets error 2501, which names the count. While other voices are free, a destroyed sound's voices rest for a third of a second before another sound takes them. So their fade ends first.
+The page plays 32 voices at most. A loop takes one voice, a group takes its `voices`, and a shot takes its `voices`, wherever free voices sit. A sketch that asks for more than 32 at once gets E2501, which names the count. While other voices are free, a destroyed sound's voices rest for a third of a second before another sound takes them. So their fade ends first.
 
 ## The page's calls
 
@@ -149,7 +156,14 @@ A sound that comes from a place plays through the browser's panner. The High and
 
 ## Files
 
-A relative address resolves against the page's address, as the engine's loaders do ([Assets](assets.md)). So `'sounds/sea.mp3'` on `https://example.com/game/` loads `https://example.com/game/sounds/sea.mp3`. An address from `new URL('./sea.mp3', import.meta.url)` resolves against the sketch module instead. MP3 decodes in every browser. An MP3 encoder adds samples at each end of a file, and records how many in a header in the file's first frame. Some browsers keep them as they decode. Safari kept 576 at each end of a mono loop, which would dip at every join. The add-on reads the header and drops what the browser kept, so a loop joins with no gap. A file without that header loses only the silence at its ends, up to 2,048 samples. A file made to loop joins its end to its start, as the sample loops do.
+A relative address resolves against the page's address, as the engine's loaders do ([Assets](assets.md)). So `'sounds/sea.mp3'` on `https://example.com/game/` loads `https://example.com/game/sounds/sea.mp3`. An address from `new URL('./sea.mp3', import.meta.url)` resolves against the sketch module instead. A file made to loop joins its end to its start, as the sample loops do.
+
+<details>
+<summary>Technical details: what the add-on does with MP3 padding</summary>
+
+MP3 decodes in every browser. An MP3 encoder adds samples at each end of a file, and records how many in a header in the file's first frame. Some browsers keep them as they decode. Safari keeps 576 samples at each end of a mono MP3, which dips at every join of a loop. The add-on reads the header and drops what the browser kept, so a loop joins with no gap. A file without that header loses only the silence at its ends, up to 2,048 samples.
+
+</details>
 
 ## Browsers
 
@@ -165,5 +179,22 @@ A relative address resolves against the page's address, as the engine's loaders 
 - The table holds 12 numbers for the listener and 6 for each emitter: 6 KB at the default capacity.
 - The page plays 32 voices at once and the table holds 4,096 emitters at most.
 
-[The API reference](reference/sound.md) lists every export of this page with its type and
-description. The add-on's doc comments make it.
+## Errors
+
+| Code | Cause |
+| --- | --- |
+| E2500 | A missing listener or file; a count, voices, capacity, volume, near or far that is not a valid number; far not above near; or a call on a destroyed sound system. |
+| E2501 | More than 32 voices. |
+| E2502 | No room in the table: raise `capacity`. |
+| E2503 | A member index out of range. |
+| E2504 | A second sound system. |
+
+## Related pages
+
+- [Assets](assets.md): loading the sound files.
+- [Hosting and cross-origin isolation](../getting-started/hosting.md): the headers that the mixer needs.
+- [Quality API](quality.md): the presets that drop the HRTF panner.
+
+## API reference
+
+[The API reference](reference/sound.md) lists every export of this page with its type and description. The add-on's doc comments make it.

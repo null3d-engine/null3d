@@ -1,14 +1,10 @@
 ---
 id: porting/threejs-postprocessing
 title: Porting post-processing
-status: experimental
-since: "0.2"
 summary: "EffectComposer passes and pmndrs effects to post.set settings; ShaderPass to post.addEffect; three.js tone mappings to custom tone curves."
 ---
 
 # Porting post-processing
-
-> Roadmap step 0.2, first released in null3D 0.1.0. The API is experimental, so it can still change between versions.
 
 three.js builds post-processing from passes in an `EffectComposer`. null3D has the chain built in. A port turns most passes into settings of `post.set`, and each custom `ShaderPass` into a custom effect with `post.addEffect`.
 
@@ -64,7 +60,7 @@ post.set({ toneMapping: 'aces', exposure: 1.2, vignette: { size: 1, intensity: 1
 | `LUTPass` | `lut: await assets.loadLut(url)`, `lutIntensity` | Load the same `.cube` or `.3dl` file. A `Data3DTexture` that code fills becomes `await assets.lutFromData({ size, data })`, with floats from 0 to 1 in the same order. |
 | `ShaderPass(VignetteShader)` | `vignette: { size: offset, intensity: darkness }` under ACES; under AgX, `vignette: { size: offset, intensity: Math.min(darkness, 1), falloff: 3 }` | null3D darkens HDR color before the tone curve, so bright corners darken instead of turning gray. Under ACES the default falloff gives a close match. With a `darkness` below 1, three.js also lifts dark corners toward a gray, and null3D does not. |
 | `FXAAPass`, `ShaderPass(FXAAShader)` | `createEngine({ antialias: 'fxaa' })` on the page | FXAA runs in the final pass. |
-| `SMAAPass`, `SSAARenderPass`, `TAARenderPass` | MSAA, which the presets from Medium up use | null3D has no SMAA, SSAA or TAA. |
+| `SMAAPass`, `SSAARenderPass`, `TAARenderPass` | MSAA, which the presets from Medium up use | null3D has no SMAA over the whole image, no SSAA and no TAA of a moving view. A view that holds still blends jittered frames by itself, so TAARenderPass and SSAARenderPass on a still camera need no pass. Bloom, outlines, automatic exposure, custom effects and sharpening stop that blend ([Still-camera accumulation](../concepts/post-processing.md#still-camera-accumulation)). |
 | `SharpenNode`, the `sharpen()` node | `sharpen` | Both sharpen display color with FSR 1's RCAS in the final pass, so the port needs no render target and no pass of its own. three.js scales the sharpening by `2^-sharpness`, where 0 sharpens the most and 2 does nothing. Set `sharpen` to that factor, so three.js's default of 0.2 is `sharpen: 0.87`. null3D damps the sharpening where the ring around a pixel is noise, which three.js does only with `denoise: true`. |
 | `BokehPass` | `dof: { focusDistance: focus, aperture, maxBlur }` and `camera.setFocalLength(mm)` | `focus` becomes `focusDistance`. null3D's `aperture` is an f-number of a camera's lens, so pick one by eye, such as 2.8, with the camera's focal length. `maxblur` is a share of the canvas's width, and `maxBlur` of its height: multiply by the aspect ratio. null3D blurs the near and far fields apart, so sharp objects spread no halo. |
 | `FilmPass`, `GlitchPass`, `HalftonePass`, `DotScreenPass`, `RenderPixelatedPass` | A custom effect for each | Port each shader as a `ShaderPass`. |
@@ -122,7 +118,7 @@ The WGSL must be a template literal right after a `/* wgsl */` comment, or a `.w
 | A `sampler2D` uniform, such as a noise texture | `var noise: texture_2d<f32>;` and the effect's `textures` option, read with `textureSampleLevel(noise, noiseSampler, uv, 0.0)` |
 | A render target's `texture` from an earlier pass | A pass's texture from `textures.fromPass(pass)` in `textures`, read at `effectPassUv(uv)` |
 
-Uniforms are `f32`, `i32`, `u32`, `vec2f`, `vec3f` or `vec4f`, up to 32 floats in all. Each `vec3f` and `vec4f` starts a new group of four floats. A `vec3f` also takes a color string, which the engine converts from sRGB to linear. A uniform name that the WGSL does not declare fails the TypeScript check, and throws [E1216](../errors/E1216.md) when the sketch runs. [Porting shaders](threejs-shaders.md) maps the rest of GLSL to WGSL.
+Uniforms are `f32`, `i32`, `u32`, `vec2f`, `vec3f` or `vec4f`, in 32 floats less one for each texture in the `textures` option. Each `vec3f` and `vec4f` starts a new group of four floats. A `vec3f` also takes a color string, which the engine converts from sRGB to linear. A uniform name that the WGSL does not declare fails the TypeScript check, and throws [E1216](../errors/E1216.md) when the sketch runs. [Porting shaders](threejs-shaders.md) maps the rest of GLSL to WGSL.
 
 ### Example: RGBShiftShader
 

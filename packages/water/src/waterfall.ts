@@ -30,7 +30,7 @@ const SPEED = 1.2;
 const SPREAD = 0.3;
 /** The most spray and mist that `setSpray` gives, as a factor of the fall's own. */
 const MOST_SPRAY = 3;
-/** The glassy water's color at the lip: a grey green, as linear red, green and blue. */
+/** The glassy water's color at the lip: a gray green, as linear red, green and blue. */
 const GLASS = [0.05, 0.075, 0.068] as const;
 /** The meters below a cloud's top over which a fall that sinks into it vanishes, in its shader. */
 export const SINK_DEPTH = 2.5;
@@ -211,8 +211,10 @@ function room(rate: number, life: number): number {
 /**
  * Makes a waterfall that falls from a river's lip: a sheet of water that curves over the lip and
  * drops almost straight, glassy at the lip and white lower down, with spray at the lip, a cloud of
- * mist that it bursts into lower down and a plume of mist at its foot. Give it the lip, the way the water runs, the river's
- * half width, its surface height and its current there, and the drop. End the river's own surface
+ * mist that it bursts into lower down and a plume of mist at its foot.
+ *
+ * Give it the lip, the way the water runs, the river's half width, its surface height and its
+ * current there, and the drop. End the river's own surface
  * at the lip: the sheet starts a short way upstream, on the river's surface, and fades in over it.
  *
  * @category api/water

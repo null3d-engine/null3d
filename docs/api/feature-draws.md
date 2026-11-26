@@ -1,22 +1,20 @@
 ---
 id: api/feature-draws
 title: Add-on feature draws
-status: experimental
-since: "0.3"
 summary: "scene.addFeatureDraw turns a draw feature description into a draw of your WGSL, your vertices, your uniforms and the description's sort place, on both GPU paths and in every thread mode; scene.addFeatureInstances repeats that shape once for each row of a batch."
 ---
 
 # Add-on feature draws
 
-> Roadmap step 0.3, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. A draw records in the main view alone, and at the opaque, the transparent or the resolve point.
+> A draw records in the main view alone, and at the opaque, the transparent or the resolve point.
 
 ```mermaid
 flowchart LR
-    description["defineFeature<br/>frame 'transparent', kind 'draw'"] --> call["scene.addFeatureDraw"]
-    shader["Your WGSL"] --> call
-    vertices["Your vertices"] --> call
-    uniforms["Your uniforms"] --> call
-    call --> object["A scene object<br/>your shader, your vertex format"]
+    description["defineFeature<br/>frame 'transparent', kind 'draw'"] --> create["scene.addFeatureDraw"]
+    shader["Your WGSL"] --> create
+    vertices["Your vertices"] --> create
+    uniforms["Your uniforms"] --> create
+    create --> object["A scene object<br/>your shader, your vertex format"]
     object --> list["The frame's draw list"]
     list --> gpu["WebGPU or WebGL2"]
 ```
@@ -25,7 +23,7 @@ flowchart LR
 
 This is the adapter for a [feature description](features.md) with `kind: 'draw'`. The description carries the sorting and the resources; the shader, the vertex format and the uniforms are the draw's own declaration, which this call takes.
 
-## A point cloud
+## One soft point
 
 ```ts
 import { defineFeature, defineSketch } from '@null3d/engine';
@@ -38,8 +36,8 @@ struct Uniforms {
 
 fn surface(input: SurfaceInput) -> Surface {
   var s = defaultSurface(input);
-  const away = length(input.uv - vec2f(0.5)) * 2.0;
-  const cover = smoothstep(1.0, 1.0 - material.softness, away);
+  let away = length(input.uv - vec2f(0.5)) * 2.0;
+  let cover = smoothstep(1.0, 1.0 - material.softness, away);
   s.baseColor = vec3f(0.0);
   s.emissive = input.vertexColor.rgb * (material.gain * cover);
   s.alpha = cover;
@@ -71,6 +69,8 @@ export default defineSketch(async ({ scene }) => {
 });
 ```
 
+This draws one point. For a cloud, put one square per point in the vertex arrays, or draw many copies of this shape with `scene.addFeatureInstances`, as [Many copies of one shape](#many-copies-of-one-shape) shows.
+
 ## The description
 
 `addFeatureDraw` reads these fields of the description. The [feature description page](features.md) gives the others: `name`, `reads`, `writes`, `outputs`, `provides` and the callbacks.
@@ -101,7 +101,7 @@ Geometries are shared, so the engine allocates the draw's buffers once and draws
 
 The uniforms that the add-on declares in `struct Uniforms` are the draw's payload. `uniforms` gives their first values, and `draw.setUniform(name, value)` or `draw.set(values)` changes them at any time without allocating. A uniform reaches the WGSL as `material.<name>`, in a surface function or a full shader. [Surface functions](../shaders/surface-functions.md#uniforms) gives the types and the 32-number limit.
 
-The draw also takes the material's values, such as `color`, `alphaMode`, `blending`, `depthWrite`, `doubleSided` and `map`, with the same names and meanings as `materials.shader`. A texture that its WGSL declares comes from `textures`, as `materials.shader` takes it.
+The draw also takes the material's values, such as `color`, `alphaMode`, `blending`, `depthWrite`, `doubleSided`, `map` and `sceneInputs`, with the same names and meanings as `materials.shader`. A texture that its WGSL declares comes from `textures`, as `materials.shader` takes it. `sceneInputs: ['sceneDepth']` lets a blended draw read the opaque scene's depth behind it ([Materials](materials.md#the-scene-behind-a-surface)).
 
 ## Where it sorts
 
@@ -109,7 +109,8 @@ A draw's vertex data and material draw as one scene object. The engine culls it 
 
 - `'opaque'` draws with the pass's other opaque objects, in the engine's own order, which the depth test decides.
 - `'transparent'` draws with the blended objects, back to front. The description's band and order place it among them, as `mesh.setRenderOrder` does: `draw.setRenderOrder(order)` changes the place later.
-- `'resolve'` blends after the camera's other blended objects. While the scene has more than one sample per pixel (MSAA), the camera draws such surfaces back to front into a layer of one sample per pixel, tested against a one-sample copy of the opaque depth, and blends the layer over the scene. Thousands of overlapping blended cards, such as Gaussian splats, then cost one blend per pixel instead of one per sample. Use it for a draw of soft, heavily overlapping surfaces. A glass or a particle in front of such a draw shows behind it, and a mesh's anti-aliased edge in front of it can show a faint fringe. With one sample, other views and frames before the layer's shaders are ready, the draw blends in the transparent pass, back to front with the other blended objects.
+- `'resolve'` blends after the camera's other blended objects. While the scene has more than one sample per pixel (MSAA), the camera draws such surfaces back to front into a layer of one sample per pixel, tested against a one-sample copy of the opaque depth, and blends the layer over the scene. Thousands of overlapping blended cards, such as Gaussian splats, then cost one blend per pixel instead of one per sample.
+- Use it for a draw of soft, heavily overlapping surfaces. A glass or a particle in front of such a draw shows behind it, and a mesh's anti-aliased edge in front of it can show a faint fringe. With one sample, other views and frames before the layer's shaders are ready, the draw blends in the transparent pass, back to front with the other blended objects.
 
 The draw's scene object, `draw.object`, takes the other object calls, such as `setPosition`, `setRotation`, `setScale` and `setLayers`. Its `setCastShadows(true)` makes the draw cast the shadows of every light that casts them, and its `setReceiveShadows(true)` makes the draw receive them. The draw's own `setVisible` shows and hides it. The draw's own `destroy()` frees its object, its material and its vertices, where `draw.object.destroy()` frees the object alone.
 
@@ -147,8 +148,8 @@ values.set([...]); // four numbers of yours for each row, read as `object.values
 ## Limits
 
 - The adapter places the main view alone. A scene pass and a reflection pass do not draw a feature draw, and a description that names one throws E1223.
-- A draw has one shape and one material, repeated once for each row. A scene that draws a different shape for each copy, or whose copies the GPU chooses, needs another hook.
-- A compact buffer of many copies that a shader expands, as a large splat scene needs, is not this hook: [compute instances](feature-instances.md) draw a capacity of instances whose live count a compute pass writes.
+- A draw has one shape and one material, repeated once for each row. A scene that draws a different shape for each copy needs another hook.
+- An opaque set whose live count a compute pass writes on the GPU, such as grass that the GPU culls, needs [compute instances](feature-instances.md). Those draw at the opaque point only, so a blended set such as splats stays with this hook.
 - The feature description's `reads`, `writes`, `outputs` and `provides` stay with the [feature registry](features.md): this draw reads and writes no scene resource and provides no lighting slot.
 
 ## Errors

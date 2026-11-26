@@ -1,14 +1,10 @@
 ---
 id: porting/threejs-overview
 title: Porting from three.js
-status: experimental
-since: "0.3"
 summary: "A port is a rewrite; the limits a port meets; the porting workflow; what gets faster; what needs rewriting."
 ---
 
 # Porting from three.js
-
-> Roadmap step 0.3, first released in null3D 0.1.0. The API is experimental, so it can still change between versions.
 
 ```mermaid
 flowchart LR
@@ -109,7 +105,7 @@ These parts have no automatic route. Plan time for them before you start.
 ## What stays the same
 
 - **Color management.** three.js r152 and later, like null3D, read hex colors as sRGB and light in linear space.
-- **Light units.** null3D uses physical units, as three.js r155 and later do: candela for point and spot lights, and lux for the others.
+- **Light units.** null3D uses physical units, as three.js r155 and later do: candela for point and spot lights, nits for rectangle and tube lights, and lux for directional and ambient lights.
 - **Material options.** `materials.standard` keeps most of the names, ranges and formulas of `MeshStandardMaterial` and `MeshPhysicalMaterial`, such as the clear coat and the sheen.
 - **Camera controls.** The controls in `@null3d/controls` keep the option names and defaults of three.js's `OrbitControls`, `MapControls`, `FlyControls` and `FirstPersonControls`.
 - **Geometry generators.** `@null3d/geometry` returns the same vertices as three.js's extra geometry classes.

@@ -1,7 +1,7 @@
 // Each error code's fix: the text that ends every EngineError message, and the only part of the
-// error table that runtime code needs. The page imports this table and hands it to each worker it
-// starts, so the text downloads once, with the page. The rest of each code's docs text is in
-// codes.ts, which only the docs generator and the tests import. Codes group by area: 11xx objects
+// error table that runtime code needs. A thread loads the table when it first reports an error, so
+// the text does not weigh on a page's start. The rest of each code's docs text is in codes.ts,
+// which only the docs generator and the tests import. Codes group by area: 11xx objects
 // and handles, 12xx values, 13xx browsers and GPUs, 14xx setup and loading, 15xx rendering.
 
 export const ERROR_FIXES = {
@@ -21,7 +21,7 @@ export const ERROR_FIXES = {
 	E1108:
 		'Pass a value inside the range that the message gives. For an instance batch, keep counts and indices within the capacity you created it with, or create a larger batch.',
 	E1109:
-		'See how near the scene comes to its limit: engine.measure() gives the memory in use in memory.wasmBytes, which does not shrink, so a reading after the first frames is the peak, and engine.mode.memoryMaximumMiB gives the limit. Add ?direct=on to the address to read the draw path that needs the most. To use less, share meshes and create fewer of them, since every mesh passes through the first frame. Use fewer instance rows. Size each batch for the rows it uses, and give a batch colors only when it needs them. Split a mesh of millions of vertices into smaller meshes, or simplify it. Destroy the batches you no longer draw. A scene that needs more memory can ask for a larger maximum with the memory option of createEngine. When a new engine fails to start this way, destroy the engines you no longer use, or keep one engine and detach and attach it. A smaller maximum leaves room for more engines.',
+		'Measure how near the scene comes to its limit with `engine.measure()`. Compare its `memory.wasmBytes` with `engine.mode.memoryMaximumMiB`, and add `?direct=on` to read the path that needs the most. Use less: share meshes, draw fewer rows, size each batch for its rows, and destroy batches you no longer draw. A scene that still needs more can ask for a larger maximum with the `memory` option of `createEngine()`.',
 	E1110:
 		'Change a static object with setPosition(), setRotation(), setScale() or another setter: each one marks the object for the engine to update. Code that writes values straight into engine memory needs a dynamic object, which the engine updates in every frame. For a row of a static batch, call markDirty(start, count) on the batch after you write its arrays, or create the batch with dynamic: true. If your code writes no engine memory, this is an engine bug: report it with the message.',
 	E1111:
@@ -29,13 +29,13 @@ export const ERROR_FIXES = {
 	E1112:
 		'Give a still 2D texture, such as one that assets.loadTexture, textures.fromImageBitmap or textures.fromData makes. A texture that changes every frame needs a cookie of its own, copied in each frame.',
 	E1203:
-		'Check the value computed before this call. NaN often comes from dividing zero by zero, or from normalizing a zero-length vector.',
+		'Check the value computed before this call: NaN often comes from dividing zero by zero, or from normalizing a zero-length vector. Most calls check their numbers only in development builds, and a release build leaves the check out. The bad value then reaches the scene, and the frame draws wrong, or not at all, with no error. Scene queries such as raycasts check in every build.',
 	E1204:
 		"Pass a hex string such as '#4a8cff', a number such as 0x4a8cff, or three linear components from 0 to 1, such as [0.07, 0.26, 1].",
 	E1205:
 		"Use a KeyboardEvent.code name such as 'KeyW' or 'ArrowLeft', or a mouse button from 'Mouse0' to 'Mouse4'. Gamepad names start with 'Gamepad', such as 'GamepadA' or 'GamepadLeftStickUp'. Define an action with input.actions.define() before you use it, and give it a name that no key or button has. Objects take the pointer events 'click', 'pointerdown', 'pointerup', 'pointermove', 'pointerenter' and 'pointerleave'.",
 	E1206:
-		'Give positions and normals three numbers per vertex, uvs and uvs1 two, colors three or four, and tangents four. Give three indices per triangle, each below the vertex count. Without indices, use a vertex count that is a multiple of three. Pass normals or computeNormals: true, and pass uvs with computeTangents: true. Replace NaN and Infinity values. Give mesh.updateVertices() the values of every vertex in the array type the mesh was made with, for an attribute the mesh has, and a range within its vertices. A mesh with joints or morph targets takes no updates.',
+		'Give positions and normals three numbers per vertex, uvs and uvs1 two, colors three or four, and tangents four. Give three indices per triangle, each below the vertex count, or no indices and a vertex count that is a multiple of three. Pass normals or `computeNormals: true`, and pass uvs with `computeTangents: true`. Replace NaN and Infinity values.',
 	E1207:
 		'Pass a whole number whose bits name the layers: 1 << n is layer n. The operator | joins layers, so (1 << 0) | (1 << 3) is layers 0 and 3. Layers run from 0 to 31.',
 	E1208:
@@ -47,13 +47,13 @@ export const ERROR_FIXES = {
 	E1214:
 		"Give fixedRate the fixed steps per second, a number above 0 such as 60 or 120. Give maxFixedSteps a whole number of 1 or more, such as 8. Give downloads an array of the files that the setup loads, each a URL or an address string such as 'models/ship.glb'.",
 	E1215:
-		'Add the null3D Vite plugin to vite.config.ts. Write the WGSL in a template literal right after a /* wgsl */ comment, or import it from a .wgsl file. Declare fn surface(input: SurfaceInput) -> Surface, fn vertexOffset(input: VertexInput) -> vec3f or fn lobe(input: LobeInput) -> vec3f in it, with no @vertex or @fragment entry point. For a full shader, give the @vertex entry point an InstanceIn from null3d::mesh. For a draw that makes its own vertices, give it @builtin(vertex_index) and @builtin(instance_index) and no mesh attribute. Give post.addEffect() WGSL that declares fn effect(input: EffectInput) -> vec4f, post.set({ toneMapping }) WGSL that declares fn toneCurve(color: vec3f) -> vec3f, and scene.setSkyLayer() WGSL that declares fn skyLayer(input: SkyLayerInput) -> SkyLayer.',
+		'Add the null3D Vite plugin to `vite.config.ts`. Write the WGSL in a template literal right after a `/* wgsl */` comment, or import it from a `.wgsl` file. Give each call the WGSL that its kind declares: the table on this page lists each declaration.',
 	E1216:
-		'Use the names of the fields of struct Uniforms in the WGSL. Give an f32 a number, and an i32 or a u32 a whole number. Give a vec2f, vec3f or vec4f an array of 2, 3 or 4 numbers. A vec3f also takes a color. Rename a field that has the name of a standard value, such as color. Give a slot that the WGSL declares as a texture_2d<f32> a texture of one layer, and a slot that it declares as a texture_2d_array<f32> a texture of several layers, from textures.fromData with a depth or a KTX2 file of layers. Give post.setEffectUniform() an effect that post.addEffect() returned.',
+		'Use the names of the fields of `struct Uniforms` in the WGSL, and the names of its texture declarations. Give each value the type that its declaration takes. Rename a field that has the name of a standard value, such as `color`. Give `post.setEffectUniform()` an effect that `post.addEffect()` returned.',
 	E1217:
-		"Give alphaMode 'opaque', 'mask', 'hash' or 'blend', and blending 'normal', 'additive', 'multiply' or 'weighted'. three.js's transparent: true is alphaMode: 'blend', and its alphaTest is alphaMode: 'mask' with alphaCutoff. A custom material takes 'opaque', 'mask', 'hash' or 'blend', and no 'weighted' blending. It takes alphaToCoverage or the hash mode only where its WGSL sets or reads the surface's alpha, such as s.alpha = texel.a in fn surface. A draw that makes its own vertices blends, and its WGSL declares no texture. A material with transmission takes 'opaque', 'mask' or 'blend', not the 'weighted' blending, and a custom one needs WGSL that sets the surface's transmission. A layered material takes no lightMap or specular maps: give clearcoatMap with clearcoatRoughnessMap as one texture, and sheenColorMap with sheenRoughnessMap as one. Give diffuseTransmissionMap and diffuseTransmissionColorMap only with diffuseTransmission, and no specular maps beside them. Give transmissionMap and thicknessMap only with transmission. Each samples a specular slot's texture array at a layer of its own, so a specular map may draw beside them when the two textures share an array, and a thicknessMap refuses a specularColorMap, whose sRGB texture never shares its array. A layered material keeps them beside the layer map of the light map's slot, but not beside a layer map of the array that one of them samples: transmissionMap samples the specular intensity slot's array, and thicknessMap the specular color slot's. Give diffuseTransmission without a clear coat, a sheen or the 'weighted' blending. A material's layer maps come from one family: the coat's and the sheen's, or iridescence's and the anisotropy's, since they take the same slots. Give an anisotropy map, and another map that gives the surface's texture coordinates. A custom material with diffuseTransmission needs WGSL that sets the surface's diffuseTransmission. Give subsurfaceRadius to materials.standard: a custom material draws no subsurface blur. Give a custom material that declares a coverage function alphaMode 'mask', or 'blend' with the alphaCutoff that its caster tests.",
+		"Give alphaMode 'opaque', 'mask', 'hash' or 'blend', and blending 'normal', 'additive', 'multiply' or 'weighted'. three.js's transparent: true is alphaMode: 'blend', and its alphaTest is alphaMode: 'mask' with alphaCutoff. For a conflict between two options, follow the message, or read the rule for each kind of material on the E1217 docs page.",
 	E1218:
-		"Use the names in animator.clips, and the joint names of the model's skeleton. Give layers whole numbers from 0 to 3, weights from 0 to 1, and fades of 0 or more seconds. Call animator() only on an object that a glTF file with animations created. Name your clip events anything but 'loop' and 'finished', which the animator reports itself. Give setMorphWeight a target number below its geometry's morphTargets, or a name in its morphTargetNames. Trim a clip that holds keys hours apart, or split a long clip into shorter ones.",
+		"Use the names in `animator.clips`, and the joint names of the model's skeleton. Call `animator()` only on an object that a glTF file with animations created, and name clip events anything but `loop` and `finished`. Give `setMorphWeight` a target number below its geometry's `morphTargets`, or a name in its `morphTargetNames`. Trim or split a clip that holds keys hours apart, and keep layers, weights and fades inside the range that the message gives.",
 	E1219:
 		"Give each label an id of its own, such as 'hp-12', and pass the same id to engine.labels.bind on the page. Give transform one of 'screen', 'world' or 'billboard', and a rotation only to a billboard label. Untrack labels that you no longer show with ui.untrackLabel. To track more labels at once, raise createEngine's maxLabels option, or maxLabels3d for labels that are planes of the scene.",
 	E1220:
@@ -63,7 +63,7 @@ export const ERROR_FIXES = {
 	E1222:
 		"Make the grid's texture with LightProbeGridData.toTexture(), which a 3D texture alone holds, or with textures.fromVolumeData(). An image texture, or one made with textures.fromData() and a depth, is a texture array, which the probe grid cannot bind.",
 	E1223:
-		"Give each feature and output a name of its own. Give a frame point and a kind that go together, such as 'opaque' with 'draw' or 'post' with 'fullscreen'. Keep an order inside its band. Name resources, lighting slots and views from the lists. Give every output a neutral default: 'black', 'white' or 'transparent', and 'black' or 'transparent' for a compute pass. One feature provides each lighting slot. Give each setting's presets a value that its values take, and a governor only with a budget. Give the budget four times in ms above 0. A full-screen effect records at the resolve point, in the main view, reads 'sceneColor' and the depth only when its WGSL reads it with effectDepth, effectViewPosition or effectDistance, and writes 'sceneColor' alone. A sky layer's description records at the background point, as a draw, provides the sky, and draws in the main, scene-pass and reflection views.",
+		'Give each feature and output a name of its own. Give a frame point and a kind that go together, and keep the order inside its band. Name resources, lighting slots and views from the lists, and give every output a neutral default. One feature provides each lighting slot, and a setting takes the values that its range allows.',
 	E1224:
 		'Give scene.overrideMaterial a material that draws meshes, from materials.standard(), materials.unlit(), materials.shader() or materials.decal(), or null to draw each mesh with its own material.',
 	E1225:
@@ -81,7 +81,7 @@ export const ERROR_FIXES = {
 	E1306:
 		'Update Safari to version 18 or later. On iPhone and iPad, update iOS or iPadOS to 18 or later, which updates the engine of every browser there.',
 	E1307:
-		"The engine draws on without those objects. Read the message: it names the pipeline and quotes the driver. When it names a custom material, check that material's WGSL on the device. A shorter shader, with fewer texture reads, loops and calls, gives the driver less to compile. On a device with little memory, use less of it: a lower quality preset, smaller textures and fewer objects. Update the browser and the device's system software. If the message names an engine template, report it with the device.",
+		"Read the message: it names the pipeline and quotes the driver. If it names a custom material, shorten that material's WGSL, with fewer texture reads, loops and calls. On a device with little memory, use a lower quality preset, smaller textures and fewer objects. Update the browser and the device's system software, and report an engine template with the device.",
 	E1401:
 		'End the sketch module with export default defineSketch(...), and pass that module to createEngine.',
 	E1402:
@@ -91,7 +91,7 @@ export const ERROR_FIXES = {
 	E1404:
 		'This is an engine bug. Report it with the message and the browser, then destroy the engine and start it again.',
 	E1405:
-		"Read the message: it names the worker that did not start, and why. The sketch worker also reports an error that your sketch's setup function threw, with that error's message: fix the setup function. Otherwise, check that the page is served with the isolation headers and that the engine files load. Allow the workers in the worker-src of a Content-Security-Policy. For the engine's files on another origin, such as a CDN, the hosting page of the docs gives the headers and the policy. Report the error if it repeats.",
+		"Read the message: it names the worker that did not start, and why. The sketch worker also reports an error that your sketch's setup function threw: fix the setup function. Otherwise, check that the page is served with the isolation headers and that the engine files load. Allow the workers in the `worker-src` of a Content-Security-Policy, and report the error if it repeats.",
 	E1406:
 		"Check that the host serves every file that the build wrote, at the paths that the build gave them. The engine's .wasm files, the KTX2 transcoder's files, the glTF loader's files, the meshopt decoder and the level planner's simplifier are among them. If the page loads at other times, the network dropped: reload the page.",
 	E1407:
@@ -105,7 +105,7 @@ export const ERROR_FIXES = {
 	E1411:
 		"Check the file's address: a relative address resolves against the page's address, and new URL('./file.png', import.meta.url) resolves against the sketch module's. Check that the server sends the file, and handle the error where the file is optional.",
 	E1412:
-		'Give loadTexture and loadImageBitmap a PNG, JPEG or WebP file, or an AVIF file in browsers that decode AVIF. Give loadTexture KTX2 files of 2D ETC1S or UASTC data, as basisu writes them. Give loadJson valid JSON. Check that the server sends the file itself, not an error page. Save KTX2 textures no larger than textures.maxSize on each side.',
+		'Give `loadTexture` and `loadImageBitmap` a PNG, JPEG or WebP file, or an AVIF file in a browser that decodes AVIF. Give `loadTexture` KTX2 files of 2D ETC1S or UASTC data, as basisu writes them. Give `loadJson` valid JSON, and check that the server sends the file itself, not an error page. Save KTX2 textures no larger than `textures.maxSize` on each side.',
 	E1413:
 		"Serve the file from the same origin as the page, or have its server send Access-Control-Allow-Origin with the page's origin or *. On a page with Cross-Origin-Embedder-Policy: require-corp, the file needs that header too.",
 	E1414:
@@ -113,7 +113,7 @@ export const ERROR_FIXES = {
 	E1415:
 		"Stop the other engine with destroy() and wait for its promise before you start this one. To run both at once, leave out sketchThread: 'main' on one of them, so that its sketch runs in a worker.",
 	E1416:
-		'Check that the file is a glTF 2.0 model, as a .glb file or a .gltf file with its buffers and images beside it. Open it in the Khronos glTF Validator, which names the broken part, and export it again from your modelling tool. For a model whose skeleton is too large, export each character to a file of its own. A file that passes a limit on what it decodes to is broken, or holds more than a scene can use. Split it into several files, or simplify its meshes.',
+		'Check that the file is a glTF 2.0 model: a .glb file, or a .gltf file with its buffers and images beside it. For a broken file, open it in the Khronos glTF Validator and export it again. For a skeleton that is too large, export each character to its own file. For a file over a size limit, split it or simplify its meshes.',
 	E1417:
 		'Export the model again without the extension that the message names, or import the add-on that the message names and register its handler on assets. Call createInstances with a model that has meshes and no instancing of its own, or with one of its meshes and a material.',
 	E1418:
@@ -143,15 +143,15 @@ export const ERROR_FIXES = {
 	E1433:
 		"Install the release of the add-on that matches this engine's plugin interface, or run the project on an engine whose plugin interface the add-on declares. The engine's own add-ons need no range: run bunx @null3d/cli upgrade, then bun install, so that each one takes the engine's version.",
 	E1434:
-		"Read the fault that the message names in the baked light file. Write version 1 of the format, which docs/guides/baked-light-data.md describes: a JSON object with the marker null3d.baked-light, the version, the kind, and the base64 payloads that its kind needs. Make each payload's length match the counts or the size that the same file gives. Read the file to its end, since a file cut short has no complete JSON.",
+		"Read the fault that the message names in the baked light file. Write version 1 of the format, which https://github.com/null3d-engine/null3d/blob/generated/docs/guides/baked-light-data.md describes: a JSON object with the marker null3d.baked-light, the version, the kind, and the base64 payloads that its kind needs. Make each payload's length match the counts or the size that the same file gives. Read the file to its end, since a file cut short has no complete JSON.",
 	E1435:
 		"Record the session again with the engine that recorded it, or update the engine that reads the file. When the message names a sketch, open the page with that sketch: a replay runs the file's frames on the scene that recorded them. When it names a key or a fixed step rate, the recording came from a sketch that this engine cannot run as it ran. A replay starts at the file's first frame, so a file must come from a session that started at the page's first frame.",
 	E1436:
 		'Ask for the pick again: the engine started a new GPU device, which answers a new pick. A pick that waits when the device is lost is rejected rather than repeated, because the frame that recorded it drew on the lost device.',
 	E1437:
-		"Run the command again. A download that broke off, or that something changed on the way, fails the check. If the check fails again, a proxy or a mirror between this computer and Google's storage changes the file, so download without it. On a platform that has no Chrome for Testing build, set CI=1 to draw with Playwright's Chromium on the software GPU, or NULL3D_CHROME=installed to draw with the installed Google Chrome.",
+		"Run the command again: a download that broke off, or that something changed on the way, fails the check. If the check fails again, a proxy or a mirror between this computer and Google's storage changes the file, so download without it. A refused archive is a warning, and stops the command only when `NULL3D_CHROME=testing` asks for Chrome for Testing alone. A platform with no Chrome for Testing build draws with the installed Google Chrome, or with Playwright's Chromium when `CI=1` is set.",
 	E1501:
-		'Share meshes and materials between objects instead of creating them per object. Draw many copies of one mesh with an instance batch. Every row of a batch counts toward the culling limit, active or not, so size each batch for the rows it uses. For a large crowd of skinned characters on WebGPU, use models with fewer vertices or fewer copies. Each copy skins its own vertices, even when copies share a mesh. The crowd draws again once it fits.',
+		'Share meshes, materials and textures between objects instead of creating them per object. Draw many copies of one mesh with an instance batch, and size each batch for the rows it uses. For a large crowd of skinned characters on WebGPU, use models with fewer vertices or fewer copies. The crowd draws again once it fits.',
 	E1502:
 		"Name in reads only the textures that your other passes write, as their writes option spells them. Add the pass that writes a texture before a pass that reads it, and remove a pass that reads a texture before the pass that writes it. If the message names only the engine's own passes, report it with the message, the browser and the quality preset.",
 	E1503:

@@ -1,16 +1,12 @@
 ---
 id: guides/multiple-views
 title: Multiple views
-status: experimental
-since: "0.3"
 summary: "Split screens and picture in picture with scene.createView: a camera and a rectangle of the canvas, drawn after the camera's view in the same frame; per-view culling; the cost of each view."
 ---
 
 # Multiple views
 
-> Roadmap step 0.3, first released in null3D 0.1.0. The API is experimental, so it can still change between versions.
-
-A view draws the scene again from another camera, into a rectangle of the canvas, in the same frame as the camera's view. Use it for a split screen, a picture in picture, a rear-view mirror or a tactical inset. Two kinds of work are different:
+A view draws the scene again from another camera, into a rectangle of the canvas, in the same frame as the camera's view. Use it for a split screen, a picture in picture, a rear-view mirror or a tactical inset. A view is not a render pass:
 
 - A **view** draws into the canvas, so the user sees it in place. `scene.createView` makes one.
 - A **pass** draws into a texture, which a material shows in the world, as a minimap on a screen does. [render.addPass](custom-passes.md#render-to-a-texture) makes one.
@@ -99,19 +95,29 @@ A view's calls use the view's camera of the frame that last ran, with its lens a
 
 Each view culls the scene once more and draws it once more, at its rectangle's pixels. A picture in picture at a tenth of the canvas costs about a tenth of a scene draw. The camera's view always draws first, so a split screen of two halves costs the camera's draw and two view draws.
 
-The shadows cost nothing more: a view draws the sun's cascades and the point and spot lights' shadows that the camera's view made, as a scene pass does. The view draws the background, the environment's light, the material fog and the lights it sees. Its objects take no ambient occlusion or screen-space reflections, which shade the camera's view. The camera's volumetric fog and outline are added to the whole image after the views draw, so they also reach a view's rectangle.
+The shadows cost nothing more: a view reuses the sun's cascades and the point and spot lights' shadows that the camera's view made.
 
-A view has a depth target of the canvas's size, made once in a frame and shared with the other views when their turns do not overlap. The rectangle follows the render scale, as the camera's view does, so a lower scale lowers a view's cost with the rest of the image.
+The rectangle follows the render scale, as the camera's view does, so a lower scale lowers a view's cost with the rest of the image. No preset switches views off or lowers their count. On a phone, keep a picture in picture small: each view costs what its rectangle costs on the preset that the device runs, as [Quality presets](../concepts/quality-presets.md) describes.
 
-Both GPU paths draw views, in every thread mode. The scene culling runs on the GPU on WebGPU and on the job workers on WebGL2, as it does for the camera. On the 8-bit path a view writes display color into the camera's image, and the resolve pass or the final pass draws it to the canvas; the picture looks the same as on the HDR path, with no bloom, as the 8-bit path has none.
+## What a view draws and its limits
 
-No preset switches views off or lowers their count. On a phone, keep a picture in picture small: each view costs what its rectangle costs on the preset that the device runs, as [Quality presets](../concepts/quality-presets.md) describes.
+Views draw on both GPU paths, in every thread mode.
 
-## What a view leaves out
+- A view draws: the shadows of the camera's view, the background, the environment's light, the material fog and the lights it sees. The camera's volumetric fog and outline are added to the whole image after the views draw, so they also reach a view's rectangle.
+- A view leaves out: ambient occlusion and screen-space reflections, which shade only the camera's view, and any object whose material shows a render pass's texture.
 
-A view draws no object whose material shows a render pass's texture, since a pass cannot read a target that another pass draws into. Keep such objects in the camera's view, or show the pass's texture on a screen in the world instead.
+A pass cannot read a target that another pass draws into, so keep such objects in the camera's view, or show the pass's texture on a screen in the world instead.
 
 A scene and its passes share 32 views, the camera's included. Reflection probes take six while they capture. `scene.createView` throws E1501 when no view is free, and the same error names the limit when a frame draws too many.
+
+<details>
+<summary>Technical details: how views draw on each GPU path</summary>
+
+A view has a depth target of the canvas's size. The engine makes it once in a frame and shares it with the other views when their turns do not overlap. The scene culling runs on the GPU on WebGPU and on the job workers on WebGL2, as it does for the camera.
+
+On the 8-bit path a view writes display color into the camera's image. The resolve pass or the final pass draws it to the canvas. The picture looks the same as on the HDR path, with no bloom, as the 8-bit path has none.
+
+</details>
 
 ## Related pages
 

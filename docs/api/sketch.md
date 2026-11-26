@@ -1,14 +1,10 @@
 ---
 id: api/sketch
 title: "Sketch API: defineSketch and the context"
-status: experimental
-since: "0.1"
 summary: "The context object: the start data, scene, assets, materials, geometry, textures, input, time, engine, quality, post, render, page, ui, debug; the callbacks; the options, with the download list."
 ---
 
 # Sketch API: defineSketch and the context
-
-> Roadmap step 0.1, first released in null3D 0.1.0. The API is experimental, so it can still change between versions.
 
 In null3D, a 3D scene is called a sketch. A sketch module builds the scene and updates it every frame, and its default export is `defineSketch(setup)`. The engine loads the module, calls `setup` once with the sketch's context, and then calls the callbacks that `setup` returns.
 
@@ -42,11 +38,20 @@ export default defineSketch(({ scene, geometry, materials, input, page }) => {
 
 The page passes the module's address to `createEngine`, and the engine loads the module in the sketch worker. The sketch worker has no `document` and no `window`, so the page keeps the HTML and the two sides talk through [messages](page.md). On a page without cross-origin isolation, the engine runs the sketch on the page's own thread, with the same API ([Hosting and cross-origin isolation](../getting-started/hosting.md)).
 
-A module whose default export is not `defineSketch(...)` fails the start with [E1401](../errors/E1401.md). A module that does not load fails it with [E1410](../errors/E1410.md): the module did not download, or its code threw an error while it loaded. The engine imports a module that does not load once more, after a short wait, and the console notes the second import. So a short break in the network does not fail the start. Only a second failure gives E1410, with the first failure's reason.
+Code at the top of the module can run before the engine has started, so it must not call the engine ([E1403](../errors/E1403.md)).
 
-Code at the top of the module runs once, when the module loads, before the engine calls `setup`. The engine loads the module while it downloads its core, in the sketch worker or, in the single-threaded build, on the page. So the module's own imports and its top-level code take no time of their own on a slow network. Code at the top of the module can therefore run before the engine has started, and also when the start fails. Work there must not need the engine. Every call that makes scene data goes through the setup's context, and an engine call before the core starts fails with [E1403](../errors/E1403.md). Work that needs no engine, such as a large table that the first view reads, can run there and overlap the download.
+A module whose default export is not `defineSketch(...)` fails the start with [E1401](../errors/E1401.md). A module that does not load fails it with [E1410](../errors/E1410.md): the module did not download, or its code threw an error while it loaded. The engine imports a module that does not load once more, after a short wait, so a short break in the network does not fail the start.
 
-Hold mode, a replay and a recording load the module only after the engine has started and seeded the thread's random numbers. There, code at the top of the module draws the same numbers from `Math.random` on every run ([Testing](../guides/testing.md)).
+<details>
+<summary>Technical details: how the engine loads the module</summary>
+
+The console notes the second import. Only a second failure gives E1410, with the first failure's reason. Code at the top of the module runs once, when the module loads, before the engine calls `setup`. The engine loads the module while it downloads its core, in the sketch worker or, in the single-threaded build, on the page. So the module's own imports and its top-level code take no time of their own on a slow network. Code there can also run when the start fails.
+
+Work there must not need the engine. Every call that makes scene data goes through the setup's context. Work that needs no engine, such as a large table that the first view reads, can run there and overlap the download.
+
+In hold mode, a replay and a recording, the engine loads the module only after it has started and seeded the thread's random numbers. There, code at the top of the module draws the same numbers from `Math.random` on every run ([Testing](../guides/testing.md#hold-mode)).
+
+</details>
 
 ## The setup function
 
@@ -64,7 +69,7 @@ An error that `setup` throws ends the start: `createEngine` rejects with it. An 
 | --- | --- | --- |
 | `fixedRate` | 60 | Fixed steps per second of sketch time: how often `onFixedUpdate` runs |
 | `maxFixedSteps` | 8 | The most fixed steps that one frame runs, after a slow frame |
-| `lowestTier` | true | False keeps the governor's lowest quality tier out, for a scene that its own sketch thread limits |
+| `lowestTier` | true | `false` keeps the governor out of its [lowest quality tier](../concepts/quality-presets.md#the-lowest-quality-tier), which cuts the render scale, shadows and bloom. Set it when the sketch's own code, not the GPU, makes frames slow: the cuts cannot make that code faster. The page's `?tier=off` switch does the same. |
 | `downloads` | none | The files that the setup loads, which start to download as soon as the module has loaded ([The download list](#the-download-list)) |
 | `serialLoadWarning` | true | False turns off a development build's warning for a load that waited for another one ([Loads one after another](#loads-one-after-another)) |
 
@@ -107,9 +112,16 @@ An entry that is not a file's address, such as an empty string, fails the start 
 
 ### Loads one after another
 
-A development build watches the setup's loads. Sometimes a load starts its download only after another load's file has arrived, while no other file downloads. The console then shows one warning that names both files. The two files could have downloaded together, and the first frame waited for the gap. Start both loads before you await either, as `Promise.all` does above, or name both files in `downloads`. An environment that the engine makes with no file counts as an earlier load too. A load that starts only after `assets.builtinEnvironment` or `assets.skyEnvironment` has finished could have started beside it.
+A development build watches the setup's loads. Sometimes a load starts its download only after another load's file has arrived, while no other file downloads. The console then shows one warning that names both files. The two files could have downloaded together, and the first frame waited for the gap. Start both loads before you await either, as `Promise.all` does above, or name both files in `downloads`.
 
-When the second file's address comes from the first file, as a level file names its models, the order is needed. A JSON file that holds the second file's name passes without a warning. For other such cases, pass `serialLoadWarning: false`. The engine watches only the loads of a live setup, not a model's own files and not loads after the first frame. A production build has no warning.
+When the second file's address comes from the first file, as a level file names its models, the order is needed. A JSON file that holds the second file's name passes without a warning. For other such cases, pass `serialLoadWarning: false`.
+
+<details>
+<summary>Technical details: what the warning watches</summary>
+
+An environment that the engine makes with no file counts as an earlier load too. A load that starts only after `assets.builtinEnvironment` or `assets.skyEnvironment` has finished could have started beside it. The engine watches only the loads of a live setup, not a model's own files and not loads after the first frame. A production build has no warning.
+
+</details>
 
 ## The context
 
@@ -129,18 +141,29 @@ When the second file's address comes from the first file, as a level file names 
 | `engine` | The canvas's size, and what the device can do: [The engine field](#the-engine-field) |
 | `preferences` | What the user's system asks of every page, such as less motion: [Accessibility](../guides/accessibility.md) |
 | `page` | Messages to and from the page: [Messages between sketch and page](page.md) |
-| `ui` | HTML labels that follow scene objects: [UI overlays and labels](ui.md) |
+| `ui` | HTML labels that follow scene objects: [Labels that follow objects](ui.md) |
 | `debug` | Lines, boxes, spheres, axes, grids, frustums and lights, drawn for one frame in development builds: [Debug drawing and stats](debug.md) |
 
 ## The engine field
 
-`engine.viewport` holds the canvas's size in CSS pixels, as `width` and `height`. Its `pixelRatio` gives the device pixels per CSS pixel that the engine draws with. That is the display's ratio, capped by the `maxPixelRatio` setting of [`ctx.quality`](quality.md). It is lower on a canvas too large for the GPU's largest texture at that ratio. The engine reads the size at the start of each frame, so it stays the same throughout a frame. The object changes in place, so read its fields when you need them.
+`engine.viewport` holds the canvas's size in CSS pixels, as `width` and `height`. Its `pixelRatio` gives the device pixels per CSS pixel that the engine draws with. That is the display's ratio, capped by the `maxPixelRatio` setting of [`ctx.quality`](quality.md). It is lower on a canvas too large for the GPU's largest texture at that ratio.
+
+The engine reads the size at the start of each frame, so it stays the same throughout a frame. The object changes in place, so read its fields when you need them.
 
 `engine.capabilities` holds the values of `engine.capabilities` on the page: the GPU path, its optional features and limits, the depth mode, and the most objects the device draws. [Page API: createEngine](engine.md#what-the-engine-reports) describes them. Check a capability before you use an optional feature, and never check GPU or browser names.
 
-`engine.held` is true when the engine steps the sketch itself, as hold mode and a replay do. It is false when the sketch runs live. A sketch that returns before its scene is complete waits for it when this is true. A held frame or a replay then shows the finished scene. A live page starts the work without awaiting it, and the result appears as it lands.
+`engine.held` is true when the engine steps the sketch itself, as hold mode and a replay do. It is false when the sketch runs live. Unlike `time.held`, it is true for the whole session, the setup included, and in a replay too.
 
-`engine.firstFrame` is a promise that resolves once the GPU has finished the engine's first frame, as `engine.firstFrame` does on the page. Start the downloads that the first frame does not need when it resolves. They then leave the network to the first frame's own files, such as its shaders. A frame number is no such signal: the thread that draws can still be drawing the first frame while the sketch runs the second. Never await the promise in the setup, because the first frame waits for the setup. In hold mode and a replay, the promise resolves once the engine has stepped the sketch to its last frame. No frame follows that one, so the work that it starts never changes what those modes show. The promise never resolves when the engine stops first.
+A sketch that returns before its scene is complete waits for it when this is true. A held frame or a replay then shows the finished scene. A live page starts the work without awaiting it, and the result appears as it lands.
+
+`engine.firstFrame` is a promise that resolves once the GPU has finished the engine's first frame, as `engine.firstFrame` does on the page. Start the downloads that the first frame does not need when it resolves; they then leave the network to the first frame's own files, such as its shaders. Never await the promise in the setup, because the first frame waits for the setup.
+
+<details>
+<summary>Technical details: firstFrame in hold mode and replays</summary>
+
+A frame number is no such signal: the thread that draws can still be drawing the first frame while the sketch runs the second. In hold mode and a replay, the promise resolves once the engine has stepped the sketch to its last frame. No frame follows that one, so the work that it starts never changes what those modes show. The promise never resolves when the engine stops first.
+
+</details>
 
 ```ts
 export default defineSketch(({ scene, engine }) => {
@@ -183,9 +206,9 @@ Each frame runs the callbacks in this order, and each callback is optional:
 
 Setters take effect at once. Changes that `onFixedUpdate` and `onUpdate` make show in the frame that the engine draws next. Creating, destroying and reparenting objects take effect when the engine processes the frame, after `onUpdate` returns ([Scene](scene.md#when-changes-take-effect)).
 
-In `onLateUpdate`, world positions already hold the frame's changes, so `getWorldPosition` gives the place where the frame draws an object. Setters that `onLateUpdate` calls also show in the same frame. Before it culls and draws, the engine updates the objects that they move and the objects below them. A camera that follows an object there does not lag a frame behind it. Structural changes that `onLateUpdate` makes, such as creating an object, take effect in the next frame.
+In `onLateUpdate`, world positions already hold the frame's changes, so `getWorldPosition` gives the place where the frame draws an object. Setters that `onLateUpdate` calls also show in the same frame. Before it culls and draws, the engine updates the objects that they move and the objects below them. A camera that follows an object there does not lag a frame behind it.
 
-The engine runs this second update only for a sketch with `onLateUpdate`, and then only for the objects that it moved and the objects below them.
+The engine runs this second update only for a sketch with `onLateUpdate`, and then only for the objects that it moved and the objects below them. Structural changes that `onLateUpdate` makes, such as creating an object, take effect in the next frame.
 
 ## Example: a camera that follows a moving object
 

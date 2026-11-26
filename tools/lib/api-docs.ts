@@ -12,6 +12,8 @@ export interface ApiPackage {
 	entry: string;
 	/** Its source folder. A public declaration may name a type from here only when it is exported. */
 	source: string;
+	/** The specifier that a page imports it by. */
+	import: string;
 }
 
 /**
@@ -20,24 +22,74 @@ export interface ApiPackage {
  * settings, so a type that two packages name is one symbol.
  */
 export const API_PACKAGES: readonly ApiPackage[] = [
-	{ entry: 'packages/engine/src/index.ts', source: 'packages/engine/src' },
-	{ entry: 'packages/engine/src/stats.ts', source: 'packages/engine/src' },
-	{ entry: 'packages/engine/src/math/index.ts', source: 'packages/engine/src' },
-	{ entry: 'packages/controls/src/index.ts', source: 'packages/controls/src' },
-	{ entry: 'packages/particles/src/index.ts', source: 'packages/particles/src' },
-	{ entry: 'packages/splats/src/index.ts', source: 'packages/splats/src' },
-	{ entry: 'packages/impostors/src/index.ts', source: 'packages/impostors/src' },
-	{ entry: 'packages/terrain/src/index.ts', source: 'packages/terrain/src' },
-	{ entry: 'packages/geometry/src/index.ts', source: 'packages/geometry/src' },
-	{ entry: 'packages/grass/src/index.ts', source: 'packages/grass/src' },
-	{ entry: 'packages/grass/src/hash.ts', source: 'packages/grass/src' },
-	{ entry: 'packages/three-compat/src/index.ts', source: 'packages/three-compat/src' },
-	{ entry: 'packages/water/src/index.ts', source: 'packages/water/src' },
-	{ entry: 'packages/wind/src/index.ts', source: 'packages/wind/src' },
-	{ entry: 'packages/sound/src/index.ts', source: 'packages/sound/src' },
-	{ entry: 'packages/sound/src/page.ts', source: 'packages/sound/src' },
+	{
+		entry: 'packages/engine/src/index.ts',
+		source: 'packages/engine/src',
+		import: '@null3d/engine',
+	},
+	{
+		entry: 'packages/engine/src/stats.ts',
+		source: 'packages/engine/src',
+		import: '@null3d/engine/stats',
+	},
+	{
+		entry: 'packages/engine/src/math/index.ts',
+		source: 'packages/engine/src',
+		import: '@null3d/engine/math',
+	},
+	{
+		entry: 'packages/controls/src/index.ts',
+		source: 'packages/controls/src',
+		import: '@null3d/controls',
+	},
+	{
+		entry: 'packages/particles/src/index.ts',
+		source: 'packages/particles/src',
+		import: '@null3d/particles',
+	},
+	{
+		entry: 'packages/splats/src/index.ts',
+		source: 'packages/splats/src',
+		import: '@null3d/splats',
+	},
+	{
+		entry: 'packages/impostors/src/index.ts',
+		source: 'packages/impostors/src',
+		import: '@null3d/impostors',
+	},
+	{
+		entry: 'packages/terrain/src/index.ts',
+		source: 'packages/terrain/src',
+		import: '@null3d/terrain',
+	},
+	{
+		entry: 'packages/geometry/src/index.ts',
+		source: 'packages/geometry/src',
+		import: '@null3d/geometry',
+	},
+	{ entry: 'packages/grass/src/index.ts', source: 'packages/grass/src', import: '@null3d/grass' },
+	{ entry: 'packages/grass/src/hash.ts', source: 'packages/grass/src', import: '@null3d/grass' },
+	{
+		entry: 'packages/three-compat/src/index.ts',
+		source: 'packages/three-compat/src',
+		import: '@null3d/three-compat',
+	},
+	{ entry: 'packages/water/src/index.ts', source: 'packages/water/src', import: '@null3d/water' },
+	{ entry: 'packages/wind/src/index.ts', source: 'packages/wind/src', import: '@null3d/wind' },
+	{ entry: 'packages/sound/src/index.ts', source: 'packages/sound/src', import: '@null3d/sound' },
+	{
+		entry: 'packages/sound/src/page.ts',
+		source: 'packages/sound/src',
+		import: '@null3d/sound/page',
+	},
 ];
 const API_TSCONFIG = 'packages/engine/tsconfig.json';
+
+/** One `@param` tag of a function or method. */
+export interface ApiParam {
+	name: string;
+	text: string;
+}
 
 /** One member of a class or interface in the reference. */
 export interface ApiMember {
@@ -45,6 +97,10 @@ export interface ApiMember {
 	/** The member as the source declares it, such as `setPosition(x: number): void`. */
 	signature: string;
 	summary: string;
+	/** Its parameter docs, from their `@param` tags. */
+	params?: ApiParam[];
+	/** Its `@returns` text. */
+	returns?: string;
 }
 
 /** One public export in the reference. */
@@ -58,8 +114,14 @@ export interface ApiSymbol {
 	summary: string;
 	/** The classes or interfaces it extends, whose members it also has. */
 	extends: string[];
+	/** The specifier that the page imports it by, such as `@null3d/engine`. */
+	import?: string;
 	/** Its own public members, for classes and interfaces, and its functions, for a namespace. */
 	members: ApiMember[];
+	/** The parameter docs of a function export. */
+	params?: ApiParam[];
+	/** The `@returns` text of a function export. */
+	returns?: string;
 }
 
 const FORMAT =
@@ -72,6 +134,61 @@ const printer = ts.createPrinter({ removeComments: true });
 
 /** Text with its lines joined, so it fits a table cell. */
 const flat = (text: string) => text.replace(/\s*\n\s*/g, ' ').trim();
+
+/**
+ * A comment's text as Markdown: paragraphs stay apart, and lists, headings and fenced code keep
+ * their lines. Lines of one prose paragraph join with a space.
+ */
+function blockText(text: string): string {
+	const out: string[] = [];
+	let fence = false;
+	for (const raw of text.replace(/\r\n/g, '\n').split('\n')) {
+		if (/^\s*```/.test(raw)) {
+			fence = !fence;
+			out.push(raw.trim());
+			continue;
+		}
+		if (fence) {
+			out.push(raw.replace(/\s+$/, ''));
+			continue;
+		}
+		const line = raw.trim();
+		if (!line) {
+			if (out.length > 0 && out[out.length - 1] !== '') out.push('');
+			continue;
+		}
+		const block = /^([-*+]|\d+\.)\s/.test(line) || /^#{1,6}\s/.test(line);
+		const previous = out.at(-1);
+		const previousBlock =
+			previous === undefined ||
+			previous === '' ||
+			/^([-*+]|\d+\.)\s/.test(previous) ||
+			/^#{1,6}\s/.test(previous) ||
+			previous.endsWith('```');
+		if (block || previousBlock) out.push(line);
+		else out[out.length - 1] = `${previous} ${line}`;
+	}
+	return out.join('\n').trim();
+}
+
+/** The `@param` and `@returns` text of a function, a method or a namespace helper. */
+function docTags(
+	symbol: ts.Symbol,
+	checker: ts.TypeChecker,
+): { params: ApiParam[]; returns: string } {
+	const params: ApiParam[] = [];
+	let returns = '';
+	for (const found of symbol.getJsDocTags(checker)) {
+		const text = ts.displayPartsToString(found.text ?? []).trim();
+		if (found.name === 'param') {
+			const match = /^(\S+)\s*([\s\S]*)$/.exec(text);
+			if (match) params.push({ name: match[1] as string, text: match[2] ?? '' });
+		} else if (found.name === 'returns') {
+			returns = text;
+		}
+	}
+	return { params, returns };
+}
 
 /** Marks the tuple and object types under a node to print on one line, as the source has them. */
 function singleLine(node: ts.Node): void {
@@ -116,11 +233,11 @@ function misreadTags(node: ts.Node): string {
 	return /\s/.test(source[start - 1] ?? '') ? ` ${text}` : text;
 }
 
-/** A symbol's summary: its comment up to its first tag, on one line. */
+/** A symbol's summary: its comment up to its first tag, with its blocks kept. */
 function summaryOf(symbol: ts.Symbol, checker: ts.TypeChecker): string {
 	const declaration = symbol.declarations?.[0];
 	const text = ts.displayPartsToString(symbol.getDocumentationComment(checker));
-	return flat(text + (declaration ? misreadTags(declaration) : ''));
+	return blockText(text + (declaration ? misreadTags(declaration) : ''));
 }
 
 /**
@@ -166,6 +283,7 @@ function callableOf(
 	name: string,
 	checker: ts.TypeChecker,
 	used: ts.Node[],
+	optional = false,
 ): string {
 	const typeParameters = declaration.typeParameters ?? [];
 	used.push(...typeParameters, ...declaration.parameters);
@@ -183,7 +301,8 @@ function callableOf(
 				FORMAT,
 			);
 	}
-	return `${name}${generic}(${declaration.parameters.map(line).join(', ')}): ${result}`;
+	const mark = optional ? '?' : '';
+	return `${name}${mark}${generic}(${declaration.parameters.map(line).join(', ')}): ${result}`;
 }
 
 /** A property as the source declares it: whether it is read-only or optional, and its type. */
@@ -232,18 +351,22 @@ function membersOf(
 		// Symbol-keyed members are markers for the engine's own checks, not API.
 		if (member.name.startsWith('__@')) continue;
 		const summary = summaryOf(member, checker);
+		const tags = docTags(member, checker);
+		const optional = Boolean(member.flags & ts.SymbolFlags.Optional);
 		const methods = callables(declarations);
 		if (methods.length === 0)
 			members.push({
 				name: member.name,
 				signature: propertyOf(member, declaration, checker, used),
 				summary,
+				...tags,
 			});
 		for (const method of methods)
 			members.push({
 				name: member.name,
-				signature: callableOf(method, member.name, checker, used),
+				signature: callableOf(method, member.name, checker, used, optional),
 				summary,
+				...tags,
 			});
 	}
 	return members;
@@ -321,7 +444,7 @@ function namespaceDocs(alias: ts.Symbol): { summary: string; page: string | unde
 	const category = doc?.tags?.find((t) => t.tagName.text === 'category');
 	return {
 		summary: statement
-			? flat((ts.getTextOfJSDocComment(doc?.comment) ?? '') + misreadTags(statement))
+			? blockText((ts.getTextOfJSDocComment(doc?.comment) ?? '') + misreadTags(statement))
 			: '',
 		page: category ? ts.getTextOfJSDocComment(category.comment)?.trim() : undefined,
 	};
@@ -404,6 +527,7 @@ export function readApi(root: string): ApiReference {
 			name: exported.name,
 			alias: exported,
 			symbol: exported.flags & ts.SymbolFlags.Alias ? checker.getAliasedSymbol(exported) : exported,
+			specifier: pkg.import,
 		}));
 	});
 	const exported = new Set(exports.map((e) => e.symbol));
@@ -412,7 +536,7 @@ export function readApi(root: string): ApiReference {
 	// An export that two entry points share, such as a type of the engine's stats module, goes
 	// into the reference once.
 	const listed = new Map<ts.Symbol, string[]>();
-	for (const { name, alias, symbol } of exports) {
+	for (const { name, alias, symbol, specifier } of exports) {
 		const names = listed.get(symbol) ?? [];
 		if (names.includes(name)) continue;
 		listed.set(symbol, [...names, name]);
@@ -451,7 +575,7 @@ export function readApi(root: string): ApiReference {
 				.filter((clause) => clause.token === ts.SyntaxKind.ExtendsKeyword)
 				.flatMap((clause) => clause.types);
 			used.push(...extended);
-			bases = extended.map((t) => t.expression.getText());
+			bases = extended.map((t) => line(t));
 			members = membersOf(checker.getDeclaredTypeOfSymbol(symbol), checker, declaration, used);
 		} else if (ts.isTypeAliasDeclaration(declaration)) {
 			kind = 'type';
@@ -466,7 +590,18 @@ export function readApi(root: string): ApiReference {
 			if (!member.summary) problems.push(`${where}: member ${member.name} has no TSDoc summary`);
 		for (const hidden of unexportedTypes(used, checker, sources, exported))
 			problems.push(`${where} names ${hidden}, which its package does not export`);
-		symbols.push({ name, kind, page: page ?? '', signature, summary, extends: bases, members });
+		const docs = docTags(symbol, checker);
+		symbols.push({
+			name,
+			kind,
+			page: page ?? '',
+			signature,
+			summary,
+			extends: bases,
+			import: specifier,
+			members,
+			...docs,
+		});
 	}
 	symbols.sort((a, b) => a.name.localeCompare(b.name));
 	return { symbols, problems };
@@ -482,6 +617,13 @@ const MEMBER_KINDS: Partial<Record<ApiSymbol['kind'], string>> = {
 	namespace: 'Namespace',
 };
 
+/** A member's table cell: its summary, then its parameter and return docs as inline text. */
+function memberDescription(member: ApiMember): string {
+	const extra = (member.params ?? []).map((param) => `\`${param.name}\`: ${flat(param.text)}`);
+	if (member.returns) extra.push(`Returns ${flat(member.returns)}`);
+	return tableCell([flat(member.summary), ...extra].filter(Boolean).join('; '));
+}
+
 /** One export as Markdown under a heading of the given level: its declaration or members, and its summary. */
 export function renderSymbol(symbol: ApiSymbol, heading = '###'): string {
 	const lines = [`${heading} \`${symbol.name}\``, ''];
@@ -491,11 +633,20 @@ export function renderSymbol(symbol: ApiSymbol, heading = '###'): string {
 		const what = MEMBER_KINDS[symbol.kind];
 		lines.push(`${what} \`${symbol.name}\`${base ? `, which extends ${base}` : ''}.`, '');
 	}
+	if (symbol.import && symbol.import !== '@null3d/engine')
+		lines.push(`Import from \`${symbol.import}\`.`, '');
 	if (symbol.summary) lines.push(symbol.summary, '');
+	if (symbol.params?.length) {
+		lines.push('| Parameter | Description |', '| --- | --- |');
+		for (const param of symbol.params)
+			lines.push(`| \`${tableCell(param.name)}\` | ${tableCell(flat(param.text))} |`);
+		lines.push('');
+	}
+	if (symbol.returns) lines.push(`Returns: ${flat(symbol.returns)}`, '');
 	if (symbol.members.length > 0) {
 		lines.push('| Member | Description |', '| --- | --- |');
 		for (const member of symbol.members)
-			lines.push(`| \`${tableCell(member.signature)}\` | ${tableCell(member.summary)} |`);
+			lines.push(`| \`${tableCell(member.signature)}\` | ${memberDescription(member)} |`);
 		lines.push('');
 	}
 	return lines.join('\n').trimEnd();

@@ -45,8 +45,9 @@ export interface LevelView {
 	 */
 	readonly orthographic?: boolean;
 	/**
-	 * The source's threshold bias, as Godot's `lod_bias`: above 1 switches every level nearer, so
-	 * coarser levels draw, and below 1 keeps its detail. The default is 1.
+	 * The source's threshold bias, as the inverse of Godot's `lod_bias`: a Godot bias of 2 is
+	 * about a null3D bias of 0.5. Above 1 switches every level nearer, so coarser levels draw, and
+	 * below 1 keeps its detail. The default is 1.
 	 */
 	readonly bias?: number;
 }
@@ -63,13 +64,13 @@ export type LevelSwitch =
 	| { readonly coverage: number };
 
 /**
- * A source's world bounds about the camera: the centre of its bounding sphere relative to the
+ * A source's world bounds about the camera: the center of its bounding sphere relative to the
  * camera, and the sphere's radius.
  *
  * @category api/geometry
  */
 export interface LevelBounds {
-	/** The bounding sphere's centre, relative to the camera. */
+	/** The bounding sphere's center, relative to the camera. */
 	readonly centre: readonly [number, number, number];
 	/** The bounding sphere's radius, in meters. */
 	readonly radius: number;
@@ -96,7 +97,7 @@ export interface LevelDistances {
  */
 export const LEAST_LEVEL_DISTANCE = 1e-3;
 
-/** The share of the bounds' radius that an error's distance takes off the distance to the centre. */
+/** The share of the bounds' radius that an error's distance takes off the distance to the center. */
 const ERROR_RADIUS_SHARE = 0.5;
 
 /** The multiple of the distance to the nearest point that caps an error's distance. */
@@ -170,7 +171,7 @@ export function levelSwitchDistance(
  * point for the other measures.
  *
  * @param view The view that measures the source.
- * @param bounds The source's bounds, with the centre relative to the camera.
+ * @param bounds The source's bounds, with the center relative to the camera.
  * @returns The two distances, in meters.
  * @category api/geometry
  */

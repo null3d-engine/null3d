@@ -1,14 +1,10 @@
 ---
 id: api/input
 title: Input
-status: experimental
-since: "0.1"
 summary: "Pointer, keyboard, touch and gamepad; action maps; pointer events on objects."
 ---
 
 # Input
-
-> Roadmap step 0.1, first released in null3D 0.1.0. The API is experimental, so it can still change between versions.
 
 ```mermaid
 flowchart LR
@@ -82,7 +78,9 @@ The sketch counts presses and releases per frame. A key can go down and up betwe
 
 Use `dragDx` and `dragDy` for drags, such as turning an object with the mouse. A frame can hold the end of a hover and the start of a drag, and `dx` counts both.
 
-A frame's drag belongs to one press. During a slow frame, one drag can end and the next can start before the sketch reads either. The next press and the events after it then wait for the following frame, so each drag keeps its own button and movement. Two quick clicks between two frames also count as two presses, one in each of the next two frames. Wheel scroll that follows a release waits for the following frame in the same way. So a frame's scroll never comes after the end of its drag. Controls that ignore the wheel during a drag still take the scroll after it.
+A frame's drag belongs to one press. During a slow frame, one drag can end and the next can start before the sketch reads either. The next press and the events after it then wait for the following frame, so each drag keeps its own button and movement. Two quick clicks between two frames also count as two presses, one in each of the next two frames.
+
+Wheel scroll that follows a release waits for the following frame in the same way. So a frame's scroll never comes after the end of its drag. Controls that ignore the wheel during a drag still take the scroll after it.
 
 Browsers send a pinch on a trackpad as wheel scroll with the Control key's flag, while no Control key is down. Unless the page stops it, the browser also zooms the whole page on a pinch. [What the page does](#what-the-page-does) shows how to stop it.
 
@@ -205,14 +203,19 @@ The page reads the gamepads once per display frame while at least one is connect
 
 ## Input off
 
-`createEngine({ input: false })` is for a page whose input another library records. The engine then adds no listener that takes input:
+`createEngine({ input: false })` is for a page whose input another library records. The engine then adds no listener that takes input, and the canvas's context menu stays the browser's.
+
+<details>
+<summary>Technical details: the listeners the engine leaves out and keeps</summary>
+
+The engine leaves out:
 
 - none of its pointer, key, wheel and context menu listeners on the canvas, and no pointer capture;
 - no `pointerup`, `pointercancel`, `keydown`, `keyup` or `blur` listener on the window;
 - no `visibilitychange` or `pointerlockchange` listener of its input on the document;
 - no gamepad listener, and no reading of the gamepads.
 
-The canvas's context menu stays the browser's. The engine keeps the listeners that take no input, and each reads only the page's state:
+It keeps a few listeners that take no input. They only read the page's state:
 
 | Listener | Why the engine keeps it |
 | --- | --- |
@@ -222,14 +225,22 @@ The canvas's context menu stays the browser's. The engine keeps the listeners th
 | `securitypolicyviolation` on the window | It names what a Content-Security-Policy blocked while the engine loads its files, as [E1418](../errors/E1418.md) and [E1422](../errors/E1422.md) say. |
 | `message`, `error` and `abort` on the engine's own objects | Its workers, ports and signals talk to the page. |
 
-A development build also listens for the dev server's shader updates. The input test records the engine's listeners in every thread mode.
+A development build also listens for the dev server's shader updates.
+
+</details>
 
 The sketch's `ctx.input` stays at rest. Every key, button and action is up, `value` gives 0 and `input.touches` is empty. The pointer stays at the canvas's top-left corner, with no movement, wheel or buttons, and objects get no pointer events.
 
 - `engine.requestPointerLock()` fails with [E1426](../errors/E1426.md). The lock is part of the engine's input, since the sketch reads the mouse's movement through the engine's listeners. Lock the canvas with the code that records the input, which reads the movement.
 - Stopping the engine leaves a lock that the page took. It ends only a lock that the engine took or that its input read.
 - A development build warns in the console when the sketch relies on input. It warns once for each kind: a read of `ctx.input`, an object's pointer event handler, and `@null3d/controls`. Each warning names `input: false`. A production build carries none of them.
-- The warning about the controls comes as they load in the sketch's thread. A thread loads a module once, so it misses controls that another sketch in the same worker loaded first. Two engines that run their sketches on the page's thread both hear a load by either one's sketch.
+
+<details>
+<summary>Technical details: when the controls warning comes</summary>
+
+The warning about the controls comes as they load in the sketch's thread. A thread loads a module once, so it misses controls that another sketch in the same worker loaded first. Two engines that run their sketches on the page's thread both hear a load by either one's sketch.
+
+</details>
 
 [Using null3D with a deterministic simulation](../guides/deterministic-simulation.md#input-that-another-library-records) shows the page.
 

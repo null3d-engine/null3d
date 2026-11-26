@@ -100,7 +100,7 @@ class Noise {
 /**
  * Makes a tiling sRGB color map, calling `sample` once per texel with the texel's u and v. The
  * sample writes three colors and the texel's height, which the map keeps in its alpha channel so a
- * layer can raise itself above its neighbours at a boundary.
+ * layer can raise itself above its neighbors at a boundary.
  */
 function colorMap(
 	textures: SketchContext['textures'],
@@ -133,7 +133,7 @@ function colorMap(
  * Makes the four layer maps in code. Each is `size` texels across and repeats; the noise tiles, so
  * the maps do too, and the same seed gives the same maps on every run. Each map keeps a height in
  * its alpha channel, so a layer that reads its height from there pushes its clumps and stones
- * through a neighbour at a boundary.
+ * through a neighbor at a boundary.
  *
  * @category api/terrain
  */
@@ -172,7 +172,7 @@ export function terrainTextures(
 		out[1] = tone * 0.98;
 		out[2] = tone * 0.95;
 		// The facets are the rock's own relief; the cracks stay a color, so the layer keeps its
-		// height about the middle where its neighbours meet it.
+		// height about the middle where its neighbors meet it.
 		out[3] = 0.5 + 0.5 * facets;
 	});
 	const snow = colorMap(textures, size, (u, v, out) => {
