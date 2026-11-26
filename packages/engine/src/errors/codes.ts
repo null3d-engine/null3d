@@ -39,7 +39,7 @@ const DOCS = {
 		example:
 			'E1101: setPosition() was called on "Crate" (slot 7), which was destroyed in frame 120.',
 		details:
-			"Development builds check every call on a scene object. Release builds skip that check: a destroyed object's setters write to a row that no object uses, and a second `destroy()` frees nothing. The engine core checks each change that waits for the next frame and logs E1101 for a change to a destroyed object, such as a destroyed parent. Meshes, textures, color tables, probes, environments and instance batches throw E1101 in every build, and so do a batch's array getters. An array that you read from a batch before its destroy can point at memory that another batch now uses.",
+			"Development builds check every call on a scene object. Release builds skip that check: a destroyed object's setters write to a row that no object uses, and a second `destroy()` frees nothing. The engine core checks each change that waits for the next frame and logs E1101 for a change to a destroyed object, such as a destroyed parent. Meshes, textures, color tables, probes, environments and instance batches throw E1101 in every build. A batch's array getters do too. An array that you read from a batch before its destroy can point at memory that another batch now uses.",
 		see: ['concepts/handles'],
 	},
 	E1102: {
@@ -90,7 +90,7 @@ const DOCS = {
 			'The engine could not create or grow its WebAssembly memory. A page with worker threads gives the engine 1 GiB by default, and up to 4 GiB through the memory option of createEngine. Many instance rows, a mesh of millions of vertices, or the first frame, which copies every mesh, can fill it. A browser can refuse memory sooner, as phones often do, or while an engine that stopped before still holds its memory.',
 		example: 'E1109: createInstances() failed: the engine could not get 1282 MB more memory.',
 		details:
-			'Each instance row takes about 210 bytes, or about 300 with per-row colors or values. About 5 million rows fill 1 GiB, along with the rest of the scene. Building a mesh with normals to compute takes about 100 bytes per vertex for a moment. The first frame copies every mesh of the scene: a scene with 84 MiB of meshes peaks at about 270 MiB on the direct path and about 205 MiB on the indirect path. The engine keeps the last 8 MiB under the limit for its own small requests. It tries again for about 45 seconds before it fails, and reports memory-wait through onProgress after 10 seconds.',
+			'Each instance row takes about 210 bytes, or about 300 with per-row colors or values. About 5 million rows fill 1 GiB, along with the rest of the scene. Building a mesh with normals to compute takes about 100 bytes per vertex for a moment. The first frame copies every mesh of the scene. A scene with 84 MiB of meshes peaks at about 270 MiB on the direct path. It peaks at about 205 MiB on the indirect path. The engine keeps the last 8 MiB under the limit for its own small requests. It tries again for about 45 seconds before it fails, and reports memory-wait through onProgress after 10 seconds.',
 		see: ['guides/performance'],
 	},
 	E1110: {
