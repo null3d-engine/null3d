@@ -32,6 +32,10 @@ export default defineSketch(({ scene }) => {
 
 The camera's view draws the whole canvas first, and each view covers its rectangle afterwards. The camera's aspect ratio is the canvas's, so a half of its image is a crop of a wider view. For two half-width cameras, add a view for each half:
 
+![One canvas split into a high wide view and a low view among standing stones.](../images/guides/multiple-views/split-screen.webp)
+
+Two cameras in one frame.
+
 ```ts
 const left = scene.createPerspectiveCamera({ fov: 50, position: [-4, 2, 6], target: [0, 1, 0] });
 const right = scene.createPerspectiveCamera({ fov: 50, position: [4, 2, 6], target: [0, 1, 0] });
