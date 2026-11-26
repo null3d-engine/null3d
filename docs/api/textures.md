@@ -280,9 +280,9 @@ Each texture has its own sampler settings, from its options:
 - The filter of magnified texels, of minified texels and between mip levels: linear or nearest. It is linear by default.
 - Anisotropic filtering, which keeps a texture sharp on a surface seen at a slant, such as a floor. It reaches at most 16 samples, or the quality preset's cap (`maxAnisotropy`) when that is lower. A nearest filter turns it off. It is off by default.
 
-![One picture on three squares with texture coordinates from -0.5 to 1.5: repeat, clamp and mirror.](../images/api/reference/textures/texture-wrap.webp)
+![A grid of texture samples. The bottom row applies repeat, clamp and mirror wrap to the same picture, then shows nearest and linear filters.](../images/api/reference/textures/texture-wrap.webp)
 
-Wrap modes.
+Wrap modes and the other texture checks.
 
 Materials do not sample cube maps. A cube map can be a background: [Assets](assets.md) loads one with `assets.loadCubemap`.
 

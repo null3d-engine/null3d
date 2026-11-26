@@ -190,9 +190,9 @@ Depth of field adds three passes at half the render size and one at the render s
 
 Automatic exposure adapts the picture to the scene's brightness, as an eye or a camera does. A meter on the GPU reads the color that the final pass reads, in the same frame. It writes the adapted exposure into one texel, and the final pass multiplies the color by it before FXAA, the vignette and the tone curve.
 
-![The same view of a stone hall with the eye's adaptation off, nearly black, and on, lit.](../images/concepts/post-processing/auto-exposure.webp)
+![A stone hall and a pool under a blue sky, lit after automatic exposure adapted to the scene.](../images/concepts/post-processing/auto-exposure.webp)
 
-Eye held, eye adapted.
+The stone hall with automatic exposure on.
 
 ```ts
 post.set({ autoExposure: { minEv: -6, speedDown: 0.7 } });

@@ -473,8 +473,8 @@
 		"source": "scripted",
 		"images": ["webgpu/demo-auto-exposure.png"],
 		"steps": "\"Adapted\": the reference (hold 6 s). \"Held\": development build, ?demo=auto-exposure&hold=6 with a hold script that presses E at 0.05 s (or open live, press E at once, capture at 6 s). Cheaper fallback: test references exposure-off.png beside exposure-dark.png.",
-		"alt": "The same view of a stone hall with the eye's adaptation off, nearly black, and on, lit.",
-		"caption": "Eye held, eye adapted.",
+		"alt": "A stone hall and a pool under a blue sky, lit after automatic exposure adapted to the scene.",
+		"caption": "The stone hall with automatic exposure on.",
 		"files": [
 			"examples/auto-exposure/",
 			"tests/image/references/chrome-real-gpu/webgpu/demo-auto-exposure.png"
@@ -2155,8 +2155,8 @@
 		"source": "scripted",
 		"images": ["webgpu/textures.png"],
 		"steps": "tests/pages/image.html?sketch=/tests/pages/sketches/textures-sketch.ts&hold=0&size=1440x810&gpu=webgpu; crop the three left squares of the bottom row.",
-		"alt": "One picture on three squares with texture coordinates from -0.5 to 1.5: repeat, clamp and mirror.",
-		"caption": "Wrap modes.",
+		"alt": "A grid of texture samples. The bottom row applies repeat, clamp and mirror wrap to the same picture, then shows nearest and linear filters.",
+		"caption": "Wrap modes and the other texture checks.",
 		"files": [
 			"tests/pages/sketches/textures-sketch.ts",
 			"tests/image/references/chrome-real-gpu/webgpu/textures.png"
@@ -2226,6 +2226,6 @@
 			"tests/image/references/chrome-real-gpu/webgpu/demo-area-lights.png"
 		],
 		"verdict": "shots-errors__E1431.md",
-		"note": "Error pages are generated: the image needs support in tools/lib/docs.ts."
+		"note": "The picture is two panels: the lit street, and the same street with its area-light tables aborted. The capture tool draws the lit demo alone, so this shot waits for a person."
 	}
 ]
