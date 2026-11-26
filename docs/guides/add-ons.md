@@ -75,12 +75,12 @@ Keep setup, options, the public API and event handling in TypeScript. They run o
 
 An add-on's meshes get levels of detail as a page's meshes do, with no call of the add-on's own. A far copy then draws a few dozen triangles instead of its full mesh. The engine hides a copy that covers less than a pixel.
 
-The engine plans a mesh's levels when it holds 4,096 triangles or more, or at least 256 whose copies hold 65,536 together. A mesh from `geometry.fromArrays` or a generator plans them at its first draw. The levels keep the mesh's vertex and triangle order, which raycasts and `updateVertices` read ([Levels of detail](../concepts/lod.md#levels-of-meshes-made-in-code)).
+The engine plans a mesh's levels when it holds 4,096 triangles or more. It plans a smaller mesh when it holds at least 256 and its copies hold 65,536 together. A mesh from `geometry.fromArrays` or a generator plans them at its first draw. The levels keep the mesh's vertex and triangle order, which raycasts and `updateVertices` read ([Levels of detail](../concepts/lod.md#levels-of-meshes-made-in-code)).
 
 <details>
 <summary>Technical details: when a mesh plans its levels</summary>
 
-The plan runs on the job workers with the asset tool's planner. The levels keep their measured errors, so they switch in at once while the threshold stays small, and fade once the governor raises it past about one and a half pixels.
+The plan runs on the job workers with the asset tool's planner. The levels keep their measured errors, so they switch in at once while the threshold stays small. They fade once the governor raises it past about one and a half pixels.
 
 </details>
 

@@ -49,7 +49,7 @@ Motion vectors need the frame before the last one, so with them the engine draws
 
 Some effects show their result one frame late: screen-space bounce light, mirrors and light probes. Tasks on the job workers can also answer after the last step. In these cases the engine draws one more frame at the held time. That frame runs none of the sketch's code, so the hold still reports the last step's frame number.
 
-Hold mode waits for the sketch's tasks on the job workers, and for the levels of detail that meshes made in code plan. It waits up to 10 seconds at each wait for the tasks, then warns and draws anyway. It waits up to five minutes for the plans, then stops with [E1408](../errors/E1408.md). Give a mesh `levels: false` when a test should draw it without levels.
+Hold mode waits for the sketch's tasks on the job workers, and for the levels of detail that meshes made in code plan. Each of its two waits for the tasks lasts up to 10 seconds, and then it warns and draws anyway. It waits up to five minutes for the plans, then stops with [E1408](../errors/E1408.md). Give a mesh `levels: false` when a test should draw it without levels.
 
 <details>
 <summary>Technical details: what hold mode waits for</summary>
