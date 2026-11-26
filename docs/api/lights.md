@@ -301,6 +301,12 @@ The object must cast shadows.
 - [Objects and transforms](objects.md): the calls that lights share with every object.
 - [Materials](materials.md): the standard material, which lights shade, and the unlit material, which they do not.
 - [Math helpers](math.md#colors): color conversions.
+- [Area lights](https://github.com/null3d-engine/null3d/tree/main/examples/area-lights): rectangle windows and tube-light neon, whose whole shapes show in a wet street.
+- [Spot light maps](https://github.com/null3d-engine/null3d/tree/main/examples/spot-cookies): a rose window and a window frame thrown across a dark hall.
+- [Shadows from a hero map](https://github.com/null3d-engine/null3d/tree/main/examples/hero-shadow): a car with a shadow map fitted tightly to it, beside the cascades.
+- [Contact shadows](https://github.com/null3d-engine/null3d/tree/main/examples/contact-shadows): the dark line where each pebble, blade and stone meets the sand.
+- [Light from the sky](https://github.com/null3d-engine/null3d/tree/main/examples/time-of-day): a day passes over a lighthouse, and its windows light at dusk.
+- [Point light shadows](https://github.com/null3d-engine/null3d/tree/main/examples/particles): a campfire whose point light casts shadows on High and Ultra.
 
 ## API reference
 

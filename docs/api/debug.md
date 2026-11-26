@@ -135,13 +135,13 @@ export default defineSketch(({ debug, input }) => {
 
 ### The view from the address
 
-`?view=<name>` picks any debug view on any page, as `?stats` does: in development builds, and in a production build only when the Vite plugin's `urlSwitches` option is on. The views themselves draw in development builds only, as the section above says. A person, or `bunx @null3d/cli shot --page '/your-page?view=levels'`, can then see any demo's levels with no code change. A name that no view has draws the materials.
+`?view=<name>` picks any debug view on any page, as `?stats` does: in development builds, and in a production build only when the Vite plugin's `urlSwitches` option is on. The views themselves draw in development builds only, as the section above says. A person, or `bunx @null3d/cli shot --page '/your-page?view=levels'`, can then see any demo's levels with no code change. A name that no view has draws the materials. The [forest demo](https://github.com/null3d-engine/null3d/tree/main/examples/forest) shows its levels with `?view=levels`.
 
 ### Views from add-ons
 
 An add-on adds a view of its own through the `debugViews` field of its [feature description](features.md#the-fields). Each view gives its name and a `set` callback, which hears when the view starts and stops. The add-on draws the view itself, with its own materials or its own debug drawing. Picking an add-on's view clears the engine's own view, so the two never draw together.
 
-A name that no feature has registered yet clears it too. A view's name must not name one of the engine's views, and each name belongs to one add-on.
+A name that no feature has registered yet clears it too. A view's name must not name one of the engine's views, and each name belongs to one add-on. The [water demo](https://github.com/null3d-engine/null3d/tree/main/examples/water) registers a view of its own, which `?view=water-bounds` shows.
 
 ```ts
 host.add(
@@ -401,7 +401,7 @@ A texture counts every mip level of every layer, as the GPU stores it. A compres
 
 ### The same overlay for another engine
 
-`@null3d/engine/stats` exports the overlay's panel, its figure types, a text layout of the figures and the page's meters. A page that draws with another engine, such as three.js, shows its own figures in the same panel. The same code measures both engines' page figures, so a comparison of the two stays fair.
+`@null3d/engine/stats` exports the overlay's panel, its figure types, a text layout of the figures and the page's meters. A page that draws with another engine, such as three.js, shows its own figures in the same panel. The same code measures both engines' page figures, so a comparison of the two stays fair. The [battle comparison](https://github.com/null3d-engine/null3d/tree/main/examples/compare/battle) shows the panel over its three.js half.
 
 `new StatsPanel(canvas, options)` puts the panel over the canvas's top-right corner, as the engine puts its overlay. Its header button opens and closes the card. The option `collapsed: true` starts it closed. The option `corner: 'bottom-right'` puts it over the canvas's bottom-right corner. The callback `onToggle` tells the page when it opens or closes, so the page measures its costly figures only while the card is open.
 

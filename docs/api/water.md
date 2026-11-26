@@ -505,6 +505,9 @@ The fall adds four particle systems: a froth at the lip, the drops thrown off th
 - [Surface functions](../shaders/surface-functions.md#the-scenes-depth): the scene's depth in a
   custom material.
 - [Quality API](quality.md): the preset and the frame-budget governor.
+- [Rivers and lakes](https://github.com/null3d-engine/null3d/tree/main/examples/water): a river winds down a valley into a lake, and the camera dives under it.
+- [The ocean](https://github.com/null3d-engine/null3d/tree/main/examples/ocean): three bands of wave spectra, transformed by compute passes every frame.
+- [Waterfalls](https://github.com/null3d-engine/null3d/tree/main/examples/showcase/creek): the fall is one part of the Creek showcase, which also runs a creek, a spring pool and an underwater view.
 
 ## API reference
 

@@ -144,3 +144,5 @@ bunx @null3d/cli shot --page "/?stop=city"
 - [Sketch API: defineSketch and the context](sketch.md): the `page` object in the sketch's context.
 - [Architecture: threads and the frame](../concepts/architecture.md): which thread runs what.
 - [3D scenes on content pages](../guides/content-pages.md): messages that drive a camera from the scroll position.
+- [Messages between page and sketch](https://github.com/null3d-engine/null3d/tree/main/examples/gizmos): the page's buttons send a message, and the sketch acts on it.
+- [What a message can carry](https://github.com/null3d-engine/null3d/tree/main/examples/replay): the replay page sends a typed array to the sketch each frame.

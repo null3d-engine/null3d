@@ -390,6 +390,8 @@ post.set({
 - White balance corrects the light of the given temperature to the neutral white of daylight at 6500 kelvin. It keeps the picture's brightness.
 - The table holds 32 texels along each side. The final pass takes the square root of the color before it reads the table. Its texels therefore lie closer together toward black, where a grade's curve is steepest.
 - The table holds the grade alone, and the tone curve stays a calculation in the pass. A custom tone curve therefore still works with the controls.
+
+The [Creek showcase](https://github.com/null3d-engine/null3d/tree/main/examples/showcase/creek) sets its own WGSL tone curve in the scene's look.
 - The final pass applies the built-in grade first and a `lut` after it, so a look from a file can sit over a grade from the controls.
 - The final pass draws on every GPU path, with HDR color or without it, so both paths grade alike.
 - The bake runs in a job worker, so a value that changes in a frame loop does not stall the frames. Where no worker can run tasks, the picture keeps its colors and development builds warn once.
@@ -518,6 +520,8 @@ A view that holds still blends its frames into a sharper picture, then stops dra
 - [Assets](assets.md): `assets.loadLut`, which loads color grading tables, and `assets.lutFromData`, which makes them from numbers.
 - [The post effects demo](https://github.com/null3d-engine/null3d/tree/main/examples/post-effects): bloom, ambient occlusion, an outline, a vignette, sharpening and color grading tables in one scene. It makes its warm and cool tables from lift, gamma and gain in code.
 - [The depth of field demo](https://github.com/null3d-engine/null3d/tree/main/examples/camera-lens): the focus racks across a chess board with `focusPoint`, while a dolly zoom changes the camera's focal length in every frame.
+- [The automatic exposure demo](https://github.com/null3d-engine/null3d/tree/main/examples/auto-exposure): a walk from a sunny courtyard into a dark hall, where the eye opens and closes.
+- [The screen-space reflections demo](https://github.com/null3d-engine/null3d/tree/main/examples/wet-street): puddles that mirror lit windows, neon signs and a passing taxi.
 
 ## API reference
 

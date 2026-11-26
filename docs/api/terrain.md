@@ -138,6 +138,8 @@ A sketch that never imports `@null3d/terrain` ships no terrain code and starts n
 - [Materials](materials.md): the standard material and custom surfaces.
 - [Particles](particles.md): the other add-on of the same kind.
 - [The three.js mapping](../porting/threejs-mapping.md): terrain beside three.js's ways of making ground.
+- [Terrain](https://github.com/null3d-engine/null3d/tree/main/examples/terrain): a 1.2 km valley with grass, soil, rock and snow blended by height and slope.
+- [Used in a large scene](https://github.com/null3d-engine/null3d/tree/main/examples/showcase/island): the Island showcase sets `steepFaces` and passes its own `splat` function.
 
 ## API reference
 

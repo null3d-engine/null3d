@@ -14,7 +14,7 @@ flowchart LR
     update --> gizmo["A held handle moves,<br/>turns or scales an object"]
 ```
 
-The `@null3d/controls` package moves a camera with the mouse, the wheel, a trackpad, touch and the keyboard, and it moves, turns and scales scene objects with gizmos.
+The `@null3d/controls` package moves a camera with the mouse, the wheel, a trackpad, touch and the keyboard, and it moves, turns and scales scene objects with gizmos. The [glTF model demo](https://github.com/null3d-engine/null3d/tree/main/examples/gltf-model) uses orbit controls through the demos' shared helper, as a model viewer does.
 
 | Controls | Call | Moves like |
 | --- | --- | --- |

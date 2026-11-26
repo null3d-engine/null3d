@@ -343,6 +343,11 @@ The descriptions serve the five adapters alone. Some kinds of add-on have no hoo
 - [Quality API](quality.md): the preset and settings that a feature's `quality` callback receives, and the budgets' scale.
 - [Debug drawing and stats](debug.md#stats-overlay-and-frame-figures): the overlay's figures, the add-on rows among them.
 - [Post-processing API](post.md): the engine's effects, which run at the resolve and post points.
+- [The aurora feature](https://github.com/null3d-engine/null3d/tree/main/examples/aurora): its add-on file, `examples/addons/aurora/index.ts`, declares a sky layer at the background frame point.
+- [Reflection cadence](https://github.com/null3d-engine/null3d/tree/main/examples/water): the water add-on sets a cadence on its reflection pass.
+- [The splats feature](https://github.com/null3d-engine/null3d/tree/main/examples/splats): the add-on's `feature.ts` and `system.ts` make the feature and draw it.
+- [Published outputs](https://github.com/null3d-engine/null3d/tree/main/examples/ocean): the ocean's compute passes publish outputs that its material reads with `textures.fromPass`.
+- [Lighting slots](https://github.com/null3d-engine/null3d/tree/main/examples/aurora): the aurora add-on provides the sky slot.
 
 ## API reference
 

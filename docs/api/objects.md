@@ -119,7 +119,7 @@ These calls rebuild the draw tables, so call them at setup or behind a loading s
 - `setFrustumCulled(false)` makes the engine draw the mesh even when its bounds are out of view.
 - `setBounds(center, radius)` gives the object a bounding sphere of its own, which culling tests instead of the mesh's sphere. Use it when a shader moves vertices outside the mesh's sphere. [Culling](../concepts/culling.md#bounds-that-you-set) explains how the engine culls with your bounds.
 - `setLevelBias(bias)` raises or lowers the threshold that picks this object's levels of detail, as the inverse of Godot's `lod_bias`: a Godot bias of 2 is about a null3D bias of 0.5. A bias above 1 draws coarser levels, and one below 1 keeps the object's detail. The same factor moves the distance at which the object hides. The bias is 1 by default, and does nothing without a mesh that has levels. [Levels of detail](../concepts/lod.md#the-bias-of-one-object) shows it.
-- `setDrawRange(start, end)` draws the mesh only between those distances from the camera to its nearest point, fading at each edge. [Distance bands](../concepts/lod.md#distance-bands) shows it.
+- `setDrawRange(start, end)` draws the mesh only between those distances from the camera to its nearest point, fading at each edge. [Distance bands](../concepts/lod.md#distance-bands) shows it. The [impostors demo](https://github.com/null3d-engine/null3d/tree/main/examples/impostors) calls it on the merged mesh of each grid cell.
 
 These calls cost nothing during play:
 
@@ -147,7 +147,7 @@ An object that a model with animations created has an animator, and `animator()`
 
 ## Pointer events
 
-`on(type, handler)` calls `handler` for each pointer event of `type` on the object: `'click'`, `'pointerdown'`, `'pointerup'`, `'pointermove'`, `'pointerenter'` or `'pointerleave'`. `off(type, handler)` removes the handler. An event on a child goes on to its parents, so a handler on a group hears the events of everything under it.
+`on(type, handler)` calls `handler` for each pointer event of `type` on the object: `'click'`, `'pointerdown'`, `'pointerup'`, `'pointermove'`, `'pointerenter'` or `'pointerleave'`. `off(type, handler)` removes the handler. An event on a child goes on to its parents, so a handler on a group hears the events of everything under it. The `'pointerenter'` handler of the [picking demo](https://github.com/null3d-engine/null3d/tree/main/examples/picking) lights the piece under the pointer.
 
 ```ts
 door.on('click', () => door.rotateY(Math.PI / 2));
@@ -168,6 +168,8 @@ The `name` option gives an object a name that error messages show, such as `"Cra
 - [Math helpers](math.md): vectors, quaternions and matrices for the setters and getters.
 - [Animation](animation.md): the animator of an animated object.
 - [Input](input.md#pointer-events-on-objects): pointer events on objects.
+- [Camera layer masks](https://github.com/null3d-engine/null3d/tree/main/examples/layers): a camera that changes its layers every 2 seconds.
+- [The hero fir and the B key](https://github.com/null3d-engine/null3d/tree/main/examples/forest): the nearest tree keeps a level-of-detail bias of its own, for comparison.
 
 ## API reference
 

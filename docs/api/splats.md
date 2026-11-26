@@ -279,6 +279,7 @@ The [API reference](reference/splats.md#splats) gives each member's type.
 - [Add-on feature descriptions](features.md): the settings, budget and figures that the cloud
   declares.
 - [Assets](assets.md#extensions-that-add-ons-read): how an add-on reads a glTF extension.
+- [Streaming and the budget](https://github.com/null3d-engine/null3d/tree/main/examples/splats): a 1.7 million splat scan of Bolton Priory, streamed nearest first within the preset's budget.
 
 ## API reference
 
