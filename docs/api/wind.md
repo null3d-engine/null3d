@@ -17,7 +17,9 @@ flowchart LR
     cpu["sample: the<br/>mirror on the CPU"] --> page
 ```
 
-`@null3d/wind` makes the air in a scene. One field moves every plant, flag and smoke card that reads it, so a gust that crosses a field reaches all of them together. The air is solved: a grid that follows the camera carries it from frame to frame. A gust therefore bends through the scene, and a body leaves a wake that outlives it. A steady wind slows near the ground, and swirls turn without piling up. A page can also shove the air at a point, as a body moving through it does.
+`@null3d/wind` makes the air in a scene. One field moves every plant, flag and smoke card that reads it, so a gust that crosses a field reaches all of them together. The air is solved: a grid that follows the camera carries it from frame to frame.
+
+A gust therefore bends through the scene, and a body leaves a wake that outlives it. A steady wind slows near the ground, and swirls turn without piling up. A page can also shove the air at a point, as a body moving through it does.
 
 ```sh
 bun add @null3d/wind
@@ -289,7 +291,9 @@ fn wind_sample(world: vec3f, origin: vec2f, size: f32, layer: i32, air: WindAir)
 
 </details>
 
-Inside the box, the sampling function gives the air with one texture read. Outside it, it works the air out from the steady field, at the height that the grid samples at. So the two meet at the box's edge, and a plant past the box moves with the air at its own place. A page's pushes and a gust that the page sends turn the air inside the box, so a plant past the box does not see them. A device that keeps no grid works the air out everywhere.
+Inside the box, the sampling function gives the air with one texture read. Outside it, it works the air out from the steady field, at the height that the grid samples at. So the two meet at the box's edge, and a plant past the box moves with the air at its own place.
+
+A page's pushes and a gust that the page sends turn the air inside the box, so a plant past the box does not see them. A device that keeps no grid works the air out everywhere.
 
 ```ts
 const leaf = ctx.materials.shader({
@@ -343,7 +347,9 @@ The box follows the camera, so update the material's `origin` values in each fra
 
 A vertex offset that reads the field orders the pass before every pass that draws the material. The shadows and the motion vectors therefore move with the plant.
 
-Trees and plants sway through such a material. The forest demo, `examples/forest`, draws the bark of its trees made in code with one custom material, and their leaf cards with a standard material. The bark's vertex offset samples this field's block at each vertex, as the example above does. Its sway fades to nothing at the material's `swayDistance`. So a tree past it stands still, and its far shadow cascades keep their layers. A tree loaded from a glTF file sways the same way: give its meshes such a material with `setMaterial`. The grass package, [`@null3d/grass`](grass.md), reads the field for its blades. Its `swayDistanceFor(preset)` gives each quality preset's sway distance.
+Trees and plants sway through such a material. The forest demo, `examples/forest`, draws the bark of its trees made in code with one custom material, and their leaf cards with a standard material. The bark's vertex offset samples this field's block at each vertex, as the example above does. Its sway fades to nothing at the material's `swayDistance`. So a tree past it stands still, and its far shadow cascades keep their layers.
+
+A tree loaded from a glTF file sways the same way: give its meshes such a material with `setMaterial`. The grass package, [`@null3d/grass`](grass.md), reads the field for its blades. Its `swayDistanceFor(preset)` gives each quality preset's sway distance.
 
 Every reader takes the field as a plain texture and its box, so it needs no code from this add-on. A page's own material reads it, as the forest demo's does. The grass package's blades read it, and the water add-on's `wind` option lifts a water surface. They read the same sampling block, and each copy costs the reader one of its material's six texture slots. Tests hold the readers' blocks equal to this page's.
 

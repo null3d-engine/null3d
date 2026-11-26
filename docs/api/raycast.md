@@ -146,7 +146,9 @@ scene.pick(240, 180).then((hit) => {
 });
 ```
 
-The pick draws each object's id into a small image around the point, then reads the id back. So a pick is exact to the pixel only when every source in the scene can draw into that image. One sprite, point or line in the scene, one material that blends, uses `transmission` or uses `alphaMode: 'hash'`, or one custom material that masks or has no vertex offset, makes every pick a raycast. That raycast tests triangles: it ignores masks, tests skinned characters in their bind pose, and uses the camera of the frame that last ran. In [hold mode](../guides/testing.md), which runs no frame loop, a pick is a raycast too.
+The pick draws each object's id into a small image around the point, then reads the id back. So a pick is exact to the pixel only when every source in the scene can draw into that image.
+
+One sprite, point or line in the scene, one material that blends, uses `transmission` or uses `alphaMode: 'hash'`, or one custom material that masks or has no vertex offset, makes every pick a raycast. That raycast tests triangles: it ignores masks, tests skinned characters in their bind pose, and uses the camera of the frame that last ran. In [hold mode](../guides/testing.md), which runs no frame loop, a pick is a raycast too.
 
 ### What a pick finds
 
@@ -283,7 +285,9 @@ A direction can have any length above 0, from 10^-300 to 10^300. The engine make
 <details>
 <summary>Technical details: the query trees</summary>
 
-The engine keeps two levels of trees, in its WebAssembly core. One tree per mesh, over its triangles. Two trees sit over the scene's objects and instance rows. The tree over static objects is built once, and again only after objects are created or destroyed. When a static object moves, the engine adjusts the boxes of its tree instead. The tree over dynamic objects is built again in each frame that runs a query, from all their positions at once. It holds the rows of dynamic batches too, also sprites, points and lines, on every layer.
+The engine keeps two levels of trees, in its WebAssembly core. One tree per mesh, over its triangles. Two trees sit over the scene's objects and instance rows. The tree over static objects is built once, and again only after objects are created or destroyed. When a static object moves, the engine adjusts the boxes of its tree instead.
+
+The tree over dynamic objects is built again in each frame that runs a query, from all their positions at once. It holds the rows of dynamic batches too, also sprites, points and lines, on every layer.
 
 Each node of a tree has four children, so one SIMD instruction tests a ray against four boxes. A query walks the scene's trees to the objects whose boxes it meets. Then it moves the ray into each object's own space and walks that object's mesh tree. Each object's box comes from its mesh's box, so it holds every triangle.
 
