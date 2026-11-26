@@ -1,10 +1,10 @@
 ---
 id: api/ui
-title: UI overlays and labels
+title: Labels that follow objects
 summary: "ui.trackLabel in the sketch; engine.labels.bind on the page."
 ---
 
-# UI overlays and labels
+# Labels that follow objects
 
 A label is an HTML element that follows a scene object, such as a name tag or a health bar above a unit. The sketch tracks a label on an object under an id, and the page binds an element to the same id. The engine then moves the element over the object in every frame on screen. No message goes between the sketch and the page per frame.
 
@@ -118,7 +118,7 @@ The page writes a screen label's element only when the label moved by half a CSS
 
 ## Related pages
 
-- [UI, HTML overlays and labels](../guides/ui-overlays.md): HTML UI around the canvas, and labels in a full app.
+- [HTML UI around the scene](../guides/ui-overlays.md): HTML UI around the canvas, and labels in a full app.
 - [Cameras](cameras.md): `worldToScreen` places a single point on the canvas.
 - [Engine](engine.md): `createEngine` and its label options.
 - [Sketch](sketch.md): the sketch's context, which holds `ui`.

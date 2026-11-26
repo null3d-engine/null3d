@@ -1,7 +1,7 @@
 ---
 id: guides/screens
 title: In-world screens
-summary: "Displays painted on an OffscreenCanvas in the sketch, with a refresh rate for each screen, uploads of only the changed rectangles, an LCD look that changes with distance, a boot glitch, and clicks mapped back to the canvas's coordinates."
+summary: "An example add-on you copy: displays painted on an OffscreenCanvas in the sketch, with a refresh rate for each screen, uploads of only the changed rectangles, an LCD look that changes with distance, a boot glitch, and clicks mapped back to the canvas's coordinates."
 ---
 
 # In-world screens

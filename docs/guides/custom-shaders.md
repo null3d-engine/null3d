@@ -145,7 +145,7 @@ The plugin compiles these kinds of WGSL:
 
 WGSL that is neither stops the build with an error that says how to fix it.
 
-The plugin compiles each shader once and caches the result, so a later build compiles only what changed. [Install null3D](../getting-started/install.md#builds) says where the cache lives and how to ignore it.
+The plugin compiles each shader once and caches the result, so a later build compiles only what changed. [Install null3D](../getting-started/install.md#shader-compiles-and-the-cache) says where the cache lives and how to ignore it.
 
 A shader can import the engine's library modules, such as `#import null3d::math`. The plugin resolves each import. [Shader library and imports](../shaders/library.md) lists the modules.
 

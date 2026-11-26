@@ -36,6 +36,12 @@ export function renderFrontMatter(fields: [key: string, value: string | boolean]
 	return `---\n${fields.map(([key, value]) => `${key}: ${scalar(value)}`).join('\n')}\n---\n`;
 }
 
+/** The title and summary of a page that a generator writes. */
+export interface PageText {
+	title: string;
+	summary: string;
+}
+
 /** Front matter of a page that a generator writes: its id, title and summary, marked generated. */
 export function generatedFrontMatter(id: string, title: string, summary: string): string {
 	return renderFrontMatter([

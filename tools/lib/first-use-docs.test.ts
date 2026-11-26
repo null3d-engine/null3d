@@ -20,7 +20,7 @@ describe('the page of shaders that load on first use', () => {
 	});
 
 	it('gives each feature a row with the name that preload takes', () => {
-		const page = firstUsePage(['bloom', 'skinning']);
+		const page = firstUsePage(['bloom', 'skinning'], { title: 'First use', summary: 'S' });
 		expect(page).toContain("| `'bloom'` | when `post.set` turns bloom on |");
 		expect(page).toContain("| `'skinning'` |");
 		expect(page).toContain('generated: true');

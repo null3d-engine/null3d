@@ -1,20 +1,39 @@
 ---
 id: cookbook/index
 title: Cookbook
-summary: "Short recipes; each is also a tested example."
+summary: "Recipes for one common task each: selection, cameras, characters, loading, sky and effects, screens, and hiding what walls hide."
 ---
 
 # Cookbook
 
-```mermaid
-flowchart LR
-    page["A recipe on this page"] --> check["The type check:<br/>every call exists"]
-    page --> hold["Hold mode on every GPU tier:<br/>the sketch sets up, steps<br/>and draws without an error"]
-```
+Each recipe is a complete sketch for one common task. Copy it into your project's `sketch.ts` and change it from there.
 
-Each recipe is a complete sketch for one common task. Copy it into your project's `sketch.ts` and change it from there. The engine's tests run every recipe on this page. They type check it against the engine, and draw it in [hold mode](../guides/testing.md) on every GPU tier. So each call that a recipe shows exists and runs in this version.
+The engine's tests type check every recipe and draw it in [hold mode](../guides/testing.md) on every GPU tier. So each call that a recipe shows exists and runs in this version.
 
-The recipes that load files name them as a project serves them from its `public` folder, such as `/models/knight.glb`. Put your own files there. The tests serve the [KayKit Knight](https://kaylousberg.itch.io/kaykit-adventurers) (CC0), a [Khronos glTF sample model](https://github.com/KhronosGroup/glTF-Sample-Assets) and a [Poly Haven](https://polyhaven.com/a/venice_sunset) sky (CC0) at those addresses.
+The recipes that load files name them as a project serves them from its `public` folder, such as `/models/knight.glb`. Put your own files there. The tests serve these files at those addresses:
+
+| Address | File | Source |
+| --- | --- | --- |
+| `/models/knight.glb` | `Knight.glb` | [KayKit Adventurers](https://kaylousberg.itch.io/kaykit-adventurers) (CC0) |
+| `/models/morph-cube.glb` | `AnimatedMorphCube.glb` | [Khronos glTF sample assets](https://github.com/KhronosGroup/glTF-Sample-Assets/tree/main/Models/AnimatedMorphCube) |
+| `/env/sunset.hdr` | `venice_sunset_2k.hdr` | [Poly Haven](https://polyhaven.com/a/venice_sunset) (CC0) |
+
+## Recipes
+
+- [Select objects with the pointer](#select-objects-with-the-pointer): cast a ray from a click.
+- [Walk to the point that the user clicks](#walk-to-the-point-that-the-user-clicks): move a character along the ground.
+- [A third-person camera for an animated character](#a-third-person-camera-for-an-animated-character): follow a character that plays clips.
+- [A crowd of animated characters](#a-crowd-of-animated-characters): draw many copies of one animated model.
+- [Morph targets from a model](#morph-targets-from-a-model): blend a face or a shape.
+- [A loading screen for models](#a-loading-screen-for-models): wait for a file and the first frame.
+- [A sky with a moving sun and fog](#a-sky-with-a-moving-sun-and-fog): a time of day.
+- [Glow and a custom effect](#glow-and-a-custom-effect): a full-screen pass of your own.
+- [A trail behind a moving object](#a-trail-behind-a-moving-object): draw the path that something took.
+- [A field of stars](#a-field-of-stars): draw many points.
+- [A screen that shows another camera](#a-screen-that-shows-another-camera): draw a camera to a texture.
+- [Screens in the world](#screens-in-the-world): draw a canvas on a mesh.
+- [Hide what walls hide](#hide-what-walls-hide): skip objects behind large blockers.
+
 
 ## Select objects with the pointer
 
@@ -52,6 +71,7 @@ export default defineSketch(({ scene, geometry, materials, post }) => {
 ```
 
 An event on a child also reaches its parents, so one handler on a model's copy hears clicks on every mesh in it. A click that outlines a mesh rebuilds the engine's draw tables once. That is fine for a click, but not for every frame. [Input](../api/input.md#pointer-events-on-objects) lists the events.
+
 
 ## Walk to the point that the user clicks
 
@@ -132,6 +152,7 @@ export default defineSketch(({ scene, geometry, materials, input }) => {
 ```
 
 The pointer's place comes with the frame that was on screen when the user clicked. So `screenToRay` casts the ray that the user saw, even while the camera moves. [Raycasting](../api/raycast.md) covers rays, batches of rays and overlap queries.
+
 
 ## A third-person camera for an animated character
 
@@ -218,6 +239,7 @@ export default defineSketch(async ({ scene, assets, geometry, materials, input }
 
 The job workers sample and blend the clips, so the sketch only sets the blend's value. `setBlend` allocates nothing, so call it in every frame. The blend's points sit in a frozen object, which the animator reads once. [Animation](../api/animation.md#1d-blends) explains blends, layers and clip events.
 
+
 ## A crowd of animated characters
 
 Each copy of a model gets an animator of its own. Give each copy a start time and a speed of its own, so the crowd does not step in time.
@@ -263,6 +285,36 @@ export default defineSketch(async ({ scene, assets, geometry, materials }) => {
 
 A copy costs one object for each mesh, and its joints cost no objects. The job workers animate the whole crowd, spread over every worker, and the sketch's thread does none of it. Instance batches draw a model in its rest pose only, so give each animated character a copy of its own. The [performance guide](../guides/performance.md) says what a crowd costs on each GPU path.
 
+
+## Morph targets from a model
+
+A glTF file's morph targets load with its meshes. Set each target's weight by its number, or by its name when the file names its targets.
+
+```ts
+import { defineSketch, type Mesh } from '@null3d/engine';
+
+export default defineSketch(async ({ scene, assets, time }) => {
+  scene.setBackground('#20242a');
+  scene.setEnvironment(await assets.builtinEnvironment('room'));
+  const camera = scene.createPerspectiveCamera({ fov: 40, position: [2.5, 2, 4], target: [0, 0, 0] });
+  scene.setActiveCamera(camera);
+
+  const model = await assets.loadGltf('/models/morph-cube.glb');
+  const cube = scene.instantiate(model).find('AnimatedMorphCube') as Mesh;
+
+  return {
+    onUpdate() {
+      // Two targets: one makes the cube thin, the other bends its top.
+      cube.setMorphWeight(0, 0.5 + 0.5 * Math.sin(time.now * 2));
+      cube.setMorphWeight(1, 0.5 + 0.5 * Math.cos(time.now * 1.3));
+    },
+  };
+});
+```
+
+`setMorphWeight` allocates nothing, so call it in every frame. A clip of the file can animate the weights too, and it blends them with the weights that you set. [Morph targets](../api/animation.md#morph-targets) explains the blend, and what morphing costs on each GPU path.
+
+
 ## A loading screen for models
 
 The sketch downloads its files at once, and posts how far the downloads have come. Then it builds the scene and waits for the GPU's pipelines, so the first frame shows the whole scene.
@@ -298,33 +350,6 @@ export default defineSketch(async ({ scene, assets, page }) => {
 
 The page shows the progress in its own HTML, and removes the loading screen when `engine.firstFrame` resolves. [Loading screens](../guides/loading-screens.md) shows the page's side, and how to load the shaders of skinning and other features before the first frame.
 
-## Morph targets from a model
-
-A glTF file's morph targets load with its meshes. Set each target's weight by its number, or by its name when the file names its targets.
-
-```ts
-import { defineSketch, type Mesh } from '@null3d/engine';
-
-export default defineSketch(async ({ scene, assets, time }) => {
-  scene.setBackground('#20242a');
-  scene.setEnvironment(await assets.builtinEnvironment('room'));
-  const camera = scene.createPerspectiveCamera({ fov: 40, position: [2.5, 2, 4], target: [0, 0, 0] });
-  scene.setActiveCamera(camera);
-
-  const model = await assets.loadGltf('/models/morph-cube.glb');
-  const cube = scene.instantiate(model).find('AnimatedMorphCube') as Mesh;
-
-  return {
-    onUpdate() {
-      // Two targets: one makes the cube thin, the other bends its top.
-      cube.setMorphWeight(0, 0.5 + 0.5 * Math.sin(time.now * 2));
-      cube.setMorphWeight(1, 0.5 + 0.5 * Math.cos(time.now * 1.3));
-    },
-  };
-});
-```
-
-`setMorphWeight` allocates nothing, so call it in every frame. A clip of the file can animate the weights too, and it blends them with the weights that you set. [Morph targets](../api/animation.md#morph-targets) explains the blend, and what morphing costs on each GPU path.
 
 ## A sky with a moving sun and fog
 
@@ -381,6 +406,7 @@ export default defineSketch(({ scene, geometry, materials, time }) => {
 
 The fog covers objects but not the sky, so give the fog a color near the sky's color at the horizon. [Fog](../api/scene.md#fog) gives every fog setting, and [the sky](../api/scene.md#environments-cube-maps-and-the-sky) every sky setting.
 
+
 ## Glow and a custom effect
 
 Bloom spreads the light of bright surfaces past their edges. A custom effect of your own WGSL then darkens every other row of pixels, as an old screen does.
@@ -425,6 +451,89 @@ export default defineSketch(({ scene, geometry, materials, post, time }) => {
 ```
 
 Effects run on the scene's HDR color, before bloom and the tone curve. On a device that has no HDR color, effects stay off. [Post effects](../api/post.md) gives every setting, and [Custom passes](../guides/custom-passes.md) says what an effect can read and what it costs.
+
+
+## A trail behind a moving object
+
+A dynamic line batch updates every point in every frame. Each frame, the sketch moves the trail's points one place back and puts the object's place at the front.
+
+```ts
+import { defineSketch } from '@null3d/engine';
+
+/** Points along the trail. */
+const POINTS = 120;
+
+export default defineSketch(async ({ scene, geometry, materials, time }) => {
+  scene.setBackground('#0a0c14');
+  const camera = scene.createPerspectiveCamera({ fov: 50, position: [0, 5, 9], target: [0, 0, 0] });
+  scene.setActiveCamera(camera);
+  scene.createAmbientLight({ intensity: 1 });
+  const comet = scene.createMesh({
+    mesh: geometry.sphere({ radius: 0.15 }),
+    material: materials.unlit({ color: '#ffd166' }),
+    dynamic: true,
+  });
+  const trail = await scene.createLines({
+    positions: new Float32Array(POINTS * 3),
+    width: 4,
+    color: '#ff8c42',
+    dynamic: true,
+  });
+
+  return {
+    onUpdate() {
+      const x = Math.cos(time.now * 1.5) * 3;
+      const y = Math.sin(time.now * 3) * 0.6;
+      const z = Math.sin(time.now * 1.5) * 3;
+      comet.setPosition(x, y, z);
+      // Read the array from the batch each frame: the engine's memory can grow.
+      const { positions } = trail;
+      positions.copyWithin(3, 0, (POINTS - 1) * 3);
+      positions[0] = x;
+      positions[1] = y;
+      positions[2] = z;
+    },
+  };
+});
+```
+
+The width is in CSS pixels, so the trail looks the same on every screen. Give `worldUnits: true` for a width in meters instead. [Lines](../api/lines.md) covers dashes, lit lines and line hits.
+
+
+## A field of stars
+
+A point batch draws thousands of points in one draw. With `sizeAttenuation: false`, each point keeps its size in CSS pixels at every distance.
+
+```ts
+import { defineSketch, math } from '@null3d/engine';
+
+const STARS = 5000;
+
+export default defineSketch(async ({ scene, time }) => {
+  scene.setBackground('#02030a');
+  const camera = scene.createPerspectiveCamera({ fov: 60, far: 500 });
+  scene.setActiveCamera(camera);
+
+  // Random points on a large sphere around the camera.
+  const positions = new Float32Array(STARS * 3);
+  for (let i = 0; i < STARS; i++) {
+    const y = math.randFloat(-1, 1);
+    const angle = math.randFloat(0, Math.PI * 2);
+    const ring = Math.sqrt(1 - y * y);
+    positions.set([Math.cos(angle) * ring * 200, y * 200, Math.sin(angle) * ring * 200], i * 3);
+  }
+  await scene.createPoints({ positions, size: 2, sizeAttenuation: false });
+
+  return {
+    onUpdate() {
+      camera.setRotationEuler(0.2, time.now * 0.05, 0);
+    },
+  };
+});
+```
+
+A point batch that you never change is static, and costs no uploads after its first frame. [Points](../api/points.md) covers colors, round points and clicks on points. For points of many sizes, or particles that each have a picture, use [sprites](../api/sprites.md).
+
 
 ## A screen that shows another camera
 
@@ -472,6 +581,7 @@ export default defineSketch(({ scene, geometry, materials, textures, render, tim
 ```
 
 A pass never draws the objects that show its own texture, so the screen does not show itself. A pass that nothing shows costs nothing. [Render graph API](../api/render.md) says what a scene pass draws.
+
 
 ## Screens in the world
 
@@ -533,89 +643,10 @@ The `refreshHz` option caps the refreshes, so a frame rate above the cap costs n
 
 The screens example add-on in `examples/addons/screens` builds this pattern into one call. It adds a refresh rate for each screen, an LCD look that changes with distance, a boot glitch, and clicks mapped back to the canvas's coordinates. [In-world screens](../guides/screens.md) covers it.
 
-## A trail behind a moving object
-
-A dynamic line batch updates every point in every frame. Each frame, the sketch moves the trail's points one place back and puts the object's place at the front.
-
-```ts
-import { defineSketch } from '@null3d/engine';
-
-/** Points along the trail. */
-const POINTS = 120;
-
-export default defineSketch(async ({ scene, geometry, materials, time }) => {
-  scene.setBackground('#0a0c14');
-  const camera = scene.createPerspectiveCamera({ fov: 50, position: [0, 5, 9], target: [0, 0, 0] });
-  scene.setActiveCamera(camera);
-  scene.createAmbientLight({ intensity: 1 });
-  const comet = scene.createMesh({
-    mesh: geometry.sphere({ radius: 0.15 }),
-    material: materials.unlit({ color: '#ffd166' }),
-    dynamic: true,
-  });
-  const trail = await scene.createLines({
-    positions: new Float32Array(POINTS * 3),
-    width: 4,
-    color: '#ff8c42',
-    dynamic: true,
-  });
-
-  return {
-    onUpdate() {
-      const x = Math.cos(time.now * 1.5) * 3;
-      const y = Math.sin(time.now * 3) * 0.6;
-      const z = Math.sin(time.now * 1.5) * 3;
-      comet.setPosition(x, y, z);
-      // Read the array from the batch each frame: the engine's memory can grow.
-      const { positions } = trail;
-      positions.copyWithin(3, 0, (POINTS - 1) * 3);
-      positions[0] = x;
-      positions[1] = y;
-      positions[2] = z;
-    },
-  };
-});
-```
-
-The width is in CSS pixels, so the trail looks the same on every screen. Give `worldUnits: true` for a width in meters instead. [Lines](../api/lines.md) covers dashes, lit lines and line hits.
-
-## A field of stars
-
-A point batch draws thousands of points in one draw. With `sizeAttenuation: false`, each point keeps its size in CSS pixels at every distance.
-
-```ts
-import { defineSketch, math } from '@null3d/engine';
-
-const STARS = 5000;
-
-export default defineSketch(async ({ scene, time }) => {
-  scene.setBackground('#02030a');
-  const camera = scene.createPerspectiveCamera({ fov: 60, far: 500 });
-  scene.setActiveCamera(camera);
-
-  // Random points on a large sphere around the camera.
-  const positions = new Float32Array(STARS * 3);
-  for (let i = 0; i < STARS; i++) {
-    const y = math.randFloat(-1, 1);
-    const angle = math.randFloat(0, Math.PI * 2);
-    const ring = Math.sqrt(1 - y * y);
-    positions.set([Math.cos(angle) * ring * 200, y * 200, Math.sin(angle) * ring * 200], i * 3);
-  }
-  await scene.createPoints({ positions, size: 2, sizeAttenuation: false });
-
-  return {
-    onUpdate() {
-      camera.setRotationEuler(0.2, time.now * 0.05, 0);
-    },
-  };
-});
-```
-
-A point batch that you never change is static, and costs no uploads after its first frame. [Points](../api/points.md) covers colors, round points and clicks on points. For points of many sizes, or particles that each have a picture, use [sprites](../api/sprites.md).
 
 ## Hide what walls hide
 
-Large, solid objects hide the objects that lie wholly behind them, and the engine skips those. Here a wall hides a field of crates from the camera. On WebGPU, High and Ultra cull them on desktops without a mark, and `createEngine`'s `gpuOcclusion` option turns it on or off. On WebGL2, mark the wall with `occluder: true`, and `createEngine`'s `softwareOcclusion` option turns the culling on.
+Large, solid objects hide the objects that lie wholly behind them, and the engine skips those. Here a wall hides a field of crates from the camera. On WebGPU, High and Ultra cull them on desktops with no `occluder` mark, and `createEngine`'s `gpuOcclusion` option turns it on or off. On WebGL2, mark the wall with `occluder: true`, and `createEngine`'s `softwareOcclusion` option turns the culling on.
 
 ```ts
 import { defineSketch } from '@null3d/engine';
@@ -649,12 +680,21 @@ export default defineSketch(({ scene, geometry, materials }) => {
 });
 ```
 
+The sketch alone culls nothing on WebGL2, because every preset leaves software occlusion off. Turn it on where you create the engine:
+
+```ts
+const engine = await createEngine({ canvas, sketch, softwareOcclusion: true });
+```
+
+On WebGPU, the sketch culls only on desktops at High or Ultra, unless you pass `gpuOcclusion: true`.
+
 Occlusion culling saves GPU time only where occluders hide many objects, such as the buildings along a street. Each occluder costs some work of its own. So measure your scene with occlusion culling on and off: `engine.measure()` counts the objects that it hid. [Culling](../concepts/culling.md) explains both methods, and which presets turn them on.
+
 
 ## Related pages
 
 - [Loading screens](../guides/loading-screens.md): progress, warm-up and the preset check.
 - [The asset pipeline](../guides/assets-pipeline.md): smaller, faster models and textures for your files.
 - [Performance guide](../guides/performance.md): what each feature costs, and how to measure it.
-- [UI, HTML overlays and labels](../guides/ui-overlays.md): name tags and health bars that follow objects.
+- [HTML UI around the scene](../guides/ui-overlays.md): name tags and health bars that follow objects.
 - [Examples](https://github.com/null3d-engine/null3d/tree/main/examples): longer demos, each with its own sketch.

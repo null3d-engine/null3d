@@ -1,13 +1,20 @@
 import { describe, expect, it } from 'bun:test';
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { ERRORS } from '../../packages/engine/src/errors/codes.ts';
 import type { ApiReference, ApiSymbol } from './api-docs';
 import {
+	AREAS,
 	checkDocs,
 	frontMatterProblems,
 	generateDocs,
+	inventoryProblems,
+	movesProblems,
+	navigation,
 	PAGES,
+	type PageEntry,
 	pageList,
+	placementProblems,
 	referenceLinkProblems,
 	referenceProblems,
 } from './docs';
@@ -52,13 +59,12 @@ describe('front matter', () => {
 		expect(yamlString('yes')).toBe('"yes"');
 	});
 
-	it('round-trips every inventory page through its front matter', () => {
+	it("round-trips every inventory page's title and summary through front matter", () => {
 		for (const page of PAGES) {
-			const fields = {
-				id: page.id,
-				title: page.title,
-				summary: page.summary,
-			};
+			const data = page.generated
+				? page
+				: parseFrontMatter(readFileSync(join(repoRoot, `docs/${page.id}.md`), 'utf8'))?.data;
+			const fields = { id: page.id, title: String(data?.title), summary: String(data?.summary) };
 			expect(parseFrontMatter(renderFrontMatter(Object.entries(fields)))?.data).toEqual(fields);
 		}
 	});
@@ -70,9 +76,8 @@ describe('front matter', () => {
 
 /** The written handles page, with optional labels in its front matter. */
 function writtenHandles(labels: [string, string][] = []): string {
-	const page = PAGES.find((p) => p.id === 'concepts/handles')!;
-	return `${renderFrontMatter([['id', page.id], ['title', page.title], ...labels, ['summary', page.summary]])}
-# ${page.title}
+	return `${renderFrontMatter([['id', 'concepts/handles'], ['title', 'Handles'], ...labels, ['summary', 'S']])}
+# Handles
 `;
 }
 
@@ -131,25 +136,114 @@ describe('frontMatterProblems', () => {
 	});
 });
 
-describe('pageList', () => {
-	it('groups pages by area in inventory order and links them relative to docs/', () => {
-		const list = pageList([
-			{
-				id: 'concepts/handles',
-				title: 'Handles',
-				summary: 'a | b',
-			},
-			{
-				id: 'concepts/architecture',
-				title: 'Architecture',
-				summary: 'x',
-			},
+describe('navigation', () => {
+	it('places every inventory page but the home once, under its area and group', () => {
+		const nav = navigation();
+		const ids = nav.flatMap((a) => a.groups.flatMap((g) => g.pages));
+		expect(ids.sort()).toEqual(
+			PAGES.map((p) => p.id)
+				.filter((id) => id !== 'index')
+				.sort(),
+		);
+		expect(nav.map((a) => a.id)).toEqual(AREAS.map((a) => a.id));
+		const concepts = nav.find((a) => a.id === 'concepts');
+		expect(concepts?.groups[0]?.title).toBe('How the engine runs');
+		expect(nav.find((a) => a.id === 'cookbook')?.groups).toEqual([
+			{ title: null, pages: ['cookbook/index'] },
 		]);
+	});
+
+	it('finds no problem with the inventory', () => {
+		expect(inventoryProblems()).toEqual([]);
+	});
+
+	it('reports a missing group, a wrong group, an empty group and a title on a written page', () => {
+		const areas = [
+			{ id: 'concepts', title: 'Concepts', groups: ['One', 'Two'] },
+			{ id: 'cookbook', title: 'Cookbook' },
+		];
+		const pages = [
+			{ id: 'concepts/a' },
+			{ id: 'concepts/b', group: 'Three' },
+			{ id: 'cookbook/index', group: 'One' },
+			{ id: 'concepts/c', group: 'One', title: 'C', summary: 'S' } as PageEntry,
+			{ id: 'other/d' },
+		];
+		expect(inventoryProblems(pages, areas)).toEqual([
+			'concepts/a needs a group of concepts: One, Two',
+			'concepts/b needs a group of concepts: One, Two',
+			'cookbook/index has a group, but cookbook has no groups',
+			'concepts/c is a written page; its title and summary belong in its front matter',
+			'other/d is in no area of AREAS',
+			'the group Two of concepts has no pages',
+		]);
+	});
+});
+
+describe('pageList', () => {
+	it('lists each area and group in navigation order and links pages relative to docs/', () => {
+		const nav = [
+			{
+				id: 'concepts',
+				title: 'Concepts',
+				groups: [{ title: 'First', pages: ['concepts/architecture', 'concepts/handles'] }],
+			},
+			{ id: 'cookbook', title: 'Cookbook', groups: [{ title: null, pages: ['cookbook/index'] }] },
+		];
+		const info = (id: string, title: string, summary: string) =>
+			[id, { id, title, summary }] as const;
+		const list = pageList(
+			nav,
+			new Map([
+				info('concepts/handles', 'Handles', 'a | b'),
+				info('concepts/architecture', 'Architecture', 'x'),
+				info('cookbook/index', 'Cookbook', 'y'),
+			]),
+		);
 		expect(list.indexOf('concepts/architecture.md')).toBeLessThan(
 			list.indexOf('concepts/handles.md'),
 		);
-		expect(list).toContain('## Concepts');
+		expect(list).toContain('## Concepts\n\n### First\n\n| Page |');
+		expect(list).toContain('## Cookbook\n\n| Page |');
 		expect(list).toContain('a \\| b');
+	});
+});
+
+describe('movesProblems', () => {
+	const isPage = (id: string) => ['concepts/new', 'concepts/newest'].includes(id);
+	it('accepts an empty file and moves that lead to a page, through a chain', () => {
+		expect(movesProblems('{}\n', isPage)).toEqual([]);
+		expect(
+			movesProblems('{"concepts/old":"concepts/new","concepts/older":"concepts/old"}', isPage),
+		).toEqual([]);
+	});
+
+	it('reports a missing file, a dead end, an old ID that is a page again, and a removed entry', () => {
+		expect(movesProblems(null, isPage)[0]).toContain('is missing');
+		expect(movesProblems('{"concepts/old":"concepts/gone"}', isPage)[0]).toContain(
+			'leads to concepts/gone',
+		);
+		expect(movesProblems('{"concepts/new":"concepts/newest"}', isPage)[0]).toContain(
+			'is a page again',
+		);
+		expect(movesProblems('{}', isPage, '{"concepts/old":"concepts/new"}')).toEqual([
+			'docs/moves.json: the entry for concepts/old was removed; keep it',
+		]);
+	});
+});
+
+describe('placementProblems', () => {
+	it('reports a generated page that the inventory does not place', () => {
+		const generated = new Map(
+			PAGES.filter((p) => p.generated).map((p) => [`docs/${p.id}.md`, ''] as const),
+		);
+		expect(placementProblems(generated)).toEqual([]);
+		generated.set('docs/concepts/stray.md', '');
+		generated.set('docs/errors/E1101.md', '');
+		generated.set('docs/api/reference/scene.md', '');
+		expect(placementProblems(generated)).toEqual([
+			'concepts/stray is generated, but the inventory does not place it',
+		]);
 	});
 });
 
@@ -173,7 +267,9 @@ describe('generateDocs', () => {
 		expect(pages).toContain('generated: true');
 		expect(pages).toContain('[Handles](concepts/handles.md)');
 		expect(pages).toContain('## Concepts');
+		expect(pages).toContain('### How the engine runs');
 		expect(pages).not.toContain('(index.md) |');
+		expect(JSON.parse(out.get('docs/nav.json') ?? '{}').areas[0].id).toBe('getting-started');
 		expect(out.get('docs/porting/threejs-mapping.md')).toContain('generated: true');
 	});
 
@@ -190,9 +286,9 @@ describe('generateDocs', () => {
 		const reference = out.get('docs/api/reference/objects.md') ?? '';
 		expect(reference).toContain('id: api/reference/objects');
 		expect(reference).toContain('generated: true');
-		expect(reference).toContain('# Objects and transforms: API reference');
+		expect(reference).toContain('# Objects: API reference');
 		expect(reference).toContain('## `Thing`');
-		expect(reference).toContain('[Objects and transforms](../objects.md)');
+		expect(reference).toContain('[Objects](../objects.md)');
 		expect(out.get('docs/pages.md')).not.toContain('api/reference/');
 	});
 });

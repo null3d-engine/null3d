@@ -10,7 +10,7 @@ null3D sends nothing to any server of its own. The engine and its add-ons have n
 
 ## What the engine downloads
 
-The engine downloads its own files from the address where the page serves them. That address is the page's own origin, or a CDN that the page names. [Hosting](hosting.md#the-engines-files-on-a-cdn) covers the CDN case. A replay page names a recording, and the engine downloads that file from the address the page gives it; no other address is used for it.
+The engine downloads its own files from the address where the page serves them. That address is the page's own origin, or a CDN that the page names. [Hosting](hosting.md#the-engines-files-on-a-cdn) covers the CDN case.
 
 | File | When it loads |
 | --- | --- |
@@ -21,11 +21,13 @@ The engine downloads its own files from the address where the page serves them. 
 | The area light tables | On the first rectangle or tube light |
 | A feature's first-use code module, such as a decoder's wrapper or a pass's setup | On the first use of that feature |
 
-The table names what the engine ships. A feature may have both a shader module and a code module, and each loads at its own first use; a page that never uses the feature downloads neither.
+The table names what the engine ships. A feature may have both a shader module and a code module, and each loads at its own first use. A page that never uses the feature downloads neither.
 
 The engine builds each address with `new URL(..., import.meta.url)`. The bundler then ships that file beside the engine's code.
 
 A repeat visit downloads less. The HTTP cache keeps the build's files, and the engine's cache of derived data keeps what it made from them, such as transcoded textures, in the browser's own storage. [Caches between visits](hosting.md#caches-between-visits) shows each cache.
+
+The `preload` option of `createEngine` moves a feature's shader download to before the first frame, for a game that must fetch nothing while it plays.
 
 The vendored decoders hold a download path of their own, and the engine never uses it. The engine hands each decoder its compiled WebAssembly, so a page can block every other origin.
 
@@ -33,10 +35,10 @@ The vendored decoders hold a download path of their own, and the engine never us
 
 The engine downloads only the addresses that you give it:
 
-- `assets.loadTexture`, `assets.loadGltf`, `assets.loadBinary`, `assets.loadJson` and `assets.loadImageBitmap` download the address that you pass.
+- `assets.loadTexture`, `assets.loadGltf`, `assets.loadBinary`, `assets.loadJson`, `assets.loadImageBitmap` and `assets.preload` download the addresses that you pass.
 - A glTF file names more addresses inside it, for its buffers, images and extensions. The engine downloads those too. They may be on another origin, which must allow the page to read them.
-- `preload` downloads the features that you list, when you call it.
-- The `downloads` option of `defineSketch` downloads the files that it names, as soon as the sketch's module has loaded. A recording, a replay and hold mode download them only at their loads.
+- A page that replays a recording ([Record a session that went wrong](../guides/testing.md#record-a-session-that-went-wrong)) downloads that file from the address that the page gives. It uses no other address for it.
+- The `downloads` option of `defineSketch` downloads the files that it names, as soon as the sketch's module has loaded. In [hold mode](../guides/testing.md#hold-mode), and while the engine records or replays a session, each file downloads only when the setup loads it. So every run stays the same.
 - `@null3d/sound` downloads the sound files that the sketch names, each once, when the sound starts. It downloads its own mixer module, about 17 KB, from beside its code at the same time. So the files do not wait for the mixer.
 - `@null3d/splats` downloads the SPZ file that you pass. A streamed cloud is fetched as its index and then only the chunk files that the view asks for, so a large cloud appears without the whole file. No other address is contacted.
 
@@ -48,7 +50,7 @@ A service worker can keep these files for a later visit. [Hosting](hosting.md#of
 
 The Vite plugin needs the engine's compiled shader modules to build a page. It looks for them in this order:
 
-1. The folder that the `NULL3D_ENGINE_SHADERS` setting names.
+1. The folder that the `NULL3D_ENGINE_SHADERS` setting names. It must hold the engine's generated shader modules, including `shaders.ts`. With it set, the build makes no request.
 2. A release file of the engine's GitHub repository. The plugin checks its SHA-256 hash against the value in the engine package.
 3. The engine's own sources, built on the spot. This takes longer and needs no network.
 
@@ -58,26 +60,38 @@ The release asset holds the full set of shader modules. A game that builds again
 
 In development, Vite keeps its own connection to the local dev server, for hot reload. That connection belongs to Vite, and it goes to the dev server, not to another server.
 
-## Turn off the build's download
-
-Set `NULL3D_ENGINE_SHADERS` to a folder that holds the engine's generated shader modules, including `shaders.ts`. The plugin then uses that folder and makes no request.
-
 ## The command-line tool
 
 `bunx @null3d/cli` contacts no server of its own. It serves the page from a server on the same machine, and it drives a browser on that machine, unless you give `mcp` other addresses. When Playwright's browser is missing, the tool prints the command that installs it. You run that command yourself.
 
-To draw on your computer's GPU, the tool uses one pinned version of Chrome for Testing. On first use it downloads that version once, from Google's Chrome for Testing releases on `storage.googleapis.com`. The tool records the SHA-256 hash of each platform's archive, and checks the download against it before it unpacks it. It deletes an archive with another hash and installs nothing ([E1437](../errors/E1437.md)). The command then draws with the installed Google Chrome, or it stops when `NULL3D_CHROME=testing` is set. It keeps the checked build in a cache folder that every project on the computer shares, with the hash that it checked. A copy in that folder without that record downloads again. The [command-line tool's page](../cli/null3d.md#chrome-for-testing) says where the folder is. The tool makes no other request to that host, and a page never makes it. When the `CI` variable is set, the tool draws on the software GPU and downloads nothing. `NULL3D_CHROME=installed` draws with the installed Google Chrome and also downloads nothing.
+To draw on your computer's GPU, the tool uses one pinned version of Chrome for Testing. It downloads it once, from Google's Chrome for Testing releases on `storage.googleapis.com`, and checks its SHA-256 hash before it unpacks it. The tool makes no other request to that host, and a page never makes it.
+
+| Case | What the tool downloads |
+| --- | --- |
+| First command that draws on the GPU | Chrome for Testing, once, hash checked |
+| Hash does not match | The archive is deleted and nothing is installed ([E1437](../errors/E1437.md)). The command draws with the installed Google Chrome, or stops when `NULL3D_CHROME=testing` is set |
+| `CI` is set | Nothing; it draws on the software GPU |
+| `NULL3D_CHROME=installed` | Nothing; it draws with the installed Google Chrome |
+| `mcp --connect` | Nothing; it starts no browser |
+
+<details>
+<summary>Technical details: the cache folder</summary>
+
+The tool keeps the checked build in a cache folder that every project on the computer shares, with the hash that it checked. A copy in that folder without that record downloads again. The [command-line tool's page](../cli/null3d.md#chrome-for-testing) says where the folder is.
+
+</details>
 
 `check-addon` reads the allocations of an add-on's own code by asking the browser it started for a
 heap profile. That browser listens on a loopback address on this machine, and the tool talks to it
 over that address and its debugging socket. Nothing leaves the machine, and no address is a server
 the tool chooses.
 
-The `mcp` command talks to the agent over its standard input and output. By default it serves the
-page and drives the browser on this machine, as `shot` does. The `--url` option opens the dev server
-at the address that you give. The `--connect` option attaches to the Chrome debugging endpoint at the
-address that you give. Either address may be on another machine. The command contacts no other
-address of its own choice. With `--connect` it starts no browser, so it downloads no Chrome.
+The `mcp` command talks to the agent over its standard input and output. By default it serves the page and drives the browser on this machine, as `shot` does.
+
+- `--url` opens the dev server at the address that you give.
+- `--connect` attaches to the Chrome debugging endpoint at the address that you give, and starts no browser, so it downloads no Chrome.
+
+Either address may be on another machine. The command contacts no other address of its own choice.
 
 A command that builds the page also runs the build's one download, the engine's generated shader modules, as the section above says. Set `NULL3D_ENGINE_SHADERS` on that command to keep the tool's whole run off every network.
 
