@@ -4,6 +4,19 @@
 keeps them out of its core. They are Reinhard's and Cineon's tone curves, and the soft outline of
 three.js's `OutlinePass`, with its glow, its pulse and its blurred edge.
 
+## What it is not
+
+It is not a compatibility layer, and it holds nothing more than those two curves and the outline.
+It runs no three.js code, and it takes no three.js scene, object, material, shader or pass.
+
+A port of a three.js scene rewrites the scene in null3D's own API, with or without this package.
+The scene code moves into a sketch, which runs in a worker, with handles and typed arrays in place
+of objects. GLSL in a `ShaderMaterial` or an `onBeforeCompile` patch becomes a WGSL surface
+function, unlit function or vertex offset. An `EffectComposer` chain becomes `post.set` settings,
+with `post.addEffect` for each custom pass.
+[Porting from three.js](https://github.com/null3d-engine/null3d/blob/generated/docs/porting/threejs-overview.md)
+gives the workflow and the limits that a port meets.
+
 ## Use
 
 ```ts

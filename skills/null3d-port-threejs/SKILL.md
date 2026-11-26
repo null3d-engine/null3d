@@ -11,6 +11,21 @@ metadata:
 
 A good port looks like the original, runs faster, and reads like null3D code. Translating line by line reaches the first goal at best. Some three.js habits keep the original's speed problems. Among them are objects changed every frame, per-object update methods, allocations in the render loop, and DOM access next to scene code. Many of them do not work at all, because null3D sketch code runs in a worker. So port by intent: work out what each part of the original does, then write that the null3D way.
 
+## A port is a rewrite
+
+No layer runs three.js code on null3D. `@null3d/three-compat` holds three.js's Reinhard and Cineon tone curves and `OutlinePass`'s soft outline, and nothing more. It takes no three.js scene, object, material or shader (`api/three-compat`). So a request such as "port my site" means a rewrite in null3D's own API. Say so to the user before you start:
+
+- The scene code moves into a sketch in a worker. Objects are handles with setters, and many similar objects are rows of a batch that typed arrays fill.
+- GLSL in a `ShaderMaterial` or an `onBeforeCompile` patch becomes a WGSL surface function, unlit function or vertex offset (`references/shaders.md`).
+- An `EffectComposer` chain becomes `post.set` settings, with `post.addEffect` for each custom pass (`references/post-processing.md`).
+
+Custom shaders meet these limits. Find them in the inventory and agree each workaround with the user (`porting/threejs-overview`, "Limits that a port meets"):
+
+- A batch row carries four values and a color. More per-instance data is packed, or read from a data texture at `input.instance`.
+- A custom material's uniforms fit in 32 numbers, less one for each texture, and it samples up to 6 textures.
+- One environment lights the whole scene, so a port drops per-material and blended environment maps.
+- No `BackSide`: flip the winding, or use `doubleSided: true`.
+
 ## 1. Before you start
 
 1. If the null3d-develop skill is available, read its sections 1, 2 and 4: the docs system, the thread model and the performance rules. They apply to every port. Without it, read the engine docs pages `concepts/architecture` and `guides/performance`.

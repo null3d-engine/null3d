@@ -6,6 +6,7 @@ import { MATERIAL_BUILDS_ADDRESS } from '../../../packages/vite-plugin/src/mater
 import { NO_CACHE } from '../../../packages/vite-plugin/src/shader-cache.ts';
 import { fixture } from '../../../tools/lib/fixture';
 import { FIRST_USE_SHADER_BUDGET, LATER_BUDGET } from '../../../tools/lib/size-report.ts';
+import { PLUGIN_INTERFACE_VERSION, VERSION } from '../../engine/src/shared/version.ts';
 import { UsageError } from './args.js';
 import {
 	ADDON_EXTERNALS,
@@ -393,8 +394,8 @@ describe('pageOf', () => {
 describe('engineVersions', () => {
 	it("reads this repository's engine version and plugin interface version", () => {
 		expect(engineVersions(join(import.meta.dirname, '../../../packages/particles'))).toEqual({
-			version: '0.0.0',
-			pluginInterface: 1,
+			version: VERSION,
+			pluginInterface: PLUGIN_INTERFACE_VERSION,
 		});
 	});
 
