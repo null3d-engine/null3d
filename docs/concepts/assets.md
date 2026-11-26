@@ -6,8 +6,6 @@ summary: "glTF, KTX2, meshopt, Draco; prefabs and instantiate; upload budgets; m
 
 # Assets and prefabs
 
-> Models, prefabs, meshopt and Draco compression, textures, KTX2 files, integer vertex types and the upload budget are built. The skins, clips and morph targets of glTF files load and animate, and textures stay under each preset's memory budget.
-
 ```mermaid
 flowchart LR
     gltf["glTF files"] -->|"assets.loadGltf:<br/>parsed in a worker"| prefab["A prefab: meshes,<br/>materials, textures<br/>and nodes, made once"]
@@ -20,11 +18,11 @@ flowchart LR
     meshes --> gpu
 ```
 
-Assets are the models, textures and meshes that a scene draws. A glTF model loads into a prefab, a template whose meshes, materials and textures exist once on the GPU. Each copy of the model creates only its objects, and draws with the prefab's data. Files download and decode outside the sketch's frames. A texture from a KTX2 file stays compressed in the format that the device supports. A mesh keeps its vertex data in the types that it came in, so integer data stays half or a quarter the size of floats. Texture uploads share a byte budget per frame, so a scene that loads many textures does not make one frame slow.
+Assets are the models, textures and meshes that a scene draws. A glTF model loads into a prefab, a template whose meshes, materials and textures exist once on the GPU. Each copy of the model creates only its objects, and draws with the prefab's data. Files download and decode outside the sketch's frames, so a large model never stalls one.
 
 ## Models and prefabs
 
-`assets.loadGltf` loads a glTF 2.0 model. A worker parses the file outside the sketch's frames, so a large model never stalls a frame. The loader then makes each mesh, material and texture of the file once, and returns a prefab. Then `scene.instantiate(prefab)` creates the model's objects under one new group, with one batch of queued changes. Each copy shares the prefab's GPU data, so ten copies of a model add only their own objects.
+`assets.loadGltf` loads a glTF 2.0 model. A worker parses the file outside the sketch's frames, so a large model never stalls a frame. The loader then makes each mesh, material and texture of the file once, and returns a prefab. Then `scene.instantiate(prefab)` creates the model's objects under one new group, with one batch of queued changes. Each copy shares the prefab's GPU data, so ten copies of a model add only their own objects. The skins, clips and morph targets of glTF files load and animate.
 
 ```ts
 // sketch.ts
@@ -38,13 +36,34 @@ For hundreds or thousands of copies, `scene.createInstances(prefab, count)` draw
 
 Before you publish a model, run it through `bunx @null3d/cli assets optimize`. The command stores its meshes as integers compressed with meshopt, and its textures as KTX2 files. The model then downloads less and takes less GPU memory. [The asset pipeline](../guides/assets-pipeline.md) covers it.
 
-The loader reads `.glb` files, and `.gltf` files with the files they name. It reads these extensions: `KHR_mesh_quantization`, `KHR_meshopt_compression`, `EXT_meshopt_compression`, `KHR_draco_mesh_compression`, `KHR_texture_basisu`, `EXT_texture_webp`, `EXT_texture_avif`, `KHR_texture_transform`, `KHR_materials_unlit`, `KHR_materials_emissive_strength`, `KHR_materials_specular`, `KHR_materials_ior`, `KHR_materials_transmission`, `KHR_materials_volume`, `KHR_materials_dispersion`, `KHR_materials_diffuse_transmission`, `KHR_materials_volume_scatter`, `KHR_materials_clearcoat`, `KHR_materials_sheen`, `KHR_materials_iridescence`, `KHR_materials_anisotropy`, `KHR_lights_punctual`, `KHR_animation_pointer`, `KHR_node_visibility`, `EXT_mesh_gpu_instancing`, `MSFT_lod`, `NEEDLE_lightmaps` and `NEEDLE_components`. It also reads the asset tool's own `NULL3D_mesh_bvh`, `NULL3D_occluder`, `NULL3D_clusters` and `NULL3D_pieces`. A file that requires another extension fails with E1417. The loader leaves out other extensions that a file only uses, and the model draws without them.
+The loader reads `.glb` files, and `.gltf` files with the files they name. It reads the common extensions for compressed meshes and textures, physically based materials, lights, animation, instancing and levels of detail. It reads the asset tool's own extensions too. A file that requires an extension the loader does not read fails with [E1417](../errors/E1417.md). The loader leaves out other extensions that a file only uses, and the model draws without them. [Assets](../api/assets.md#gltf-models) says what each extension becomes.
+
+<details>
+<summary>Technical details: the glTF extensions the loader reads</summary>
+
+| Group | Extensions |
+| --- | --- |
+| Meshes | `KHR_mesh_quantization`, `KHR_meshopt_compression`, `EXT_meshopt_compression`, `KHR_draco_mesh_compression`, `EXT_mesh_gpu_instancing`, `MSFT_lod` |
+| Textures | `KHR_texture_basisu`, `EXT_texture_webp`, `EXT_texture_avif`, `KHR_texture_transform` |
+| Materials | `KHR_materials_unlit`, `KHR_materials_emissive_strength`, `KHR_materials_specular`, `KHR_materials_ior`, `KHR_materials_transmission`, `KHR_materials_volume`, `KHR_materials_dispersion`, `KHR_materials_diffuse_transmission`, `KHR_materials_volume_scatter`, `KHR_materials_clearcoat`, `KHR_materials_sheen`, `KHR_materials_iridescence`, `KHR_materials_anisotropy` |
+| Lights and light maps | `KHR_lights_punctual`, `NEEDLE_lightmaps`, `NEEDLE_components` |
+| Animation and visibility | `KHR_animation_pointer`, `KHR_node_visibility` |
+| The asset tool's own | `NULL3D_mesh_bvh`, `NULL3D_occluder`, `NULL3D_clusters`, `NULL3D_pieces` |
+
+</details>
 
 An add-on can read an extension that the engine leaves out. It registers a handler with `assets.registerGltfExtension`, and the loader draws the primitives that carry the extension through that handler. Without the handler, a file that requires such an extension fails with E1417, and the message names the package to import. [Assets](../api/assets.md#extensions-that-add-ons-read) gives the handler's shape.
 
 ### Compressed meshes
 
-meshopt compression makes a model's vertex and index data several times smaller to download. The loader decodes it in its worker with meshoptimizer's own decoder, so the meshes match what any other meshopt decoder reads from the file. The decoder is about 4 KB after Brotli. It downloads with the first file that holds meshopt data, so a page without such files does not download it. It runs as WebAssembly with SIMD instructions, and the engine compiles it once per page.
+meshopt compression makes a model's vertex and index data several times smaller to download. The loader decodes it in its worker with meshoptimizer's own decoder, so the meshes match what any other meshopt decoder reads from the file.
+
+| Format | Decoder after Brotli | Use it for |
+| --- | --- | --- |
+| meshopt | About 4 KB | Every model, and the only choice for files with animation clips or morph targets |
+| Draco | About 60 KB | Large static meshes, such as scans and product models on a page that loads several hundred KB of them, where it is 14 to 27% smaller |
+
+Each decoder downloads with the first file that needs it, and compiles once per page.
 
 ```ts
 // sketch.ts: the same call loads a compressed model
@@ -52,17 +71,26 @@ const city = await assets.loadGltf('/models/city-meshopt.glb');
 scene.instantiate(city);
 ```
 
-The loader reads both names of the extension: `KHR_meshopt_compression`, and the older `EXT_meshopt_compression`. A file can carry a fallback buffer with the uncompressed data, for loaders without a decoder. The engine never downloads that buffer, because it always decodes. A file whose compressed data breaks the extension's rules, or does not decode, fails with E1416.
+The loader reads both names of the meshopt extension: `KHR_meshopt_compression`, and the older `EXT_meshopt_compression`. A file can carry a fallback buffer with the uncompressed data, for loaders without a decoder. The engine never downloads that buffer, because it always decodes. A file whose compressed data breaks the extension's rules, or does not decode, fails with [E1416](../errors/E1416.md).
 
-The loader also reads Draco compression, `KHR_draco_mesh_compression`, which many older models use. It decodes each mesh in its worker with Draco's own decoder for glTF files. That decoder is about 60 KB after Brotli. It downloads with the first file that holds Draco data, so a page without such files does not download it. The engine compiles it once per page.
+The loader reads Draco compression too, `KHR_draco_mesh_compression`, which many older models use. It decodes each mesh in its worker with Draco's own decoder for glTF files. The loader stores the decoded normals and tangents as 8-bit integers, and texture coordinates between 0 and 1 as 16-bit integers. These are the types that the asset tool writes, and they take half the GPU memory of the floats that other loaders keep, or less. Positions stay floats. In development builds, the loader warns about each Draco file and names the command that converts it.
 
-The loader stores the decoded normals and tangents as 8-bit integers, and texture coordinates between 0 and 1 as 16-bit integers. These are the types that the asset tool writes. They take half the GPU memory of the floats that other loaders keep, or less. Positions stay floats. In development builds, the loader warns about each Draco file and names the command that converts it.
-
-Convert Draco files to meshopt with `bunx @null3d/cli assets optimize` when you can. Draco suits large static meshes, such as scans and product models, on a page that loads several hundred KB of them. There a Draco file is 14 to 27% smaller than a meshopt file after Brotli. Draco does not compress animation clips or morph targets. So an animated or morphed file is 3 to 4 times larger than its meshopt copy. Blender 5.2 reads and writes meshopt. Keep a Draco copy only for older Blender versions, which read Draco and not meshopt.
+Convert Draco files to meshopt with `bunx @null3d/cli assets optimize` when you can. Draco does not compress animation clips or morph targets, so an animated or morphed file is 3 to 4 times larger than its meshopt copy. Blender 5.2 reads and writes meshopt. Keep a Draco copy only for older Blender versions, which read Draco and not meshopt.
 
 ## Textures
 
-`assets.loadTexture` loads PNG, JPEG, WebP and AVIF images, and KTX2 files of Basis Universal data. The browser decodes images off the main thread. Every browser that runs null3D decodes WebP and AVIF, so the engine ships no decoder for them. An image that does not decode fails with E1412. Workers transcode KTX2 data into the compressed format that the device supports. These are the engine's job workers, which take the work between frames, or one worker of its own where no job worker can. A frame never waits for them. The GPU then keeps it at a quarter or an eighth of the memory of plain RGBA. The transcoder downloads when the first KTX2 file loads, so a page without KTX2 files does not download it. The engine keeps each transcoded texture in its cache of derived data, so a repeat visit skips the transcoder ([Caching](../api/assets.md#the-cache-of-derived-data)).
+`assets.loadTexture` loads PNG, JPEG, WebP and AVIF images, and KTX2 files of Basis Universal data. The browser decodes images off the main thread. Every browser that runs null3D decodes WebP and AVIF, so the engine ships no decoder for them. An image that does not decode fails with [E1412](../errors/E1412.md).
+
+Workers transcode KTX2 data into the compressed format that the device supports. A frame never waits for them. The GPU then keeps it at a quarter or an eighth of the memory of plain RGBA.
+
+<details>
+<summary>Technical details: which workers transcode KTX2 data</summary>
+
+These are the engine's job workers, which take the work between frames, or one worker of its own where no job worker can.
+
+</details>
+
+The transcoder downloads when the first KTX2 file loads, so a page without KTX2 files does not download it. The engine keeps each transcoded texture in its cache of derived data, so a repeat visit skips the transcoder ([Caching](../api/assets.md#the-cache-of-derived-data)).
 
 A KTX2 file of UASTC HDR data holds colors brighter than white, such as a sky or a lamp. It becomes BC6H on a device with BC formats, at one byte per texel. Devices without BC formats, such as the iPad and most phones, get `rgb9e5ufloat`: shared-exponent floats at four bytes per texel, half the memory of `rgba16float`, which every device filters. Its values are linear, so use it for emissive maps and unlit materials, with tone mapping on.
 
@@ -113,7 +141,14 @@ A model or texture file can come from a user, or be broken. So the loaders check
 
 The model limit grows with the file, because compressed data decodes to several times its size. The sample models decode to at most 3 times their bytes, so a real model stays far below the limit. A model that does pass it is broken, or holds more than a scene can draw. Split it into several files.
 
-A block of meshopt data can hold many arrays. The asset tool packs every index list of one width into one block, so a large scene's block can pass 256 MiB. No GPU buffer holds the block whole, so only the file's total limits it. Each array that the engine reads from the block must still stay within 256 MiB. `bunx @null3d/cli assets optimize` writes no model that passes either limit. Its error tells you to split the scene into several files.
+A block of meshopt data can hold many arrays. Each array that the engine reads from the block must still stay within 256 MiB. `bunx @null3d/cli assets optimize` writes no model that passes either limit. Its error tells you to split the scene into several files.
+
+<details>
+<summary>Technical details: limits inside meshopt blocks</summary>
+
+The asset tool packs every index list of one width into one block, so a large scene's block can pass 256 MiB. No GPU buffer holds the block whole, so only the file's total limits it.
+
+</details>
 
 A primitive that names an accessor another primitive also names shares that accessor's arrays. So a file pays once for data that it uses many times.
 
