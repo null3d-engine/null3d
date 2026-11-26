@@ -65,13 +65,19 @@ export default defineSketch(({ scene, geometry, materials, post }) => {
 
 ## Below the whole canvas's render scale
 
-The engine can draw the scene at a lower scale than the canvas, then scale the image up, to hold a frame rate on a slow GPU ([Dynamic resolution](quality-presets.md#dynamic-resolution)). While the render scale can drop below 1, as it can on the Low, Medium and High presets, the final pass runs in two steps. The first step tone maps the image at the render size into an 8-bit target. The second step scales that target up to the canvas with an upscaler that keeps edges sharp, then draws the outline's line, applies the color grading table and dithers. While the scale cannot drop below 1, one pass does all of this work.
+The engine can draw the scene at a lower scale than the canvas, then scale the image up, to hold a frame rate on a slow GPU ([Dynamic resolution](quality-presets.md#dynamic-resolution)). While the render scale can drop below 1, as it can on the Low, Medium and High presets, the final pass runs in two steps.
+
+The first step tone maps the image at the render size into an 8-bit target. The second step scales that target up to the canvas with an upscaler that keeps edges sharp, then draws the outline's line, applies the color grading table and dithers. While the scale cannot drop below 1, one pass does all of this work.
 
 <details>
 <summary>Technical details: the two steps and the upscaler</summary>
 
-1. The first step draws at the render size, one pixel for each render pixel. It adds bloom's light, darkens the edges with the vignette, and runs the output transform, which is the tone curve and the sRGB encode. It smooths edges with FXAA too. It writes an 8-bit target the size of the canvas, with the image in its corner at the render scale. The second step reads that target as display color. The first step leaves the dither to the second step: that step draws canvas pixels, so the noise lands at the canvas's size.
-2. The second step is the plain final pass. It reads the 8-bit target and scales it up to the whole canvas with GSR 1, Qualcomm's spatial upscaler, which keeps edges sharper than a bilinear filter. The pass blends the four nearest texels as a bilinear filter does, then votes on their green channel to find an edge. Where an edge passes, it weighs twelve texels around the pixel and adds a bounded correction to the blend; a flat area keeps the blend alone. The work runs only where a pixel reads a smaller corner on the canvas, so an image at the whole canvas's scale pays nothing for it. Then the pass sharpens the display color while the sketch asks for it ([Sharpening](#sharpening)), draws the outline's line, applies the color grading table, when the sketch sets one, and dithers.
+1. The first step draws at the render size, one pixel for each render pixel. It adds bloom's light and darkens the edges with the vignette. It runs the output transform, which is the tone curve and the sRGB encode. It smooths edges with FXAA too.
+
+   It writes an 8-bit target the size of the canvas, with the image in its corner at the render scale. The second step reads that target as display color. The first step leaves the dither to the second step: that step draws canvas pixels, so the noise lands at the canvas's size.
+2. The second step is the plain final pass. It reads the 8-bit target and scales it up to the whole canvas with GSR 1, Qualcomm's spatial upscaler, which keeps edges sharper than a bilinear filter. The pass blends the four nearest texels as a bilinear filter does, then votes on their green channel to find an edge.
+
+   Where an edge passes, it weighs twelve texels around the pixel and adds a bounded correction to the blend. A flat area keeps the blend alone. The work runs only where a pixel reads a smaller corner on the canvas, so an image at the whole canvas's scale pays nothing for it. Then the pass sharpens the display color while the sketch asks for it ([Sharpening](#sharpening)). It draws the outline's line, applies the color grading table when the sketch sets one, and dithers.
 
 </details>
 

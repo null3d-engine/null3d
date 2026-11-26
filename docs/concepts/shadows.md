@@ -299,7 +299,9 @@ In far cascades, the engine raises `bias` to a floor set by the map's depth prec
 <details>
 <summary>Technical details: depth precision and the bias floor</summary>
 
-The shadow map stores each depth in 16 bits. So it holds 65,535 steps of depth from each cascade's face toward the light to its far face. A cascade's box reaches far toward the light, to hold every caster that can shadow its slice. A step is then a few millimeters in a near cascade. In the last cascade of the S4 benchmark, which ends 200 m out, it is about 14 mm. A stored depth can sit up to one step from the caster's true depth. So in each cascade, `bias` and the plane margin that [Flat casters](#flat-casters) describes cover at least one and a half steps. It changes nothing in the near cascades, where a step is shorter than the defaults.
+The shadow map stores each depth in 16 bits. So it holds 65,535 steps of depth from each cascade's face toward the light to its far face. A cascade's box reaches far toward the light, to hold every caster that can shadow its slice. A step is then a few millimeters in a near cascade. In the last cascade of the S4 benchmark, which ends 200 m out, it is about 14 mm.
+
+A stored depth can sit up to one step from the caster's true depth. So in each cascade, `bias` and the plane margin that [Flat casters](#flat-casters) describes cover at least one and a half steps. It changes nothing in the near cascades, where a step is shorter than the defaults.
 
 </details>
 
@@ -460,7 +462,13 @@ WebGPU and WebGL2 draw the same shadows. On WebGL2, the directional light's filt
 <details>
 <summary>Technical details: shadow formats and reads on each path</summary>
 
-Both keep the shadow map as a depth texture array of 16-bit depths, `depth16unorm` on WebGPU and `DEPTH_COMPONENT16` on WebGL2. Both keep the shadow atlas as a depth texture array of 32-bit floats. A tile's view is a perspective view, which spends most of its depth's steps near its light. In 16 bits, one step near a tile's far end would be about 1.5% of the distance from the light: 15 cm at 10 m. The atlas is read with the GPU's depth comparison, which blends the tests of the four nearest texels, and the filter blends several comparisons. On WebGL2 the shaders read it as a `sampler2DArrayShadow` through a comparison sampler. The directional light's filter reads the depths of the shadow map's texels and compares them itself. WebGPU reads four texels at once. WebGL2's shading language has no such read, so there it reads each texel on its own. Each comparison on WebGL2 reads the map at its own level, which Apple's GPUs run faster than a read at a set level.
+Both keep the shadow map as a depth texture array of 16-bit depths, `depth16unorm` on WebGPU and `DEPTH_COMPONENT16` on WebGL2. Both keep the shadow atlas as a depth texture array of 32-bit floats.
+
+A tile's view is a perspective view, which spends most of its depth's steps near its light. In 16 bits, one step near a tile's far end would be about 1.5% of the distance from the light: 15 cm at 10 m.
+
+The atlas is read with the GPU's depth comparison, which blends the tests of the four nearest texels, and the filter blends several comparisons. On WebGL2 the shaders read it as a `sampler2DArrayShadow` through a comparison sampler. The directional light's filter reads the depths of the shadow map's texels and compares them itself. WebGPU reads four texels at once.
+
+WebGL2's shading language has no such read, so there it reads each texel on its own. Each comparison on WebGL2 reads the map at its own level, which Apple's GPUs run faster than a read at a set level.
 
 </details>
 

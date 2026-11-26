@@ -42,12 +42,18 @@ All threads share one block of WebAssembly memory, so they pass scene data by re
 
 ### When the job workers start
 
-A job worker is a whole browser thread, and each costs about 3.5 MiB of memory even when it waits. So the engine starts none at first. Until one is ready, the sketch thread runs its share of each loop. At 0.2 ms or more of parallel loops per frame, it asks for 2 job workers. After each later window it doubles, up to the logical cores minus 2 and at least 1. Workers that started stay until the engine stops, and a small scene never starts one. The stats overlay counts the workers that run, and `engine.mode.jobWorkers` gives the most that the engine may start.
+A job worker is a whole browser thread, and each costs about 3.5 MiB of memory even when it waits. So the engine starts none at first. Until one is ready, the sketch thread runs its share of each loop. At 0.2 ms or more of parallel loops per frame, it asks for 2 job workers.
+
+After each later window it doubles, up to the logical cores minus 2 and at least 1. Workers that started stay until the engine stops, and a small scene never starts one. The stats overlay counts the workers that run, and `engine.mode.jobWorkers` gives the most that the engine may start.
 
 <details>
 <summary>Technical details: how the engine times the job workers</summary>
 
-Over each window of 30 frames, or 2 seconds once it holds 2 frames, the sketch thread times its parallel loops. It takes their mean time per frame. The first decoders, such as the KTX2 transcoder, ask for 2 job workers while their own code downloads. The first decode then runs on the first job worker that is ready, and later ones on the second. They ask for more while every job worker has a task. The page downloads the job worker script while the core downloads. So a setup that loads a model starts its job workers from the browser's cache. Work that only job workers run between frames also asks for 2 when none has started, such as the resampling of a model's clips.
+Over each window of 30 frames, or 2 seconds once it holds 2 frames, the sketch thread times its parallel loops. It takes their mean time per frame.
+
+The first decoders, such as the KTX2 transcoder, ask for 2 job workers while their own code downloads. The first decode then runs on the first job worker that is ready, and later ones on the second. They ask for more while every job worker has a task.
+
+The page downloads the job worker script while the core downloads. So a setup that loads a model starts its job workers from the browser's cache. Work that only job workers run between frames also asks for 2 when none has started, such as the resampling of a model's clips.
 
 After a window with too little parallel work, the sketch thread stops timing its loops. The pause lasts 4.5 seconds of sketch time, because each reading of the browser's clock allocates memory. The pause is a time, not a frame count, so a slow frame rate does not make it longer. Once it has asked for the most, it stops for good.
 
@@ -78,7 +84,9 @@ The sketch worker, computing frame N+1:
 5. Runs parallel jobs: the animation step, which poses the animated objects, then the transforms by hierarchy depth, with their bounds. A skinned mesh's bounds follow its pose.
 6. Runs your `onLateUpdate`, then updates the objects that it moved and the objects below them.
 7. Runs more parallel jobs: the instance batches.
-8. Gathers the point and spot lights nearest the camera, and tests each grid cell against each view. A view is the camera's, a shadow cascade's, a shadow tile's or a scene pass's. Parallel jobs then cull the see-through objects and sort them back to front. On the WebGL2 path, they also cull the objects of the cells in view. They test them against marked blockers when [software occlusion culling](culling.md#software-occlusion-culling-on-webgl2) is on. They list the lights of each cluster too. When textures take more memory than the preset's budget, the engine drops their largest mip levels here ([Quality presets](quality-presets.md#texture-memory)).
+8. Gathers the point and spot lights nearest the camera, and tests each grid cell against each view. A view is the camera's, a shadow cascade's, a shadow tile's or a scene pass's. Parallel jobs then cull the see-through objects and sort them back to front. On the WebGL2 path, they also cull the objects of the cells in view. They test them against marked blockers when [software occlusion culling](culling.md#software-occlusion-culling-on-webgl2) is on. They list the lights of each cluster too.
+
+   When textures take more memory than the preset's budget, the engine drops their largest mip levels here ([Quality presets](quality-presets.md#texture-memory)).
 9. Records the frame's draw lists: the new GPU objects and the uploads first, then each pass in the order that the [render graph](render-graph.md) sets. It also keeps the frame's camera for rays from the pointer, and places the frame's labels.
 10. Publishes the finished frame: it stores the frame's number in one shared slot, which the render worker reads in its next frame callback.
 
@@ -126,7 +134,9 @@ A frame's draw list holds a series of passes, and the [render graph](render-grap
 
 The passes of the other effects, such as decals, the transparency layers, volumetric fog and depth of field, run between them ([The post-processing chain](post-processing.md)).
 
-On WebGL2 the job workers cull, and test the occluders when software occlusion culling is on. They also list the lights of each cluster before the frame records. The vertex shaders of the shadow and scene passes skin and morph the meshes. So the frame has no compute passes there. A new environment from a file, or the built-in room, adds GPU work to the next frame once. The GPU filters its map for each roughness before the frame draws ([Lighting and environment](lighting.md#environment-maps)). The graph works out the order only when the passes change, so a frame whose passes stay the same pays nothing for it.
+On WebGL2 the job workers cull, and test the occluders when software occlusion culling is on. They also list the lights of each cluster before the frame records. The vertex shaders of the shadow and scene passes skin and morph the meshes. So the frame has no compute passes there.
+
+A new environment from a file, or the built-in room, adds GPU work to the next frame once. The GPU filters its map for each roughness before the frame draws ([Lighting and environment](lighting.md#environment-maps)). The graph works out the order only when the passes change, so a frame whose passes stay the same pays nothing for it.
 
 ## Precision far from the origin
 

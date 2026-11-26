@@ -30,7 +30,9 @@ null3D draws each frame as a series of passes. A pass is one job for the GPU, su
 
 The engine declares its own passes. A sketch adds scene passes of its own with `render.addPass`, and `render.dumpGraph()` prints the graph ([Render graph API](../api/render.md)).
 
-In the diagram, boxes are passes and cylinders are data. An arrow into a pass shows what it reads, and an arrow out of a pass shows what it writes. The opaque and transparent passes share one render pass on the GPU. The final pass takes the scene color to the canvas. On the 8-bit path with MSAA, the resolve pass can take its place, along the dotted arrows. It shares the opaque and transparent passes' render pass. The last paragraph of this section says when.
+In the diagram, boxes are passes and cylinders are data. An arrow into a pass shows what it reads, and an arrow out of a pass shows what it writes.
+
+The opaque and transparent passes share one render pass on the GPU. The final pass takes the scene color to the canvas. On the 8-bit path with MSAA, the resolve pass can take its place, along the dotted arrows. It shares the opaque and transparent passes' render pass. The last paragraph of this section says when.
 
 ## The engine's passes
 
@@ -71,11 +73,17 @@ With GPU occlusion culling on, each camera view's culling pass keeps the large o
 
 ## Views and a sketch's passes
 
-A view is the scene seen from one camera, culled on its own. On WebGPU each view has a culling pass, and on WebGL2 the job workers list the visible objects of each view. A start-up measurement can pick direct draws on an Apple GPU in Safari, or in any browser on iPhone and iPad ([Culling](culling.md#how-each-path-culls)). There the job workers list them on WebGPU too. The camera's view draws the scene color and depth, and the scene color reaches the canvas. Each scene pass that a sketch adds has a view of its own, which draws into its texture. The camera's passes read the texture of every scene pass that a material shows, so those passes run first. A view that a sketch adds with `scene.createView` draws after the camera's passes. It draws into a rectangle of the camera's scene color through the viewport and the scissor. It has a depth target of its own, so its image covers the camera's there.
+A view is the scene seen from one camera, culled on its own. On WebGPU each view has a culling pass, and on WebGL2 the job workers list the visible objects of each view. A start-up measurement can pick direct draws on an Apple GPU in Safari, or in any browser on iPhone and iPad ([Culling](culling.md#how-each-path-culls)). There the job workers list them on WebGPU too.
+
+The camera's view draws the scene color and depth, and the scene color reaches the canvas. Each scene pass that a sketch adds has a view of its own, which draws into its texture. The camera's passes read the texture of every scene pass that a material shows, so those passes run first.
+
+A view that a sketch adds with `scene.createView` draws after the camera's passes. It draws into a rectangle of the camera's scene color through the viewport and the scissor. It has a depth target of its own, so its image covers the camera's there.
 
 WebGPU draws an image's top row first, and materials sample the bottom row at v = 0. So on WebGPU a copy pass turns each pass's image over into its texture. WebGL2 draws the rows in that order already. A reflection view on the HDR WebGPU path is the exception. It draws into its target directly, and `reflection_uv` turns the rows of the lookups that read it.
 
-A full-screen pass that a sketch adds is a view without a camera. It draws one triangle over its texture, and its shader writes the rows bottom first on both paths, so it needs no copy. A pass that reads only other passes' textures runs before the passes that read its own. A pass that reads the scene color, the outline mask or the scene depth runs after the camera's passes. So the camera's passes do not read its texture in the same frame: a material that shows it shows the frame before. A custom effect that reads it runs after it.
+A full-screen pass that a sketch adds is a view without a camera. It draws one triangle over its texture, and its shader writes the rows bottom first on both paths, so it needs no copy.
+
+A pass that reads only other passes' textures runs before the passes that read its own. A pass that reads the scene color, the outline mask or the scene depth runs after the camera's passes. So the camera's passes do not read its texture in the same frame: a material that shows it shows the frame before. A custom effect that reads it runs after it.
 
 A compute pass that a sketch adds is a view without a camera too. Its shader writes its texture as a storage texture. A material, an effect or another pass samples that texture in the same frame, because the graph orders the pass before them. A custom material's vertex offset that reads it also draws it in the material's shadow, motion and pick passes. So the graph orders the pass before those too.
 
@@ -161,7 +169,9 @@ const screen = materials.shader({ wgsl: monitor, roughness: 0.15, textures: show
 
 ## Targets and memory
 
-A target is a texture that passes draw into. A temporary target lives for one frame, and the pass that creates it sets its size. That size is the render size, half or a quarter of it, the canvas size, or a fixed size in pixels. The render size is the canvas size at the render scale, which [dynamic resolution](quality-presets.md#dynamic-resolution) moves. The engine makes each target of a relative size at the canvas's size, and passes draw into its top-left corner at a lower scale. So a new scale needs no new texture. The engine's scene color and depth are temporary targets.
+A target is a texture that passes draw into. A temporary target lives for one frame, and the pass that creates it sets its size. That size is the render size, half or a quarter of it, the canvas size, or a fixed size in pixels. The render size is the canvas size at the render scale, which [dynamic resolution](quality-presets.md#dynamic-resolution) moves.
+
+The engine makes each target of a relative size at the canvas's size, and passes draw into its top-left corner at a lower scale. So a new scale needs no new texture. The engine's scene color and depth are temporary targets.
 
 A kept target holds its contents from one frame to the next, in a texture of its own. The kept targets of [custom passes](../api/render.md) with a `scale`, reflections included, are the exception: each texture takes the render size's share, and a new scale makes it again, so materials read it whole.
 

@@ -6,7 +6,9 @@ summary: "Low to Ultra; pixel-ratio caps; the preset check; switching presets; t
 
 # Quality presets, dynamic resolution and frame budgets
 
-> The engine chooses a preset and checks it in the first frames of play, or before play when the page asks. It applies the preset's pixel ratio cap, render scale range, shadow, texture and anti-aliasing settings, depth prepass, occlusion culling and memory maximum. During play, the frame-budget governor moves a sketch's budgets and the render scale in turn, a budget's step first, then the live shadow settings. A sketch can switch presets with `quality.setPreset`. The presets do not cap the count of point and spot lights. The camera lists up to 1,024 of them on every preset, and up to 128 in each cluster.
+> The engine chooses a preset and checks it in the first frames of play, or before play when the page asks. It applies the preset's pixel ratio cap, render scale range, shadow, texture and anti-aliasing settings, depth prepass, occlusion culling and memory maximum. During play, the frame-budget governor moves a sketch's budgets and the render scale in turn, a budget's step first, then the live shadow settings.
+>
+> A sketch can switch presets with `quality.setPreset`.
 
 ```mermaid
 flowchart TD
@@ -178,6 +180,8 @@ The [settings of each preset](quality-preset-tables.md#settings-of-each-preset) 
 
 The engine makes its memory while it tests the GPU paths. So the memory maximum follows the starting preset and the crashed starts, and the GPU path does not cap it. The `memory` option of `createEngine` replaces it: [Page API](../api/engine.md#memory).
 
+The presets do not cap the count of point and spot lights. The camera lists up to 1,024 of them on every preset, and up to 128 in each cluster.
+
 ### Pixel ratio cap
 
 The pixel ratio cap is the cheapest large saving on phones. The GPU fills each device pixel, and a screen's device pixels grow with the square of its ratio. So a ratio of 3 fills 2.25 times the pixels of a ratio of 2. The `maxPixelRatio` option of `createEngine` replaces the preset's cap, and `quality.set({ maxPixelRatio })` changes it during play.
@@ -223,7 +227,9 @@ When room returns, 5% under the budget, the engine loads the dropped levels agai
 
 ### Anti-aliasing
 
-Low smooths edges with FXAA, and the other presets with MSAA. MSAA draws 4 samples per pixel, which costs a phone's GPU memory and bandwidth. FXAA draws one sample and smooths edges in the final pass, at a small cost in sharpness. The `antialias` option of `createEngine` replaces the preset's mode. The mode stays fixed while the engine runs, because the scene's targets and pipelines depend on it. Two cases move it. When the start-up preset check lowers the preset, the engine draws with the lower preset's mode. In compatibility mode with MSAA, the first effect that needs HDR color moves the engine to FXAA ([The post-processing chain](post-processing.md#effects-on-devices-without-hdr-color)). A sketch's own preset change never moves it. [GPU tiers and backends](backends.md#color-and-anti-aliasing-on-each-tier) compares the modes.
+Low smooths edges with FXAA, and the other presets with MSAA. MSAA draws 4 samples per pixel, which costs a phone's GPU memory and bandwidth. FXAA draws one sample and smooths edges in the final pass, at a small cost in sharpness.
+
+The `antialias` option of `createEngine` replaces the preset's mode. The mode stays fixed while the engine runs, because the scene's targets and pipelines depend on it. Two cases move it. When the start-up preset check lowers the preset, the engine draws with the lower preset's mode. In compatibility mode with MSAA, the first effect that needs HDR color moves the engine to FXAA ([The post-processing chain](post-processing.md#effects-on-devices-without-hdr-color)). A sketch's own preset change never moves it. [GPU tiers and backends](backends.md#color-and-anti-aliasing-on-each-tier) compares the modes.
 
 ### Moment transparency
 
@@ -234,7 +240,11 @@ The layer costs memory and GPU time. On the Island showcase at High at 1920 x 10
 <details>
 <summary>Technical details: the moment layer's memory</summary>
 
-The layer's moment store and color sum take 8 bytes per pixel each at the render size. Its surfaces write both, which is 16 bytes per pixel a frame, or 33 MB at 1920 x 1080. The composite reads both and writes the scene color, and SMAA 1x's two 8-bit steps take 8 bytes per pixel more. Its resolve step writes a copy of the scene color, at 4 or 8 bytes per pixel by the scene color's format. A multisampled scene also needs a copy of one depth sample, at 4 bytes per pixel. So the targets that the layer adds come to 32 to 36 bytes per pixel before the render graph shares any with another pass. The 33 MB counts the writes alone, and the memory is larger. The weighted blending writes 10 bytes per pixel into its two sums. SMAA smooths the layer's edges under the share that its moments cover, and the opaque geometry keeps MSAA's samples.
+The layer's moment store and color sum take 8 bytes per pixel each at the render size. Its surfaces write both, which is 16 bytes per pixel a frame, or 33 MB at 1920 x 1080.
+
+The composite reads both and writes the scene color, and SMAA 1x's two 8-bit steps take 8 bytes per pixel more. Its resolve step writes a copy of the scene color, at 4 or 8 bytes per pixel by the scene color's format. A multisampled scene also needs a copy of one depth sample, at 4 bytes per pixel. So the targets that the layer adds come to 32 to 36 bytes per pixel before the render graph shares any with another pass.
+
+The 33 MB counts the writes alone, and the memory is larger. The weighted blending writes 10 bytes per pixel into its two sums. SMAA smooths the layer's edges under the share that its moments cover, and the opaque geometry keeps MSAA's samples.
 
 </details>
 

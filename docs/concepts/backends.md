@@ -37,7 +37,9 @@ On WebGL2 there are no compute shaders, so the job workers cull on the CPU ([Cul
 <details>
 <summary>Technical details: how WebGL2 uploads a frame</summary>
 
-The job workers group the visible objects the same way as on WebGPU. Each object's matrix sits in a data texture on the GPU, which a frame updates only where matrices changed. Dynamic instance batches write theirs each frame into the next of three textures. So a frame never writes a texture that the GPU may still read. Each frame lists the visible objects, 4 bytes each, and uploads the list only when it changed. The `visibleEntries` figure of `engine.measure` counts the entries of each frame's list. A static instance batch that has stopped changing is culled in groups of 64 nearby rows, with one test and one list entry per group. A group partly in view draws all its rows, and the GPU clips the ones outside. On both paths, a scene spread over several grid cells skips the still objects of the cells out of view first ([Culling](culling.md)).
+The job workers group the visible objects the same way as on WebGPU. Each object's matrix sits in a data texture on the GPU, which a frame updates only where matrices changed. Dynamic instance batches write theirs each frame into the next of three textures. So a frame never writes a texture that the GPU may still read.
+
+Each frame lists the visible objects, 4 bytes each, and uploads the list only when it changed. The `visibleEntries` figure of `engine.measure` counts the entries of each frame's list. A static instance batch that has stopped changing is culled in groups of 64 nearby rows, with one test and one list entry per group. A group partly in view draws all its rows, and the GPU clips the ones outside. On both paths, a scene spread over several grid cells skips the still objects of the cells out of view first ([Culling](culling.md)).
 
 </details>
 
@@ -62,7 +64,9 @@ WebGL2 and WebGPU's compatibility mode run at most the Medium [quality preset](q
 
 ## Color and anti-aliasing on each tier
 
-The anti-aliasing mode smooths the jagged edges of objects. The quality preset picks it: FXAA on Low, and MSAA from Medium up. The `antialias` option of `createEngine` replaces the preset's mode. The mode stays fixed while the engine runs, because the scene's targets and pipelines depend on it. Two cases move it. When the start-up preset check lowers the preset, the engine draws with the lower preset's mode. In compatibility mode with MSAA, the first effect that needs HDR color moves the engine to FXAA ([The post-processing chain](post-processing.md#effects-on-devices-without-hdr-color)). A sketch's own preset change never moves it.
+The anti-aliasing mode smooths the jagged edges of objects. The quality preset picks it: FXAA on Low, and MSAA from Medium up. The `antialias` option of `createEngine` replaces the preset's mode. The mode stays fixed while the engine runs, because the scene's targets and pipelines depend on it.
+
+Two cases move it. When the start-up preset check lowers the preset, the engine draws with the lower preset's mode. In compatibility mode with MSAA, the first effect that needs HDR color moves the engine to FXAA ([The post-processing chain](post-processing.md#effects-on-devices-without-hdr-color)). A sketch's own preset change never moves it.
 
 | Mode | How the frame draws it |
 | --- | --- |

@@ -353,7 +353,9 @@ The coefficients are four RGB values. The first mask is the probe's validity: 1 
 
 A scene with a grid draws no [screen-space bounce light](post-processing.md#screen-space-bounce-light). The grid already holds one bounce, with the occlusion the screen cannot supply, and the two would count the same light twice.
 
-`bakeProbes` bakes a grid in the browser. Each probe casts directions with `scene.raycastBatch`, which tests both faces of every triangle here. A direction that reaches the sky counts toward the probe's sky visibility. A direction that meets a surface's back means geometry encloses the probe: the bake gives it no validity, and fills it from the probes around it. A direction that hits a surface's front takes that surface's color once, as a matte bounce. The bake counts no lamps, so the grid holds one colored bounce, the occlusion of the sky and which probes lie inside geometry. `step` bakes a few probes a frame, so a loading screen can show progress. `finish` bakes the rest at once.
+`bakeProbes` bakes a grid in the browser. Each probe casts directions with `scene.raycastBatch`, which tests both faces of every triangle here. A direction that reaches the sky counts toward the probe's sky visibility. A direction that meets a surface's back means geometry encloses the probe. The bake gives it no validity, and fills it from the probes around it. A direction that hits a surface's front takes that surface's color once, as a matte bounce.
+
+The bake counts no lamps, so the grid holds one colored bounce, the occlusion of the sky and which probes lie inside geometry. `step` bakes a few probes a frame, so a loading screen can show progress. `finish` bakes the rest at once.
 
 The sky itself never bakes. The shader weights each probe's sky visibility by how much the surface faces the sky above the horizon, multiplies that by the environment's live light, and adds it to the baked bounce. A time of day that moves the sky, or an environment that turns or changes its intensity, then lights the grid again with no new bake. Only the bounce keeps the environment that the bake read.
 
@@ -542,7 +544,9 @@ The sky's environment shows the physical sky too. When a refresh starts, the eng
 
 ## Time of day
 
-`timeOfDay` works out the settings that change together through a day, from one value: an hour from 0 to 24, or a preset. They are the sky's sun and air, the main light, the fog's color and glow, an ambient light, the sky's intensity and the exposure. Each comes from the same sky model as the sky background. With the analytic sky, the fog takes the color of the sky's horizon by day and fades to the sky's average color at dusk. With the physical sky, the fog takes the sky's mean light by day and through dusk, the light that the exposure follows, so it stays as dim as the sky around it. A fog of the horizon's color would carry the sky's brightest band over the whole scene.
+`timeOfDay` works out the settings that change together through a day, from one value: an hour from 0 to 24, or a preset. They are the sky's sun and air, the main light, the fog's color and glow, an ambient light, the sky's intensity and the exposure. Each comes from the same sky model as the sky background.
+
+With the analytic sky, the fog takes the color of the sky's horizon by day and fades to the sky's average color at dusk. With the physical sky, the fog takes the sky's mean light by day and through dusk. That is the light that the exposure follows, so the fog stays as dim as the sky around it. A fog of the horizon's color would carry the sky's brightest band over the whole scene.
 
 ```ts
 import { defineSketch, timeOfDay } from '@null3d/engine';

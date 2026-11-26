@@ -32,7 +32,9 @@ scene.createInstances(rock, 5_000, { material: stone }); // the first draw plans
 await rock.buildLevels(); // resolves with the levels once they are in
 ```
 
-Each level about halves the triangles of the level above, down to a few dozen, and keeps its measured error, so it switches in at once where the error covers less than the `lodThreshold` setting's pixels. The threshold is live, and the [frame-budget governor](quality-presets.md#the-frame-budget-governor), which lowers quality when frames run late, can raise it to 4 or 8 pixels, where such a switch shows; a measured level then fades, as [Fading between levels](#fading-between-levels) describes. The levels name the mesh's own vertices, so they cost indices alone, and the mesh keeps its vertex and triangle order: raycasts and `updateVertices` see the mesh as it was made. The [geometry page](../api/geometry.md#levels-of-detail) gives the `levels` option, which turns the plan off or on, and the meshes that plan none: meshes that pose or move, meshes that a shader shapes, meshes whose vertices change, and meshes whose levels you set by hand.
+Each level about halves the triangles of the level above, down to a few dozen. It keeps its measured error, so it switches in at once where the error covers less than the `lodThreshold` setting's pixels. The threshold is live. The [frame-budget governor](quality-presets.md#the-frame-budget-governor), which lowers quality when frames run late, can raise it to 4 or 8 pixels, where such a switch shows. A measured level then fades, as [Fading between levels](#fading-between-levels) describes.
+
+The levels name the mesh's own vertices, so they cost indices alone. The mesh keeps its vertex and triangle order, so raycasts and `updateVertices` see the mesh as it was made. The [geometry page](../api/geometry.md#levels-of-detail) gives the `levels` option, which turns the plan off or on. It also names the meshes that plan none. These are meshes that pose or move, meshes that a shader shapes, meshes whose vertices change, and meshes whose levels you set by hand.
 
 A mesh of separate quads plans as any other mesh unless it asks for cards with `levels: { cards: true }`. The walls of a building kit are separate quads too, and thinning them as cards would cut holes in them. Without cards, a level drops only whole small pieces, such as a shutter's slats, where they cover under a pixel.
 
@@ -104,11 +106,17 @@ A level covers the whole mesh at one detail. A mesh that is close at one end and
 
 The asset tool builds the tree with `--clusters`, as [the asset pipeline](../guides/assets-pipeline.md#cluster-levels) explains. It splits a large static mesh into patches, then simplifies groups of patches into the patches above them. Every patch's indices name the mesh's own vertices, so the tree adds no vertex. It costs about twice the mesh's indices.
 
-A view draws a patch while the patch's own error passes its threshold and the error of the patch above it does not. Each error is tested at the distance to its own patch's bounds. A patch that fails the threshold is too coarse for that distance, so the walk descends into its children. The chosen patches are the frontier of that one rule. A patch's bounds hold its children's bounds, and its error is at least theirs. So a patch never passes where one of its children fails, and the patches cover the mesh once. Neighbors of different detail meet at their edges with no gap. The engine draws a tree from an older asset tool as whole levels, and in development it asks you to optimize the file again.
+A view draws a patch while the patch's own error passes its threshold and the error of the patch above it does not.
+
+Each error is tested at the distance to its own patch's bounds. A patch that fails the threshold is too coarse for that distance, so the walk descends into its children. The chosen patches are the frontier of that one rule.
+
+A patch's bounds hold its children's bounds, and its error is at least theirs. So a patch never passes where one of its children fails, and the patches cover the mesh once. Neighbors of different detail meet at their edges with no gap. The engine draws a tree from an older asset tool as whole levels, and in development it asks you to optimize the file again.
 
 The engine draws a tree's patches on both GPU paths, in the camera's view and in each shadow map. On WebGPU, a compute pass picks the patches that a view draws, copies their indices into a list of the view's own, and the view draws them in one draw. A view that sees none of a mesh's patches draws none of it. The pass runs three dispatches: one to test each patch, one to add the counts up, and one to copy the indices that draw. The list takes four bytes an index. The engine counts the indices that each view picks in each frame, and sizes the view's list to them with room to spare.
 
-On WebGL2, the job workers walk the tree for each view with the same rule, where the device has `WEBGL_multi_draw` (Chrome and Safari). Each chosen patch is a range of the mesh's tree in one multi-draw call, so a frame uploads ranges and no triangles. Ranges that are neighbors in the tree's index list merge, so a frame makes fewer calls. A WebGL2 browser without `WEBGL_multi_draw`, such as Firefox, draws the mesh's whole levels instead. The tool writes them beside the tree. They are the levels that `--lod` makes, and other glTF viewers draw them too.
+On WebGL2, the job workers walk the tree for each view with the same rule, where the device has `WEBGL_multi_draw` (Chrome and Safari). Each chosen patch is a range of the mesh's tree in one multi-draw call, so a frame uploads ranges and no triangles. Ranges that are neighbors in the tree's index list merge, so a frame makes fewer calls.
+
+A WebGL2 browser without `WEBGL_multi_draw`, such as Firefox, draws the mesh's whole levels instead. The tool writes them beside the tree. They are the levels that `--lod` makes, and other glTF viewers draw them too.
 
 The engine splits a mesh of more than 65,535 vertices into parts, because a draw's 16-bit indices reach no further. On WebGPU such a mesh still draws its patches. The engine puts all of its parts in one vertex buffer, one after another. The tree's 32-bit indices reach every vertex there. That buffer holds at most 128 MiB, the default size of a storage binding: about 4 million vertices of 32 bytes. A larger mesh draws whole levels instead. The trees that a scene draws also share 128 MiB of indices, about 33 million. They share at most 65,535 patches too, which a mesh of about 4 million triangles fills. A tree that does not fit draws whole levels.
 
@@ -136,14 +144,18 @@ A level given by its error switches in where that error covers fewer pixels than
 pixels = error × scale × render height / (2 × distance × tan(field of view / 2))
 ```
 
-The engine folds the render height, the field of view and the threshold into one number per view, the factor. A level switches in where error × scale × factor / distance falls under 1. The threshold is 1 pixel from Medium up, and 2 on Low. The render height includes the render scale. So on a taller screen, or at a higher render scale, such a level switches in farther away. When the frame-budget governor lowers the render scale, coarser levels draw. When frames still take too long, the governor doubles this threshold and the shadow maps' threshold together, twice at most.
+The engine folds the render height, the field of view and the threshold into one number per view, the factor. A level switches in where error × scale × factor / distance falls under 1. The threshold is 1 pixel from Medium up, and 2 on Low. The render height includes the render scale. So on a taller screen, or at a higher render scale, such a level switches in farther away.
+
+When the frame-budget governor lowers the render scale, coarser levels draw. When frames still take too long, the governor doubles this threshold and the shadow maps' threshold together, twice at most.
 
 <details>
 <summary>Technical details: the factor and the distance</summary>
 
 The factor is the render height in pixels times the projection's `P[1][1]`, over twice the threshold in pixels. `P[1][1]` is 1 / tan(field of view / 2), so this form equals the formula above.
 
-For a level given by its error, the distance runs from the camera to the center of the object's bounding sphere, less half the sphere's radius, and is capped at twice the distance to the sphere's nearest point. A level's error is its largest anywhere on the mesh. A large object therefore switches at a point between its near side and its middle: it does not turn coarse too early, and its far side does not keep detail that only its near side shows. The cap keeps a camera standing on a large mesh measuring the surface below it. Half the radius of a ground two kilometers across would be hundreds of meters. The near side then shows an error of up to two pixels rather than one.
+For a level given by its error, the distance runs from the camera to the center of the object's bounding sphere, less half the sphere's radius. It is capped at twice the distance to the sphere's nearest point. A level's error is its largest anywhere on the mesh. A large object therefore switches at a point between its near side and its middle. It does not turn coarse too early, and its far side does not keep detail that only its near side shows.
+
+The cap keeps a camera standing on a large mesh measuring the surface below it. Half the radius of a ground two kilometers across would be hundreds of meters. The near side then shows an error of up to two pixels rather than one.
 
 </details>
 
@@ -239,7 +251,9 @@ Distance bands, and levels given by a distance or by screen coverage, keep the c
 
 ## Cards beyond the levels
 
-A level of detail keeps one draw and one mesh per object. Far past the last level, an object can draw as a card instead: a quad that stands upright, turns to the eye, and shows a picture of the object. The picture should come from a bake of several views with the engine's baker, so the card holds the object from every side; a hand-painted side view belongs only on a card that never covers more than a few pixels. The `@null3d/impostors` add-on draws those cards, and a distance band on the meshes hands the object over to them. [Impostors](../api/impostors.md#bake-several-views-not-one-side) shows the bake.
+A level of detail keeps one draw and one mesh per object. Far past the last level, an object can draw as a card instead: a quad that stands upright, turns to the eye, and shows a picture of the object.
+
+The picture should come from a bake of several views with the engine's baker, so the card holds the object from every side. A hand-painted side view belongs only on a card that never covers more than a few pixels. The `@null3d/impostors` add-on draws those cards, and a distance band on the meshes hands the object over to them. [Impostors](../api/impostors.md#bake-several-views-not-one-side) shows the bake.
 
 The card's light comes from the scene, through the stored normal, so a sun that moves relights the cards exactly as it relights the meshes. A copy's turn about the world's up turns its views and its light too, so a turned tree hands over to a card whose crown matches it. A camera that moves around the tree does not turn its light: the card turns to the eye, and the stored normal turns only with the tree. A card casts the crown's shape, and takes the shadows that fall on the surface it shows, when the sketch asks for it.
 
