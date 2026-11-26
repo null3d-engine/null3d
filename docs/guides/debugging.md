@@ -17,7 +17,7 @@ flowchart TD
     hold["Hold mode"] -- "the first error" --> held["window.__null3dHold<br/>with ok: false"]
 ```
 
-The engine reports a problem in one of four places, as the diagram shows. Each message says what failed and how to fix it.
+The engine reports a problem in one of four places, as the diagram shows. Each message says what failed and how to fix it. Some problems raise no error, such as a canvas that shows only the background. [Common failures](#common-failures) lists them with their fixes.
 
 ## Error messages
 
@@ -92,7 +92,15 @@ console.log(JSON.stringify(engine.report)); // every result of the start's tests
 
 Add `engine.report` to a bug report. It holds the result of every test, and the GPU's name where the browser shows one.
 
-When the page draws although a worker was meant to, `engine.mode.renderFallback` says why. `no-surface` means that the browser cannot draw with the GPU path in a worker. `no-answer` means that the engine's test worker did not answer in time, twice, as on a stalled GPU or a very busy machine. `failed-to-start` means that the test worker's script did not load. A development build also logs a warning with the reason. Drawing on the page works, but the page's own code then shares its thread with the drawing. [Page API: createEngine](../api/engine.md#what-the-engine-reports) describes each value.
+When the page draws although a worker was meant to, `engine.mode.renderFallback` says why:
+
+| Value | Meaning |
+| --- | --- |
+| `no-surface` | The browser cannot draw with the GPU path in a worker. |
+| `no-answer` | The engine's test worker did not answer in time, twice, as on a stalled GPU or a very busy machine. |
+| `failed-to-start` | The test worker's script did not load. |
+
+A development build also logs a warning with the reason. Drawing on the page works, but the page's own code then shares its thread with the drawing ([Page API: createEngine](../api/engine.md#what-the-engine-reports)).
 
 Switches in the page's address force a choice, so you can find which path shows a fault. The engine reads them in development builds. A production build reads them only when the Vite plugin's `urlSwitches` option is on:
 
@@ -119,7 +127,9 @@ debug.arrow(muzzle, aim, 10);                        // where a shot goes, from 
 
 Only development builds draw the lines. [Debug drawing and stats](../api/debug.md) lists every call.
 
-To check normals, depth, overdraw, triangle edges, shadows or levels of detail, draw the whole scene with a debug view. In the sketch, `debug.view('wireframe')` draws every triangle's edges, and `debug.view('lit')` draws the materials again. `?view=levels` in the page's address shows a demo's levels with no code change. [Debug views](../api/debug.md#debug-views) lists the views. To see whether shadow edges crawl as the camera moves, draw `'shadows'` from a still camera. Then let `debug.shadowCamera` place the cascades from the moving one ([Watch the shadow cascades from elsewhere](../api/debug.md#watch-the-shadow-cascades-from-elsewhere)).
+To check normals, depth, overdraw, triangle edges, shadows or levels of detail, draw the whole scene with a debug view. In the sketch, `debug.view('wireframe')` draws every triangle's edges, and `debug.view('lit')` draws the materials again. `?view=levels` in the page's address shows a demo's levels with no code change. [Debug views](../api/debug.md#debug-views) lists the views.
+
+To see whether shadow edges crawl as the camera moves, draw `'shadows'` from a still camera. Then let `debug.shadowCamera` place the cascades from the moving one ([Watch the shadow cascades from elsewhere](../api/debug.md#watch-the-shadow-cascades-from-elsewhere)).
 
 ## Reproduce a frame
 
@@ -133,7 +143,11 @@ It also saves the errors and warnings that the page logged, with their stacks, i
 
 ## Measure
 
-The stats overlay shows frame figures over the top-right corner of the canvas, or over its bottom-right corner with the `corner` option. Its header shows the frame rate. A click opens a card with each thread's CPU time and the GPU's time against the target frame rate. The card also shows memory, draw calls, triangles and objects drawn, and what holds the frame rate back. It lists the GPU time of each step of the frame that the GPU timed, such as the opaque pass or bloom. An add-on feature that reports figures gets a row of its own, with its GPU time, its settings, its budget and its memory. A development build also lists the memory of each engine table and allocator under `Memory by system`. Each row gives the bytes that the area uses, reserves and has used at most. Show it from the page with `createEngine({ stats: true })`, `engine.stats(true)` or the `?stats` switch, or from the sketch with `debug.stats(true)`. The call `debug.frameStats()` gives the sketch the engine's figures, for logs and tests. Both work in production builds too. [Debug drawing and stats](../api/debug.md#stats-overlay-and-frame-figures) lists the figures.
+The stats overlay shows frame figures over the top-right corner of the canvas, or over its bottom-right corner with the `corner` option. Its header shows the frame rate. A click opens a card with each thread's CPU time and the GPU's time against the target frame rate. The card also shows memory, draw calls, triangles and objects drawn, and what holds the frame rate back. It lists the GPU time of each step of the frame that the GPU timed, such as the opaque pass or bloom. An add-on feature that reports figures gets a row of its own, with its GPU time, its settings, its budget and its memory.
+
+Show it from the page with `createEngine({ stats: true })`, `engine.stats(true)` or the `?stats` switch, or from the sketch with `debug.stats(true)`.
+
+The call `debug.frameStats()` gives the sketch the engine's figures, for logs and tests. Both work in production builds too. A development build also breaks memory down by engine system. [Debug drawing and stats](../api/debug.md#stats-overlay-and-frame-figures) lists the figures.
 
 `engine.measure(seconds)` measures the running engine from the page: CPU time per frame by thread and phase, GPU time, frame intervals, uploads, draw calls and memory. [Debug drawing and stats](../api/debug.md#frame-measurement) shows an example, and the [performance guide](performance.md) explains the numbers.
 
@@ -141,7 +155,13 @@ To test a page's handling of a lost GPU, call `engine.simulateGpuLoss()`. The en
 
 ## The in-page inspector
 
-`?inspect` opens a panel at the left edge of the page, over the canvas. The panel lists the scene as a tree, with each object's name and kind under its parent. A search box narrows the tree by name or kind. A click selects an object and outlines it in the view. It then shows the object's fields: position, rotation, scale, visibility, the static or dynamic flag and, for a mesh, its base color, roughness, metalness and opacity. The panel also shows the frame figures at its foot, which it reads every second.
+`?inspect` opens a panel at the left edge of the page, over the canvas. The panel lists the scene as a tree, with each object's name and kind under its parent. A search box narrows the tree by name or kind. A click selects an object and outlines it in the view. It then shows the object's fields:
+
+- position, rotation and scale;
+- visibility and the static or dynamic flag;
+- for a mesh, its base color, roughness, metalness and opacity.
+
+The panel also shows the frame figures at its foot, which it reads every second.
 
 The panel runs in a development build only, and its code loads when the page first asks for it. A held page and a replay open no panel and publish no bridge. A change lasts until the page reloads. Live edits are for exploring: write the final values into the sketch and its tests.
 
@@ -175,39 +195,7 @@ Each call that names an object takes a selector, and each call returns a JSON-sa
 
 `bunx @null3d/cli mcp` starts a Model Context Protocol server over stdio. A coding agent lists and changes the scene's objects, captures a frame, and reads the frame figures, the errors and the render graph. It can also switch the quality preset or the GPU path. The page needs a development build, because a production build leaves the inspection channel out.
 
-The server reaches the scene in one of three ways:
-
-- By default, it starts the project's own Vite dev server and a headless Chrome, as `shot` does. This works on a cloud agent with no window.
-- `--connect <endpoint>` attaches to a Chrome that already runs with a debugging port, and drives the tab that already shows the page. The agent then sees exactly what the developer sees. Start Chrome with `--remote-debugging-port=9222`, and open the page from your Vite dev server. Then run `bunx @null3d/cli mcp --connect http://127.0.0.1:9222`. Every development build publishes the bridge, so the page needs no switch. `?inspect` only opens the panel.
-- `--url <address>` uses a dev server that already runs, and still starts its own headless browser.
-
-The other options:
-
-- `--page <path>` names the page, `/` by default. With `--connect`, the server drives the tab at that path.
-- `--size <width>x<height>` sets the window of the server's own headless browser, 1280x720 by default.
-- `--gpu <tier>` opens the server's own page on `webgpu`, `compat` or `webgl2`.
-- `--timeout <seconds>` sets how long the page may take to publish the inspector, 60 by default.
-
-A held page and a replay publish no bridge, so the server cannot reach them. [The `mcp` command](../cli/null3d.md#mcp) is the full reference of the command.
-
-| Tool | What it does |
-| --- | --- |
-| `list_objects` | Lists the live objects, with a filter |
-| `get_object` | Reads one object's transform, flags and material |
-| `set_transform` | Changes an object's transform, visibility, static or dynamic flag, or layers |
-| `set_material` | Changes a mesh's material values |
-| `capture` | Returns a PNG of the current frame |
-| `stats` | Reads the frame figures |
-| `errors` | Reads the engine errors and the console's errors and warnings |
-| `render_graph` | Returns the compiled render graph as DOT text |
-| `set_quality` | Switches the preset, or changes quality settings |
-| `set_gpu` | Switches the GPU path and reloads the page |
-
-Register the server in Claude Code with:
-
-```sh
-claude mcp add null3d -- bunx @null3d/cli mcp
-```
+By default the server starts the project's own Vite dev server and a headless Chrome, which works on a cloud agent with no window. With `--connect <endpoint>` it drives a Chrome that you already run with a debugging port, so the agent sees exactly what you see. A held page and a replay publish no bridge. [The `mcp` command](../cli/null3d.md#mcp) lists every option and tool.
 
 Live changes are for exploring. Write the final values into the sketch and the tests, and check them with `bunx @null3d/cli test`.
 
