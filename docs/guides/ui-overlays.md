@@ -1,10 +1,10 @@
 ---
 id: guides/ui-overlays
-title: "UI, HTML overlays and labels"
+title: HTML UI around the scene
 summary: "HTML UI on the page; labels that follow objects; GUI panels."
 ---
 
-# UI, HTML overlays and labels
+# HTML UI around the scene
 
 ```mermaid
 flowchart LR

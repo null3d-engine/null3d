@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { checkDocsStyle, checkSubject, isTitleCase } from './docs-style';
+import { checkDocsStyle, checkSubject, detailsBlockProblems, isTitleCase } from './docs-style';
 
 const rules = (md: string) => checkDocsStyle(md).map((f) => `${f.severity}:${f.rule}:${f.line}`);
 
@@ -196,5 +196,44 @@ describe('checkSubject', () => {
 			'docs(dev): record the runs of 2026-10-07',
 		])
 			expect(subjectRules(subject)).toEqual([]);
+	});
+});
+
+describe('detailsBlockProblems', () => {
+	const block = (
+		body: string,
+		summary = '<summary>Technical details: how the cascades split</summary>',
+	) => `Text.\n\n<details>\n${summary}\n\n${body}\n\n</details>\n\nMore text.\n`;
+
+	it('accepts a block with Markdown, a list and code inside', () => {
+		expect(
+			detailsBlockProblems(block('A paragraph.\n\n- one\n- two\n\n```ts\nconst a = 1;\n```')),
+		).toEqual([]);
+	});
+
+	it('refuses a wrong summary, a heading, a diagram, a nested block and an unclosed block', () => {
+		expect(detailsBlockProblems(block('Body.', '<summary>More</summary>'))[0]?.[1]).toContain(
+			'Technical details:',
+		);
+		expect(detailsBlockProblems(block('## Inside'))[0]?.[1]).toContain('heading');
+		expect(detailsBlockProblems(block('```mermaid\nflowchart LR\n```'))[0]?.[1]).toContain(
+			'Mermaid',
+		);
+		expect(detailsBlockProblems(block('<details>'))[0]?.[1]).toContain('another block');
+		expect(
+			detailsBlockProblems(
+				'<details>\n<summary>Technical details: x y</summary>\n\nBody.\n',
+			)[0]?.[1],
+		).toContain('no </details>');
+		expect(detailsBlockProblems('  <details>\n')[0]?.[1]).toContain('a line of its own');
+		expect(detailsBlockProblems('Write `<details>` on its own line.\n')).toEqual([]);
+	});
+
+	it('reports a broken block as a style error', () => {
+		expect(
+			checkDocsStyle(block('Body.', '<summary>More</summary>')).some(
+				(f) => f.rule === 'details_block' && f.severity === 'error',
+			),
+		).toBe(true);
 	});
 });

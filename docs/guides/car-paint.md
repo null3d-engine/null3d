@@ -1,7 +1,7 @@
 ---
 id: guides/car-paint
 title: Car paint
-summary: "A paint material over the clear coat, with glinting metal flakes that stop shimmering, panel seams that follow the pixel, and an optional carbon weave with direction-dependent shine."
+summary: "An example add-on you copy: a paint material over the clear coat, with glinting metal flakes that stop shimmering, panel seams that follow the pixel, and an optional carbon weave with direction-dependent shine."
 ---
 
 # Car paint

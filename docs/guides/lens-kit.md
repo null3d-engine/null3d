@@ -1,7 +1,7 @@
 ---
 id: guides/lens-kit
 title: Lens kit
-summary: "One look for the camera's marks: a grade, a sharpening, a vignette, film grain, color fringes, an anamorphic streak read from bloom, and a speed blur."
+summary: "An example add-on you copy: one look for the camera's marks: a grade, a sharpening, a vignette, film grain, color fringes, an anamorphic streak read from bloom, and a speed blur."
 ---
 
 # Lens kit

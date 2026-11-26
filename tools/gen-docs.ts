@@ -6,15 +6,21 @@
 //                                   tested devices that break its rules
 //   bun tools/gen-docs.ts --check   write them, then report those problems, missing pages, bad
 //                                   front matter, broken links, and generated files that git keeps
-import { checkDocs, PAGES } from './lib/docs';
+import { spawnSync } from 'node:child_process';
+import { checkDocs, MOVES_FILE, PAGES } from './lib/docs';
 import { gitProblems, isWorkTree, writeGenerated } from './lib/generated';
 
 const root = process.cwd();
 const generated = writeGenerated(root);
 
 if (process.argv.includes('--check')) {
+	// The moves file on main, whose entries a branch must keep; none when main has no such file.
+	const onMain = spawnSync('git', ['show', `origin/main:${MOVES_FILE}`], {
+		cwd: root,
+		encoding: 'utf8',
+	});
 	const problems = [
-		...checkDocs(root),
+		...checkDocs(root, onMain.status === 0 ? onMain.stdout : null),
 		...(isWorkTree(root) ? gitProblems(root, [...generated.files.keys()]) : []),
 	];
 	for (const p of problems) console.log(`error: ${p}`);
