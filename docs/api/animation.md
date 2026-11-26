@@ -22,6 +22,10 @@ Characters animate on the job workers, in the engine's WebAssembly core. Each fr
 
 `assets.loadGltf` reads a model's skins, its clips and its morph targets. Each copy that `scene.instantiate` makes gets an animator on its group, which plays the model's clips. `prefab.clips` lists their names. The [character demo](https://github.com/null3d-engine/null3d/tree/main/examples/character) blends a character's clips by its speed, and swings its sword on an upper-body layer.
 
+![A cartoon knight with a round shield walks across a cobbled courtyard.](../images/api/animation/character.webp)
+
+The animated characters demo. In the cookbook, say it is the demo, not the recipe: its camera orbits.
+
 ```ts
 const knight = await assets.loadGltf('/models/knight.glb');
 const hero = scene.instantiate(knight, { position: [0, 0, 0] });
@@ -50,6 +54,10 @@ Files from `bunx @null3d/cli assets optimize` store every clip at the engine's r
 ## Seeing the skeleton
 
 `debug.skeleton(object)` draws the joints of an animated object, such as a copy's group, in the frame's pose. It draws a line from each joint of a skin to its parent joint. A line is blue at the joint and green at its parent. Pass a color to draw every line in that color. Call it in `onUpdate`, as every debug drawing call. Only development builds draw it.
+
+![Lines from blue to green trace the joints of a running fox; one yellow line traces a waving arm.](../images/api/animation/skeleton-lines.webp)
+
+debug.skeleton with the default colors and with one color.
 
 ```ts
 return {
@@ -339,6 +347,10 @@ The joints below a turned joint follow it, and so do the meshes that hang on the
 
 `lookAt(target, options, weight)` turns a chain of joints so that the last one aims at a point in the world. The engine aims again in each frame from the animated pose, until `lookAt(null)` stops it. So a soldier keeps its rifle on a target while its walk sways its body. Call `lookAt` every frame to follow a moving point.
 
+![Seven knights in a ring turn their heads toward a floating wisp of light.](../images/api/animation/look-at-ring.webp)
+
+Joint overrides that look at a point.
+
 ```ts
 const AIM = Object.freeze({ joints: ['Spine', 'Chest', 'Neck'], limit: 0.8 });
 let aim = 0;
@@ -494,6 +506,10 @@ Its skinning work also stays, because the vertex shader of each pass that draws 
 ## Morph targets
 
 A morph target is another shape of a mesh, such as a smile or a blink. Each object of a mesh with targets blends them in by its own weights. A weight of 0 leaves a target out, 1 adds all of it, and other numbers scale it.
+
+![A bed of tulips, some open and some closed, in morning sun.](../images/api/animation/morph-tulips.webp)
+
+One morph target per tulip head. The targets are made in code, not loaded from a file.
 
 The call `setMorphWeight` sets a weight by the target's number or name. The call `getMorphWeight` reads it back. The mesh geometry's `morphTargetNames` lists the names in target order, such as `prefab.find('Face')?.mesh?.morphTargetNames`.
 

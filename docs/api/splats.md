@@ -26,6 +26,10 @@ training run produces. A splat has a center, three principal spreads and a rotat
 shape, and a color and an opacity. The add-on draws each one as a camera-facing card that covers
 the splat's projected ellipse and fades as a Gaussian, so overlapping splats read as one surface.
 
+![A drone scan of a priory drawn from Gaussian splats.](../images/api/splats/splats-demo.webp)
+
+The splats demo. On feature-draws, say the add-on makes the draw.
+
 The add-on reads three kinds of file:
 
 - **SPZ**, Niantic's packed form, in its gzip and zstd containers.

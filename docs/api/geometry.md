@@ -25,6 +25,10 @@ A mesh is the shape that objects draw. `ctx.geometry` makes meshes, and any numb
 
 Each generator takes named options. An option that you leave out takes its default.
 
+![Nine shapes in a 3 by 3 grid, three with a tile texture made in code and the rest plastic and metal.](../images/api/geometry/generators.webp)
+
+The geometry generators.
+
 ```ts
 // sketch.ts
 const crate = geometry.box({ width: 1, height: 0.5, depth: 1 });
@@ -52,6 +56,10 @@ The generators give each vertex a position, a normal and texture coordinates. Th
 ## Extra shapes
 
 The `@null3d/geometry` package holds more shapes, and the curves and outlines that build them. Install it beside the engine:
+
+![A torus knot, polyhedra, a lathe vase, an extruded star, a tube and a glowing flat heart, reflected in a polished floor at dusk.](../images/api/geometry/extra-shapes.webp)
+
+Extra shapes from @null3d/geometry.
 
 ```sh
 bun add @null3d/geometry
@@ -153,6 +161,10 @@ Integer positions keep their own units. Give the object the scale and the positi
 
 `computeNormals: true` computes the normals from the triangles. Each vertex gets the average of the normals of its triangles, weighted by their areas. Vertices that triangles share get smooth normals. For hard edges, give each face its own vertices. The [meshes from arrays demo](https://github.com/null3d-engine/null3d/tree/main/examples/mesh-arrays) shows both: a smooth height field, an island with a color at each vertex, and a crystal with hard edges.
 
+![An island with smooth normals and vertex colors beside a hard-edged crystal.](../images/api/geometry/mesh-arrays.webp)
+
+Meshes from arrays.
+
 `computeTangents: true` computes tangents from the positions, the normals and `uvs`, with Eric Lengyel's method. It needs `uvs`, and it works with or without indices. The job workers share the work, so a large mesh takes less time. Both options compute from integer positions, normals and texture coordinates too, as shaders read them, and give 32-bit floats.
 
 ## Morph targets
@@ -192,6 +204,10 @@ The targets of every mesh together can take up to 4,194,304 deltas, 32 MiB of GP
 ## Vertices that change
 
 `mesh.updateVertices(name, values, start, count)` writes new values into one attribute of a mesh. Keep the arrays that you made the mesh with, change them, and pass them again:
+
+![Rings spread over a pool from a glowing float.](../images/api/geometry/vertex-updates.webp)
+
+updateVertices every frame.
 
 ```ts
 // sketch.ts: a sheet whose middle rows rise and fall

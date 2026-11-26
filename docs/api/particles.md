@@ -20,6 +20,10 @@ The GPU works out each particle in closed form, from its birth and its age. The 
 
 So a system of a million particles costs the CPU one call in a frame, and it draws the same on WebGPU and WebGL2. A held frame at a given time is the same whatever frames came before it.
 
+![A campfire in an autumn glade at dusk, with flames, embers, fireflies and fallen leaves.](../images/api/particles/campfire.webp)
+
+Five particle systems in one sketch.
+
 ```sh
 bun add @null3d/particles
 ```

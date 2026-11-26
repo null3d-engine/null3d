@@ -141,6 +141,10 @@ A static batch, the default, updates only the segments of the points that you ma
 
 With `worldUnits: false`, the default, the width is in CSS pixels, at every distance and on every screen. A line 4 pixels wide shows 4 CSS pixels wide, and the engine scales it by the device's pixel ratio. Use it for outlines, paths and graphs that must stay readable.
 
+![A strip, segments, a loop, dashes and a blended line; the floor loop in world units narrows toward the back.](../images/api/lines/lines-widths.webp)
+
+Line widths in world units. Use this picture here and lines-lit under Lit lines, so no picture shows twice.
+
 With `worldUnits: true`, the width is in world units. A line 0.1 units wide is as wide as a rod 0.1 units thick at the same distance, so far lines look thinner. Use it for roads, cables and beams that belong to the world.
 
 The engine culls each segment by a sphere around it. With a width in world units, the sphere holds the whole width. A width in pixels has no size in the world, so the sphere holds the segment's center line alone. A segment whose center line lies just outside the view can then lose the part of its width that reaches into it.
@@ -154,6 +158,10 @@ The engine keeps each segment's distance along the line. When a point of a stati
 ## Lit lines
 
 `lit: true` shades the lines as a [standard material](materials.md) shades a surface that faces the camera, with the line's color as its base color. The sun, the point and spot lights near each segment and the ambient and hemisphere lights light it, and `emissive` adds light of its own. Lines without `lit` draw their color as it is, whatever the lights. Both kinds take the scene's fog.
+
+![Two helixes shaded by a sun and a red light, a glowing blue bar, and a flat magenta line that the lights do not change.](../images/api/lines/lines-lit.webp)
+
+Lit and unlit lines.
 
 ## Blending, sorting and depth
 

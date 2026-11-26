@@ -71,6 +71,10 @@ The world getters read the engine's last transform update. A change that you mak
 
 An object gets a parent from the `parent` option, or later from `setParent(parent)`. `setParent(null)` makes it a root object. `getParent()` returns the parent, or null for a root object.
 
+![Six crates in six materials on a turntable on a dark studio stage.](../images/api/objects/objects-turntable.webp)
+
+The objects demo moves crates between parents; a still picture cannot show it.
+
 By default the object keeps its position, rotation and scale relative to the parent. Its place in the world then changes with the new parent. `setParent(parent, { keepWorld: true })` keeps its place, rotation and size in the world instead. The engine gives the object the position, rotation and scale that do that under the new parent.
 
 ```ts

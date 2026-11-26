@@ -60,6 +60,10 @@ Put the catcher a little above the surface it lies on, so its shadows show over 
 
 ## Standard values
 
+![Fifteen spheres of one color: roughness rises left to right, metalness top to bottom.](../images/api/materials/standard-grid.webp)
+
+Roughness and metalness.
+
 | Option | Range | Default | What it does |
 | --- | --- | --- | --- |
 | `color` | A [color](#color) | White | The base color: the color of diffuse light, and of a metal's reflections |
@@ -180,6 +184,10 @@ Then each frame copies the camera's opaque colors once and makes the blurred cop
 
 A surface with `diffuseTransmission` lets the light that reaches its back through to its front, as glTF's `KHR_materials_diffuse_transmission` describes. A leaf, a petal, a lampshade or an ear then glows where the sun or a lamp shines behind it. The light from behind spreads out evenly, as the diffuse light does, so the surface does not show what lies behind it. For glass and water, which do, use `transmission`.
 
+![Backlit leaves and petals under a low sun, with a paper lantern.](../images/api/materials/translucency.webp)
+
+Diffuse transmission.
+
 | Value | What it does |
 | --- | --- |
 | `diffuseTransmission` | The share of the surface's diffuse light that passes through to the other side. The front keeps the rest, and the specular reflection stays. 0 lets nothing through, and 1 lets all the diffuse light through, as a sheet of paper does |
@@ -229,6 +237,10 @@ Each pixel of such a surface adds one product per light, and one more reading of
 
 Light that enters skin, wax or marble leaves it a little way from where it entered, redder the further it went. A material with `subsurfaceRadius` draws that: the subsurface blur spreads the surface's diffuse light over the radius. The edges of its shadows, the light at the side of a nose and the detail of its maps then go soft. Its highlights stay sharp, since only the diffuse light spreads.
 
+![Wax candles, a jade knot and a soap egg that glow softly by candlelight.](../images/api/materials/subsurface.webp)
+
+Light under the surface. It shows on High and Ultra.
+
 | Value | Meaning |
 | --- | --- |
 | `subsurfaceRadius` | How far light spreads under the surface, in world units taken as meters. Skin takes about 0.01, wax about 0.02, and marble a few millimeters |
@@ -266,6 +278,10 @@ While it draws, the objects with a radius draw a second time, in a skin pass tha
 ## Clear coat and sheen
 
 Two layers can lie over the standard material's surface, as glTF's `KHR_materials_clearcoat` and `KHR_materials_sheen` extensions describe them:
+
+![A red car on a plinth in the rain, over wet cobbles whose puddles shine with a clear coat, beside a velvet cushion with a sheen.](../images/api/materials/coat-and-sheen.webp)
+
+Clear coat and sheen.
 
 - A **clear coat** is a thin, clear, shiny film, such as the lacquer of car paint, varnish on wood, or water on a stone. It has highlights and a reflection of its own, at its own roughness. Where it reflects light, it dims what lies under it. So a rough red paint under a smooth coat shows a sharp reflection over a soft color.
 - A **sheen** is the soft glow that cloth, velvet and fuzz take at grazing angles, where the light catches the tips of their fibers. Its color tints the glow. Light that the sheen reflects does not reach the surface under it.
@@ -330,6 +346,10 @@ A layered material costs each of its pixels, per light, one more highlight for t
 
 Two more effects sit in the same shaders as the clear coat and the sheen, and a material takes them with the same options:
 
+![A beetle with a shifting film on a brushed metal plinth, among soap bubbles.](../images/api/materials/iridescence-and-anisotropy.webp)
+
+Iridescence and anisotropy.
+
 - **Iridescence** is the color that a thin film adds to a reflection, as on a soap bubble, an oil slick, a beetle's shell or a pearl. The film reflects each wavelength by its own phase, so the color depends on the film's thickness and on the angle you see it from. The engine uses Belcour and Barla's thin-film formulas.
 - **Anisotropy** stretches the surface's highlight along one direction, as the grain of brushed metal spreads it across the grooves instead of around them. The engine uses an anisotropic GGX lobe, after Filament.
 
@@ -390,6 +410,10 @@ They run in the shaders of the layers above the surface, which load the first ti
 ## Decals
 
 A decal material projects a standard material onto every opaque surface inside a box. Use decals for scorch marks, mud, puddles, road paint, moss, cracks and posters. Give the material to a mesh of `geometry.box()`: the object's position, rotation and scale place the box.
+
+![A zebra crossing, road paint, puddles and posters on a street at dusk.](../images/api/materials/decals.webp)
+
+Decals.
 
 ```ts
 // sketch.ts: a scorch mark on the ground, and cracks on a wall. The maps come from textures.
@@ -521,6 +545,10 @@ On WebGL2, the maps of one material share at most six textures on the GPU. Maps 
 ## Relief
 
 Three maps give a surface relief. Each reads heights from its red channel, in the `linear` color space.
+
+![Hills, boulders, a brick wall and a wireframe frame drawn with displacement, parallax and bump maps.](../images/api/materials/relief.webp)
+
+Relief maps.
 
 ```ts
 // sketch.ts
@@ -782,6 +810,10 @@ const poster = materials.standard({ color: '#e8554e', depthBias: { constant: -4,
 ## Custom materials
 
 `materials.shader(options)` takes every option of `materials.standard` but the texture maps, and a `wgsl` option: WGSL that the null3D Vite plugin compiled. The WGSL declares a surface function, which starts from the look that the standard options make:
+
+![Crystals in one batch colored by their row, and stones with bands, both drawn by custom materials.](../images/api/materials/shader-inputs.webp)
+
+A custom material that reads row and object values.
 
 ```ts
 const rings = /* wgsl */ `

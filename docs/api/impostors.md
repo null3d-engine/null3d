@@ -8,6 +8,10 @@ summary: "createImpostors: far objects as camera-facing cards that blend the thr
 
 A far object covers few pixels, so its triangles cost work that no one sees. An impostor draws it as one baked card that faces the eye, with the world's up kept upright in its plane.
 
+![A pine forest on rolling hills at golden hour, backlit by a low sun.](../images/api/impostors/impostors-forest.webp)
+
+The Impostors demo: meshes near, merged cells in the middle, cards far out. The hand-overs are made to be invisible.
+
 ```mermaid
 flowchart LR
     views["bakeImpostorAtlas draws<br/>the mesh from each cell's direction"] --> atlas["Two atlases: the octahedral<br/>grid of colors, and the grid<br/>of normals and depths"]
@@ -86,6 +90,10 @@ A card's light comes from the scene's lights, as a mesh's does. The surface atla
 ### Cast and receive shadows
 
 The cards cast a shadow only if you ask. Give the batch `castShadows: true` and a layer that the sun draws. To keep the caster off the camera's layers, make a second batch from the same options and rows on a layer that only the sun draws, and add that layer to the sun's mask. A caster that no camera draws pays nothing on the camera. When you use a second batch, keep the rows of both batches in step: write and mark the other too.
+
+![Crown-shaped shadows on the ground from a batch of cards that only the light draws.](../images/api/impostors/impostor-shadow.webp)
+
+Card shadows from a caster-only batch.
 
 In the shadow pass each card turns toward the sun and cuts the crown's shape from its stored coverage. A batch with `receiveShadows: true` takes the shadows of other objects at the surface that the stored depth shows, not at its own plane, so a card does not darken itself. The default `castsStill` holds the caster still while the sun stands still, so the far shadow cascades stay cached. Pass `castsStill: false` when the scene turns cards from frame to frame, and their casters draw whenever their maps do.
 
@@ -240,6 +248,10 @@ const surface = textures.fromData({ ...bake.surface, colorSpace: 'linear', wrap:
 ## Hand the near meshes over to the cards
 
 `handOverToCards(meshes, cards, switchDistance, start)` sets the distance bands of a batch of near meshes and the batch of their cards. Call it once at setup, after you write the cards' sizes.
+
+![Three pines in the hand-over band with full crowns.](../images/api/impostors/impostor-handover.webp)
+
+Each pine draws as its mesh and its card at once, and no sky shows through the crowns.
 
 ```ts
 import { handOverToCards } from '@null3d/impostors';
