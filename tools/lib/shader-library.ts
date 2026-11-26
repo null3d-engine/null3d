@@ -64,7 +64,11 @@ function commentText(lines: readonly string[], marker: '///' | '//'): string {
 		if (previous !== undefined && previous !== '') out[out.length - 1] = `${previous} ${line}`;
 		else out.push(line);
 	}
-	return out.join('\n').trim();
+	// Decision records are notes for maintainers. The source keeps them; the page does not show them.
+	return out
+		.join('\n')
+		.replace(/\s*\(D-\d+\)/g, '')
+		.trim();
 }
 
 /** Where the declaration that starts at `start` ends: its closing line. */
