@@ -130,6 +130,18 @@ fn clip_with_jitter(view_proj: mat4x4f, jitter: vec2f, relative_position: vec3f)
     return clip + vec4f(jitter * clip.w, 0.0, 0.0);
 }
 
+/// Row `row` of the 3 × 3 part of `view_proj`, 0 for x or 1 for y, without its share along the
+/// view: the camera's right or up axis in the world, times the projection's scale along it. A lens
+/// shift or a jitter adds some of the view's axis to these rows of a perspective projection, and
+/// the w row is that axis, so taking out the share along it leaves the axis alone. An
+/// orthographic projection keeps a shift in its last column, and its w row is 0.
+fn screen_axis(view_proj: mat4x4f, row: u32) -> vec3f {
+    let axis = vec3f(view_proj[0][row], view_proj[1][row], view_proj[2][row]);
+    let along = vec3f(view_proj[0].w, view_proj[1].w, view_proj[2].w);
+    let length = dot(along, along);
+    return select(axis, axis - along * (dot(axis, along) / length), length > 0.0);
+}
+
 /// The scene's environment, as the engine writes it into each frame's values: light from every
 /// direction around the scene, in a prefiltered cube map and nine spherical harmonics
 /// coefficients. Its vectors are named fields rather than arrays: shaders copy the struct out of

@@ -289,6 +289,7 @@ mod tests {
             fov_degrees: 60.0,
             near: 0.1,
             far: 200.0,
+            shift: [0.0; 2],
         })
     }
 
@@ -299,6 +300,7 @@ mod tests {
             center: [0.0, 0.0],
             near: 0.1,
             far: 100.0,
+            shift: [0.0; 2],
         })
     }
 

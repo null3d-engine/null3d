@@ -344,9 +344,12 @@ pub fn split_distances(near: f32, end: f32, count: usize, lambda: f32) -> [f32; 
     splits
 }
 
-/// The view-space x and y of the corner (`sx`, `sy`) of a lens's view at `distance` along it, for
-/// a target of `aspect`: -1 and 1 are the view's edges.
+/// The view-space x and y of the point (`sx`, `sy`) of a lens's view at `distance` along it, for a
+/// target of `aspect`: -1 and 1 are the view's edges, and 0 its middle. A lens shift moves the
+/// view off the camera's axis by twice its share of the view's half sizes.
 fn view_corner(lens: &Lens, aspect: f32, distance: f32, sx: f32, sy: f32) -> (f32, f32) {
+    let [shift_x, shift_y] = lens.shift();
+    let (sx, sy) = (2.0 * shift_x + sx, 2.0 * shift_y + sy);
     match lens {
         Lens::Perspective(lens) => {
             let tan_y = (lens.fov_degrees.to_radians() / 2.0).tan();
@@ -361,6 +364,14 @@ fn view_corner(lens: &Lens, aspect: f32, distance: f32, sx: f32, sy: f32) -> (f3
     }
 }
 
+/// The sign of each part of a lens's shift, with 1 for no shift: the corner of the view that lies
+/// farthest from the camera's axis.
+fn far_corner(lens: &Lens) -> (f32, f32) {
+    let [x, y] = lens.shift();
+    let sign = |v: f32| if v < 0.0 { -1.0 } else { 1.0 };
+    (sign(x), sign(y))
+}
+
 /// The smallest sphere around the slice of a lens's view from `start` to `end` along it, for a
 /// target of `aspect`, in the view's own units: its center's x, y and distance along the view, and
 /// its radius. It depends on nothing but the lens, so it keeps its size as the camera turns.
@@ -368,13 +379,30 @@ fn slice_sphere(lens: &Lens, aspect: f32, start: f32, end: f32) -> ([f32; 3], f3
     let (x, y) = view_corner(lens, aspect, end, 1.0, 1.0);
     match lens {
         Lens::Perspective(_) => {
-            // The corners at each end lie on a circle around the view's axis, whose radius is the
-            // distance times k. The center sits on the axis where the near and far corners are
-            // equally far away, or at the far end when the far corners alone set the radius.
-            let k2 = (x * x + y * y) / (end * end);
-            let along = ((end + start) * (1.0 + k2) / 2.0).min(end);
-            let radius = ((end - along) * (end - along) + end * end * k2).sqrt();
-            ([0.0, 0.0, along], radius)
+            // The corners at each end lie on a circle around the view's middle line, which runs
+            // from the camera through the middle of the view, at `c` across per unit along the
+            // view. The circle's radius is the distance times k. The center sits on that line,
+            // where the near and far corners are equally far away, or at the far end when the far
+            // corners alone set the radius. Off the axis, a corner's distance from a point of the
+            // line has a term in `m`, the corners' reach along the line's slope.
+            let (cx, cy) = view_corner(lens, aspect, end, 0.0, 0.0);
+            let (hx, hy) = (x - cx, y - cy);
+            let k2 = (hx * hx + hy * hy) / (end * end);
+            let l = 1.0 + (cx * cx + cy * cy) / (end * end);
+            let m = (cx.abs() * hx + cy.abs() * hy) / (end * end);
+            let skew = if m > 0.0 {
+                2.0 * m / (end - start)
+            } else {
+                0.0
+            };
+            let along = (((end + start) * (l + k2) + skew * (end * end + start * start))
+                / (2.0 * l + skew * (end + start)))
+                .min(end);
+            let radius = ((end - along) * (end - along) * l
+                + 2.0 * (end - along) * end * m
+                + end * end * k2)
+                .sqrt();
+            ([cx / end * along, cy / end * along, along], radius)
         }
         Lens::Orthographic(_) => {
             // The slice is a box, and the sphere passes through its corners.
@@ -440,7 +468,8 @@ pub fn fit_cascades(
     // which is up to this many times its distance along the view, at the view's corners.
     let reach = match lens {
         Lens::Perspective(_) => {
-            let (x, y) = view_corner(lens, aspect, 1.0, 1.0, 1.0);
+            let (sx, sy) = far_corner(lens);
+            let (x, y) = view_corner(lens, aspect, 1.0, sx, sy);
             (1.0 + x * x + y * y).sqrt()
         }
         Lens::Orthographic(_) => 1.0,
@@ -1360,6 +1389,7 @@ mod tests {
         fov_degrees: 60.0,
         near: 0.1,
         far: 1000.0,
+        shift: [0.0; 2],
     };
     const LENS: Lens = Lens::Perspective(PERSPECTIVE);
 
@@ -1468,6 +1498,7 @@ mod tests {
         fov_degrees: 42.0,
         near: 0.05,
         far: 1000.0,
+        shift: [0.0; 2],
     });
     const DEMO_DISTANCE: f32 = 60.0;
     /// The radius of the bounding sphere that the demo gives its car to hold the whole vehicle.
@@ -1614,10 +1645,51 @@ mod tests {
             center: [2.0, -1.0],
             near: -10.0,
             far: 300.0,
+            shift: [0.0; 2],
         });
         for (lens, near) in [(LENS, PERSPECTIVE.near), (orthographic, -10.0)] {
             slices_land_inside(&lens, near);
         }
+    }
+
+    #[test]
+    fn a_shifted_view_s_slices_land_inside_its_cascades_and_its_spheres_hold_their_corners() {
+        let perspective = Lens::Perspective(Perspective {
+            shift: [0.4, -0.3],
+            ..PERSPECTIVE
+        });
+        let orthographic = Lens::Orthographic(Orthographic {
+            height: 30.0,
+            width: None,
+            center: [2.0, -1.0],
+            near: -10.0,
+            far: 300.0,
+            shift: [-0.5, 0.25],
+        });
+        for (lens, near) in [(perspective, PERSPECTIVE.near), (orthographic, -10.0)] {
+            slices_land_inside(&lens, near);
+        }
+        // Each slice's sphere holds the eight corners of the slice, and its center lies off the
+        // axis, toward the shifted view.
+        let aspect = 16.0 / 9.0;
+        for (start, end) in [(0.1, 5.0), (5.0, 40.0), (40.0, 200.0)] {
+            let ([x, y, along], radius) = slice_sphere(&perspective, aspect, start, end);
+            assert!(x > 0.0 && y < 0.0, "({x}, {y})");
+            for distance in [start, end] {
+                for (sx, sy) in [(-1.0, -1.0), (-1.0, 1.0), (1.0, -1.0), (1.0, 1.0)] {
+                    let (cx, cy) = view_corner(&perspective, aspect, distance, sx, sy);
+                    let reach =
+                        ((cx - x).powi(2) + (cy - y).powi(2) + (distance - along).powi(2)).sqrt();
+                    assert!(
+                        reach <= radius * (1.0 + 1e-5),
+                        "{distance}: {reach} > {radius}"
+                    );
+                }
+            }
+        }
+        // Without a shift, the sphere sits on the axis, as it always has.
+        let ([x, y, _], _) = slice_sphere(&LENS, aspect, 5.0, 40.0);
+        assert_eq!((x, y), (0.0, 0.0));
     }
 
     /// Checks that every point of each slice of a view through `lens`, from `near` on, lands
@@ -1690,6 +1762,7 @@ mod tests {
         let camera = camera();
         let near_far = Lens::Perspective(Perspective {
             far: 50.0,
+            shift: [0.0; 2],
             ..PERSPECTIVE
         });
         for (lens, end) in [(LENS, 200.0), (near_far, 50.0)] {
@@ -2238,9 +2311,16 @@ mod tests {
             normalize([1.0, -0.4, 0.2]),
         ];
         let mut checked = 0;
-        for fov in [20.0, 30.0, 35.0, 40.0, 45.0, 50.0, 60.0, 75.0, 90.0] {
+        // Shifted views too, whose far corners lie farther from the camera's axis.
+        let shifted = [(30.0, [0.45, -0.3]), (60.0, [-0.5, 0.5])];
+        let views = [20.0, 30.0, 35.0, 40.0, 45.0, 50.0, 60.0, 75.0, 90.0]
+            .map(|fov| (fov, [0.0; 2]))
+            .into_iter()
+            .chain(shifted);
+        for (fov, shift) in views {
             let lens = Lens::Perspective(Perspective {
                 fov_degrees: fov,
+                shift,
                 ..PERSPECTIVE
             });
             for cascades in 2..=4 {

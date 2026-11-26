@@ -3572,17 +3572,19 @@ pub fn set_texture_option(option: u32, value: u32) -> u32 {
 
 /// Draws from this camera object with a perspective lens, the objects whose layer masks share a
 /// bit with `layers`. The call values give the vertical field of view in degrees, the near
-/// distance and the far distance. With `target` the shadows' camera (`constants::camera_target`),
-/// the camera fits the main directional light's cascades instead.
+/// distance, the far distance and the lens shift across and up, in fractions of the view's width and
+/// height. With `target` the shadows' camera (`constants::camera_target`), the camera fits the main
+/// directional light's cascades instead.
 #[wasm_bindgen(js_name = setPerspectiveCamera)]
 pub fn set_perspective_camera(camera: u32, layers: u32, target: u32) -> u32 {
     set_camera(
         camera,
-        |[fov_degrees, near, far]| {
+        |[fov_degrees, near, far, shift_x, shift_y]| {
             Lens::Perspective(Perspective {
                 fov_degrees,
                 near,
                 far,
+                shift: [shift_x, shift_y],
             })
         },
         layers,
@@ -3592,20 +3594,31 @@ pub fn set_perspective_camera(camera: u32, layers: u32, target: u32) -> u32 {
 
 /// Draws from this camera object with an orthographic lens. The call values give the view's height
 /// and width, with a width of 0 following the canvas's aspect ratio, how far right of and above
-/// the camera's axis it is centered, and the near and far distances. It draws the objects whose
-/// layer masks share a bit with `layers`. With `target` the shadows' camera, it fits the main
+/// the camera's axis it is centered, the near and far distances, and the lens shift across and up,
+/// in fractions of the view's width and height. It draws the objects whose layer masks share a bit
+/// with `layers`. With `target` the shadows' camera, it fits the main
 /// directional light's cascades.
 #[wasm_bindgen(js_name = setOrthographicCamera)]
 pub fn set_orthographic_camera(camera: u32, layers: u32, target: u32) -> u32 {
     set_camera(
         camera,
-        |[height, width, center_x, center_y, near, far]| {
+        |[
+            height,
+            width,
+            center_x,
+            center_y,
+            near,
+            far,
+            shift_x,
+            shift_y,
+        ]| {
             Lens::Orthographic(Orthographic {
                 height,
                 width: (width > 0.0).then_some(width),
                 center: [center_x, center_y],
                 near,
                 far,
+                shift: [shift_x, shift_y],
             })
         },
         layers,

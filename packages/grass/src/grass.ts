@@ -529,6 +529,10 @@ export async function createGrass(ctx: SketchContext, options: GrassOptions): Pr
 				values[14] = -(world[10] as number);
 				values[15] = camera.near;
 				values[19] = camera.far;
+				// The middle of a shifted view, across and up per unit along the view.
+				const shift = camera.lensShift;
+				values[20] = 2 * shift[0] * tanY * aspect;
+				values[21] = 2 * shift[1] * tanY;
 			} else {
 				values[3] = 0;
 			}

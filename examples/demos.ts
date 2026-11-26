@@ -557,7 +557,9 @@ export const DEMOS: readonly Demo[] = [
 		title: 'Depth of field and focal length',
 		scene: 'Chess endgame',
 		summary:
-			'A low shot across a chess board. The focus racks from a near pawn to the far king, and a dolly zoom takes the lens from 35 to 85 mm, so the string lights behind swell into wide discs of light.',
+			'A low shot across a chess board. The focus racks from a near pawn to the far king, and a dolly zoom takes the lens from 35 to 85 mm, so the string lights behind swell into wide discs of light. The shifted framing moves the board to one side with a lens shift, and keeps its perspective.',
+		controls: [{ keys: ['L'], does: 'Lens shift on or off' }],
+		choices: [{ name: 'framing', label: 'Framing', options: ['Centered', 'Shifted'] }],
 		hold: 3,
 		timeoutSeconds: 60,
 	},

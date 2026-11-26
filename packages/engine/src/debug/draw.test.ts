@@ -419,6 +419,18 @@ describe('debug drawing', () => {
 		);
 	});
 
+	test("a shifted camera's frustum moves each plane by the shift's share of its size", () => {
+		const scene = { lensChanged: () => {} } as unknown as Scene;
+		const camera = new PerspectiveCamera(scene, 9, 'eye', 90, 1, 10);
+		camera.setLensShift(0.25, -0.5);
+		expect(frustumCorners(camera, 2, 1)).toEqual(
+			[...boxCorners([49, 53], [-2, 0], [1]), ...boxCorners([40, 80], [-20, 0], [10])].sort(),
+		);
+		const map = new OrthographicCamera(scene, 9, 'map', orthographicView({ height: 4 }), 1, 10);
+		map.setLensShift(-0.5, 0.25);
+		expect(frustumCorners(map, 2, 1)).toEqual(boxCorners([42, 50], [-1, 3], [1, 10]));
+	});
+
 	test("an orthographic camera's frustum is a box, as wide as the canvas's shape makes it", () => {
 		const view = orthographicView({ height: 4 });
 		const camera = new OrthographicCamera({} as Scene, 9, 'map', view, 1, 10);

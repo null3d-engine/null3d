@@ -3,7 +3,7 @@ id: api/cameras
 title: Cameras
 status: experimental
 since: "0.1"
-summary: "Perspective and orthographic cameras; a perspective camera's focal length; screenToRay; worldToScreen; layers."
+summary: "Perspective and orthographic cameras; a perspective camera's focal length; lens shift; screenToRay; worldToScreen; layers."
 ---
 
 # Cameras
@@ -72,6 +72,37 @@ scene.setActiveCamera(camera);
 - The `height` property reads the view's height. The `width` property reads the width of a view made from edges, and is `undefined` while the width follows the canvas.
 
 In development builds, a view with no size throws E1108. So does a far plane that is not beyond the near plane, for both kinds of camera.
+
+## Lens shift
+
+A shift lens moves the picture off the camera's axis and keeps its perspective. A web page uses one to put a scene beside its text without turning the camera. Turning the camera would change the perspective: upright lines would lean, and the subject would show another side.
+
+`setLensShift(x, y)` moves the view right by `x` times its width and up by `y` times its height. The scene moves the other way in the picture. The `lensShift` property reads the shift back as `[x, y]`, and the default is `[0, 0]`.
+
+```ts
+import { defineSketch } from '@null3d/engine';
+
+export default defineSketch(({ scene }) => {
+  const camera = scene.createPerspectiveCamera({ position: [0, 2, 8], target: [0, 1, 0] });
+  // The page's text fills the left half, so the target sits three quarters of the way across.
+  camera.setLensShift(-0.25, 0);
+  scene.setActiveCamera(camera);
+});
+```
+
+The shifted picture is the matching crop of a wider picture from the same place. A shift of 0.5 puts the camera's axis on the edge of the picture. Both kinds of camera take a shift. An orthographic view moves across by the same fractions of its size.
+
+Everything that uses the camera's view follows the shift. That covers culling, the shadow cascades, picking, `screenToRay`, `worldToScreen` and HTML labels. It also covers views from `scene.createView`, and the post effects that rebuild positions from depth. A sketch can change the shift in any frame, and the call allocates nothing.
+
+To draw one tile of a larger picture, narrow the lens to the tile and shift the view onto it. The canvas must have the tile's shape. Take a tile that is `w` of the full picture's width and `h` of its height. Its middle lies `cx` right of and `cy` above the full picture's middle. All four are fractions of the full picture:
+
+```ts
+const half = Math.tan((fullFov * Math.PI) / 360) * h;
+camera.setFov((360 / Math.PI) * Math.atan(half)); // or camera.setOrthoHeight(fullHeight * h)
+camera.setLensShift(cx / w, cy / h);
+```
+
+The [three.js mapping](../porting/threejs-mapping.md) gives the same numbers for three.js's `setViewOffset`.
 
 ## Which kind of camera
 

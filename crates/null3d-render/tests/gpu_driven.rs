@@ -885,6 +885,7 @@ fn the_cell_order_follows_creates_destroys_and_moves_between_cells() {
         fov_degrees: 120.0,
         near: 1.0,
         far: 20_000.0,
+        shift: [0.0; 2],
     };
     world.renderer.settings_mut().set_camera(world.camera, lens);
     let (sin, cos) = std::f32::consts::FRAC_PI_4.sin_cos();

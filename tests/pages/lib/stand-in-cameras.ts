@@ -11,6 +11,8 @@ export const STAND_IN_VIEW_HEIGHT = 8;
 export class StandInCamera {
 	readonly isOrthographic: boolean = false;
 	readonly fov = STAND_IN_FOV;
+	/** The lens shift across and up, in fractions of the view's width and height: none at first. */
+	readonly lensShift: [number, number] = [0, 0];
 	/** The position, as the engine stores it. */
 	readonly stored = new Float32Array(3);
 	/** The rotation quaternion, as the engine stores it: none at first. */

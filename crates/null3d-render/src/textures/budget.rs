@@ -1066,6 +1066,7 @@ mod tests {
             fov_degrees: 90.0,
             near: 0.1,
             far: 1000.0,
+            shift: [0.0; 2],
         };
         let projection = Lens::Perspective(lens).projection(1.0);
         let view = NeedView {

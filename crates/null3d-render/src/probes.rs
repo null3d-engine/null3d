@@ -651,6 +651,7 @@ pub(crate) fn face_transform(position: [f64; 3], face: usize, far: f32) -> Camer
         fov_degrees: 90.0,
         near: CAPTURE_NEAR,
         far: far.max(CAPTURE_NEAR * 2.0),
+        shift: [0.0; 2],
     });
     let (cell, local) = split64(position);
     CameraTransform {
