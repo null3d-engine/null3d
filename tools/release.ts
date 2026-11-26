@@ -5,11 +5,15 @@
 //                                   print the next version and its notes, and change nothing
 //   bun tools/release.ts --apply    also write every version copy and add the section to
 //                                   CHANGELOG.md; in CI, write `version` to $GITHUB_OUTPUT
+//   bun tools/release.ts --set-version <version>
+//                                   write that version into every version copy, and nothing
+//                                   else; the release workflow lands its version this way on a
+//                                   main that moved while the release ran
 //   bun tools/release.ts --notes <version>
 //                                   print that version's section of CHANGELOG.md, cut to the
 //                                   length a GitHub Release takes
 import { execFileSync } from 'node:child_process';
-import { appendFileSync, readFileSync, writeFileSync } from 'node:fs';
+import { appendFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parseArgs } from 'node:util';
 import { readIfExists } from './lib/files';
@@ -29,8 +33,7 @@ import {
 	readCommits,
 	releaseProblems,
 	renderChangelog,
-	versionCopies,
-	writeVersion,
+	writeVersionCopies,
 } from './lib/release';
 
 const root = process.cwd();
@@ -81,10 +84,7 @@ function changelogUrl(ref: string): string {
 }
 
 function apply(version: string, changelog: string): void {
-	for (const copy of versionCopies(root)) {
-		const path = join(root, copy.path);
-		writeFileSync(path, writeVersion(readFileSync(path, 'utf8'), copy, version));
-	}
+	writeVersionCopies(root, version);
 	writeFileSync(
 		join(root, CHANGELOG),
 		prependChangelog(readIfExists(root, CHANGELOG) ?? '', changelog),
@@ -101,8 +101,18 @@ async function main(): Promise<void> {
 			apply: { type: 'boolean', default: false },
 			'dry-run': { type: 'boolean', default: false },
 			notes: { type: 'string' },
+			'set-version': { type: 'string' },
 		},
 	});
+
+	const setVersion = values['set-version'];
+	if (setVersion !== undefined) {
+		if (!TAG_RE.test(setVersion))
+			fail(`--set-version takes a version such as 0.1.1, not "${setVersion}"`);
+		writeVersionCopies(root, setVersion);
+		console.log(`Wrote ${setVersion} into every version copy.`);
+		return;
+	}
 
 	if (values.notes !== undefined) {
 		const notes = extractReleaseNotes(readIfExists(root, CHANGELOG) ?? '', values.notes);
