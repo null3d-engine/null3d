@@ -6,7 +6,7 @@ summary: "createTerrain: a height field drawn as a camera-centered quadtree of b
 
 # Terrain (@null3d/terrain)
 
-> The ground has no collision. A block morphs toward its parent block's surface before it gives way to it, and a skirt closes the seam between neighbours that differ by more than one level.
+> The ground has no collision. A block morphs toward its parent block's surface before it gives way to it, and a skirt closes the seam between neighbors that differ by more than one level.
 
 ```mermaid
 flowchart LR
@@ -16,7 +16,9 @@ flowchart LR
     splat --> screen["The ground"]
 ```
 
-The `@null3d/terrain` package draws a height field as terrain. It divides the ground into a quadtree of blocks. A block near the camera draws a fine grid, and a block far away draws a coarse grid over more ground. The ground near the camera then keeps its detail, and the far hills stay cheap. Every pixel takes its normal from a map baked over the whole ground, so a coarse block still shows the relief of the hills. One material blends up to four tiled color layers over every block by a splat map, and each layer's own height shows it through its neighbours where two layers meet.
+The `@null3d/terrain` package draws a height field as terrain. It divides the ground into a quadtree of blocks. A block near the camera draws a fine grid, and a block far away draws a coarse grid over more ground. The ground near the camera then keeps its detail, and the far hills stay cheap.
+
+Every pixel takes its normal from a map baked over the whole ground, so a coarse block still shows the relief of the hills. One material blends up to four tiled color layers over every block by a splat map, and each layer's own height shows it through its neighbors where two layers meet.
 
 The package is built on the engine's public API. Its surface function ships compiled, so your build does not compile it, and the package needs no extra setup for it.
 
@@ -63,9 +65,11 @@ export default defineSketch((ctx) => {
 });
 ```
 
+[`TerrainOptions`](reference/terrain.md#terrainoptions) lists every option with its default, [`TerrainLayer`](reference/terrain.md#terrainlayer) every layer field, and [`Terrain`](reference/terrain.md#terrain) every member of the object that `createTerrain` returns.
+
 ## How it works
 
-`createTerrain` samples a height field once, into a flat array of heights. The height comes from a function or from a height map held as a `Float32Array`. Later reads, such as `heightAt`, interpolate between the four samples around the point.
+`createTerrain` samples a height field once, into a flat array of heights. The height comes from a function of x and z, or from a `Float32Array` height map. A map holds `resolution` × `resolution` heights in meters (256 × 256 by default), row by row from the ground's −z edge. [`TerrainOptions`](reference/terrain.md#terrainoptions) lists every option and its default. Later reads, such as `heightAt`, interpolate between the four samples around the point.
 
 The ground is a quadtree. The root block covers the whole ground with a coarse grid. A block splits into four while one of its cells would show more screen error than the ground allows.
 
@@ -75,13 +79,22 @@ The `error` option sets the allowed error in pixels. The default follows the qua
 
 Each block is one mesh whose vertices carry the heights. The height field never changes shape after `createTerrain`. Once a block is made, the engine reuses it. The terrain picks its blocks again when the camera crosses a cell of the finest level, rises by one such cell, or draws through a different lens or buffer size. A still camera therefore costs no work at all.
 
-Every pixel lights from a normal map that `createTerrain` bakes from the height field's slopes. A far block covers ground in cells larger than the height samples, so its own vertices cannot show the small hills. The normal map keeps that relief at every distance. Set `bakedNormals: false` to light from the mesh's own normals instead. A map laid from above stretches into streaks on a steep face, so `steepFaces: true` maps the third layer, the rock, from the sides there, for two more samples of that map.
+Every pixel lights from a normal map that `createTerrain` bakes from the height field's slopes. A far block covers ground in cells larger than the height samples, so its own vertices cannot show the small hills. The normal map keeps that relief at every distance. Set `bakedNormals: false` to light from the mesh's own normals instead.
 
-Each block morphs toward its parent block's surface as the camera pulls away. A block hands over to its parent at the distance where the parent's own cell would no longer show the allowed error. Over the last part of the approach, the block's vertices move to the parent grid's heights, so the two surfaces match when the switch comes and the ground does not pop. The parent grid is triangulated the same way, so a block whose morph is complete has exactly the parent's surface. The morph adds no draw and no work in a frame: each block carries the parent's height at each vertex in its own vertex record, written when the block is built or reused. `morph: false` switches each block at once instead.
+A map laid from above stretches into streaks on a steep face, so `steepFaces: true` maps the third layer, the rock, from the sides there, for two more samples of that map.
+
+Each block morphs toward its parent block's surface as the camera pulls away. A block hands over to its parent at the distance where the parent's own cell would no longer show the allowed error. `morph: false` switches each block at once instead.
 
 The quadtree is the ground's levels of detail, so each block mesh takes `levels: false`, and the engine plans no levels of its own for it.
 
-A skirt hangs from the edge of each block, a little below the ground. The selection does not restrict neighbours, so two blocks that meet can differ by more than one level. The morph ends on a block's own parent, which cannot match a neighbour two levels coarser, so the skirt still covers that seam. On a very steep seam a thin sliver of skirt can still show.
+A skirt hangs from the edge of each block to close the seam between blocks of different detail. On a very steep seam a thin sliver of skirt can still show.
+
+<details>
+<summary>Technical details: the morph and the skirt</summary>
+
+Over the last part of the approach, the block's vertices move to the parent grid's heights, so the two surfaces match when the switch comes and the ground does not pop. The parent grid is triangulated the same way, so a block whose morph is complete has exactly the parent's surface. The morph adds no draw and no work in a frame: each block carries the parent's height at each vertex in its own vertex record, written when the block is built or reused. The selection does not restrict neighbors, so two blocks that meet can differ by more than one level. The morph ends on a block's own parent, which cannot match a neighbor two levels coarser, so the skirt still covers that seam.
+
+</details>
 
 ## Layers and the splat map
 
@@ -89,17 +102,28 @@ The ground's material blends up to four layers. Each layer is a tiled color map 
 
 A layer also carries a height at each texel. Its map's brightness gives that height by default, or its alpha channel where `heightFrom` says `'alpha'`. The four maps that `terrainTextures` makes keep a height in their alpha channel, so give their layers `heightFrom: 'alpha'`. At a boundary between two layers, the heights push one through the other. Rock then shows through the grass in ragged patches rather than in a smooth cross-fade. `contrast` sets how strongly a layer's height scales its weight, from 0 to 1. The default is 1, and 0 blends by the splat map's weights alone.
 
-The default splat map comes from the ground itself. Grass takes the low, gentle ground, soil the higher dry ground, rock the steep slopes, and snow the ground above. Give `splat` to paint the weights yourself. `terrainTextures` makes the four layer maps in code, or give any `Texture` from `textures.fromData` or `assets`.
+The default splat map comes from the ground itself. Grass takes the low, gentle ground, soil the higher dry ground, rock the steep slopes, and snow the ground above. Give `splat`, a function of x and z that writes the four layer weights into `out`, to set the weights yourself. `terrainTextures` makes the four layer maps in code, or give any `Texture` from `textures.fromData` or `assets`.
 
 ## Placing things on the ground
 
 The terrain carries no collision. Read `heightAt(x, z)` and `normalAt(x, z, out)` to place anything that stands on the ground, and to set its upright direction. Both allocate nothing, so a frame may call them freely.
 
+## Hiding and tinting the ground
+
+`terrain.setVisible(false)` hides the ground, and `setVisible(true)` shows the current selection again. `terrain.setTint(color)` multiplies the ground's own colors, white by default, so a scene can take the ground down with the hour at night without changing its day look.
+
 ## Speed
 
 A terrain draws one mesh per visible block. The blocks near the camera are the most and the finest, and the few coarse blocks cover the rest. A 1,200 meter ground at the default settings draws about 200 blocks, near 130,000 triangles, from a camera near the ground. That figure is for a picture 1,080 pixels tall. A taller picture draws more and finer blocks, and a shorter one draws fewer. A higher camera or a wider field of view draws fewer and coarser blocks, and the Low preset draws coarser blocks than High. A block splits or merges only when the camera moves far enough to need other blocks.
 
-The quadtree selection and the block build run in the add-on's own WebAssembly module. The module runs on the engine's job workers, so `update` only asks for the work. A crossing can need tens of new blocks. One task builds at most `blocksPerUpdate` of them, 16 by default. The first selection builds every block that it needs, over a few tasks. The ground draws its last complete selection until the new one is built, and `terrain.building` is true meanwhile. The arrays that the tasks fill are made once and shared, so the frame path allocates nothing. A block that the view leaves gives up its mesh to the next block that the ground needs. A terrain that follows a moving camera therefore builds meshes only until it holds `maxBlocks` of them. `terrain.setVisible(false)` hides the ground, and `setVisible(true)` shows the current selection again. `terrain.setTint(color)` multiplies the ground's own colors, white by default, so a scene can take the ground down with the hour at night without changing its day look.
+The quadtree selection and the block build run in the add-on's own WebAssembly module. The module runs on the engine's job workers, so `update` only asks for the work. A crossing can need tens of new blocks. The ground draws its last complete selection until the new one is built, and `terrain.building` is true meanwhile.
+
+<details>
+<summary>Technical details: how blocks build on the job workers</summary>
+
+One task builds at most `blocksPerUpdate` of them, 16 by default. The first selection builds every block that it needs, over a few tasks. The arrays that the tasks fill are made once and shared, so the frame path allocates nothing. A block that the view leaves gives up its mesh to the next block that the ground needs. A terrain that follows a moving camera therefore builds meshes only until it holds `maxBlocks` of them.
+
+</details>
 
 A sketch that never imports `@null3d/terrain` ships no terrain code and starts no terrain work. The package follows the engine's add-on rules: its surface function ships compiled, and the selection and build module loads when a terrain first picks its blocks.
 

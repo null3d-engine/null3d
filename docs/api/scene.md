@@ -398,7 +398,7 @@ export default defineSketch(async ({ scene, assets, textures }) => {
   const environmentOptions = { intensity: 0.8 };
   scene.setEnvironment(environment, environmentOptions);
   // ... build the room here ...
-  const grey = [0.8, 0.8, 0.8] as const; // every surface a light grey
+  const grey = [0.8, 0.8, 0.8] as const; // every surface a light gray
   const bake = bakeProbes(scene, {
     box: { min: [-12, 0, -12], max: [12, 8, 12] },
     spacing: [1, 2, 1],
