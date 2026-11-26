@@ -91,7 +91,7 @@ boxes.markDirty();
 color.fromHex(rgb, '#ff8800'); // the linear RGB of an sRGB hex color
 ```
 
-Each row's color multiplies its material's base color and opacity, as [Instances and batching](../concepts/instances.md#per-row-colors) explains. `color.fromHsl` and `color.fromHex` write three numbers, so a row keeps its alpha.
+Each row's color multiplies its material's base color and opacity, as [Instances and batching](../concepts/instances.md#per-row-colors) explains. `color.fromHsl` and `color.fromHex` write three numbers, so a row keeps its alpha. The [sprites and lines demo](https://github.com/null3d-engine/null3d/tree/main/examples/sprites-lines) turns hex colors to linear RGB with `color.fromHex` for its neon helix and its sparks.
 
 ## Random numbers
 
@@ -101,6 +101,8 @@ Each row's color multiplies its material's base color and opacity, as [Instances
 - `math.seed(n)` starts it again from the seed `n`, and the same numbers follow on every run.
 - Hold mode seeds it before the sketch loads, and makes `Math.random` draw from it too. A held frame is then the same on every run. See [Testing your sketch](../guides/testing.md).
 - `math.randFloat`, `math.randInt` and `math.randFloatSpread` draw their numbers from it.
+
+The [hold mode demo](https://github.com/null3d-engine/null3d/tree/main/examples/hold-mode) calls `math.seed(2)` and draws the same stone texture on every run.
 
 ## The maths entry, for a deterministic simulation
 
@@ -120,7 +122,7 @@ const turn = exact.quat.setAxisAngle(quat.create(), [0, 1, 0], 0.5);
 
 The entry leaves out the helpers that need a sine, a cosine, an arc cosine or an exponential, which `Math` computes differently on different engines. They are `quat.setAxisAngle`, `fromEuler`, `rotateX`, `rotateY`, `rotateZ` and `slerp`, `vec3.angle` and `math.damp`. The call `createMath({ sin, cos, acos, exp })` builds those eight on the functions that you pass, with the main entry's arithmetic.
 
-It also leaves out the random helpers, which start from `Math.random`, and `color`. [Using null3D with a deterministic simulation](../guides/deterministic-simulation.md) lists each sub-path's helpers, and says what else stays out of a simulation.
+It also leaves out the random helpers, which start from `Math.random`, and `color`. [Using null3D with a deterministic simulation](../guides/deterministic-simulation.md) lists each sub-path's helpers, and says what else stays out of a simulation. The [deterministic simulation demo](https://github.com/null3d-engine/null3d/tree/main/examples/replay) imports from this entry and steps its orb hunt by ticks.
 
 ## API reference
 

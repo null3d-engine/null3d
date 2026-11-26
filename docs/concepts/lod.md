@@ -331,5 +331,6 @@ The mesh and the card are different sources, so their dither phases differ. The 
 - [The asset pipeline](../guides/assets-pipeline.md#levels-of-detail): the levels that `assets optimize` writes.
 - [Impostors](../api/impostors.md): cards beyond the last level.
 - [Shadows](shadows.md): the shadow threshold that follows the level threshold.
-- The forest demo: trees made in code with levels given by hand.
-- The impostors demo: a forest drawn three ways by distance.
+- [The forest demo](https://github.com/null3d-engine/null3d/tree/main/examples/forest): trees made in code with levels given by hand.
+- [The impostors demo](https://github.com/null3d-engine/null3d/tree/main/examples/impostors): a forest drawn three ways by distance.
+- [The terrain demo](https://github.com/null3d-engine/null3d/tree/main/examples/terrain): a 1.2 km valley whose far hills draw as coarser blocks.

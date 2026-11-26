@@ -81,7 +81,7 @@ A model that the tool wrote with `--stages` holds its coarsest level. Each finer
 
 The loader holds back a level that the camera never draws, and fetches it once the camera comes close enough to show it. So a page downloads the levels that its camera shows, and no others. `maxLevels` sets the most levels to load, the file's own counted first. Set 1 to draw the coarse level alone and download no stage.
 
-A model with a cluster tree streams the tree's bands the same way, and a band counts as a level. [Levels of detail](../concepts/lod.md#levels-from-the-asset-tool) explains the files.
+A model with a cluster tree streams the tree's bands the same way, and a band counts as a level. [Levels of detail](../concepts/lod.md#levels-from-the-asset-tool) explains the files. The [Island showcase](https://github.com/null3d-engine/null3d/tree/main/examples/showcase/island) loads models with levels and far cards.
 
 A worker parses the file outside the sketch's frames, and decodes the images that the file holds there. The files that a `.gltf` file names download through `assets`, so `preload` and `onProgress` cover them too.
 
@@ -232,7 +232,7 @@ A file that only uses such an extension, and does not require it, draws without 
 - Values outside 0 to 1 are clamped, as the canvas would clamp them.
 - The first table loads the readers, a file of about 2 KB. The thread that runs the sketch reads the file between frames: a table of 33 takes about 10 ms on a desktop.
 
-`lut.destroy()` frees the table's GPU memory. Give `post.set` a table that lives.
+`lut.destroy()` frees the table's GPU memory. Give `post.set` a table that lives. The comparisons build their color grade with `lutFromData`: the [night town](https://github.com/null3d-engine/null3d/tree/main/examples/compare/night-town), [battle](https://github.com/null3d-engine/null3d/tree/main/examples/compare/battle) and [factory](https://github.com/null3d-engine/null3d/tree/main/examples/compare/factory) comparisons.
 
 ### Tables from numbers
 
@@ -277,7 +277,7 @@ export default defineSketch(async ({ assets, post }) => {
 - The KTX2 file that `bunx @null3d/cli assets env` writes, the fast path. It holds a cube map in `rgb9e5ufloat` or `rgba16float`, with one mip level for each step of roughness. It also holds the nine coefficients of its diffuse light.
 - An HDR file of an equirectangular panorama: a Radiance file (`.hdr`) or an OpenEXR file (`.exr`). The engine filters it on the GPU at load, with the asset tool's steps.
 
-Prefer the tool's KTX2 file for maps that ship with a game; use an HDR file for maps that change, such as user uploads.
+Prefer the tool's KTX2 file for maps that ship with a game; use an HDR file for maps that change, such as user uploads. The [environment light demo](https://github.com/null3d-engine/null3d/tree/main/examples/environment) shows an HDR file's light, an EXR file's light and the built-in room.
 
 `builtinEnvironment('room')` makes a white room with six boxes, six glowing panels and one point light. It gives soft, neutral light. `skyEnvironment()` makes the light of the sky that [`scene.setBackground({ sky })`](scene.md#environments-cube-maps-and-the-sky) draws. The GPU draws each of them and filters it, so no file downloads. Give any of them to [`scene.setEnvironment`](scene.md#the-environment).
 
@@ -381,7 +381,7 @@ await assets.preload(['/tex/a.png', '/tex/b.png', '/tex/c.png']);
 // (120_000, 120_000) as the last of the three arrives.
 ```
 
-[Loading screens and warm-up](../guides/loading-screens.md) shows a whole loading screen.
+[Loading screens and warm-up](../guides/loading-screens.md) shows a whole loading screen. The [glTF model demo](https://github.com/null3d-engine/null3d/tree/main/examples/gltf-model) drives its loading bar this way, through the demos' shared helper.
 
 ## Caching
 

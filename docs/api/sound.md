@@ -198,6 +198,7 @@ MP3 decodes in every browser. An MP3 encoder adds samples at each end of a file,
 - [Assets](assets.md): loading the sound files.
 - [Hosting and cross-origin isolation](../getting-started/hosting.md): the headers that the mixer needs.
 - [Quality API](quality.md): the presets that drop the HRTF panner.
+- [Loops, groups and shots](https://github.com/null3d-engine/null3d/tree/main/examples/sound): a thunderstorm on the moor, with positional thunder, rain and a brook.
 
 ## API reference
 

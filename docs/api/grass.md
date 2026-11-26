@@ -151,3 +151,6 @@ Give the grass a `swayDistance` to stop the blades past that distance. Then a fa
 - [Add-on instance draws](feature-instances.md): the draw whose count the blade list writes.
 - [Shadows](../concepts/shadows.md#update-rates): how the far cascades keep their layers.
 - [Quality API](quality.md): the preset and the frame-budget governor.
+- [Grass in the wind](https://github.com/null3d-engine/null3d/tree/main/examples/vegetation-wind): a grove whose grass and plants sway in the wind field.
+- [Grass in a scene](https://github.com/null3d-engine/null3d/tree/main/examples/contact-shadows): tufts of grass that cast contact shadows in a stone garden.
+- [Grass at scale](https://github.com/null3d-engine/null3d/tree/main/examples/showcase/island): the island sets `compute: false`, so its grass draws as an instance batch on both paths.

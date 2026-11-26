@@ -198,6 +198,7 @@ On WebGL2, each row's matrix is split into a position, a rotation and a scale th
 - [Add-on draws](feature-draws.md): a draw over its own vertices, rather than a capacity of instances.
 - [Compute passes](render.md#compute-passes): the pass that writes the count and the rows.
 - [Grass](grass.md): an add-on that draws with instance draws.
+- [Compute instances in use](https://github.com/null3d-engine/null3d/tree/main/examples/vegetation-wind): the grass add-on draws its blades this way in the Plants in wind demo.
 
 ## API reference
 

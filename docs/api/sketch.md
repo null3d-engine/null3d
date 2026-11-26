@@ -36,7 +36,7 @@ export default defineSketch(({ scene, geometry, materials, input, page }) => {
 
 ## Where the sketch runs
 
-The page passes the module's address to `createEngine`, and the engine loads the module in the sketch worker. The sketch worker has no `document` and no `window`, so the page keeps the HTML and the two sides talk through [messages](page.md). On a page without cross-origin isolation, the engine runs the sketch on the page's own thread, with the same API ([Hosting and cross-origin isolation](../getting-started/hosting.md)).
+The page passes the module's address to `createEngine`, and the engine loads the module in the sketch worker. The sketch worker has no `document` and no `window`, so the page keeps the HTML and the two sides talk through [messages](page.md). On a page without cross-origin isolation, the engine runs the sketch on the page's own thread, with the same API ([Hosting and cross-origin isolation](../getting-started/hosting.md)). The [hold mode demo](https://github.com/null3d-engine/null3d/tree/main/examples/hold-mode) runs the same sketch with a held frame.
 
 Code at the top of the module can run before the engine has started, so it must not call the engine ([E1403](../errors/E1403.md)).
 
@@ -156,7 +156,7 @@ The engine reads the size at the start of each frame, so it stays the same throu
 
 A sketch that returns before its scene is complete waits for it when this is true. A held frame or a replay then shows the finished scene. A live page starts the work without awaiting it, and the result appears as it lands.
 
-`engine.firstFrame` is a promise that resolves once the GPU has finished the engine's first frame, as `engine.firstFrame` does on the page. Start the downloads that the first frame does not need when it resolves; they then leave the network to the first frame's own files, such as its shaders. Never await the promise in the setup, because the first frame waits for the setup.
+`engine.firstFrame` is a promise that resolves once the GPU has finished the engine's first frame, as `engine.firstFrame` does on the page. Start the downloads that the first frame does not need when it resolves; they then leave the network to the first frame's own files, such as its shaders. Never await the promise in the setup, because the first frame waits for the setup. The [Creek showcase](https://github.com/null3d-engine/null3d/tree/main/examples/showcase/creek) waits for it before it loads its models on a live page.
 
 <details>
 <summary>Technical details: firstFrame in hold mode and replays</summary>
@@ -239,7 +239,7 @@ export default defineSketch(({ scene, geometry, materials, time }) => {
 });
 ```
 
-The camera moves in `onLateUpdate`, after the car's move in `onUpdate` reached its world position. In `onUpdate`, `getWorldPosition` would give the car's place in the previous frame, and the camera would trail it.
+The camera moves in `onLateUpdate`, after the car's move in `onUpdate` reached its world position. In `onUpdate`, `getWorldPosition` would give the car's place in the previous frame, and the camera would trail it. The [input demo](https://github.com/null3d-engine/null3d/tree/main/examples/input) follows its walking robot with a camera in `onLateUpdate`.
 
 ## Errors in callbacks
 

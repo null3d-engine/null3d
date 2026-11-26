@@ -222,6 +222,8 @@ The GPU keeps birth times as 32-bit floats. So every 1,024 seconds, a system mov
 - [Points](points.md): squares of one size.
 - [Materials](materials.md): blending and depth writes.
 - [The three.js mapping](../porting/threejs-mapping.md): particles beside three.js's ways of making them.
+- [Emitters, flipbooks and look](https://github.com/null3d-engine/null3d/tree/main/examples/particles): a campfire glade with flames, embers, smoke, falling leaves and fireflies.
+- [Wind field shared with plants](https://github.com/null3d-engine/null3d/tree/main/examples/showcase/creek): the leaves that fall from the trees move in the wind field.
 
 ## API reference
 

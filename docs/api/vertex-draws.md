@@ -161,6 +161,7 @@ A copy that leaves one side of the box comes back on the other side. The field t
 
 ## Related pages
 
+- [The rain demo](https://github.com/null3d-engine/null3d/tree/main/examples/rain): 50,000 rain streaks from one draw with a vertex count and no mesh data.
 - [Custom shaders](../guides/custom-shaders.md): the WGSL that the plugin compiles, and full shaders.
 - [Built-in shader inputs](../shaders/builtins.md): `frame`, `camera` and `object`, which `fill_builtins` fills.
 - [Shader library and imports](../shaders/library.md): `null3d::wrap` and the other modules.

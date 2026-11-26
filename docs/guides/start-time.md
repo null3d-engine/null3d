@@ -204,7 +204,7 @@ Two files download at a time, at a low priority, so the engine's own files still
 
 </details>
 
-Over the simulated phone link, the creek demo's eleven models took 21.3 seconds with the download list. They took 25.9 seconds without it, with every model drawn before the first frame. With nothing downloading before the first frame, it took 0.2 seconds with the list and 3.3 seconds without.
+Over the simulated phone link, the creek demo's eleven models took 21.3 seconds with the download list. They took 25.9 seconds without it, with every model drawn before the first frame. With nothing downloading before the first frame, it took 0.2 seconds with the list and 3.3 seconds without. The [character demo](https://github.com/null3d-engine/null3d/tree/main/examples/character) starts its two loads together, after it builds the courtyard.
 
 List only the files that the first frame needs, and start the rest from `engine.firstFrame`, as the next section shows. A development build warns once in a live start when a scene's own load started only after another one finished, with nothing else downloading. Pass `serialLoadWarning: false` to turn the warning off where the second address comes from the first file.
 
@@ -214,7 +214,7 @@ The first frame waits for the setup. When the setup awaits a large model, the vi
 
 Start those downloads after the first frame, not in the setup. Over HTTP/1.1, large files that the setup starts take all six connections, and the first frame's own shader and code files wait behind them. A lower fetch priority does not help: the large files take the free connections before the shader requests exist. Started with the setup, a scene's 2.85 MB of town models made its first frame 0.7 to 1.0 seconds later.
 
-On the simulated phone link, the creek demo's first frame takes 5.7 seconds when its large models come after it. It takes 25.7 seconds when the setup waits for them.
+On the simulated phone link, the creek demo's first frame takes 5.7 seconds when its large models come after it. It takes 25.7 seconds when the setup waits for them. The [Creek showcase](https://github.com/null3d-engine/null3d/tree/main/examples/showcase/creek) draws its first frame before its large models arrive.
 
 In the sketch, `engine.firstFrame` resolves once the GPU has finished the first frame, as `engine.firstFrame` does on the page. Unlike the page's promise, it never rejects: when the engine stops first, it stays pending. Start the later downloads when it resolves:
 
@@ -242,7 +242,7 @@ Never await `engine.firstFrame` in the setup, because the first frame waits for 
 
 While the engine holds frames or replays, the sketch's `assets` calls run one at a time, in the order the sketch made them. So the held picture never depends on which file lands first ([Hold mode](testing.md#hold-mode)).
 
-A scene that streams its content, such as a splat scan, can draw once the parts nearest the camera are in. The rest then stream in after the first frame. The engine's splat demo drew its first frame after 8.8 seconds that way, over the simulated phone connection. It took 29.1 seconds when it waited for every part.
+A scene that streams its content, such as a splat scan, can draw once the parts nearest the camera are in. The rest then stream in after the first frame. The engine's splat demo drew its first frame after 8.8 seconds that way, over the simulated phone connection. It took 29.1 seconds when it waited for every part. The [splats demo](https://github.com/null3d-engine/null3d/tree/main/examples/splats) streams the scan's nearest chunks first.
 
 A model that appears after the first frame draws once its pipelines are built, on both GPU paths. Without `KHR_parallel_shader_compile`, as in Chrome on some Android phones, each new WebGL2 program compiles at its first draw. That frame then runs long, once for each new program. To show a later group of models whole, create them hidden and warm up, as [A later loading stage](loading-screens.md#a-later-loading-stage) shows.
 

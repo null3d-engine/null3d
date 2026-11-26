@@ -160,7 +160,7 @@ The browser inlines a setter that a small function calls, and a fraction that it
 
 </details>
 
-Decimal numbers are a special case. Until the browser optimizes a function, the numbers it computes are stored as small objects. Code that runs once per frame gets optimized only after thousands of frames, so judge allocation after about 30 seconds of play.
+Decimal numbers are a special case. Until the browser optimizes a function, the numbers it computes are stored as small objects. Code that runs once per frame gets optimized only after thousands of frames, so judge allocation after about 30 seconds of play. The [vertex updates demo](https://github.com/null3d-engine/null3d/tree/main/examples/vertex-updates) rewrites its pool's arrays every frame and passes them to `mesh.updateVertices`, which allocates nothing.
 
 ## Objects during play
 
@@ -200,6 +200,8 @@ These habits keep play free of rebuilds:
 
   The places in the scene's object tables count toward it too, so batches hold at most the limit less those places. Engine memory holds about 5 million rows (E1109). So size each batch for the rows it uses.
 - Check with `measure`. A `rebuilds` count above zero during play points to one of the calls whose cost is a rebuild in the table. New passes show in `pipelines`, not in `rebuilds`.
+
+The [factory comparison](https://github.com/null3d-engine/null3d/tree/main/examples/compare/factory) changes its robot arms during play, in both engines.
 
 ## How the engine batches, builds pipelines and times frames
 
@@ -276,7 +278,7 @@ On WebGL2 the job workers cull, so a frame whose view changed also uploads its l
 
 Mark objects and batches static when they rarely move, and call `markDirty` for the rows that you change. See [Static and dynamic objects](../concepts/static-dynamic.md).
 
-The render worker picks how each upload travels, so you do not need to.
+The render worker picks how each upload travels, so you do not need to. The [instancing demo](https://github.com/null3d-engine/null3d/tree/main/examples/instances) moves 100,000 columns this way, by rewriting their rows in every frame.
 
 <details>
 <summary>Technical details: how uploads travel</summary>
@@ -299,7 +301,7 @@ Animated characters also cost skinning work and memory:
 - The skinning pass holds at most 1 GiB of skinned vertices on most devices. A crowd past it gets [E1501](../errors/E1501.md). [Limits of skinning](../api/animation.md#limits-of-skinning) lists every limit.
 - The job workers sample and blend each character's clips in every frame. Give a far character more frames between its updates with [`animator.setUpdateInterval`](../api/animation.md#crowds), and hold the ones near the camera at 1. The `farAnimationInterval` quality setting gives the interval for far characters, and the governor raises it when frames take too long.
 
-For a large crowd, use models with fewer vertices, give far characters a longer update interval, and draw fewer shadow cascades on phones.
+For a large crowd, use models with fewer vertices, give far characters a longer update interval, and draw fewer shadow cascades on phones. The [battle comparison](https://github.com/null3d-engine/null3d/tree/main/examples/compare/battle) draws a crowd of animated knights and mechs in both engines.
 
 ## See-through objects
 
@@ -331,7 +333,7 @@ The S1-cells benchmark spreads S1-static's 100,000 boxes over 8 x 8 cells, 8 km 
 - On WebGL2, cells cut the busiest thread's CPU time from 0.21 ms to 0.07 ms per frame. The list of visible objects fell from 1,517 entries to 79.
 - On WebGPU the GPU culls, so the CPU time stayed at 0.10 ms. The culling pass took 0.025 ms of GPU time with cells, and 0.039 ms without them.
 
-So in a large world, keep the objects that never move static, under static parents. A static object under a dynamic parent moves with it, so every view tests it. The `?cells=off` switch culls without cells, to compare.
+So in a large world, keep the objects that never move static, under static parents. A static object under a dynamic parent moves with it, so every view tests it. The `?cells=off` switch culls without cells, to compare. The [large world demo](https://github.com/null3d-engine/null3d/tree/main/examples/large-world) spreads static batches across several grid cells on a road 6,378 km from the origin.
 
 ## Point and spot lights
 
@@ -358,7 +360,7 @@ Each area light takes two integrals over the light's outline, and the first area
 
 </details>
 
-The S3 benchmark lights 20,000 still boxes with 256 moving point lights. In Chrome on a MacBook Pro, the engine's own work took 0.07 ms per frame on WebGPU, where the GPU lists the lights. The compute pass that lists them took about 0.2 ms of GPU time. three.js's WebGL renderer cannot draw this scene on that Mac. Its shader for 256 point lights needs more uniforms than the GPU gives a fragment shader.
+The S3 benchmark lights 20,000 still boxes with 256 moving point lights. In Chrome on a MacBook Pro, the engine's own work took 0.07 ms per frame on WebGPU, where the GPU lists the lights. The compute pass that lists them took about 0.2 ms of GPU time. three.js's WebGL renderer cannot draw this scene on that Mac. Its shader for 256 point lights needs more uniforms than the GPU gives a fragment shader. The [area lights demo](https://github.com/null3d-engine/null3d/tree/main/examples/area-lights) lights a wet street with rectangle windows and tube-light neon. The [night town comparison](https://github.com/null3d-engine/null3d/tree/main/examples/compare/night-town) puts many lights in both engines.
 
 ## Shadows
 
@@ -378,6 +380,8 @@ Each post effect adds full-screen work, which grows with the pixels drawn:
 - Ambient occlusion adds the depth prepass and three passes at half size. In the engine's ambient occlusion scene on a MacBook Pro, it added 2.42 ms per frame, where three.js's `GTAOPass` added about 5.3 ms. Low and Medium leave it off.
 - Each custom effect that reads other pixels costs a full-screen pass. The engine joins the effects that read only their own pixel, and can fold the last into the final pass ([Custom passes](custom-passes.md#cost)).
 - A scene pass culls and draws the scene again, at the size of its texture. Keep the texture small, and give the pass a cadence with `render.setPassEvery` so it draws in some frames only. A pass that nothing shows costs nothing ([Render to a texture](custom-passes.md#drawing-less-often)).
+
+The [post effects demo](https://github.com/null3d-engine/null3d/tree/main/examples/post-effects) chains several effects in one neon alley. The [security camera demo](https://github.com/null3d-engine/null3d/tree/main/examples/security-camera) draws a scene pass into a monitor.
 
 ## Occlusion culling
 

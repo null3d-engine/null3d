@@ -20,7 +20,7 @@ flowchart LR
 ```
 
 The screens add-on in the repository, in the `examples/addons/screens` folder, holds the pattern.
-It is not an npm package. Copy the folder into your project and import its entry point.
+It is not an npm package. Copy the folder into your project and import its entry point. The [screens painted on an OffscreenCanvas](https://github.com/null3d-engine/null3d/tree/main/examples/canvas-screen) demo shows wall panels and a console, each at its own refresh rate.
 
 ## Make a screen
 
@@ -105,7 +105,7 @@ takes no values.
 ## Clicks on a screen
 
 A pointer hit on a mesh carries its texture coordinates. `screen.pointOf(event)` turns them into a
-canvas point. `screen.texelOf(event)` gives the whole texel under the point.
+canvas point. `screen.texelOf(event)` gives the whole texel under the point. The [picking demo](https://github.com/null3d-engine/null3d/tree/main/examples/picking) shows an object's click handler and the point that the ray hit.
 
 ```ts
 screen.onClick((point) => {

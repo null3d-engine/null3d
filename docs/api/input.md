@@ -201,9 +201,11 @@ The page reads the gamepads once per display frame while at least one is connect
 - In hold mode, the sketch gets no input, so a held frame is the same on every run. See [Testing your sketch](../guides/testing.md).
 - `createEngine({ input: false })` turns the engine's listening off, for a page whose input another library records, such as a game whose simulation a server replays from a log. [Input off](#input-off) says what changes.
 
+The [first-person and fly controls demo](https://github.com/null3d-engine/null3d/tree/main/examples/walk-and-fly) turns its view with the pointer lock. The demos' shared runner asks for the lock, not the demo's sketch.
+
 ## Input off
 
-`createEngine({ input: false })` is for a page whose input another library records. The engine then adds no listener that takes input, and the canvas's context menu stays the browser's.
+`createEngine({ input: false })` is for a page whose input another library records. The engine then adds no listener that takes input, and the canvas's context menu stays the browser's. The [deterministic simulation demo](https://github.com/null3d-engine/null3d/tree/main/examples/replay) starts this way, and its page takes the keys and the pointer lock.
 
 <details>
 <summary>Technical details: the listeners the engine leaves out and keeps</summary>

@@ -243,7 +243,7 @@ A sketch's own preset change never moves it. [GPU tiers and backends](backends.m
 
 ### Moment transparency
 
-The `momentTransparency` option of `createEngine`, or the `?moments=on` or `?moments=off` switch, blends the camera's blended surfaces in the moment transparency layer, which needs no sort. [Moment transparency](../api/materials.md#moment-transparency) describes the layer and the materials that it draws. Every preset leaves it off, because it draws those surfaces twice, and the setting stays fixed while the engine runs.
+The `momentTransparency` option of `createEngine`, or the `?moments=on` or `?moments=off` switch, blends the camera's blended surfaces in the moment transparency layer, which needs no sort. [Moment transparency](../api/materials.md#moment-transparency) describes the layer and the materials that it draws. Every preset leaves it off, because it draws those surfaces twice, and the setting stays fixed while the engine runs. The [Island showcase](https://github.com/null3d-engine/null3d/tree/main/examples/showcase/island) starts the engine with the layer on.
 
 The layer costs memory and GPU time. On the Island showcase at High at 1920 x 1080, GPU textures grew by 40 MiB on WebGPU and by 52 MiB on WebGL2. In the [S1 benchmark](../guides/performance.md) at High, on a MacBook Pro in Chrome, it added about 0.6 ms of GPU time a frame on WebGPU. On WebGL2 it added about 1.1 ms. It adds almost no processor time. A desktop GPU's fill rate is not a phone's, so measure on the phone.
 
@@ -407,7 +407,7 @@ The entry goes on trial as a step down does. Frames that come clearly slower aft
 
 `?tier=lowest` starts a page in the tier, for tests, devices and a known weak class. A page that starts in the tier also caps the render scale at one third, so it draws at that scale from the first frame. The governor stays the default path to the tier.
 
-A sketch whose own thread limits its frames keeps the tier out. Its smaller render cannot make the sketch work cheaper, so the picture only loses detail. `defineSketch(setup, { lowestTier: false })` sets that.
+A sketch whose own thread limits its frames keeps the tier out. Its smaller render cannot make the sketch work cheaper, so the picture only loses detail. `defineSketch(setup, { lowestTier: false })` sets that. The [Island showcase](https://github.com/null3d-engine/null3d/tree/main/examples/showcase/island) opts out this way.
 
 ### Settings of an add-on's feature
 

@@ -171,6 +171,7 @@ values.set([...]); // four numbers of yours for each row, read as `object.values
 - [Custom shaders](../guides/custom-shaders.md): the WGSL that the plugin compiles, surface functions and full shaders.
 - [Surface functions](../shaders/surface-functions.md): the surface input, the surface record, uniforms and textures.
 - [Render graph API](render.md): the sketch's own passes, which draw into textures.
+- [Many copies and the resolve point](https://github.com/null3d-engine/null3d/tree/main/examples/splats): the splats add-on makes the draw, with its instances at the resolve point.
 
 ## API reference
 

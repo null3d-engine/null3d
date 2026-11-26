@@ -136,7 +136,7 @@ for (const [k, knight] of knights.entries()) {
 
 ## Property animation
 
-A clip can move values other than bones and morph weights. A glTF file with `KHR_animation_pointer` moves a material's color or opacity, and where its maps sit on the texture coordinates. It also moves a light's intensity or color, or a node's visibility. These tracks follow the clip's time, speed, fades and weights. A sketch starts the same kind of animation in code with `scene.animateProperty`.
+A clip can move values other than bones and morph weights. A glTF file with `KHR_animation_pointer` moves a material's color or opacity, and where its maps sit on the texture coordinates. It also moves a light's intensity or color, or a node's visibility. These tracks follow the clip's time, speed, fades and weights. A sketch starts the same kind of animation in code with `scene.animateProperty`. The [animated values demo](https://github.com/null3d-engine/null3d/tree/main/examples/property-animation) moves a lamp, a material and a camera with keyframes.
 
 ```ts
 const pulse = scene.animateProperty(lamp, 'light.intensity', {
@@ -292,7 +292,7 @@ A blend holds 1 to 8 clips, each at a point of its own. Without a `phase`, a ble
 
 ## Layers and joint masks
 
-Each animator has four layers, numbered 0 to 3. Layer 0 blends its clips with the rest pose. Each layer above replaces the pose of the layers below, by the layer's weight.
+Each animator has four layers, numbered 0 to 3. Layer 0 blends its clips with the rest pose. Each layer above replaces the pose of the layers below, by the layer's weight. The [character demo](https://github.com/null3d-engine/null3d/tree/main/examples/character) swings its sword on an upper-body layer.
 
 `setLayerMask(layer, joints)` limits a layer to some joints: each named joint and every joint below it. Pass the name of a joint, or an array of names. `null` gives the layer every joint again.
 
@@ -345,7 +345,7 @@ The joints below a turned joint follow it, and so do the meshes that hang on the
 
 ### Looking at a point
 
-`lookAt(target, options, weight)` turns a chain of joints so that the last one aims at a point in the world. The engine aims again in each frame from the animated pose, until `lookAt(null)` stops it. So a soldier keeps its rifle on a target while its walk sways its body. Call `lookAt` every frame to follow a moving point.
+`lookAt(target, options, weight)` turns a chain of joints so that the last one aims at a point in the world. The engine aims again in each frame from the animated pose, until `lookAt(null)` stops it. So a soldier keeps its rifle on a target while its walk sways its body. Call `lookAt` every frame to follow a moving point. The [look-at demo](https://github.com/null3d-engine/null3d/tree/main/examples/look-at) turns seven knights' heads toward a wisp of light.
 
 ![Seven knights in a ring turn their heads toward a floating wisp of light.](../images/api/animation/look-at-ring.webp)
 
@@ -414,6 +414,8 @@ Events come from the clip's data. The animator also reports two events of its ow
 - `'loop'` fires each time a repeating clip starts again.
 - `'finished'` fires once when a clip that plays once reaches its end.
 
+The [character demo](https://github.com/null3d-engine/null3d/tree/main/examples/character) listens for `'finished'` and stops the sword swing when it ends.
+
 Each event fires once each time the clip's time passes it, however long the frame was. An event at a clip's last frame fires as the clip loops, as one at its first frame does. Backward clips fire events too, in their order of play.
 
 Handlers run on your sketch's thread at the start of the next frame, before `onFixedUpdate` and `onUpdate`. So your update code sees what the clips reached in the frame before. A clip that a handler plays starts in that frame.
@@ -472,7 +474,7 @@ A skinned mesh culls with a sphere that its pose moves. The engine keeps a spher
 
 ## Crowds
 
-A crowd of copies of one model draws in one instanced draw per part. Its cost is the work of its animation and its vertices.
+A crowd of copies of one model draws in one instanced draw per part. Its cost is the work of its animation and its vertices. The [battle comparison](https://github.com/null3d-engine/null3d/tree/main/examples/compare/battle) draws hundreds of animated soldiers and mechs.
 
 `animator.setUpdateInterval(frames)` sets the frames between two updates of one character's pose. The value 1, the default, updates it in every frame. A larger number, up to 64, samples and composes it once every that many frames. It holds the last pose in between. `animator.updateInterval` reads the value back.
 
@@ -505,7 +507,7 @@ Its skinning work also stays, because the vertex shader of each pass that draws 
 
 ## Morph targets
 
-A morph target is another shape of a mesh, such as a smile or a blink. Each object of a mesh with targets blends them in by its own weights. A weight of 0 leaves a target out, 1 adds all of it, and other numbers scale it.
+A morph target is another shape of a mesh, such as a smile or a blink. Each object of a mesh with targets blends them in by its own weights. A weight of 0 leaves a target out, 1 adds all of it, and other numbers scale it. The [morph targets demo](https://github.com/null3d-engine/null3d/tree/main/examples/morph-flowers) opens a bed of tulips in a wave.
 
 ![A bed of tulips, some open and some closed, in morning sun.](../images/api/animation/morph-tulips.webp)
 

@@ -338,7 +338,7 @@ Each level must have the mesh's vertex attributes, as it draws with the same pip
 
 An empty list takes the levels away, and destroying a level's mesh takes every level away. `mesh.levels` lists them as you gave them. A mesh whose bound covers fewer pixels than the threshold draws nothing: its last level holds no geometry. Wrong levels throw [E1221](../errors/E1221.md).
 
-[Levels of detail](../concepts/lod.md) explains the three measures, the hide distance, the fading bands and the shadows. It also explains how glTF files from the asset tool bring their levels.
+[Levels of detail](../concepts/lod.md) explains the three measures, the hide distance, the fading bands and the shadows. It also explains how glTF files from the asset tool bring their levels. The [forest demo](https://github.com/null3d-engine/null3d/tree/main/examples/forest) calls `setLevels` on each tree mesh, with measured errors.
 
 A far object that draws as a card follows its own rules. A card that lights unlike its mesh reads as
 another tree. [Impostors](impostors.md#make-a-card-read-as-its-mesh) says which mesh to bake, the

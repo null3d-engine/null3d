@@ -133,3 +133,4 @@ The engine does not use logarithmic depth, which writes depth from the fragment 
 - [Engine](../api/engine.md): the `largeWorld` option of `createEngine`.
 - [GPU tiers and backends](backends.md#depth-on-each-tier): depth on each tier.
 - [The large world demo](https://github.com/null3d-engine/null3d/tree/main/examples/large-world): a drive along a road on the Earth's surface, in large-world mode with batch origins.
+- [No `largeWorld` flag](https://github.com/null3d-engine/null3d/tree/main/examples/far-from-origin): 2 cm keys and a brass wheel, 1,000 km from the origin, seen from 40 cm.

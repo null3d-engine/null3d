@@ -21,7 +21,7 @@ flowchart LR
     copies["Many copies of a mesh,<br/>a far level of detail"] --> merge["mergeFarGeometry:<br/>one mesh per far grid cell"]
 ```
 
-A level of detail cuts the triangles but keeps one draw per object. An impostor goes further. A bake draws the object from many directions into atlases ahead of time. Far away, the object draws as one card that faces the eye. The card blends the three stored views nearest the camera, and the light falls on it from the normals the bake stored, so a card follows the scene's sun. Many cards draw in one instance batch.
+A level of detail cuts the triangles but keeps one draw per object. An impostor goes further. A bake draws the object from many directions into atlases ahead of time. Far away, the object draws as one card that faces the eye. The card blends the three stored views nearest the camera, and the light falls on it from the normals the bake stored, so a card follows the scene's sun. Many cards draw in one instance batch. The [impostors demo](https://github.com/null3d-engine/null3d/tree/main/examples/impostors) draws a pine forest three ways by distance, with cards far out. The [Island showcase](https://github.com/null3d-engine/null3d/tree/main/examples/showcase/island) draws its far trees as cards.
 
 <details>
 <summary>Technical details: how a card's turn and light follow its mesh</summary>

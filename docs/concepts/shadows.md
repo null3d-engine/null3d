@@ -514,3 +514,6 @@ WebGL2's shading language has no such read, so there it reads each texel on its 
 - [Render graph](render-graph.md): the passes that draw each frame.
 - [Quality presets](quality-presets.md): `shadowCascades`, `shadowMapSize`, `shadowFilter`, `farCascadeInterval`, `followMovingCasters`, `shadowCascadeBlend` and their values on each preset.
 - [The hero shadow demo](https://github.com/null3d-engine/null3d/tree/main/examples/hero-shadow): a car on a launch pad whose own shadow map turns off and on every 3 seconds, beside shadows from the cascades.
+- [Contact shadows](https://github.com/null3d-engine/null3d/tree/main/examples/contact-shadows): the dark line where each pebble, blade and stone meets the sand.
+- [A spot light's picture, shadowed by the objects in its beam](https://github.com/null3d-engine/null3d/tree/main/examples/spot-cookies): a rose window and a lit window frame fall across a dark hall.
+- [Trees that cast and receive the sun's shadows](https://github.com/null3d-engine/null3d/tree/main/examples/forest): 56,000 trees over rolling hills, at four levels of detail.

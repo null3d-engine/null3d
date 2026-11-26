@@ -124,7 +124,7 @@ The image moves to the thread that draws, without a copy, so the sketch can use 
 
 ## Canvases
 
-`textures.fromCanvas` makes a texture that follows an `OffscreenCanvas` drawn in the sketch, such as a score board, a map or a drawing surface. The canvas's last row goes to v = 0, the bottom of a plane, so the canvas stands upright on a plane as on a page. Its first pixels upload as any image's do.
+`textures.fromCanvas` makes a texture that follows an `OffscreenCanvas` drawn in the sketch, such as a score board, a map or a drawing surface. The canvas's last row goes to v = 0, the bottom of a plane, so the canvas stands upright on a plane as on a page. Its first pixels upload as any image's do. The [screens on a canvas demo](https://github.com/null3d-engine/null3d/tree/main/examples/canvas-screen) paints wall panels and a console this way, each at its own rate.
 
 ![A dark wall with three glowing screens that show numbers and bar gauges, and a small console panel with a wave trace below them.](../images/api/textures/canvas-screen.webp)
 
@@ -193,7 +193,7 @@ The video element's own settings, such as its file format and its cross-origin r
 
 A texture with `depth` above 1 holds that many layers, up to 256, one after another in `data`. Its layers are a texture array of their own. Materials read its first layer.
 
-Data of the wrong length or type for the size and format throws E1208. Data textures have no mip levels unless `mipmaps` is true.
+Data of the wrong length or type for the size and format throws E1208. Data textures have no mip levels unless `mipmaps` is true. The [security camera demo](https://github.com/null3d-engine/null3d/tree/main/examples/security-camera) makes its ground maps with `textures.fromData`.
 
 ## Textures of render passes
 

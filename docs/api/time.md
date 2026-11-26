@@ -124,6 +124,8 @@ A fixed factor per frame, such as `current += (goal - current) * 0.1`, moves fas
 - [Page API: createEngine](engine.md): `setPaused`, `detach` and `attach`, which pause and resume the sketch's frames.
 - [Math helpers](math.md): `math.damp`, `math.lerp` and `vec3.lerp`.
 - [Testing your sketch](../guides/testing.md): hold mode's fixed steps.
+- [Hold mode](https://github.com/null3d-engine/null3d/tree/main/examples/hold-mode): a held frame that every run draws the same.
+- [Easing at any frame rate](https://github.com/null3d-engine/null3d/tree/main/examples/math): 300 drones that follow a lamp at their own lag and speed.
 
 ## API reference
 

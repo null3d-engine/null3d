@@ -653,7 +653,7 @@ A material with `vertexColors` draws a mesh without colors in its base color alo
 
 A material with `wireframe: true` draws each triangle's three edges as lines. An edge that two triangles share draws twice. The engine keeps an edge list for each mesh from the first wireframe on, which takes twice the GPU memory of the mesh's triangle indices. Its shadows draw lines too.
 
-Flat shading and bump maps have no effect, because lines have no faces. Lines are one pixel wide on every GPU path. For wide lines, or for a mesh's outline edges alone, use [Lines](lines.md).
+Flat shading and bump maps have no effect, because lines have no faces. Lines are one pixel wide on every GPU path. For wide lines, or for a mesh's outline edges alone, use [Lines](lines.md). The [relief demo](https://github.com/null3d-engine/null3d/tree/main/examples/relief) draws a geodesic frame with `wireframe: true`, and its shadow is a shadow of lines.
 
 ## Alpha modes
 
@@ -717,7 +717,7 @@ scene.createMesh({ mesh: geometry.plane({ width: 8, height: 6 }), material: hold
 
 A blended surface with `doubleSided: true` draws in two draws. Its back faces draw first, then its front faces. So the near side of a glass box or a sphere always covers its far side, whatever the order of the mesh's triangles. Neighbors that share the mesh and the material draw together: all their back faces, then all their front faces.
 
-`forceSinglePass: true` draws both faces in one draw. The triangles then cover each other in the mesh's order. Use it for flat surfaces, such as leaves and planes of glass, whose two faces never overlap on screen: it saves one draw per object. The second draw costs about as much as the first, so it is the speed setting for scenes with many double-sided blended objects. Solid double-sided materials always draw once.
+`forceSinglePass: true` draws both faces in one draw. The triangles then cover each other in the mesh's order. Use it for flat surfaces, such as leaves and planes of glass, whose two faces never overlap on screen: it saves one draw per object. The second draw costs about as much as the first, so it is the speed setting for scenes with many double-sided blended objects. Solid double-sided materials always draw once. The [depth-only demo](https://github.com/null3d-engine/null3d/tree/main/examples/depth-only) sets it on its double-sided glass panes.
 
 ```ts
 // sketch.ts: a glass globe that shows its far side, and a flat pane that needs one draw.
@@ -986,6 +986,17 @@ One engine holds up to 1,024 materials at once. One more throws E1501. A materia
 - [Lights](lights.md): what lights a standard material.
 - [Surface functions](../shaders/surface-functions.md): the WGSL of a custom material.
 - [Math helpers](math.md#colors): sRGB and linear colors.
+- [Clear coat and sheen](https://github.com/null3d-engine/null3d/tree/main/examples/coat-and-sheen): candy paint, carbon fiber and velvet in a rainy showroom.
+- [Iridescence and anisotropy](https://github.com/null3d-engine/null3d/tree/main/examples/iridescence-and-anisotropy): a beetle's shell, soap bubbles and an oil slick.
+- [Diffuse transmission](https://github.com/null3d-engine/null3d/tree/main/examples/translucency): broad leaves and coral petals let the low sun through.
+- [Subsurface light](https://github.com/null3d-engine/null3d/tree/main/examples/subsurface): wax, jade and soap glow under the surface.
+- [Decals](https://github.com/null3d-engine/null3d/tree/main/examples/decals): road paint, posters and stains projected onto a street.
+- [Bump, displacement and parallax](https://github.com/null3d-engine/null3d/tree/main/examples/relief): hills and a brick wall whose depth comes from maps made in code.
+- [Weighted blending](https://github.com/null3d-engine/null3d/tree/main/examples/weighted-transparency): eight crossing glass panes and 600 smoke puffs blend in any order.
+- [Custom materials](https://github.com/null3d-engine/null3d/tree/main/examples/shader-inputs): 900 crystals from one material that reads each row.
+- [Scene depth behind a surface](https://github.com/null3d-engine/null3d/tree/main/examples/water): the water add-on reads the bed's depth through the surface.
+- [Invisible surfaces that hide](https://github.com/null3d-engine/null3d/tree/main/examples/depth-only): a plane with `colorWrite: false` holds back a hall while the page shows through.
+- [Dispersion in glass](https://github.com/null3d-engine/null3d/tree/main/examples/extra-shapes): a torus knot and polyhedra in glass that separates the light into colors.
 
 ## API reference
 

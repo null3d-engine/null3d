@@ -684,6 +684,15 @@ Every row of a batch shares the batch's layers, which the `layers` option and `s
 - [Loading screens and warm-up](../guides/loading-screens.md): waiting for the scene's pipelines.
 - [Assets and prefabs](../concepts/assets.md): models from glTF files, and what a prefab shares.
 - [Lighting and environment](../concepts/lighting.md#environment-maps): how an environment lights the scene.
+- [The physical sky](https://github.com/null3d-engine/null3d/tree/main/examples/atmosphere): a day over a valley of ridges under the physical sky.
+- [Sky layers](https://github.com/null3d-engine/null3d/tree/main/examples/aurora): curtains of green and violet light over a frozen lake.
+- [Multiple views](https://github.com/null3d-engine/null3d/tree/main/examples/multiple-views): one scene drawn from two cameras in the same frame.
+- [Reflection probes](https://github.com/null3d-engine/null3d/tree/main/examples/reflection-probes): two rooms over one polished floor, each with a probe.
+- [Volumetric fog](https://github.com/null3d-engine/null3d/tree/main/examples/light-shafts): sun rays and lantern cones in a pine wood at dusk.
+- [The environment](https://github.com/null3d-engine/null3d/tree/main/examples/environment): spheres lit by an HDR file, an EXR file and the built-in room.
+- [Instance batches](https://github.com/null3d-engine/null3d/tree/main/examples/instances): 100,000 columns in one batch at golden hour.
+- [Decals](https://github.com/null3d-engine/null3d/tree/main/examples/decals): road paint, posters and stains projected onto a street.
+- [The material override](https://github.com/null3d-engine/null3d/tree/main/examples/objects): the Look button draws the whole stage in one material.
 
 ## API reference
 

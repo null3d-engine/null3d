@@ -532,6 +532,9 @@ The core checks the whole graph when `render.addPass`, `render.removePass` or `t
 - [Textures](textures.md): `textures.fromPass`.
 - [Cameras](cameras.md): perspective and orthographic cameras.
 - [The security camera demo](https://github.com/null3d-engine/null3d/tree/main/examples/security-camera): a camera on a pole sweeps a yard behind a wall, and a monitor shows what it sees.
+- [Compute passes](https://github.com/null3d-engine/null3d/tree/main/examples/ocean): the water add-on adds three compute passes that transform the ocean's wave spectra each frame.
+- [Reflection passes](https://github.com/null3d-engine/null3d/tree/main/examples/mesh-arrays): a reflection pass mirrors an island in the water, and a custom material reads it.
+- [Passes with history and instance buffers](https://github.com/null3d-engine/null3d/tree/main/examples/vegetation-wind): the wind add-on's pass keeps history, and the grass add-on's pass fills instance buffers.
 
 ## API reference
 
