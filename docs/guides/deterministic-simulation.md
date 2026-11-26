@@ -209,17 +209,15 @@ export default defineConfig({
 
 The game's module then imports `createEngine` and `SKETCH` from the folder's `entry.js`, and passes `SKETCH` as the `sketch` option. The plugin also writes `null3d-files.json`, which lists the files that the start loads and those of each feature, as [Hosting](../getting-started/hosting.md) describes.
 
-The shader modules decide most of the folder's size. Build only the shader permutation words that the game draws with:
+The shader modules decide most of the folder's size. Copy only the builds of the shader permutation words that the game draws with:
 
-1. Record the words from a run of the game's page, as [Build only the shader permutations you draw with](assets-pipeline.md#build-only-the-shader-permutations-you-draw-with) shows. Name the game's pages with `--page`, or `--live` for a page that the recorder drives through its states. Record on both GPU paths, and at the low and high presets.
-2. In a checkout of null3D, build the shader modules from the list: `NULL3D_SHADER_PERMUTATIONS=<list> bun run shaders`. The checkout's `packages/engine/src/generated` then holds them.
-3. Build the game with `NULL3D_ENGINE_SHADERS` set to that folder, such as `NULL3D_ENGINE_SHADERS=<checkout>/packages/engine/src/generated bunx vite build`. The plugin then takes the narrowed modules in place of the full set.
+1. Build a development copy of the folder (`bunx vite build --mode development`). A production build ignores `?permutations`, `?gpu` and `?preset`, so a recording of it holds nothing.
+2. Record the words from a run of the game's page, as [Build only the shader permutations you draw with](assets-pipeline.md#build-only-the-shader-permutations-you-draw-with) shows. The game's engine starts on a click, so name its page with `--live` and give the recorder the start control. Serve the game with its development folder, and give the recorder its address: `bunx @null3d/cli shaders record --base http://localhost:8080 --live /game.html --click "#play"`.
+3. Name the list in the engine folder's config, as `null3d({ shaders: { list: 'shader-permutations.txt' } })`, and build the folder in production again. The build copies only the listed builds, from the release asset, and compiles nothing.
 
-A game whose page module another build makes records differently from a sketch page. Its engine starts on a click, so name its page with `--live` and give the recorder the start control: `--click "#play"`. Its files folder is a production build, and a production build ignores `?permutations`, `?gpu` and `?preset`. Record against a development build of that folder (`vite build --mode development`). Then build the narrowed set, and rebuild the folder in production. A real game recorded this way drew with 5 words, and its folder held 300 files and 26 MB. The same folder built with the 172-word example list held 762 files and 226 MB.
+With null3D 0.1.0's shader set, a small scene drew with 6 words. Its build copied 218 shader files and 17 MB, against 7,597 files and 4,115 MB without a list.
 
-The shader modules in a release asset are the full set. A game that builds against that asset and names no list copies every module into its files folder. That can exceed the folder's file and byte limits. Narrow the set first.
-
-A small game scene with three lanes and a ship drew with 5 words. Its folder held 297 files and 26,057,130 bytes, 4,737,421 after Brotli. The same folder built with the 172 words of null3D's examples held 759 files and 225,683,678 bytes. The full set of shader modules is 4,117,799,356 bytes. Record again after the game gains a feature that turns on a new word. The engine names a word that the set lacks the first time a pipeline needs it.
+The shader modules in a release asset are the full set. A game that builds against that asset without a list copies every module into its files folder. The build then warns with the size that it copied. That can exceed the folder's file and byte limits. Record again after the game gains a feature that turns on a new word. The engine names a word that the list lacks the first time a pipeline needs it.
 
 ## API reference
 

@@ -464,13 +464,81 @@ Each texture encodes on its own worker thread, so a set of textures uses every C
 
 ## Build only the shader permutations you draw with
 
-A production build can compile only the shader permutations that your scenes draw with, instead of every combination of every bit. That shortens the build and shrinks the set it writes. The build reads one file that lists the permutations as hexadecimal words, one on each line.
+The engine's shader set holds every build of every permutation word, which is thousands of files and gigabytes. A page downloads only the few files that its device needs. A production build still copies every file into its output, and the host stores them all. A list of the words that your pages draw with makes the build copy only the builds of those words.
 
-The list belongs to one set of pages. A project that adds a scene records again, because the build compiles only what the list holds. A build without the list stays a full build, as before.
+The list is a text file with one hexadecimal word on each line. A word leaves out the bits that a device fixes when it starts: the draw index, tone mapping in the shader and half precision. So one list serves every device. The build keeps each listed word's builds for every value of those bits.
 
-A word leaves out the bits that a device fixes when it starts: the draw index, tone mapping in the shader and half precision. One list then serves every device module. A build compiles each word's builds for every value of those bits. Record both GPU paths, because a path's variants list a few bits of their own. WebGL2 has the morph targets, and WebGPU has the instance index.
+### Record the list
 
-Record the list from a run of your pages. The recorder loads each page in hold mode at the low and high presets, because the words a preset turns on differ, and it loads each page live too. A live page advances the scene, and a showcase scene offers its controls: the recorder presses every button of its controls HUD, so the words that those states ask for reach the list.
+`shaders record` loads your pages in a headless browser and writes the words that their pipelines ask for. Run it in the project's folder. It starts the project's own Vite dev server:
+
+```sh
+bunx @null3d/cli shaders record --page / --live /
+```
+
+A held page (`--page`) loads in hold mode at the low and high quality presets, on WebGPU and on WebGL2. A preset turns on a few bits, and each GPU path lists bits of its own. WebGL2 has the morph targets, and WebGPU has the instance index. A live page (`--live`) loads on both GPU paths and draws for five seconds. The recorder presses every button of the page's controls HUD, when it has one, so the words of those states reach the list. Without either option, the command records `/` both ways. It writes `shader-permutations.txt`, or the file that `--out` names. [The `null3d` command](../cli/null3d.md#shaders-record) lists every option.
+
+A page that builds more of its scene as the visitor scrolls needs `--scroll`. The recorder then scrolls each live page down to its end, one window's height at a time. After each step, it waits until the page has asked for nothing for half a second. So each stage that a scroll reveals has loaded its shaders, and its pipelines have asked for their words.
+
+A game page that starts its engine on a click needs `--live` pages and `--click <selector>`, such as `--click "#play"`. Pages that another server serves take `--base <url>`. That server must serve a development build, because a production build ignores the recording switch. The [deterministic simulation guide](deterministic-simulation.md#a-production-build-of-a-games-engine-files) gives the full sequence for a game.
+
+A state that no page reaches during the recording goes into the list by hand. An example is a feature that a visitor turns on later. Add its word with `--extra`, or add a line to the file:
+
+```sh
+bunx @null3d/cli shaders record --page / --extra 0x00000010
+```
+
+`0x00000010` is the alpha mask bit, for a masked material that a visitor's action shows. A word that you add by hand leaves out the device bits, as the recorded words do.
+
+### Build with the list
+
+Name the list in the plugin's options. The path is relative to Vite's root:
+
+```ts
+// vite.config.ts
+import null3d from '@null3d/vite-plugin';
+import { defineConfig } from 'vite';
+
+export default defineConfig({
+  plugins: [null3d({ shaders: { list: 'shader-permutations.txt' } })],
+});
+```
+
+A production build then copies only the builds of the listed words. A shader file whose builds the list leaves out gives way to one small module that holds no build. A table of shared paragraphs keeps only the paragraphs that the kept builds read. The build compiles no shader. It takes the engine's set from the same place as before: the release asset, or the folder that `NULL3D_ENGINE_SHADERS` names. The dev server ignores the list and serves the whole set, so a recording sees every word.
+
+The build prints what it copied, such as:
+
+```text
+null3D: copied 218 shader files, 17 MB: the builds of the 6 permutation words of shader-permutations.txt.
+```
+
+A build without a list warns with the size of the whole set, which it copies.
+
+A list names words alone. A listed word keeps its builds in every shader that has one, in the files of features that your pages never use too. The word without any bit set keeps the most, because the engine's own passes and the passes of many features draw with it. Every page draws with it, so a list without `0x00000000` stops the build.
+
+With null3D 0.1.0's shader set, the builds copied these shader files:
+
+| List | Shader files | Size |
+| --- | --- | --- |
+| None, so the whole set | 7,597 | 4,115 MB |
+| The 270 words of null3D's examples | 795 | 257 MB |
+| The 6 words of a small scene | 218 | 17 MB |
+
+### When the list lacks a word
+
+A listed word that no shader build of the project holds stops the build, and the message names the word. The builds are those of the engine's set and those of the project's own shaders, such as its custom materials and the shaders of its add-ons. Such a word comes from a typing mistake, or from a list that another version of the engine recorded. Record the list again.
+
+A page that asks for a word that the list lacks fails the pipeline that needs it. The message names the word, as the list writes it:
+
+```text
+the shader set holds only the permutation words of the project's shader list, and this pipeline asks for 0x00000010, which the list lacks. Record the pages again with bunx @null3d/cli shaders record so that the word reaches the list, or add 0x00000010 to the list by hand, and build again.
+```
+
+Record again after a scene gains a feature that turns on a new permutation bit.
+
+### In a checkout of null3D
+
+This repository records the list of its examples with its own script, which runs the same recorder over every demo:
 
 ```sh
 NULL3D_SHADER_PERMUTATIONS= bun run examples:build
@@ -478,28 +546,14 @@ bun run examples:preview
 bun tools/shader-permutations.ts --base https://localhost:5173 --pages demos
 ```
 
-The preview serves HTTPS by default. A secure origin is what makes WebGPU, and so the High and Ultra presets, available. `NULL3D_HTTPS=0` opts out to plain HTTP on the loopback. The recorder accepts the local certificate.
+The empty variable builds the full set, so the recording sees every word. The preview serves HTTPS by default, because a secure origin makes WebGPU, and so the High and Ultra presets, available. The script writes `examples/shader-permutations.txt`. Its `--page-root` names the address that the pages sit under: `/` for a preview of the built site, or `/examples/` for the repository's own dev server. The island's pages record with its highest walker count, a state that its controls cannot reach.
 
-The empty variable makes a full set, because the recording reads every word that the pages ask for. Without it, the build narrows to the list that a recorded run wrote.
-
-The recorder writes `examples/shader-permutations.txt`, and `bun run examples:build` reads it. Its `--page-root` names the address that the pages sit under. Use `/` for a preview of the built site, or `/examples/` for this repository's own dev server. A demo that draws more in a state its controls cannot reach enters that state through the recorder's own query. The island's pages record with its highest walker count. The recorder runs from a checkout of this repository, because it drives a browser through the repository's own page list and browser launcher. A project outside the repository runs it from such a checkout and names its pages with one `--page <path>` for each, instead of `--pages demos`.
-
-A game page that starts its engine on a click needs `--live` pages and `--click <selector>`, such as `--click "#play"`. A production build of the engine folder ignores the URL switches. Record against a development build of that folder (`vite build --mode development`). The [deterministic simulation guide](deterministic-simulation.md#a-production-build-of-a-games-engine-files) gives the full sequence.
-
-Build with the list:
+The shader build of a checkout takes a list too, and then compiles only those words:
 
 ```sh
 NULL3D_SHADER_PERMUTATIONS=examples/shader-permutations.txt bun run build
 ```
 
-Without the variable, the build compiles every permutation, as before. With it, the build's cache keys and its input hash include the list, so a changed list builds again.
+`bun run examples:build` reads the examples' list this way. The build's cache keys and its input hash include the list, so a changed list builds again.
 
-Record again after a scene gains a feature that turns on a new permutation bit. The build then lacks that word. The engine fails with an error that names the word the first time a pipeline needs it, instead of drawing nothing. A path that a recording cannot reach, such as a feature that a visitor turns on later, goes into the list by hand:
-
-```sh
-bun tools/shader-permutations.ts --base https://localhost:5173 --pages demos --extra 0x00000010
-```
-
-A word that the recording cannot reach is written without the device bits, as the recorded words are. `0x00000010` is the alpha mask bit, for a masked material that a visitor's action shows.
-
-The file that the asset command writes into a model, `asset.extras.NULL3D_shaders`, names the bits that the model turns on. The list here is different: it holds the whole words that your scenes draw with. A narrowed build compiles those words. [Loading screens](loading-screens.md#loading-everything-up-front) describes the model's list.
+The file that the asset command writes into a model, `asset.extras.NULL3D_shaders`, names the bits that the model turns on. The list here is different: it holds the whole words that your scenes draw with. [Loading screens](loading-screens.md#loading-everything-up-front) describes the model's list.

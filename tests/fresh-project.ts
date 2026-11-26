@@ -9,7 +9,10 @@
 // production. The build must hold the engine's third-party notices, and its page must start the
 // threaded engine in a browser under a strict Content-Security-Policy, whatever test switches the
 // address holds. Last, the project's service worker caches the build on a first visit, and the page
-// must start the threaded engine again with the server stopped, on both GPU paths. Once the
+// must start the threaded engine again with the server stopped, on both GPU paths. The tool then
+// records the permutation words that the page draws with, and a build with that list must copy only
+// those words' shader builds, and start on both GPU paths. A build with a shorter list must stop the
+// page with the engine's message that names a word the list lacks. Once the
 // production build has ended, the project also builds a page of its own layout around a copy of
 // this repository's examples folder, as a website that holds the repository as a submodule does.
 // That build runs beside the production build's start checks. Two demos, and a comparison in each
@@ -46,6 +49,7 @@ import {
 	type OfflineFiles,
 } from '../packages/vite-plugin/src/index.ts';
 import { shaderCacheFolder } from '../packages/vite-plugin/src/shader-cache.ts';
+import { moduleWords, ShaderList, wordText } from '../packages/vite-plugin/src/shader-list.ts';
 import { cacheDir, cacheOff, pruneCacheLocked, secondsSince } from '../tools/lib/build-cache.ts';
 import { DEFAULT_PACK_DIR, packPackages } from '../tools/lib/pack.ts';
 import { type PackedPackage, publicPackages } from '../tools/lib/packages.ts';
@@ -547,6 +551,130 @@ const SITE_PAGE = {
 	],
 };
 
+/** The Vite config of a build of the project with a list of permutation words, into `outDir`. */
+function listedConfig(list: string, outDir: string): string {
+	return [
+		"import null3d from '@null3d/vite-plugin';",
+		"import { defineConfig } from 'vite';",
+		'',
+		`export default defineConfig({ plugins: [null3d({ shaders: { list: '${list}' } })], build: { outDir: '${outDir}' } });`,
+		'',
+	].join('\n');
+}
+
+/**
+ * The engine's shader files that a build copied: their number and bytes, and the word of each
+ * build that they hold. A copy keeps the shader build's own form, whose lines the words come from,
+ * and the bundler's minified chunks hold none of those lines.
+ */
+function copiedShaderFiles(dist: string): { files: number; bytes: number; words: Set<number> } {
+	const folder = join(dist, 'assets');
+	const copied = { files: 0, bytes: 0, words: new Set<number>() };
+	for (const name of readdirSync(folder)) {
+		if (!name.endsWith('.js')) continue;
+		const text = readFileSync(join(folder, name), 'utf8');
+		const words = moduleWords(text);
+		const table = name.startsWith('shader-paragraphs-') || name.startsWith('shaders-unlisted-');
+		if (words.length === 0 && !table) continue;
+		copied.files++;
+		copied.bytes += Buffer.byteLength(text);
+		for (const word of words) copied.words.add(word);
+	}
+	return copied;
+}
+
+/**
+ * Records the words that the project's page draws with, with the installed command's
+ * `shaders record`, then builds the project with that list. The build must copy only the builds of
+ * listed words, far fewer bytes than the build without a list, and its page must start on both GPU
+ * paths. A build with a list that leaves out a word the page draws with must stop the page with the
+ * engine's message that names it.
+ */
+async function narrowsShaders(project: string, cli: string): Promise<void> {
+	step('Record the shader words that the page draws with', project, cli, [
+		'shaders',
+		'record',
+		'--page',
+		'/',
+		'--live',
+		'/',
+	]);
+	const list = ShaderList.read(join(project, 'shader-permutations.txt'));
+	writeFileSync(
+		join(project, 'vite.listed.config.ts'),
+		listedConfig('shader-permutations.txt', 'dist-listed'),
+	);
+	const vite = join(project, 'node_modules/.bin/vite');
+	step('Build with the list', project, vite, ['build', '--config', 'vite.listed.config.ts']);
+	const full = copiedShaderFiles(join(project, 'dist'));
+	const listed = copiedShaderFiles(join(project, 'dist-listed'));
+	const unlisted = [...listed.words].filter((word) => !list.holds(word));
+	console.log(
+		`  ${list.words.size} words: ${listed.files} shader files, ${listed.bytes.toLocaleString('en-US')} bytes, against ${full.files} files, ${full.bytes.toLocaleString('en-US')} bytes without the list`,
+	);
+	if (unlisted.length > 0)
+		throw new Error(
+			`the build with the list copied builds of words it lacks: ${unlisted.map(wordText).join(', ')}`,
+		);
+	if (listed.words.size === 0 || listed.bytes * 10 > full.bytes)
+		throw new Error(
+			`the build with the list copied ${listed.bytes} bytes of shaders, not a tenth of the ${full.bytes} without it`,
+		);
+	console.log('\nStart the build with the list on both GPU paths');
+	await withBrowser(join(project, 'dist-listed'), true, async (browser, server) => {
+		for (const path of ['webgpu', 'webgl2']) {
+			const page = await browser.newPage();
+			const errors = pageErrors(page);
+			await page.goto(`${server.url.href}?path=${path}`);
+			const { start, tier } = await startOf(page, `with the list on ${path}`, errors);
+			if (start !== 'threaded' || !tier?.startsWith(path === 'webgpu' ? 'webgpu' : 'webgl2'))
+				throw new Error(
+					`the build with the list did not start on ${path}: start ${start}, tier ${tier}, page errors ${JSON.stringify(errors)}`,
+				);
+			await page.close();
+		}
+	});
+	// The engine's own passes draw with the word without any bit, so the shorter list keeps that
+	// word alone, and the page's scene draws with words that it lacks.
+	writeFileSync(join(project, 'short-permutations.txt'), `${wordText(0)}\n`);
+	writeFileSync(
+		join(project, 'vite.short.config.ts'),
+		listedConfig('short-permutations.txt', 'dist-short'),
+	);
+	step('Build with a list that lacks a word', project, vite, [
+		'build',
+		'--config',
+		'vite.short.config.ts',
+	]);
+	console.log('\nStart the build whose list lacks a word');
+	await withBrowser(join(project, 'dist-short'), true, async (browser, server) => {
+		const page = await browser.newPage();
+		const errors = pageErrors(page);
+		await page.goto(server.url.href);
+		const named = await within(
+			page
+				.waitForFunction(
+					() => (globalThis as unknown as PageGlobals).document.documentElement.dataset.start,
+					undefined,
+					{ timeout: PAGE_LIMIT_MS },
+				)
+				.then((handle) => handle.jsonValue())
+				.catch(() => undefined),
+			PAGE_LIMIT_MS + 5_000,
+			() => 'the page whose list lacks a word neither started nor failed',
+		);
+		// The message names a word that the recording holds and the shorter list lacks.
+		const said = [String(named), ...errors].find((text) => text.includes('which the list lacks'));
+		const word = /asks for (0x[0-9a-f]{8}), which the list lacks/.exec(said ?? '')?.[1];
+		const value = word === undefined ? undefined : Number.parseInt(word.slice(2), 16);
+		if (value === undefined || value === 0 || !list.words.has(value))
+			throw new Error(
+				`the page whose list lacks a word did not name one that the recording holds: start ${named}, page errors ${JSON.stringify(errors)}`,
+			);
+		console.log(`  the engine said: ${said?.slice(0, 300)}`);
+	});
+}
+
 /**
  * The website build's compiled shaders, kept between runs. The demos' custom materials each build
  * into every variant of the standard material, and the plugin compiles them in the build. An entry
@@ -709,6 +837,8 @@ async function main(): Promise<void> {
 		if (!existsSync(notices)) throw new Error(`the production build writes no ${NOTICES_FILE}`);
 		if (readFileSync(notices, 'utf8') !== `${expected}\n`)
 			throw new Error(`the production build's ${NOTICES_FILE} differs from the packages' notices`);
+		// The builds with a list run before the site's build, so that no two Vite builds run at once.
+		await narrowsShaders(project, cli);
 		// The site's build needs only the installed packages, so it runs beside the start checks.
 		site = startSiteBuild(project);
 		await startsUnderStrictPolicy(join(project, 'dist'));

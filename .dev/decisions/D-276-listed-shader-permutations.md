@@ -1,6 +1,6 @@
 # D-276: A production build compiles only the permutation words its pages record
 
-Status: decided and built. The shader build takes a list of whole permutation words, the recorder writes the list, and the showcases' production build reads it. Task: M3-R12.
+Status: decided and built. The shader build takes a list of whole permutation words, the recorder writes the list, and the showcases' production build reads it. A project outside the repository narrows its copies of the set with the Vite plugin instead ([D-398](D-398-plugin-shader-list.md)). Task: M3-R12.
 
 Summary: A production build of a known set of pages compiles only the permutation words that those pages draw with. The list is recorded from a run of the pages, so it covers what the models list and what the page turns on at run time. The engine's release set still serves every project, so it compiles every word.
 
@@ -48,9 +48,9 @@ The shader build takes `--permutations <file>`, one hexadecimal word on each lin
 
 A word leaves out the bits that a device fixes: the draw index, tone mapping in the shader and half precision. One list then serves every device module, and the build makes each listed word's builds for every value of those bits. A build matches a listed word with those bits cleared, so one list serves every template.
 
-The list comes from a recording run of the pages. `?permutations=record` makes the drawing thread record the word of every variant that a pipeline asks for. The recorder loads each page in hold mode at the low and high presets on both GPU paths, because a preset sets a few of the bits and a path lists bits that the other does not. It also loads every page live, and presses every button of a showcase's controls HUD, because a held frame never turns those on. It writes the union to `examples/shader-permutations.txt`.
+The list comes from a recording run of the pages. `?permutations=record` makes the drawing thread record the word of every variant that a pipeline asks for. The recorder of the command-line tool ([D-398](D-398-plugin-shader-list.md)) loads each page in hold mode at the low and high presets on both GPU paths. A preset sets a few of the bits, and a path lists bits that the other does not. It also loads every page live, and presses every button of a showcase's controls HUD, because a held frame never turns those on. It writes the union to `examples/shader-permutations.txt`.
 
-The examples' production build reads that file. The engine's release asset is built without a list, because it serves every project rather than one project's pages. D-188's 684 MiB release asset does not change. A list made from one project's pages would leave another project's pipeline without a shader. The figure that falls is the set that a production build of the showcases writes and ships, because those pages are known. The set at this tree is larger than D-188's, at 3.48 GB, as more features joined the manifest since that record.
+The examples' production build reads that file. The engine's release asset is built without a list, because it serves every project rather than one project's pages. D-188's 684 MiB release asset does not change. A list made from one project's pages would leave another project's pipeline without a shader. The figure that falls is the set that a production build of the showcases writes and ships, because those pages are known. A project that builds against the release asset narrows its copies with the plugin's `shaders.list`, which reads the same list and compiles nothing ([D-398](D-398-plugin-shader-list.md)). The set at this tree is larger than D-188's, at 3.48 GB, as more features joined the manifest since that record.
 
 The list lives in a generated module of its own, `shader-permutations.ts`, and not in the main shader module. The main module holds the start shader data, so an import of the list from there put that data into the page's and the sketch worker's bundles: the size check measured page.js at 48.4% and the sketch worker at 16.2% after Brotli. The lookup's import from the small module leaves page.js 3.5% larger, by 1,026 bytes, for the recording switch and its message.
 
@@ -59,7 +59,7 @@ The variants that load on a feature's first use stay in modules of their own. Th
 ## Consequences
 
 - `crates/null3d-shaders` filters each variant's builds to the list, and the list joins the cache key.
-- `tools/shader-modules.ts` reads `NULL3D_SHADER_PERMUTATIONS`, and `tools/shader-permutations.ts` records the list.
+- `tools/shader-modules.ts` reads `NULL3D_SHADER_PERMUTATIONS`. `tools/shader-permutations.ts` records the demos' list with the recorder of the command-line tool, `packages/cli/src/shader-record.js`.
 - `packages/engine` records the words and names a missing word at the pipeline that needs it.
 - `examples/vite.build.config.ts` reads `examples/shader-permutations.txt`; a full build sets the variable empty.
-- `guides/assets-pipeline` describes the recording and the build. D-162 describes the model's own list, which is a different list.
+- `guides/assets-pipeline` describes the recording, the plugin's list and the build. D-162 describes the model's own list, which is a different list.

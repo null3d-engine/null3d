@@ -283,6 +283,7 @@ Rendering:
 
 Startup:
 
+- The Vite plugin's `shaders.list` names a list of the shader permutation words that the pages draw with. `bunx @null3d/cli shaders record` wrote it after the last change of the scenes. Without one, the build copies the engine's whole shader set and warns with its size (`guides/assets-pipeline`).
 - The host sends the isolation headers, sends each `.wasm` file as `Content-Type: application/wasm`, and lets browsers keep the hashed files under `assets/` (`getting-started/hosting`).
 - An Electron app serves the build from a custom scheme with the two isolation headers, not from `file://`, and `engine.capabilities.threaded` is `true` in the packaged app (`getting-started/hosting`).
 - With the build's files on a CDN, the CDN sends `Access-Control-Allow-Origin` on every file, and the page's policy allows `blob:` workers and the CDN (`getting-started/hosting`). The engine needs no `'unsafe-eval'`.
