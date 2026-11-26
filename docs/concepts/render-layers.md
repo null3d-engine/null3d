@@ -21,6 +21,10 @@ A layer mask is a 32-bit number. Bit n puts an object on layer n, so the mask `1
 
 New objects, batches and cameras are on layer 0 alone, with the mask 1. Every camera draws every object until you change a mask.
 
+![Brick cottages drawn without their roof layer, so the rooms inside show, with a red map pin above each house.](../images/concepts/render-layers/layers-cottages.webp)
+
+The camera's mask leaves out the roof layer and draws the pin layer.
+
 ## Setting layers
 
 ```ts

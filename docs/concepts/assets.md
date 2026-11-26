@@ -24,6 +24,10 @@ Assets are the models, textures and meshes that a scene draws. A glTF model load
 
 `assets.loadGltf` loads a glTF 2.0 model. A worker parses the file outside the sketch's frames, so a large model never stalls a frame. The loader then makes each mesh, material and texture of the file once, and returns a prefab. Then `scene.instantiate(prefab)` creates the model's objects under one new group, with one batch of queued changes. Each copy shares the prefab's GPU data, so ten copies of a model add only their own objects. The skins, clips and morph targets of glTF files load and animate.
 
+![The Khronos BoomBox on a polished turntable in a dark studio.](../images/concepts/assets/gltf-model.webp)
+
+The glTF models demo. On the assets tool page, say only that this is the model the example output describes, not the optimized file.
+
 ```ts
 // sketch.ts
 const ship = await assets.loadGltf('/models/ship.glb');

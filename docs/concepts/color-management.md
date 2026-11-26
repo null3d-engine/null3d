@@ -94,6 +94,10 @@ Effects that need HDR color, such as bloom, move compatibility mode to HDR color
 
 A material with `toneMapped: false` keeps its color as the display shows it. Use it for a panel, a sign or another object whose colors are set for the screen, such as a heads-up display in the world.
 
+![Two rows of the same seven bright colors: the top row keeps its display color, the bottom row takes the tone curve.](../images/concepts/color-management/tone-mapped.webp)
+
+toneMapped: false on the top row.
+
 The 8-bit path honors it in each material's own shader. The HDR path honors it in its final pass, for surfaces that do not blend. A blended surface still takes the tone curve on the HDR path. If it needs the exact color, use the 8-bit path with `createEngine({ hdr: false })` ([The post-processing chain](post-processing.md) explains what else that path changes).
 
 <details>

@@ -19,6 +19,10 @@ An instance batch draws one mesh with one material many times. Each copy is a ro
 
 Use a batch for many copies that you move in loops, such as particles, bullets, crowds, trees and rocks. Use separate objects from `scene.createMesh` when each copy needs a name, a parent or its own setters.
 
+![A field of about 100,000 columns in one instance batch at golden hour, with hover cars streaming above it.](../images/concepts/instances/instances.webp)
+
+One dynamic batch: the sketch writes every column's height in every frame.
+
 ## Create a batch
 
 ```ts
@@ -235,6 +239,10 @@ So create batches in the setup, and pool rows during play instead of creating ba
 ## Per-row colors
 
 `colors: true` adds a `colors` array, with a linear RGBA color for each row, white at first. The color multiplies the material's base color and opacity, as a mesh's vertex colors do. So a white material shows each row's color, and a row's alpha below a masked material's cutoff hides the row. Convert an sRGB color, such as a hex string, with the color helpers in [Math helpers](../api/math.md).
+
+![Five instance batches of eight rows each, every row in its own color, beside one gray row of the same material without colors.](../images/concepts/instances/per-row-colors.webp)
+
+Row colors multiply the material's color.
 
 ```ts
 import { color, defineSketch } from '@null3d/engine';

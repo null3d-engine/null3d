@@ -22,6 +22,10 @@ An object far from the camera covers few pixels. Its full mesh then costs vertex
 
 A mesh with levels draws one of them per frame in every object and every instance row that uses it. The engine picks the level on the GPU on WebGPU, and on its job workers on WebGL2. Both use the same rule, so a level switches in at the same distance on every GPU path.
 
+![A dense mixed forest at golden hour, under a cloudy sky.](../images/concepts/lod/forest.webp)
+
+What you see. The levels view beside it shows what the engine picks.
+
 ## Levels of meshes made in code
 
 A mesh made in code plans its levels the first time the scene draws it. It plans when it holds 4,096 triangles or more, or when it holds at least 256 triangles and its copies hold 65,536 triangles together. This holds whether `geometry.fromArrays` or a generator made it. A page's meshes and an add-on's plan alike. A mesh that no object draws plans nothing, and the plan sees the material that draws the mesh first.

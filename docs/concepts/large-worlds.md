@@ -35,6 +35,10 @@ Lights, shadow cascades, raycasts, overlap queries, `screenToRay`, `worldToScree
 
 Cells keep world matrices precise, but a position that you set is a 32-bit float by default. At the Earth's radius it moves in steps of 0.5 m before it reaches a cell. Start the engine with `largeWorld: true`, and the setters keep each position exact:
 
+![A road at golden hour with dashed lane marks, trees and hazy hills.](../images/concepts/large-worlds/large-world.webp)
+
+A road 6,378 km from the origin, in large-world mode.
+
 ```ts
 // page.ts
 const engine = await createEngine({ canvas, sketch, largeWorld: true });

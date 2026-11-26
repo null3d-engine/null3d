@@ -221,6 +221,10 @@ A scene inside one cell has nothing to skip, and culls as it would without cells
 
 Write world positions as usual, and the engine picks the cells:
 
+![A tray of small keys and a brass wheel, drawn sharp.](../images/concepts/culling/far-from-origin.webp)
+
+2 cm keys 1,000 km from the origin, drawn without jitter.
+
 ```ts
 const base = [250_000, 0, -80_000] as const;
 const camera = scene.createPerspectiveCamera({
