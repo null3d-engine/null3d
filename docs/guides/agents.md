@@ -60,7 +60,7 @@ An agent checks its work with the `null3d` command, which prints short lines of 
 
 `bunx @null3d/cli mcp` starts a Model Context Protocol server for the project in the current folder. It runs over stdio, and an agent uses it to look inside the running scene and change it live. The server needs a development build, because a production build leaves the inspection channel out.
 
-By default the server starts the project's own Vite dev server and a headless Chrome, as `shot` does. This works on a cloud agent with no window. With `--connect <endpoint>` it attaches to a Chrome that the developer already runs with a remote debugging port. It then drives the tab that shows the page, so the agent sees exactly what the developer sees. [Debugging](debugging.md#the-mcp-server) lists the options and the tools, and [the `mcp` command](../cli/null3d.md#mcp) is the full reference.
+By default it starts the project's own Vite dev server and a headless Chrome; with `--connect <endpoint>` it drives a Chrome that you already run. [The `mcp` command](../cli/null3d.md#mcp) lists every option and tool.
 
 Register the server in Claude Code with:
 
@@ -68,6 +68,6 @@ Register the server in Claude Code with:
 claude mcp add null3d -- bunx @null3d/cli mcp
 ```
 
-The tools list and read objects, and change a transform or a material. They capture a frame, and read the frame figures, the errors and the render graph. They also switch the quality preset or the GPU path. Live changes are for exploring: the agent writes the final values into the sketch and its tests, and checks them with `bunx @null3d/cli test`.
+Live changes are for exploring: the agent writes the final values into the sketch and its tests, and checks them with `bunx @null3d/cli test`.
 
 The page also shows a panel of its own with `?inspect`, which lists the scene, selects an object and edits it. [The in-page inspector](debugging.md#the-in-page-inspector) describes it.

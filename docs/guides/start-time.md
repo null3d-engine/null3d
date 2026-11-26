@@ -93,17 +93,14 @@ The engine builds a pipeline that the driver refuses once more, alone. When the 
 
 ## Compress every file
 
-The host's compression decides the size of the start's largest downloads. Send every file of the build with Brotli where the host has it, and with gzip where it does not:
+The host's compression decides the size of the start's largest downloads. Send every file of the build with Brotli where the host has it, and with gzip where it does not. A device loads one start shader file, picked by what its GPU supports:
 
 | File | As it is | gzip | Brotli |
 | --- | --- | --- | --- |
-| The engine core, `null3d_bg-<hash>.wasm` | 1.9 MB | 0.8 MB | 0.6 MB |
 | The largest WebGL2 start shader file | 1.4 MB | 0.21 MB | 0.06 MB |
 | The largest WebGPU start shader file | 0.47 MB | 0.09 MB | 0.04 MB |
 
-A device loads one start shader file, picked by what its GPU supports. [Send the files with Brotli](../getting-started/hosting.md#send-the-files-with-brotli) gives the size of the engine's whole start for each kind of compression.
-
-Many servers compress only text, and send `.wasm` files as they are. Open the browser's network panel, and compare the core's transferred size with its size. With nginx, add `application/wasm` to `gzip_types`, or send files that you compress when you deploy, as [Hosting](../getting-started/hosting.md#send-the-files-with-brotli) shows.
+The engine core's `.wasm` file takes about 0.6 MB with Brotli ([Send the files with Brotli](../getting-started/hosting.md#send-the-files-with-brotli)).
 
 The null3D Vite plugin compresses in both of its servers. `vite preview` compresses the build's files and models with Brotli, `.wasm` included, for every visitor. The dev server compresses its answers to other devices, such as a phone on the network, and leaves `localhost` as it is.
 
@@ -114,8 +111,7 @@ Models compress less, because their textures are compressed already. Brotli save
 A repeat visit is fast when the browser keeps what the first visit downloaded. Vite names each file in `assets/` with a hash of its content. Serve those files as immutable, and the HTML page so that the browser checks it each time, as [Hosting](../getting-started/hosting.md#let-browsers-keep-the-build-files) shows. A repeat visit then downloads only the page.
 
 - A file served with `no-cache` costs one round trip on every visit, even when it has not changed. Give your own large files, such as models, a hash or a version in their addresses, such as `statue-v3.glb`, and serve those addresses as immutable. Serve every other address with `no-cache`, so a changed file never shows its old copy.
-- Send no `Vary: Origin` header with the build's files when they come from the page's own origin. A worker's request for a module carries an `Origin` header that the page's own download of the file does not. With `Vary: Origin`, the browser checks the file again, one round trip, instead of taking its copy.
-- Send `.wasm` files with `Content-Type: application/wasm`, with nothing after it. Chrome 157 and later then keep the compiled engine core beside the file, and a repeat visit skips most of its compile. Chrome writes that code a few seconds into a visit, about 6 seconds after the first frame on the engine's test page. Chrome 156 and earlier rarely write it ([Let Chrome keep the compiled core](../getting-started/hosting.md#let-chrome-keep-the-compiled-core)).
+- Send the build's files as [Hosting](../getting-started/hosting.md#let-browsers-keep-the-build-files) shows, including the header that lets Chrome keep the compiled core ([let Chrome keep the compiled core](../getting-started/hosting.md#let-chrome-keep-the-compiled-core)).
 
 On the engine's test page, a repeat visit took 160 ms to the first frame with the compiled core kept. It took 176 to 180 ms with only the file kept. Chrome recompiled 3 functions in the first case, and 273 in the second.
 
