@@ -6,8 +6,6 @@ summary: "standard, unlit, shader, shadowCatcher; every option."
 
 # Materials
 
-> `materials.shader` takes no standard texture maps. It takes up to 6 textures of its own.
-
 A material sets how the surfaces of the objects that use it look. `materials.standard` makes a lit material, and `materials.unlit` makes one that ignores lights. Create materials in the setup, and share each one between the objects that look alike.
 
 ```ts

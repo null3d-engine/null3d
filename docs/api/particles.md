@@ -6,8 +6,6 @@ summary: "createParticles: emitters, bursts and sub-emitters; closed-form GPU mo
 
 # Particles (@null3d/particles)
 
-> Particles do not cast shadows, and lights do not light them. A system does not sort its own particles back to front.
-
 ```mermaid
 flowchart LR
     update["system.update()<br/>in onLateUpdate"] --> births["Records of the particles<br/>born in the frame"]

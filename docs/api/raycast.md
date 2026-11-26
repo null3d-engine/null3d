@@ -6,8 +6,6 @@ summary: "raycast, raycastAny, raycastAll, raycastBatch, overlap queries, pointe
 
 # Raycasting and spatial queries
 
-> Queries test a skinned character in its bind pose, not in its animated pose. Pixel-exact picking draws each character as it is posed.
-
 ```mermaid
 flowchart LR
     query["A ray, a sphere<br/>or a box"] --> scene["The scene's trees:<br/>static and dynamic objects"]

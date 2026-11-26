@@ -6,8 +6,6 @@ summary: "createTerrain: a height field drawn as a camera-centered quadtree of b
 
 # Terrain (@null3d/terrain)
 
-> The ground has no collision. A block morphs toward its parent block's surface before it gives way to it, and a skirt closes the seam between neighbors that differ by more than one level.
-
 ```mermaid
 flowchart LR
     height["A height field<br/>from a function or a map"] --> tree["A camera-centered quadtree<br/>picks the blocks"]
