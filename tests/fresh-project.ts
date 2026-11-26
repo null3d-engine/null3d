@@ -59,6 +59,7 @@ import { MODULE_DIR } from '../tools/lib/shader-modules.ts';
 import { ASSET_SCENE } from './lib/asset-scene.ts';
 import { launchRepoBrowser } from './lib/chrome-for-testing.ts';
 import { STRICT_POLICY } from './lib/content-security-policy.ts';
+import { devServerAddress } from './lib/dev-server.ts';
 
 const ROOT = join(import.meta.dirname, '..');
 /** The project's files besides its package manifest. */
@@ -696,7 +697,7 @@ async function devServerWarns(project: string, vite: string, list: ShaderList): 
 	try {
 		let url: string | undefined;
 		for (let k = 0; k < 600 && url === undefined; k++) {
-			url = /http:\/\/localhost:\d+\//.exec(output())?.[0];
+			url = devServerAddress(output());
 			if (url === undefined) await Bun.sleep(100);
 		}
 		if (url === undefined)
