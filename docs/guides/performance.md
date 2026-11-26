@@ -88,7 +88,9 @@ The engine kept the full render scale and every setting on both devices. On the 
 
 ### Quality presets
 
-The engine picks a [quality preset](../concepts/quality-presets.md) for each device when it starts. It picks Low on phones, Medium on tablets and High on computers. The GPU path can cap it lower. A warm tablet can run Medium below 60 frames per second, so name Low on tablets where a steady rate matters most ([Quality presets](../concepts/quality-presets.md#how-the-engine-chooses-a-preset)). When the page names no preset, the engine checks its choice after the first frame. It measures the frame rate of the scene that the setup built, and lowers the preset until one holds the target.
+The engine picks a [quality preset](../concepts/quality-presets.md) for each device when it starts. It picks Low on phones, Medium on tablets and High on computers. The GPU path can cap it lower. A warm tablet can run Medium below 60 frames per second, so name Low on tablets where a steady rate matters most ([Quality presets](../concepts/quality-presets.md#how-the-engine-chooses-a-preset)).
+
+When the page names no preset, the engine checks its choice after the first frame. It measures the frame rate of the scene that the setup built, and lowers the preset until one holds the target.
 
 The preset sets:
 
@@ -203,7 +205,11 @@ Performance advice written for other engines often assumes things that do not ho
 
 ### What makes the GPU build a pipeline?
 
-The material's kind, standard, unlit or custom, and the [options that it fixes](../api/materials.md#options-fixed-at-creation) when you create it, apart from `flatShading` and `fog`. Each custom material's WGSL is a shader of its own. The mesh's vertex format, and the pass's color format, depth format and sample count. Other material values never do: materials are rows in one shared table. So a thousand standard materials in different colors share one pipeline for each vertex format. Tone mapping and exposure are values the shaders read, so changing them builds nothing. Shadow passes and the depth prepass build depth-only pipelines of their own.
+The material's kind, standard, unlit or custom, and the [options that it fixes](../api/materials.md#options-fixed-at-creation) when you create it, apart from `flatShading` and `fog`. Each custom material's WGSL is a shader of its own.
+
+The mesh's vertex format, and the pass's color format, depth format and sample count.
+
+Other material values never do: materials are rows in one shared table. So a thousand standard materials in different colors share one pipeline for each vertex format. Tone mapping and exposure are values the shaders read, so changing them builds nothing. Shadow passes and the depth prepass build depth-only pipelines of their own.
 
 ### When are pipelines built?
 
@@ -232,7 +238,9 @@ On WebGPU the draw is indirect. On an Apple GPU in Safari, or in any browser on 
 - The transparent pass.
 - The final tone-map pass on the HDR path.
 
-On WebGPU, a culling pass on the GPU tests each object and row against the view, and the opaque pass replays a draw bundle. The engine records the bundle again only when the scene's structure changes. On a device that draws the direct path, the job workers cull on the CPU as they do on WebGL2. On WebGL2 the job workers cull on the CPU, and the opaque pass draws the objects in view. On both paths, culling first skips the still objects of grid cells out of view: [Large worlds](#large-worlds). [Architecture](../concepts/architecture.md#the-passes-of-a-frame) lists every pass.
+On WebGPU, a culling pass on the GPU tests each object and row against the view, and the opaque pass replays a draw bundle. The engine records the bundle again only when the scene's structure changes. On a device that draws the direct path, the job workers cull on the CPU as they do on WebGL2. On WebGL2 the job workers cull on the CPU, and the opaque pass draws the objects in view.
+
+On both paths, culling first skips the still objects of grid cells out of view: [Large worlds](#large-worlds). [Architecture](../concepts/architecture.md#the-passes-of-a-frame) lists every pass.
 
 ### Does the engine know when the GPU finished a frame?
 
@@ -375,7 +383,9 @@ Occlusion culling skips the objects that lie wholly behind others. Each GPU path
 
 ### Blockers on WebGL2
 
-On WebGL2, the `softwareOcclusion` option of `createEngine` turns occlusion culling on, and every preset leaves it off. Objects marked with `setOccluder(true)` or the `occluder` option then hide what lies wholly behind them, and the GPU skips it. The job workers draw the blockers into a small depth buffer each frame, so each blocker costs CPU time on them. Mark a few large, solid objects that hide many others, such as the buildings along a street. Where the job workers' time grows, keep the small ones from blocking with `setOccluder(false)`, or with `"occluder": false` in the mesh's extras ([Blockers](assets-pipeline.md#blockers)). Then compare `occludedEntries` with `visibleEntries` in `measure`, and the job workers' time with the `softwareOcclusion` setting on and off. [Culling](../concepts/culling.md#software-occlusion-culling-on-webgl2) explains the method and its limits.
+On WebGL2, the `softwareOcclusion` option of `createEngine` turns occlusion culling on, and every preset leaves it off. Objects marked with `setOccluder(true)` or the `occluder` option then hide what lies wholly behind them, and the GPU skips it. The job workers draw the blockers into a small depth buffer each frame, so each blocker costs CPU time on them.
+
+Mark a few large, solid objects that hide many others, such as the buildings along a street. Where the job workers' time grows, keep the small ones from blocking with `setOccluder(false)`, or with `"occluder": false` in the mesh's extras ([Blockers](assets-pipeline.md#blockers)). Then compare `occludedEntries` with `visibleEntries` in `measure`, and the job workers' time with the `softwareOcclusion` setting on and off. [Culling](../concepts/culling.md#software-occlusion-culling-on-webgl2) explains the method and its limits.
 
 <details>
 <summary>Technical details: what a blocker costs</summary>

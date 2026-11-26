@@ -143,7 +143,9 @@ It also saves the errors and warnings that the page logged, with their stacks, i
 
 ## Measure
 
-The stats overlay shows frame figures over the top-right corner of the canvas, or over its bottom-right corner with the `corner` option. Its header shows the frame rate. A click opens a card with each thread's CPU time and the GPU's time against the target frame rate. The card also shows memory, draw calls, triangles and objects drawn, and what holds the frame rate back. It lists the GPU time of each step of the frame that the GPU timed, such as the opaque pass or bloom. An add-on feature that reports figures gets a row of its own, with its GPU time, its settings, its budget and its memory.
+The stats overlay shows frame figures over the top-right corner of the canvas, or over its bottom-right corner with the `corner` option. Its header shows the frame rate. A click opens a card with each thread's CPU time and the GPU's time against the target frame rate. The card also shows memory, draw calls, triangles and objects drawn, and what holds the frame rate back.
+
+It lists the GPU time of each step of the frame that the GPU timed, such as the opaque pass or bloom. An add-on feature that reports figures gets a row of its own, with its GPU time, its settings, its budget and its memory.
 
 Show it from the page with `createEngine({ stats: true })`, `engine.stats(true)` or the `?stats` switch, or from the sketch with `debug.stats(true)`.
 
