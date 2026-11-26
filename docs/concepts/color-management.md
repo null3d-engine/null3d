@@ -18,7 +18,9 @@ flowchart LR
 
 null3D works in linear color. A color that you give as a hex string or a number is sRGB, the way CSS writes colors. The engine converts it to linear once, when the call receives it. A color that you give as three numbers is linear already.
 
-Lighting adds and scales light in linear color, so a lit surface can be brighter than white. The scene therefore draws into a high dynamic range (HDR) target. Each light and each color of the scene comes in scaled by the exposure. At the end of each frame, a tone mapping curve maps it into the display's range. The final pass then encodes it as sRGB for the canvas.
+Lighting adds and scales light in linear color, so a lit surface can be brighter than white. The scene therefore draws into a high dynamic range (HDR) target. Where the device cannot draw a float target in the anti-aliasing mode, the scene takes an 8-bit path. Each shader then tone maps its own color ([The 8-bit path](#the-8-bit-path)).
+
+Each light and each color of the scene comes in scaled by the exposure. At the end of each frame, a tone mapping curve maps it into the display's range. The final pass then encodes it as sRGB for the canvas.
 
 ## Colors in the API
 
@@ -56,11 +58,33 @@ A strong light can make a surface many times brighter than white. The scene keep
 - `rgba16float` on WebGPU. Where the device can draw into `rg11b10ufloat` and the canvas is opaque, the scene color takes that format instead, which needs half the memory.
 - `RGBA16F` on WebGL2, where the device can draw float targets in the anti-aliasing mode.
 
-The final pass reads each pixel of the scene color. In the FXAA anti-aliasing mode it first smooths the edges. It darkens the edges with the vignette, when the sketch sets one, and applies the tone mapping to the exposed color. It then encodes the result as sRGB. Last, after any color grading table, it adds a little noise, called dithering, so smooth gradients show no bands. The final pass is one triangle over the canvas, with no scene work in it. Below the whole canvas's render scale it runs in two steps, while the render scale can drop. The first step does the FXAA, the tone curve and the sRGB encode at the render size. The second scales the image up ([The post-processing chain](post-processing.md#below-the-whole-canvass-render-scale)).
+The final pass reads each pixel of the scene color. In the order the shader runs them:
+
+1. In the FXAA mode, smooth the edges.
+2. Darken the edges by the vignette, when the sketch sets one.
+3. Apply the tone mapping to the exposed color (with automatic exposure, the adapted exposure first).
+4. Encode as sRGB.
+5. Apply any color grading table.
+6. Add the dither, so smooth gradients show no bands.
+
+The final pass is one triangle over the canvas, with no scene work in it. Below the whole canvas's render scale it runs in two steps, while the render scale can drop ([The post-processing chain](post-processing.md#below-the-whole-canvass-render-scale)).
 
 ### The 8-bit path
 
-Some devices cannot draw a float target in the anti-aliasing mode. These are WebGPU in compatibility mode with MSAA, and WebGL2 devices whose float targets fail the engine's test. There, each shader applies the tone mapping itself, and writes into an 8-bit target. With MSAA that target can resolve straight into the canvas, with no final pass. That holds while the render scale cannot drop below 1 and no effect needs the final pass. Such effects are color grading, sharpening, outlines, transmission, screen-space reflections and the bounce light. So are soft particles, a material that reads the scene's depth, the moment transparency layer, and a full-screen pass that reads the scene color. The scene's shaders apply the vignette themselves there. Low and Medium let the render scale drop below 1, so there the final pass usually runs. With FXAA or no anti-aliasing, the final pass reads the target and keeps its colors.
+Some devices cannot draw a float target in the anti-aliasing mode. These are WebGPU in compatibility mode with MSAA, and WebGL2 devices whose float targets fail the engine's test. There, each shader applies the tone mapping itself, and writes into an 8-bit target. With MSAA that target can resolve straight into the canvas, with no final pass. That holds while the render scale cannot drop below 1 and no effect needs the final pass. These effects need it:
+
+- color grading
+- sharpening
+- outlines
+- transmission
+- screen-space reflections
+- bounce light
+- soft particles
+- a material that reads the scene's depth
+- the moment transparency layer
+- a full-screen pass that reads the scene color
+
+The scene's shaders apply the vignette themselves there. Low and Medium let the render scale drop below 1, so there the final pass usually runs. With FXAA or no anti-aliasing, the final pass reads the target and keeps its colors.
 
 Effects that need HDR color, such as bloom, move compatibility mode to HDR color with FXAA when a sketch turns them on. On a WebGL2 device with no float target they stay off. [The post-processing chain](post-processing.md#effects-on-devices-without-hdr-color) explains both.
 
@@ -70,7 +94,14 @@ Effects that need HDR color, such as bloom, move compatibility mode to HDR color
 
 A material with `toneMapped: false` keeps its color as the display shows it. Use it for a panel, a sign or another object whose colors are set for the screen, such as a heads-up display in the world.
 
-The 8-bit path honours it in each material's own shader, which tone maps there: the shader encodes the color without the curve. The HDR path tone maps the whole image once, in its final pass. While a material keeps its display color, that pass also reads a mask of the surfaces whose material does so, and it skips the curve for those pixels. A blended surface keeps the curve on the HDR path, because a blended pixel mixes two surfaces and the mask cannot say which one owns it. Draw such a surface on the 8-bit path with `createEngine({ hdr: false })` if it needs the exact color. [The post-processing chain](post-processing.md) explains what else that path changes.
+The 8-bit path honors it in each material's own shader. The HDR path honors it in its final pass, for surfaces that do not blend. A blended surface still takes the tone curve on the HDR path. If it needs the exact color, use the 8-bit path with `createEngine({ hdr: false })` ([The post-processing chain](post-processing.md) explains what else that path changes).
+
+<details>
+<summary>Technical details: how each path keeps the display color</summary>
+
+On the 8-bit path the shader encodes the color without the curve. The HDR path's final pass reads a mask of the marked surfaces and skips the curve there. A blended pixel mixes two surfaces, so the mask cannot say which one owns it.
+
+</details>
 
 The vignette and the sRGB encoding still apply to such a material. The exposure scales its colors before them, as it scales every other color.
 
@@ -103,9 +134,7 @@ Automatic exposure adapts the picture to the scene's brightness over time, as an
 
 ## The background
 
-The background color is part of the scene. Exposure and tone mapping change it as they change the objects. The curves, for example, make dark colors a little darker. To show an exact page color behind the scene, use `toneMapping: 'none'` at an exposure of 1. You can also use a transparent canvas over a CSS background.
-
-A [background texture](../api/scene.md#the-camera-and-the-background) draws into the scene color too, so exposure and tone mapping change it in the same way. To show the texture's own colors, use `toneMapping: 'none'` at an exposure of 1.
+The background color and a [background texture](../api/scene.md#the-camera-and-the-background) are part of the scene. Exposure and tone mapping change them as they change the objects, so the curves, for example, make dark colors a little darker. To show either one with its own colors, use `toneMapping: 'none'` at an exposure of 1. A transparent canvas over a CSS background gives an exact page color behind the scene instead.
 
 ## Transparent canvases
 
