@@ -58,4 +58,42 @@ describe('the Release workflow', () => {
 		])
 			expect(text, step).toContain(step);
 	});
+
+	it("builds the shaders from CI's caches and reuses a set that an earlier release packed", () => {
+		const parsed = Bun.YAML.parse(readFileSync(RELEASE, 'utf8')) as {
+			env?: Record<string, unknown>;
+			jobs: {
+				release: {
+					env?: Record<string, unknown>;
+					steps: { name?: string; uses?: string; run?: string; with?: Record<string, string> }[];
+				};
+			};
+		};
+		const { steps, env } = parsed.jobs.release;
+		const build = steps.find((step) => step.uses === './.github/actions/shaders');
+		expect(build?.with?.run).toBe('bun run shaders');
+		expect(steps.some((step) => step.run?.trim() === 'bun run shaders')).toBe(false);
+		// The release only reads the shader caches: it never saves a module set or entries of its own.
+		expect(parsed.env?.SAVE_CACHES).toBeUndefined();
+		expect(env?.SAVE_CACHES).toBeUndefined();
+
+		const restore = steps.find((step) => step.name === 'Restore the packed shader set');
+		const save = steps.find((step) => step.name === 'Save the packed shader set');
+		expect(restore?.uses).toStartWith('actions/cache/restore@');
+		expect(save?.uses).toStartWith('actions/cache/save@');
+		// The key names the module set and the code that picks and packs its files, never the version.
+		expect(restore?.with?.key).toContain('steps.shader-set.outputs.name');
+		expect(restore?.with?.key).toContain('tools/lib/shader-artifact.ts');
+		expect(restore?.with?.key).toContain('tools/lib/shader-modules.ts');
+		expect(restore?.with?.key).not.toContain('version');
+		const order = [
+			build,
+			restore,
+			steps.find((step) => step.name === "Write the release's shader set"),
+			save,
+			steps.find((step) => step.name === 'Land the version on main'),
+		].map((step) => steps.indexOf(step!));
+		expect(order.every((index) => index !== -1)).toBe(true);
+		expect(order).toEqual([...order].sort((a, b) => a - b));
+	});
 });
