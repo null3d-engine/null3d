@@ -218,7 +218,9 @@ Shadow edges stay still while the camera turns and moves. To see it, draw the `'
 <details>
 <summary>Technical details: how cascades stay stable</summary>
 
-Each cascade's box holds a sphere around its slice of the view, so the box keeps its size as the camera turns. The box also moves only in steps of whole texels of the shadow map, on a grid fixed to the world. So a caster always covers the same texels, and its shadow's edge does not crawl or shimmer. Along the light, the box moves only in whole steps of the map's 16-bit depth. So each caster's stored depth rounds the same way in every frame. A surface near a caster then does not flicker between light and shadow as the camera moves.
+Each cascade's box holds a sphere around its slice of the view, so the box keeps its size as the camera turns. The box also moves only in steps of whole texels of the shadow map, on a grid fixed to the world. So a caster always covers the same texels, and its shadow's edge does not crawl or shimmer.
+
+Along the light, the box moves only in whole steps of the map's 16-bit depth. So each caster's stored depth rounds the same way in every frame. A surface near a caster then does not flicker between light and shadow as the camera moves.
 
 </details>
 

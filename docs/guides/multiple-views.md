@@ -113,7 +113,9 @@ A scene and its passes share 32 views, the camera's included. Reflection probes 
 <details>
 <summary>Technical details: how views draw on each GPU path</summary>
 
-A view has a depth target of the canvas's size. The engine makes it once in a frame and shares it with the other views when their turns do not overlap. The scene culling runs on the GPU on WebGPU and on the job workers on WebGL2, as it does for the camera. On the 8-bit path a view writes display color into the camera's image, and the resolve pass or the final pass draws it to the canvas. The picture looks the same as on the HDR path, with no bloom, as the 8-bit path has none.
+A view has a depth target of the canvas's size. The engine makes it once in a frame and shares it with the other views when their turns do not overlap. The scene culling runs on the GPU on WebGPU and on the job workers on WebGL2, as it does for the camera.
+
+On the 8-bit path a view writes display color into the camera's image. The resolve pass or the final pass draws it to the canvas. The picture looks the same as on the HDR path, with no bloom, as the 8-bit path has none.
 
 </details>
 

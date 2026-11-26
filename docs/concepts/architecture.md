@@ -84,7 +84,9 @@ The sketch worker, computing frame N+1:
 5. Runs parallel jobs: the animation step, which poses the animated objects, then the transforms by hierarchy depth, with their bounds. A skinned mesh's bounds follow its pose.
 6. Runs your `onLateUpdate`, then updates the objects that it moved and the objects below them.
 7. Runs more parallel jobs: the instance batches.
-8. Gathers the point and spot lights nearest the camera, and tests each grid cell against each view. A view is the camera's, a shadow cascade's, a shadow tile's or a scene pass's. Parallel jobs then cull the see-through objects and sort them back to front. On the WebGL2 path, they also cull the objects of the cells in view. They test them against marked blockers when [software occlusion culling](culling.md#software-occlusion-culling-on-webgl2) is on. They list the lights of each cluster too.
+8. Gathers the point and spot lights nearest the camera, and tests each grid cell against each view. A view is the camera's, a shadow cascade's, a shadow tile's or a scene pass's. Parallel jobs then cull the see-through objects and sort them back to front.
+
+   On the WebGL2 path, parallel jobs also cull the objects of the cells in view. They test them against marked blockers when [software occlusion culling](culling.md#software-occlusion-culling-on-webgl2) is on. They list the lights of each cluster too.
 
    When textures take more memory than the preset's budget, the engine drops their largest mip levels here ([Quality presets](quality-presets.md#texture-memory)).
 9. Records the frame's draw lists: the new GPU objects and the uploads first, then each pass in the order that the [render graph](render-graph.md) sets. It also keeps the frame's camera for rays from the pointer, and places the frame's labels.
@@ -94,7 +96,9 @@ The render worker, drawing frame N inside its own `requestAnimationFrame` callba
 
 1. Takes the next complete frame. The sketch worker runs at most one frame ahead, so no frame is skipped. If none is ready, it draws nothing, and the browser keeps showing the last frame. It also draws nothing while two frames are unfinished on the GPU. The sketch worker then waits too, so at most two frames wait on a GPU that falls behind.
 2. Applies a canvas resize that arrives with the frame. The frame was built for that size, so the canvas and the frame's render targets always agree. A new pixel ratio, as when the window moves to another screen, resizes the canvas too.
-3. Uploads the changed byte ranges to GPU buffers, and on WebGL2 to data textures. On WebGPU, uploads from 64 KiB up to 4 MiB have two routes: the direct write call, and staging buffers that the browser keeps mapped. The render worker times both on the device and takes the faster one. Chrome favors the staging buffers, and Safari the direct call. On WebGL2, uploads read straight from shared memory, or from a copy in a browser that refuses to read it.
+3. Uploads the changed byte ranges to GPU buffers, and on WebGL2 to data textures. On WebGPU, uploads from 64 KiB up to 4 MiB have two routes: the direct write call, and staging buffers that the browser keeps mapped. The render worker times both on the device and takes the faster one.
+
+   Chrome favors the staging buffers, and Safari the direct call. On WebGL2, uploads read straight from shared memory, or from a copy in a browser that refuses to read it.
 
    Textures upload in bands of rows, within the quality preset's budget of bytes per frame, and the GPU then makes their mip levels.
 4. Replays the draw lists into WebGPU or WebGL2 calls and submits them. The browser shows the frame when the callback returns.
@@ -127,7 +131,9 @@ A frame's draw list holds a series of passes, and the [render graph](render-grap
 <details>
 <summary>Technical details: skinning, occlusion culling and the final pass</summary>
 
-- Skinning: the vertex shaders skin custom materials' meshes too. The skinning pass handles morphed meshes, which it morphs by their weights first. It also handles meshes that a debug view or a full shader of the sketch's draws. It skins each mesh that some view draws once, into a buffer of skinned vertices. The shadow and scene passes draw that buffer. A mesh whose pose did not change keeps its vertices. The pass runs only while the scene has such meshes.
+- Skinning: the vertex shaders skin custom materials' meshes too. The skinning pass handles morphed meshes, which it morphs by their weights first. It also handles meshes that a debug view or a full shader of the sketch's draws.
+
+  It skins each mesh that some view draws once, into a buffer of skinned vertices. The shadow and scene passes draw that buffer. A mesh whose pose did not change keeps its vertices. The pass runs only while the scene has such meshes.
 - Opaque pass: it draws 4 samples per pixel in the MSAA mode. With GPU occlusion culling on WebGPU, an occluders' pass draws the depth of the large objects. Those are the objects that showed in the camera's last frame. A compute pass builds a depth pyramid from it and culls every object in view against it. The depth prepass and the opaque pass then draw the objects that show.
 - Final pass on the HDR path: it also applies the vignette and the exposure. It smooths edges in the FXAA mode. While the render scale can drop below the whole canvas, the work splits in two. The first step draws FXAA, the tone curve and the sRGB encode at the render size. The second step scales the image up and draws the rest ([Below the whole canvas's render scale](post-processing.md#below-the-whole-canvass-render-scale)).
 - Final pass on the 8-bit path: with MSAA and a lowest render scale of 1, the scene's render pass averages its samples. It writes them straight into the canvas. The final pass then runs only when an effect needs it, such as color grading, sharpening, outlines or transmission. The scene's shaders apply the vignette before their tone mapping ([GPU tiers and backends](backends.md#color-and-anti-aliasing-on-each-tier)).

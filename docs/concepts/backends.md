@@ -223,7 +223,9 @@ Safari 16.4 and 17 pass the engine's feature tests, but the engine meets faults 
 <details>
 <summary>Technical details: how the engine detects old Safari</summary>
 
-On a phone with 4 GB of memory, Safari 17 refused the engine's shared memory. Its WebGL2 compiler also rejected a shader of the standard material. A page that the null3D Vite plugin builds still starts the core's download as its HTML arrives, and leaves it unread. The check reads the browser's user agent. An `AppleWebKit/` number of 600 or more marks Apple's WebKit, and the check then reads Safari's `Version/` part, or else the iOS or iPadOS version. Chrome, Edge, Samsung Internet and Firefox on other systems give no such number, so the check passes them.
+On a phone with 4 GB of memory, Safari 17 refused the engine's shared memory. Its WebGL2 compiler also rejected a shader of the standard material. A page that the null3D Vite plugin builds still starts the core's download as its HTML arrives, and leaves it unread.
+
+The check reads the browser's user agent. An `AppleWebKit/` number of 600 or more marks Apple's WebKit, and the check then reads Safari's `Version/` part, or else the iOS or iPadOS version. Chrome, Edge, Samsung Internet and Firefox on other systems give no such number, so the check passes them.
 
 </details>
 

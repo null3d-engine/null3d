@@ -288,7 +288,9 @@ A material's `envIntensity` scales the environment's light on that material alon
 - An HDR file loads the HDR reader and its worker, about 6.5 KB after Brotli, and the code and shaders that make the room. They load while the file downloads. The worker reads a 2K file in about 100 ms on a MacBook Pro, outside the sketch's frames. The GPU then filters the map in the next frame, before that frame draws, in about the room's time.
 - An HDR map keeps its panorama on the thread that draws, up to 8 MB for an image of 2,048 x 1,024 texels or more. A new GPU device makes the map again from it. `environment.destroy()` frees both.
 - The built-in room downloads no file. Its first use loads the code and the shaders that make it, about 12 KB after Brotli. The shaders compile in the background while the scene loads, and `builtinEnvironment` resolves once they are ready. The GPU then makes the whole map in the next frame, before that frame draws. That frame takes longer by the map's GPU time, which the table below gives.
-- The sky's environment loads the same code and shaders as the room. The GPU makes its whole map in the next frame, in about 14 ms on a MacBook Pro. After a change of the sky that shows, it makes the map again in 20 stages, one a frame. A sun that turns less than half a degree leaves the map as it is, and so does a color value that drifts by less than 2%. Slowly drifting clouds wait too, and their changes add up. One last refresh captures the sky exactly once it stops changing.
+- The sky's environment loads the same code and shaders as the room. The GPU makes its whole map in the next frame, in about 14 ms on a MacBook Pro. After a change of the sky that shows, it makes the map again in 20 stages, one a frame.
+
+  A sun that turns less than half a degree leaves the map as it is. A color value that drifts by less than 2% does the same. Slowly drifting clouds wait too, and their changes add up. One last refresh captures the sky exactly once it stops changing.
 
   Each stage takes about 1 ms of GPU time on a MacBook Pro. The scene draws with the old map until the last stage, so no frame waits for a whole map. A sun that turns in every frame pays a stage only while it crosses those steps.
 - The sky's environment keeps about 9 MB more for its steps. A file's map uploads in the frames after the load, within the frame's upload budget.
@@ -348,7 +350,9 @@ Mirror reflections win over probes: a [reflection pass](../api/render.md#reflect
 <details>
 <summary>Technical details: what a probe's capture costs</summary>
 
-A capture draws the scene six times, at half the map's size, and its filter draws about 50 small passes in the same frame, before the camera's view draws. A probe that refreshes always pays this in turns with the other such probes. Each probe's map takes 0.7 MB of GPU memory at 256 x 256, the size from Medium up, and 0.2 MB at 128 x 128 on Low. The six views and the filter's chain take about 1.5 MB more while the scene has a probe. The quality setting `probeSize` sets the size.
+A capture draws the scene six times, at half the map's size. Its filter draws about 50 small passes in the same frame, before the camera's view draws. A probe that refreshes always pays this in turns with the other such probes.
+
+Each probe's map takes 0.7 MB of GPU memory at 256 x 256, the size from Medium up. At 128 x 128 on Low it takes 0.2 MB. The six views and the filter's chain take about 1.5 MB more while the scene has a probe. The quality setting `probeSize` sets the size.
 
 </details>
 
