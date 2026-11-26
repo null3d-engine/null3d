@@ -26,7 +26,7 @@ const BOULDERS = [
 const [WIDE, TALL] = [60, 8];
 /** The height of the hills at x and z: the plane's u runs along x, and its v against z. */
 const ground = (x: number, z: number) => (hills(0.5 + x / WIDE, 0.5 - z / WIDE) - 0.5) * TALL;
-export default defineSketch(async (ctx) => {
+export default defineSketch<{ parallax?: string }>(async (ctx) => {
 	const { scene, assets, geometry, materials, textures, post, quality, input, page, time } = ctx;
 	const sky = {
 		sky: {
@@ -130,7 +130,7 @@ export default defineSketch(async (ctx) => {
 	page.onMessage((name, value) => {
 		if (name === 'parallax') setParallax(value === 'On');
 	});
-
+	if (ctx.data?.parallax !== undefined) quality.set({ parallax: ctx.data.parallax === 'On' });
 	return {
 		onUpdate(dt) {
 			// The camera drifts from side to side, so the bricks' depth shows, until the user takes it.

@@ -27,7 +27,7 @@ three.js apps usually run everything on the main thread: DOM, input, scene updat
 | Labels (CSS2DRenderer, CSS3DRenderer) | Both | `ui.trackLabel` in the sketch, `engine.labels.bind` on the page; `transform: 'world'` or `'billboard'` makes the element a plane of the scene |
 | Audio (Web Audio, three.js Audio) | Both | `createSound` from `@null3d/sound` in the sketch makes and moves the sounds; `connectSound` from `@null3d/sound/page` plays them on the page, started by a click, a tap or a key. Music and the page's own UI sounds stay in `page.ts` with Web Audio |
 | Video elements | `page.ts` | `engine.registerVideo` on the page and `textures.fromVideo` in the sketch: the page sends one image per frame that the video presents. Keep a frame within the upload budget (null3d-develop recipe 14) |
-| `localStorage`, cookies, URL parameters | `page.ts` | Send what the sketch needs at start; IndexedDB also works in the sketch |
+| `localStorage`, cookies, URL parameters | `page.ts` | Pass what the setup needs as `createEngine`'s `sketchData`, which the setup reads as `ctx.data`; IndexedDB also works in the sketch |
 | `fetch` of JSON, binary data, models | `sketch.ts` | Workers have `fetch`; relative URLs resolve against the page |
 | A cache of generated geometry in IndexedDB | `sketch.ts` | Keep it, with arrays only, never engine objects; key it by the build (null3d-develop `references/performance.md`, section 12) |
 | `GLTFLoader` with `KTX2Loader` | `sketch.ts` | `assets.loadGltf(url)` parses in a worker and needs no decoder paths; `scene.instantiate(prefab)` for each copy |
@@ -95,6 +95,7 @@ Rules:
 - Send events and changes, not per-frame state. Some three.js apps update the DOM every frame from scene data, such as a speedometer. Send such a value only when it changes by a visible amount.
 - Positions for HTML elements use `ui.trackLabel`, which needs no messages at all.
 - Give message types names and a TypeScript union type shared by both sides, so typos fail at compile time.
+- State that the scene needs from its first frame goes in `createEngine({ sketchData })`, not in a message. A three.js page that reads `?section=` or a saved theme before it builds the scene does this. The setup reads it as `ctx.data`, typed with `defineSketch<Data>`, also in hold mode, where no message arrives before the held frame. It takes plain JSON data (`api/page`).
 - Large one-off data (a level file) goes straight to the sketch with `fetch`, not through the page.
 
 ## 3. Converting the loop

@@ -44,6 +44,7 @@ Engine docs: `guides/testing`, `guides/deterministic-simulation`, `api/page`, `a
 - Never wait with a fixed sleep. A slow machine fails it, and a fast one wastes it.
 - In a live page, wait for `engine.firstFrame`. It resolves when the first frame is on the screen.
 - In a held page (`?hold=<seconds>`), wait for `window.__null3dHold`. The engine sets it when the hold ends, with `ok: false` on a failure, so a failed page never costs a timeout.
+- A held page gets no message before its held frame. A page that reads its state from its own query and passes it as `createEngine`'s `sketchData` holds at that state, so `?hold=1&level=2` or `bunx @null3d/cli shot --page "/?level=2"` draws level 2.
 - Better still, wait for the app's own hook, which the page sets after `engine.firstFrame` and the app's own loading (section 4).
 - Wait with `page.waitForFunction`, which polls until the value is true or the test's timeout ends.
 

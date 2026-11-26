@@ -719,27 +719,46 @@ export function exportTargets(exports: unknown): string[] {
 	);
 }
 
+/** What a packed package must and must not hold, besides what its manifest names. */
+export interface PackageRules {
+	/** Files that the tarball must hold. */
+	readonly required?: readonly string[];
+	/** Files that only the repository uses. */
+	readonly forbidden?: readonly string[];
+	/** Raw WGSL files whose compiled modules take their place. */
+	readonly rawShaders?: readonly string[];
+	/** The version being released, which the package must carry. */
+	readonly release?: string;
+}
+
 /**
  * What is wrong with a packed package, from its manifest and the paths of the files it holds
- * (without the tarball's `package/` folder). The rules: public with provenance, no `workspace:`
- * versions, every export and command present, every file in `required` present, no file in
- * `forbidden`, and no raw WGSL file in `rawShaders`.
+ * (without the tarball's `package/` folder). The rules: public with provenance, the release's
+ * version when one is given, no `workspace:` versions, every sibling `@null3d/` package pinned at
+ * the package's own version, every export and command present, every required file present, no
+ * forbidden file, and no raw WGSL file.
  */
 export function packageProblems(
 	manifest: Manifest,
 	files: ReadonlySet<string>,
-	required: readonly string[],
-	forbidden: readonly string[] = [],
-	rawShaders: readonly string[] = [],
+	{ required = [], forbidden = [], rawShaders = [], release }: PackageRules = {},
 ): string[] {
 	const problems: string[] = [];
 	const { publishConfig } = manifest;
 	if (publishConfig?.access !== 'public' || publishConfig.provenance !== true)
 		problems.push('publishConfig must set "access": "public" and "provenance": true');
+	if (release !== undefined && manifest.version !== release)
+		problems.push(`it has the version ${manifest.version}, and the release is ${release}`);
 	for (const field of ['dependencies', 'peerDependencies', 'optionalDependencies'] as const)
-		for (const [dep, version] of Object.entries(manifest[field] ?? {}))
-			if (version.startsWith('workspace:'))
-				problems.push(`${field} gives ${dep} the version ${version}, which npm cannot install`);
+		for (const [dep, pin] of Object.entries(manifest[field] ?? {})) {
+			if (pin.startsWith('workspace:'))
+				problems.push(`${field} gives ${dep} the version ${pin}, which npm cannot install`);
+			// The packages release together, so each one pins its siblings at its own version.
+			else if (dep.startsWith(WORKSPACE_PREFIX) && pin !== manifest.version)
+				problems.push(
+					`${field} gives ${dep} the version ${pin}, and the package is ${manifest.version}`,
+				);
+		}
 	const bins =
 		typeof manifest.bin === 'string' ? [manifest.bin] : Object.values(manifest.bin ?? {});
 	const holds = (target: string) => {

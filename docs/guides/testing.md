@@ -134,7 +134,7 @@ bunx @null3d/cli shot --script drive.script --out tour.png
 
 ## Record a session that went wrong
 
-A bug on a phone can replay on this computer. Open your page with `?record`: the engine records each frame's step and the input that the sketch read, from the page's first frame, and a **Save recording** button appears. Reproduce the bug, tap it, and copy the file to the computer. The recording keeps the sketch's random seed, so the sketch's setup builds the same scene on the replay.
+A bug on a phone can replay on this computer. Open your page with `?record`: the engine records each frame's step and the input that the sketch read, from the page's first frame, and a **Save recording** button appears. Reproduce the bug, tap it, and copy the file to the computer. The recording keeps the sketch's random seed and [start data](../api/page.md#start-data), so the setup builds the same scene on the replay.
 
 Open the same page with `?replay=<file>`, or replay a file from anywhere with the command line:
 

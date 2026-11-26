@@ -3,7 +3,7 @@
 // tests share them. Reading git's log, the version copies and the docs pages is the only outside
 // access.
 import { spawn } from 'node:child_process';
-import { existsSync, readdirSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { PAGES, pagePath } from './docs';
 import { checkDocsStyle, DECISION_RECORD_SOURCE, INTERNAL_REFERENCE_SOURCE } from './docs-style';
@@ -487,23 +487,35 @@ export function packageFolders(root: string): string[] {
 const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 /**
- * Every copy of the release version: each package manifest, the engine's `VERSION` export and the
- * matching constant of each add-on, the Rust workspace version (which the core reports), and the
- * workspace crates in the lockfile.
+ * Every copy of the release version: each package manifest and its workspace entry in `bun.lock`,
+ * the engine's `VERSION` export and the matching constant of each add-on, the Rust workspace version
+ * (which the core reports), and the workspace crates in `Cargo.lock`. `bun pm pack` writes each
+ * `workspace:` dependency as the version that `bun.lock` gives the sibling, and a frozen install
+ * accepts a stale one, so a release that left the lockfile behind would publish packages that pin
+ * their siblings at the previous version.
  */
 export function versionCopies(root: string): VersionCopy[] {
-	const manifests = packageFolders(root).map((name) => `packages/${name}/package.json`);
+	const folders = packageFolders(root);
 	const crates = readdirSync(join(root, 'crates')).flatMap((dir) => {
 		const name = /^name = "([^"]+)"/m.exec(readIfExists(root, `crates/${dir}/Cargo.toml`) ?? '');
 		return name?.[1] ? [name[1]] : [];
 	});
 	return [
-		...manifests.map((path) => ({ path, pattern: /("version":\s*")([^"]*)(")/ })),
+		...folders.map((name) => ({
+			path: `packages/${name}/package.json`,
+			pattern: /("version":\s*")([^"]*)(")/,
+		})),
+		...folders.map((name) => ({
+			path: 'bun.lock',
+			pattern: new RegExp(
+				`("packages/${escapeRegExp(name)}": \\{\\s*"name": "[^"]*",\\s*"version": ")([^"]*)(")`,
+			),
+		})),
 		{
 			path: 'packages/engine/src/shared/version.ts',
 			pattern: /(export const VERSION = ')([^']*)(')/,
 		},
-		...packageFolders(root)
+		...folders
 			.filter((name) => name !== 'engine')
 			.filter((name) => existsSync(join(root, 'packages', name, 'src/version.ts')))
 			.map((name) => ({
@@ -529,4 +541,16 @@ export function writeVersion(text: string, copy: VersionCopy, version: string): 
 	if (!copy.pattern.test(text))
 		throw new Error(`${copy.path} has no version where the release expects one (${copy.pattern})`);
 	return text.replace(copy.pattern, `$1${version}$3`);
+}
+
+/**
+ * Writes `version` into every copy of the release version under `root`, and changes nothing else
+ * in those files. The release lands its version on a main that moved while it ran this way, so a
+ * dependency that another pull request changed meanwhile, in a manifest or a lockfile, stays.
+ */
+export function writeVersionCopies(root: string, version: string): void {
+	for (const copy of versionCopies(root)) {
+		const path = join(root, copy.path);
+		writeFileSync(path, writeVersion(readFileSync(path, 'utf8'), copy, version));
+	}
 }

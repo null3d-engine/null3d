@@ -228,7 +228,6 @@ jobs:
           fi
           echo "The release commit changes:"
           git diff --cached --name-only | sed 's/^/  /'
-          files="$(git diff --cached --name-only)"
           git commit -q -m "chore(release): ${VERSION}" -m "$trailers"
           released="$(git rev-parse HEAD)"
           echo "released=${released}" >> "$GITHUB_OUTPUT"
@@ -236,12 +235,15 @@ jobs:
           # Landings may continue while a release runs. The release itself holds the commit it
           # started from, but the version numbers and the changelog section belong on the commit
           # main holds now, so main stays a straight line and its changelog holds every release.
+          # The version goes into main's own files, not as copies of the released commit's: a
+          # pull request that changed a manifest or a lockfile meanwhile keeps its change.
           git fetch origin main
           if [ "$(git rev-parse origin/main)" != "$base" ]; then
             echo "main moved to $(git rev-parse --short origin/main) during the release; the version lands there."
             git checkout -q -B release-version origin/main
-            # shellcheck disable=SC2086
-            git checkout -q "$released" -- $files
+            git checkout -q "$released" -- CHANGELOG.md
+            bun tools/release.ts --set-version "$VERSION"
+            git add -u
             # A run again of a release that landed its version but stopped before the tag finds
             # main holding the same files. The tag still sits on this run's released commit.
             if git diff --cached --quiet; then
@@ -360,11 +362,14 @@ jobs:
           fi
           bun tools/shader-artifact.ts write \
             --tag "$VERSION" --repo "$GITHUB_REPOSITORY" --sha256 "$SHA256"
-      # Bun packs each package: its prepack script builds the JavaScript and declarations, and Bun
-      # writes the real version in place of each workspace: version, which npm cannot install. The
-      # check fails unless each tarball holds every file it needs.
+      # The pack tool builds each package's JavaScript and declarations once, and Bun packs it. Bun
+      # writes each workspace: version, which npm cannot install, as the version that bun.lock
+      # gives the sibling. The check fails unless each tarball holds every file it needs, carries
+      # the tag's version, and pins every sibling at that version, so a lockfile that the release
+      # left behind stops the job before npm. A version npm already has is skipped below, so a
+      # wrong version would otherwise pass without an error.
       - name: Pack and check every public package
-        run: bun tools/pack-packages.ts --out "$RUNNER_TEMP/npm"
+        run: bun tools/pack-packages.ts --out "$RUNNER_TEMP/npm" --version "$VERSION"
       - uses: actions/setup-node@v4
         with:
           node-version: 24

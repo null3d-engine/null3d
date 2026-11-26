@@ -5,7 +5,8 @@
 // the canvas. `stopDemo('signal')` aborts the demo's signal, `stopDemo('destroy')` destroys its
 // engine, and `stopDemo('fail')` makes the engine fail with E1404. With ?pagePart, the page asks
 // for a page part that the demo may not have. With ?hud, it gives the demo a HUD element, which
-// shows until the demo hides it.
+// shows until the demo hides it. ?<choice>=<option>, such as ?mode=rotate, starts a demo's choice
+// at that option.
 //
 // With ?switchTo=, the page does not wait for the demo's start, and the demo runs the empty sketch.
 // `switchDemo()` aborts the demo and starts the one that ?switchTo= names on a second canvas, with
@@ -65,6 +66,7 @@ run('demo-probe', async () => {
 		canvas,
 		demo: { ...demo, sketch, ...(params.has('pagePart') && { pagePart: true }) },
 		choices,
+		picks: Object.fromEntries(params),
 		...(hud && { hud }),
 		signal: stop.signal,
 	});

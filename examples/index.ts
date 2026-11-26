@@ -508,6 +508,8 @@ async function runDemo(demo: Demo): Promise<void> {
 			demo: { ...demo, sketch },
 			labels,
 			choices,
+			// The address can name the option that each choice starts at, such as ?layout=inset.
+			picks: Object.fromEntries(params),
 			hud,
 			preset,
 		});
