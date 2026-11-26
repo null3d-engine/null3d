@@ -10,21 +10,37 @@ import { ERROR_FIXES, type ErrorCode } from './fixes';
 export interface ErrorEntry {
 	/** A short name for the error. */
 	title: string;
-	/** What went wrong, in one or two sentences. */
+	/** What went wrong, in one or two sentences. It is the page summary and the index cell too. */
 	cause: string;
 	/** How to fix it. */
 	fix: string;
 	/** A message as the engine prints it. */
 	example: string;
+	/** One short line for each separate cause. */
+	cases?: string[];
+	/** Dense detail for implementers: limits, figures and how the engine checks. Docs only. */
+	details?: string;
+	/** One line for each case's fix, such as "If <case>: <step>". Docs only. */
+	fixCases?: string[];
+	/** Dense detail of the fixes that apply to one case each. Docs only. */
+	fixDetails?: string;
+	/** How the error reaches the page's code, when it is not a call that throws it. Docs only. */
+	reaches?: string;
+	/** The docs pages that explain the feature, by page ID. Docs only. */
+	see?: string[];
 }
 
 /** Each code's docs text besides its fix. */
 const DOCS = {
 	E1101: {
 		title: 'Stale handle',
-		cause: 'A call used an object after it was destroyed. Its slot may already hold a new object.',
+		cause:
+			'A call used an object, instance batch or resource after you destroyed it. The engine reuses the freed slot, but a call through the old handle never changes the object that takes it.',
 		example:
 			'E1101: setPosition() was called on "Crate" (slot 7), which was destroyed in frame 120.',
+		details:
+			"Development builds check every call on a scene object. Release builds skip that check: a destroyed object's setters write to a row that no object uses, and a second `destroy()` frees nothing. The engine core checks each change that waits for the next frame and logs E1101 for a change to a destroyed object, such as a destroyed parent. Meshes, textures, color tables, probes, environments and instance batches throw E1101 in every build, and so do a batch's array getters. An array that you read from a batch before its destroy can point at memory that another batch now uses.",
+		see: ['concepts/handles'],
 	},
 	E1102: {
 		title: 'Too many objects',
@@ -47,7 +63,7 @@ const DOCS = {
 	E1105: {
 		title: 'Unknown command',
 		cause:
-			'The engine core received a structural change it does not know, so the TypeScript side and the core come from different builds.',
+			"The engine core received a structural change it does not know, so the engine's JavaScript and its core come from different builds.",
 		example: 'E1105: the engine core received command 42.',
 	},
 	E1106: {
@@ -59,7 +75,7 @@ const DOCS = {
 	E1107: {
 		title: 'Object created twice',
 		cause:
-			'The engine core received a second create command for one object, so the TypeScript side and the core disagree about the scene.',
+			"The engine core received a second create command for one object, so the engine's JavaScript and its core disagree about the scene. The core skips that command, and the scene keeps running.",
 		example: 'E1107: the object in slot 7 was created twice.',
 	},
 	E1108: {
@@ -71,8 +87,11 @@ const DOCS = {
 	E1109: {
 		title: 'Engine memory full',
 		cause:
-			"The engine could not create or grow its WebAssembly memory. A page with worker threads gives the engine 1 GiB by default, and up to 4 GiB through the memory option of createEngine. Each instance row takes about 210 bytes, or about 300 with per-row colors or values. So about 5 million rows fill 1 GiB, along with the rest of the scene. A mesh of millions of vertices can fill it too, from geometry.fromArrays or a model file. Building such a mesh with normals to compute takes about 100 bytes per vertex for a moment. A frame can fail too, because the first frame copies every mesh of the scene. Its need is largest on the direct draw path: a scene with 84 MiB of meshes peaks at about 270 MiB there and about 205 MiB on the indirect path. The engine also keeps the last 8 MiB under the limit for its own small requests, so a scene stops once it reaches them. A browser can refuse memory sooner, as phones often do. It can also refuse a new engine's memory while the memory of an engine that stopped before is not free yet. The engine then tries again for about 45 seconds before it fails, and reports memory-wait through onProgress after 10 seconds.",
+			'The engine could not create or grow its WebAssembly memory. A page with worker threads gives the engine 1 GiB by default, and up to 4 GiB through the memory option of createEngine. Many instance rows, a mesh of millions of vertices, or the first frame, which copies every mesh, can fill it. A browser can refuse memory sooner, as phones often do, or while an engine that stopped before still holds its memory.',
 		example: 'E1109: createInstances() failed: the engine could not get 1282 MB more memory.',
+		details:
+			'Each instance row takes about 210 bytes, or about 300 with per-row colors or values. About 5 million rows fill 1 GiB, along with the rest of the scene. Building a mesh with normals to compute takes about 100 bytes per vertex for a moment. The first frame copies every mesh of the scene: a scene with 84 MiB of meshes peaks at about 270 MiB on the direct path and about 205 MiB on the indirect path. The engine keeps the last 8 MiB under the limit for its own small requests. It tries again for about 45 seconds before it fails, and reports memory-wait through onProgress after 10 seconds.',
+		see: ['guides/performance'],
 	},
 	E1110: {
 		title: 'Unmarked write to a static object',
@@ -130,6 +149,7 @@ const DOCS = {
 			"A call that makes or updates a texture received something it cannot use. It can be an option the engine does not know, or an image without pixels or larger than the device takes. It can also be data that does not fit the texture's size and format, or numbers that make no color grading table. With a KTX2 file, it can be an option that the file cannot take, or an update of its texture.",
 		example:
 			'E1208: textures.fromData() got 12 numbers for 2 x 2 x 1 texels, not 16: give four per texel.',
+		see: ['api/textures'],
 	},
 	E1209: {
 		title: 'Too many textures',
@@ -143,6 +163,7 @@ const DOCS = {
 		cause:
 			'A call received a setting that it does not have, or a value that the setting does not take. Examples are a tone mapping that the engine does not know, a negative exposure, a grading control outside its range, and a built-in environment that the engine does not have. It also covers a glTF extension handler that names no extension, that another handler reads, or that returns a part without a mesh or a material. It also covers createEngine() sketchData that is not plain JSON data, or that takes more than 64 KiB as JSON.',
 		example: `E1213: post.set() got the tone mapping "filmic", which is not 'agx', 'agx-punchy', 'neutral', 'aces' or 'none'.`,
+		see: ['api/materials'],
 	},
 	E1214: {
 		title: 'Invalid sketch option',
@@ -156,6 +177,7 @@ const DOCS = {
 			'materials.shader(), post.addEffect(), post.set() or scene.setSkyLayer() received WGSL that it cannot draw with. The null3D Vite plugin compiles WGSL while it builds the project. The engine therefore takes only what the plugin compiled: a template literal after a /* wgsl */ comment, or a .wgsl file that a module imports. The WGSL of a custom material declares a surface function, a vertex offset or a lobe. A full shader instead has a @vertex entry point that takes an InstanceIn from null3d::mesh. An effect declares fn effect, a tone curve fn toneCurve, and a sky layer fn skyLayer.',
 		example:
 			'E1215: materials.shader() got WGSL as text, which the null3D Vite plugin did not compile.',
+		see: ['guides/custom-shaders'],
 	},
 	E1216: {
 		title: 'Invalid uniform or texture',
@@ -163,6 +185,7 @@ const DOCS = {
 			"A custom material's or effect's uniforms or textures did not match its WGSL. The uniforms option and set() take the names of the fields of struct Uniforms in the WGSL, each with a value of its type. A field cannot have the name of a standard value, such as color or roughness, because set() takes those too. The textures option takes the names of the WGSL's `var name: texture_2d<f32>;` and `var name: texture_2d_array<f32>;` declarations, each with a texture of the layers that its declaration takes.",
 		example:
 			"E1216: materials.shader.set() got speeed, which is not a uniform of the material's WGSL.",
+		see: ['guides/custom-shaders'],
 	},
 	E1217: {
 		title: 'Invalid material option',
@@ -277,7 +300,7 @@ const DOCS = {
 	E1402: {
 		title: 'Engine core out of date',
 		cause:
-			"The engine core WebAssembly file lacks functions that the TypeScript side calls, so the two come from different builds. Development builds check this when the core loads. When null3D's own dev server serves the engine from a checkout of its repository, the check also compares the stamp of the Rust sources that the core was built from with the stamp of the checkout's sources. A core built before a merge or an edit of those sources then fails at once, before it can run with code that expects another core.",
+			"The engine core's WebAssembly file lacks functions that the engine's JavaScript calls, so the two come from different builds. Development builds check this when the core loads. When null3D's own dev server serves the engine from a checkout of its repository, the check also compares the stamp of the Rust sources that the core was built from with the stamp of the checkout's sources. A core built before a merge or an edit of those sources then fails at once, before it can run with code that expects another core.",
 		example: 'E1402: the threaded engine core lacks isThreadedBuild.',
 	},
 	E1403: {
@@ -297,6 +320,7 @@ const DOCS = {
 		cause:
 			"An engine worker failed while the engine started. The worker's script, the engine core or the renderer did not start there, or the sketch's setup function threw an error without an engine code.",
 		example: 'E1405: the render worker did not start: no WebGPU adapter.',
+		see: ['getting-started/hosting'],
 	},
 	E1406: {
 		title: 'Engine file not downloaded',
@@ -386,6 +410,7 @@ const DOCS = {
 			"The page's Content-Security-Policy does not allow WebAssembly, so the engine core, the KTX2 transcoder, the meshopt decoder or the Draco decoder could not compile. A policy allows it only when its script-src, or its default-src without a script-src, holds 'wasm-unsafe-eval'.",
 		example:
 			"E1418: the page's Content-Security-Policy does not let the threaded engine core compile: WebAssembly.compileStreaming(): Refused to compile or instantiate WebAssembly module.",
+		see: ['getting-started/hosting'],
 	},
 	E1419: {
 		title: 'Canvas held by another engine',
@@ -413,6 +438,7 @@ const DOCS = {
 			"The engine's files come from another origin than the page, such as a CDN, and the page's Content-Security-Policy blocks one of them. The engine starts each worker from a blob: address that imports the worker's script from that origin, and downloads its .wasm files from there. So the policy's worker-src must allow blob: and the other origin, and its script-src and connect-src must allow the other origin too. Firefox checks the modules that a worker imports against worker-src.",
 		example:
 			"E1422: the page's Content-Security-Policy blocks the job-0 worker: its worker-src does not allow blob:, which the engine starts its workers from when its files come from another origin.",
+		see: ['getting-started/hosting'],
 	},
 	E1423: {
 		title: 'Engine file without CORS',
@@ -420,6 +446,7 @@ const DOCS = {
 			"The engine's files come from another origin than the page, such as a CDN. One of them came without a CORS header, or did not download. A page loads a module or a .wasm file from another origin only when the response carries Access-Control-Allow-Origin.",
 		example:
 			'E1423: the KTX2 transcoder from https://cdn.example.com came without a CORS header, or did not download: Failed to fetch.',
+		see: ['getting-started/hosting'],
 	},
 	E1424: {
 		title: 'Custom shader builds not downloaded',
@@ -475,6 +502,7 @@ const DOCS = {
 			"assets.loadLightProbeGrid() or assets.loadLightMap() downloaded a file that is not a baked light file that this engine reads. The file may not be JSON, or its format marker may be missing. Its version may not be the one that this engine reads, or its kind may not be the one that the call takes. A probe grid may have counts or spacing that a grid cannot take. Its coefficients may not hold 12 floats for each probe in the counts' product, or its validity or skyVisibility may not hold one float from 0 to 1 for each probe. A light map may have a width or height that a texture cannot take, or an encoding other than rgb8 or rgba16float. Its radiance or its direction may not hold the bytes that its size needs, which a cut-short file shows. The message names the fault.",
 		example:
 			'E1434: assets.loadLightProbeGrid() could not read https://example.com/light/grid.json: its version is 2, and this engine reads version 1.',
+		see: ['guides/baked-light-data'],
 	},
 	E1435: {
 		title: 'Recording not read',

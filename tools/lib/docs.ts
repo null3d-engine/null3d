@@ -470,42 +470,123 @@ export function mappingMarkdown(mapping: Mapping, text: PageText, forSkill: bool
 	return lines.join('\n');
 }
 
-/** The docs page of one error code, generated from the engine's error table. */
-export function errorPage(code: string, entry: ErrorEntry): string {
-	return `${generatedFrontMatter(`errors/${code}`, `${code}: ${entry.title}`, entry.cause)}
-# ${code}: ${entry.title}
-
-## What happened
-
-${entry.cause}
-
-## How to fix it
-
-${entry.fix}
-
-## Example
-
-\`\`\`text
-${entry.example}
-\`\`\`
-`;
+/** A collapsible block of dense detail, with blank lines around its body. */
+function detailsBlock(summary: string, body: string): string {
+	return `<details>\n<summary>${summary}</summary>\n\n${body.trim()}\n\n</details>`;
 }
+
+/** The docs page of one error code, generated from the engine's error table. */
+export function errorPage(
+	code: string,
+	entry: ErrorEntry,
+	pages: ReadonlyMap<string, PageInfo> = new Map(),
+): string {
+	const parts = [
+		generatedFrontMatter(`errors/${code}`, `${code}: ${entry.title}`, entry.cause),
+		`# ${code}: ${entry.title}`,
+		'',
+		'## What happened',
+		'',
+		entry.cause,
+	];
+	if (entry.reaches) parts.push('', entry.reaches);
+	if (entry.cases?.length) {
+		parts.push('');
+		for (const one of entry.cases) parts.push(`- ${one}`);
+	}
+	if (entry.details)
+		parts.push('', detailsBlock('Technical details: limits and edge cases', entry.details));
+	parts.push('', '## How to fix it', '', entry.fix);
+	if (/\breport (it|the error)\b/i.test(entry.fix)) {
+		parts.push(
+			'',
+			'Report engine bugs on [GitHub Issues](https://github.com/null3d-engine/null3d/issues). Add the full message and [engine.report](../guides/debugging.md#how-the-engine-runs-on-this-device).',
+		);
+	}
+	if (entry.fixCases?.length) {
+		parts.push('');
+		for (const one of entry.fixCases) parts.push(`- ${one}`);
+	}
+	if (entry.fixDetails)
+		parts.push('', detailsBlock('Technical details: fixes for each case', entry.fixDetails));
+	parts.push(
+		'',
+		'[Where problems appear](../guides/debugging.md#where-problems-appear) says where each kind of error reaches your code.',
+		'',
+		'## Example message',
+		'',
+		'The engine prints the part below, then the fix above and a link to this page.',
+		'',
+		'```text',
+		entry.example,
+		'```',
+		'',
+		'## See also',
+		'',
+	);
+	const related = [...new Set([...(entry.see ?? []), ERROR_INDEX_ID, 'guides/debugging'])];
+	for (const id of related) {
+		if (id === ERROR_INDEX_ID) {
+			parts.push('- [Error codes](index.md)');
+			continue;
+		}
+		const title = pages.get(id)?.title ?? id;
+		parts.push(`- [${title}](../${id}.md)`);
+	}
+	return `${parts.join('\n')}\n`;
+}
+
+/** The headings of the error index, by the first two digits of each code. */
+const ERROR_GROUPS: readonly [string, string][] = [
+	['11', 'Objects, handles and engine memory'],
+	['12', 'Values passed to calls'],
+	['13', 'Browsers and GPUs'],
+	['14', 'Setup, loading and runtime'],
+	['15', 'Render graph'],
+];
 
 /** The list of every error code, generated from the engine's error table. */
 export function errorIndexPage(errors: Record<string, ErrorEntry>, text: PageText): string {
-	const rows = Object.entries(errors).map(
-		([code, entry]) =>
-			`| [${code}](${code}.md) | ${tableCell(entry.title)} | ${tableCell(entry.cause)} |`,
-	);
-	return `${generatedFrontMatter(ERROR_INDEX_ID, text.title, text.summary)}
-# ${text.title}
-
-Every error the engine throws is an \`EngineError\` with a code. Its message names the call and the object, says what failed and how to fix it, and links to the code's page here.
-
-| Code | Error | What happened |
-| --- | --- | --- |
-${rows.join('\n')}
-`;
+	const groups = new Map<string, [string, ErrorEntry][]>();
+	for (const [code, entry] of Object.entries(errors).sort(([a], [b]) => a.localeCompare(b))) {
+		const prefix = code.slice(1, 3);
+		const rows = groups.get(prefix) ?? [];
+		rows.push([code, entry]);
+		groups.set(prefix, rows);
+	}
+	const parts = [
+		generatedFrontMatter(ERROR_INDEX_ID, text.title, text.summary),
+		`# ${text.title}`,
+		'',
+		"Every error the engine reports is an `EngineError` with a code. Its message names the call and the object, says what failed and how to fix it, and links to the code's page here. [Where problems appear](../guides/debugging.md#where-problems-appear) says where each kind of error reaches your code.",
+		'',
+		"Codes from E2000 to E9999 belong to add-ons. An add-on's message starts with its name, such as `splats E2101`, and the add-on's page lists its codes: [Gaussian splats](../api/splats.md), [Sound](../api/sound.md).",
+	];
+	const known = new Set(ERROR_GROUPS.map(([prefix]) => prefix));
+	for (const [prefix, title] of ERROR_GROUPS) {
+		const rows = groups.get(prefix);
+		if (!rows?.length) continue;
+		parts.push('', `## ${title}`, '', '| Code | Error | What happened |', '| --- | --- | --- |');
+		for (const [code, entry] of rows)
+			parts.push(
+				`| [${code}](${code}.md) | ${tableCell(entry.title)} | ${tableCell(entry.cause)} |`,
+			);
+	}
+	const rest = [...groups.entries()].filter(([prefix]) => !known.has(prefix));
+	for (const [, rows] of rest) {
+		parts.push(
+			'',
+			'## Other errors',
+			'',
+			'| Code | Error | What happened |',
+			'| --- | --- | --- |',
+		);
+		for (const [code, entry] of rows)
+			parts.push(
+				`| [${code}](${code}.md) | ${tableCell(entry.title)} | ${tableCell(entry.cause)} |`,
+			);
+	}
+	return `${parts.join('\n')}\n`;
 }
 
 export interface PageInfo {
@@ -672,15 +753,16 @@ export function generateDocs(root: string, api: ApiReference = readApi(root)): M
 	out.set(`${SKILL_MAPPING_DIR}/api-mapping.md`, mappingMarkdown(mapping, mappingPage, true));
 	out.set(`${SKILL_MAPPING_DIR}/threejs-mapping.json`, `${JSON.stringify(mapping, null, 2)}\n`);
 
+	const pages = collectPages(root, out);
 	for (const [code, entry] of Object.entries(ERRORS))
-		out.set(pagePath(`errors/${code}`), errorPage(code, entry));
+		out.set(pagePath(`errors/${code}`), errorPage(code, entry, pages));
 	out.set(pagePath(ERROR_INDEX_ID), errorIndexPage(ERRORS, generatedText(ERROR_INDEX_ID)));
 
 	const record = recordFiles(root);
 	if (record.size > 0) out.set(RECORD_TABLES_PAGE, recordTablesPage(readRecord(record).rows));
 
 	const nav = navigation();
-	out.set(pagePath(PAGE_LIST_ID), pageListPage(nav, collectPages(root, out)));
+	out.set(pagePath(PAGE_LIST_ID), pageListPage(nav, pages));
 	out.set(NAV_FILE, `${JSON.stringify({ areas: nav }, null, 2)}\n`);
 	return out;
 }
