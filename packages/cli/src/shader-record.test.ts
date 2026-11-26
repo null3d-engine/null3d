@@ -133,8 +133,27 @@ describe('parseRecordArgs', () => {
 		expect([options.scroll, options.click, options.extra]).toEqual([true, '#play', [0x10]]);
 	});
 
-	it("writes the run's words alone with --replace", () => {
+	it('opens one live page by hand, at a GPU path and preset of its own', () => {
+		const options = parseRecordArgs(['--manual', '--gpu', 'webgl2', '--preset', 'low']);
+		expect([options.manual, options.held, options.live, options.gpu, options.preset]).toEqual([
+			true,
+			[],
+			['/'],
+			'webgl2',
+			'low',
+		]);
+		expect(parseRecordArgs(['--manual', '--live', '/game.html']).live).toEqual(['/game.html']);
 		expect(parseRecordArgs(['--replace']).replace).toBe(true);
+	});
+
+	it('refuses a manual run of several pages, and a GPU path or preset without one', () => {
+		expect(() => parseRecordArgs(['--manual', '--page', '/'])).toThrow(/one --live/);
+		expect(() => parseRecordArgs(['--manual', '--live', '/a', '--live', '/b'])).toThrow(
+			/one --live/,
+		);
+		expect(() => parseRecordArgs(['--gpu', 'webgl2'])).toThrow(/go with --manual/);
+		expect(() => parseRecordArgs(['--manual', '--gpu', 'metal'])).toThrow(/webgpu or webgl2/);
+		expect(() => parseRecordArgs(['--manual', '--preset', 'max'])).toThrow(/low, medium/);
 	});
 
 	it('refuses a full address as a page, a base that is no address, and a scroll without a live page', () => {

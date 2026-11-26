@@ -2,14 +2,29 @@
 // adds them to a list. The Vite plugin's `shaders.list` option names the list, and a production
 // build then copies only the shader builds of those words, rather than every build of the engine's
 // shader set. The pages load in a headless browser with the engine's recording switch: each held
-// page at the low and high presets on both GPU paths, and each live page on both GPU paths.
+// page at the low and high presets on both GPU paths, and each live page on both GPU paths. With
+// `--manual`, one page opens in a browser window for a person to play through, and its words are
+// saved when they say so.
 import { resolve } from 'node:path';
+import { createInterface } from 'node:readline';
 import { readArguments, UsageError } from './args.js';
 import { defaultEnvironment, launchBrowser } from './browser.js';
+import { switchedPath } from './page.js';
 import { startDevServer } from './server.js';
-import { readExtraWords, recordTargets, recordWords } from './shader-record.js';
-import { writeWordList } from './shader-words.js';
+import {
+	RECORD_GPUS,
+	readExtraWords,
+	recordingUrl,
+	recordTargets,
+	recordWords,
+} from './shader-record.js';
+import { recordedWords, writeWordList } from './shader-words.js';
 import { shownPath } from './text.js';
+
+/** @import { Readable, Writable } from 'node:stream' */
+
+/** The quality presets that `--preset` takes. */
+const PRESETS = ['low', 'medium', 'high', 'ultra'];
 
 const OPTIONS = /** @type {const} */ ({
 	base: { type: 'string' },
@@ -20,6 +35,9 @@ const OPTIONS = /** @type {const} */ ({
 	out: { type: 'string', default: 'shader-permutations.txt' },
 	extra: { type: 'string' },
 	replace: { type: 'boolean', default: false },
+	manual: { type: 'boolean', default: false },
+	gpu: { type: 'string' },
+	preset: { type: 'string' },
 	help: { type: 'boolean', short: 'h', default: false },
 });
 
@@ -56,6 +74,12 @@ Options:
                             0x10,0x14, for a state that no page reaches while it records
   --out <file>              The list to write (shader-permutations.txt)
   --replace                 Write the recorded words alone, rather than adding them to the list
+  --manual                  Open the --live page, or /, in a browser window, for you to play
+                            through its menus, settings and levels by hand. Press Enter here to
+                            save its words. Ctrl-C asks before it discards them. Record by hand on
+                            both GPU paths at the low and high presets, as the automatic run does
+  --gpu <path>              With --manual: webgpu or webgl2 (the engine's own choice)
+  --preset <name>           With --manual: low, medium, high or ultra (the engine's own choice)
 
 Record again after the project gains a feature that draws with a new word. A production build that
 lacks a word fails its pipeline with a message that names the word. It draws with Chrome for
@@ -73,6 +97,9 @@ with Playwright's Chromium on SwiftShader, the software GPU of machines without 
  * @property {number[]} extra The words to add by hand.
  * @property {string} out The list to write, from the current folder.
  * @property {boolean} replace True to write the recorded words alone.
+ * @property {boolean} manual True to open one live page for a person to play through.
+ * @property {string | undefined} gpu The GPU path of a manual run.
+ * @property {string | undefined} preset The quality preset of a manual run.
  * @property {boolean} help True to print the help instead.
  */
 
@@ -96,13 +123,25 @@ function readPath(option, path) {
  */
 export function parseRecordArgs(args) {
 	const { values } = readArguments(args, OPTIONS, false);
-	const { base, click, out, help, scroll, replace } = values;
+	const { base, click, out, help, scroll, replace, manual, gpu, preset } = values;
 	if (base !== undefined && !/^https?:\/\//.test(base))
 		throw new UsageError(`--base takes an address such as https://localhost:5173, not "${base}"`);
 	const held = (values.page ?? []).map((path) => readPath('--page', path));
 	const live = (values.live ?? []).map((path) => readPath('--live', path));
 	if (scroll && live.length === 0 && held.length > 0)
 		throw new UsageError('--scroll scrolls the live pages, and no --live page is named');
+	if (manual && (held.length > 0 || live.length > 1 || scroll))
+		throw new UsageError(
+			'--manual opens one page for you to play through: name it with one --live, without --page or --scroll',
+		);
+	if (!manual && (gpu !== undefined || preset !== undefined))
+		throw new UsageError(
+			'--gpu and --preset go with --manual: the automatic run records both GPU paths at the low and high presets',
+		);
+	if (gpu !== undefined && !RECORD_GPUS.includes(/** @type {never} */ (gpu)))
+		throw new UsageError(`--gpu takes ${RECORD_GPUS.join(' or ')}, not "${gpu}"`);
+	if (preset !== undefined && !PRESETS.includes(preset))
+		throw new UsageError(`--preset takes ${PRESETS.join(', ')}, not "${preset}"`);
 	let extra = /** @type {number[]} */ ([]);
 	try {
 		extra = readExtraWords(values.extra ?? '');
@@ -112,20 +151,101 @@ export function parseRecordArgs(args) {
 	const none = held.length === 0 && live.length === 0;
 	return {
 		base,
-		held: none ? ['/'] : held,
+		held: none && !manual ? ['/'] : held,
 		live: none ? ['/'] : live,
 		scroll,
 		click,
 		extra,
 		out,
 		replace,
+		manual,
+		gpu,
+		preset,
 		help,
 	};
 }
 
 /**
+ * Waits for the person who records by hand: it resolves with `save` when they press Enter, or
+ * when the input ends. Ctrl-C asks whether to discard the words, and an answer of `y` resolves
+ * with `discard`; any other answer saves them. `closed` resolves with `closed` when the page goes
+ * before they answer.
+ *
+ * @param {{ input?: Readable, output?: Writable, closed?: Promise<'closed'> }} [streams]
+ * @returns {Promise<'save' | 'discard' | 'closed'>}
+ */
+export function askToSave({
+	input = process.stdin,
+	output = process.stdout,
+	closed = new Promise(() => {}),
+} = {}) {
+	const prompt = createInterface({ input, output, terminal: 'isTTY' in input && !!input.isTTY });
+	/** @type {Promise<'save' | 'discard'>} */
+	const answered = new Promise((done) => {
+		let asking = false;
+		prompt.on('line', (line) => {
+			if (!asking) return done('save');
+			done(/^y(es)?$/i.test(line.trim()) ? 'discard' : 'save');
+		});
+		prompt.on('close', () => done('save'));
+		prompt.on('SIGINT', () => {
+			asking = true;
+			output.write(
+				'\nDiscard the words that the page reached? Type y and Enter to discard them, or press Enter to save them: ',
+			);
+		});
+	});
+	return Promise.race([answered, closed]).finally(() => prompt.close());
+}
+
+/**
+ * Opens one page in a browser window, with the recording switch and any GPU path and preset, for
+ * a person to play through, and gives its words once they press Enter, or nothing when they
+ * discard them or close the page first.
+ *
+ * @param {RecordOptions} options
+ * @param {string} base
+ * @returns {Promise<number[] | undefined>}
+ */
+async function recordByHand(options, base) {
+	const path = switchedPath(options.live[0] ?? '/', { gpu: options.gpu, preset: options.preset });
+	const browser = await launchBrowser(defaultEnvironment(), [], undefined, undefined, false);
+	try {
+		// The window keeps its own size, as a person's browser does.
+		const page = await browser.newPage({ ignoreHTTPSErrors: true, viewport: null });
+		let loads = 0;
+		page.on('framenavigated', (frame) => {
+			if (frame !== page.mainFrame() || ++loads < 2) return;
+			console.log(
+				'The page loaded again, so the engine started a new recording and the words before it are gone. Record each page or reload in a run of its own: each run adds to the list.',
+			);
+		});
+		/** @type {Promise<'closed'>} */
+		const closed = new Promise((done) => page.once('close', () => done('closed')));
+		await page.goto(recordingUrl(base, path));
+		if (options.click !== undefined)
+			await page.locator(options.click).first().click({ timeout: 30_000 });
+		console.log(
+			`Recording ${path}. Play through every menu, setting, level and mode that the page offers. Then press Enter here to save the words, or Ctrl-C to stop.`,
+		);
+		const answer = await askToSave({ closed });
+		if (answer === 'closed') {
+			console.log('The page closed before the words were saved, so the list stays as it was.');
+			return undefined;
+		}
+		if (answer === 'discard') {
+			console.log('The words were discarded, and the list stays as it was.');
+			return undefined;
+		}
+		return await recordedWords(page);
+	} finally {
+		await browser.close();
+	}
+}
+
+/**
  * Runs the shaders command with its arguments, and returns the exit code: 0 once the list is
- * written.
+ * written, 1 when a manual run saved nothing.
  *
  * @param {readonly string[]} args
  * @returns {Promise<number>}
@@ -146,15 +266,19 @@ export async function run(args) {
 	const server = options.base === undefined ? await startDevServer() : undefined;
 	try {
 		const base = options.base ?? /** @type {{ url: string }} */ (server).url;
-		const targets = recordTargets(options);
-		console.log(`Recording ${targets.length} pages from ${base}`);
-		const browser = await launchBrowser(defaultEnvironment());
 		let words;
-		try {
-			words = await recordWords({ browser, base, targets, click: options.click });
-		} finally {
-			await browser.close();
+		if (options.manual) words = await recordByHand(options, base);
+		else {
+			const targets = recordTargets(options);
+			console.log(`Recording ${targets.length} pages from ${base}`);
+			const browser = await launchBrowser(defaultEnvironment());
+			try {
+				words = await recordWords({ browser, base, targets, click: options.click });
+			} finally {
+				await browser.close();
+			}
 		}
+		if (words === undefined) return 1;
 		const out = resolve(options.out);
 		const list = writeWordList(out, [...words, ...options.extra], { replace: options.replace });
 		console.log(

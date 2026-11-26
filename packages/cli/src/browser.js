@@ -540,7 +540,8 @@ export function launchChromium(options) {
 }
 
 /**
- * Starts an environment's browser, headless, with any `args` besides its own flags. On the real GPU
+ * Starts an environment's browser, headless unless `headless` is false, with any `args` besides
+ * its own flags. On the real GPU
  * it is the `chrome` build, and Chrome for Testing downloads on first use, with the installed Google
  * Chrome in its place on a failure when `fallback` allows it. A browser that is not installed fails
  * with the fix.
@@ -549,6 +550,7 @@ export function launchChromium(options) {
  * @param {readonly string[]} [args]
  * @param {ChromeBuild} [chrome]
  * @param {boolean} [fallback]
+ * @param {boolean} [headless]
  * @returns {Promise<Browser>}
  */
 export async function launchBrowser(
@@ -556,6 +558,7 @@ export async function launchBrowser(
 	args = [],
 	chrome = chromeBuild(),
 	fallback = chromeFallback(),
+	headless = true,
 ) {
 	const build =
 		environment === 'chrome-real-gpu' && chrome === 'testing'
@@ -564,7 +567,7 @@ export async function launchBrowser(
 	const options = browserOptions(environment, build);
 	try {
 		return await launchChromium({
-			headless: true,
+			headless,
 			...options,
 			args: [...(options.args ?? []), ...args],
 		});

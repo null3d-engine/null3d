@@ -1,9 +1,11 @@
 import { afterEach, describe, expect, it } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { PassThrough } from 'node:stream';
 import { fixture } from '../../../tools/lib/fixture';
 import { parseShaderList } from '../../vite-plugin/src/shader-list.ts';
 import * as words from './shader-words.js';
+import { askToSave } from './shaders.js';
 
 const {
 	parseWordList,
@@ -93,5 +95,41 @@ describe('the types of @null3d/cli/shaders', () => {
 		const names = [...declared.matchAll(/^export (?:function|const) (\w+)/gm)].map((m) => m[1]);
 		const exported = Object.keys(words).sort();
 		expect([...names].sort()).toEqual(exported);
+	});
+});
+
+describe('askToSave', () => {
+	it('saves on Enter, and when the input ends', async () => {
+		const input = new PassThrough();
+		const asked = askToSave({ input, output: new PassThrough() });
+		input.write('\n');
+		expect(await asked).toBe('save');
+		const ended = new PassThrough();
+		const closed = askToSave({ input: ended, output: new PassThrough() });
+		ended.end();
+		expect(await closed).toBe('save');
+	});
+
+	it('asks on Ctrl-C, and discards on y or saves on Enter', async () => {
+		for (const [answer, result] of [
+			['y\r', 'discard'],
+			['\r', 'save'],
+		] as const) {
+			// A terminal gives Ctrl-C as a key, which the prompt reads in raw mode.
+			const input = Object.assign(new PassThrough(), { isTTY: true, setRawMode: () => input });
+			const asked = askToSave({ input, output: new PassThrough() });
+			input.write('\x03');
+			input.write(answer);
+			expect(await asked).toBe(result);
+		}
+	});
+
+	it('gives way when the page closes first', async () => {
+		const asked = askToSave({
+			input: new PassThrough(),
+			output: new PassThrough(),
+			closed: Promise.resolve('closed'),
+		});
+		expect(await asked).toBe('closed');
 	});
 });

@@ -557,6 +557,7 @@ bunx @null3d/cli shaders record
 bunx @null3d/cli shaders record --page / --page /level-2.html --live /
 bunx @null3d/cli shaders record --live / --scroll
 bunx @null3d/cli shaders record --base http://localhost:8080 --live /game.html --click "#play"
+bunx @null3d/cli shaders record --manual --gpu webgl2 --preset low
 ```
 
 | Option | Effect | Without it |
@@ -569,6 +570,9 @@ bunx @null3d/cli shaders record --base http://localhost:8080 --live /game.html -
 | `--extra <words>` | Words to add by hand, as hexadecimal numbers joined by commas, such as `0x10,0x14` | Only the recorded words |
 | `--out <file>` | The list to write | `shader-permutations.txt` |
 | `--replace` | Writes the run's words alone | The words join those that the list holds |
+| `--manual` | Opens the `--live` page, or `/`, in a browser window for you to play through. Enter saves its words, and Ctrl-C asks before it discards them | The pages load headless and the recorder drives them |
+| `--gpu <path>` | With `--manual`: `webgpu` or `webgl2` | The engine picks the GPU path |
+| `--preset <name>` | With `--manual`: `low`, `medium`, `high` or `ultra` | The engine picks the preset |
 
 The command loads up to four pages at once in a headless browser, each with the engine's recording switch, `?permutations=record`. A held page publishes its words once its held frame has drawn. The recorder stops a live page once it has driven it through its states, and then the page publishes its words. A page that fails gets a second try. A second failure stops the run with the page's errors, so no list leaves out a page's words. The run's words join those that the list holds already. So each level or mode can be recorded in a run of its own into one list. The list holds each word once, in order:
 
@@ -580,7 +584,7 @@ The command loads up to four pages at once in a headless browser, each with the 
 0x00000020
 ```
 
-A project's browser tests can write the list too, with `saveRecordedWords` from `@null3d/cli/shaders`, as [Record from your browser tests](../guides/assets-pipeline.md#record-from-your-browser-tests) shows.
+With `--manual`, the command opens one page in a window on your screen. Play through its menus, settings and levels, then press Enter in the terminal. Run it on both GPU paths at the low and high presets, as the automatic run records them. A reload starts a new recording, so record each page in a run of its own. A project's browser tests can write the list too, with `saveRecordedWords` from `@null3d/cli/shaders`, as [Record from your browser tests](../guides/assets-pipeline.md#record-from-your-browser-tests) shows.
 
 A production build ignores the recording switch, so a page that `--base` names must come from a development build: the dev server, or `vite build --mode development`. The plugin's `urlSwitches` option also lets a production build read it. Record again after the project gains a feature that draws with a new word. A build whose list lacks a word stops the pipeline that needs it, with a message that names the word.
 

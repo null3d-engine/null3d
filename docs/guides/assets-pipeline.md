@@ -492,6 +492,25 @@ bunx @null3d/cli shaders record --page / --extra 0x00000010
 
 Each run adds its words to the list that `--out` names, once each, in order. So each level or mode of a game can be recorded in a run of its own into one list. The `--replace` option writes the run's words alone, for a list that starts afresh.
 
+### Record at setup
+
+A game that creates every material and object variant at setup, hidden, records nearly every word in one load. Its setup creates the objects that later states show, hides them, and awaits `scene.warmUp()`, as [Loading screens](loading-screens.md#a-later-loading-stage) advises. The engine builds the pipelines of hidden objects too, and each build reaches the recording. A hidden object with a clear coat added its 16 words to a scene's list, held and live, with or without the warm-up.
+
+A game that loads its levels on demand can add a switch of its own that loads every level at setup, such as `?all-levels`. Record with that switch, such as `--page '/?all-levels'`. Ship the game without it.
+
+### Record by hand
+
+`--manual` opens one page in a browser window on your own screen, with the recording switch. Play through every menu, setting, level and mode that the page offers. Then press Enter in the terminal, and the command adds the words to the list. Ctrl-C asks whether to discard them.
+
+```sh
+bunx @null3d/cli shaders record --manual --gpu webgpu --preset low
+bunx @null3d/cli shaders record --manual --gpu webgpu --preset high
+bunx @null3d/cli shaders record --manual --gpu webgl2 --preset low
+bunx @null3d/cli shaders record --manual --gpu webgl2 --preset high
+```
+
+Run it on both GPU paths at the low and high presets, as the automatic run records them. A path and a preset each turn on words of their own. The `--live <path>` option names another page than `/`. A recording covers one load of the page. A reload or a link to another page starts a new recording, and the command says so. Record each page in a run of its own: each run adds to the list.
+
 ### Record from your browser tests
 
 A project's own browser tests already drive its states. `@null3d/cli/shaders` adds the words that a test reached to the list. Open the page with the recording switch, drive it, then save:
