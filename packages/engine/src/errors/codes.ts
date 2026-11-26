@@ -92,18 +92,26 @@ const DOCS = {
 	E1109: {
 		title: 'Engine memory full',
 		cause:
-			'The engine could not create or grow its WebAssembly memory. A page with worker threads gives the engine 1 GiB by default, and up to 4 GiB through the memory option of createEngine. Many instance rows, a mesh of millions of vertices, or the first frame, which copies every mesh, can fill it. A browser can refuse memory sooner, as phones often do, or while an engine that stopped before still holds its memory.',
+			'The engine could not create or grow its WebAssembly memory. A page with worker threads gives the engine 1 GiB by default, and the memory option of `createEngine()` can raise it to 4 GiB. Many instance rows, a mesh of millions of vertices, or the first frame that copies every mesh can fill it.',
 		example: 'E1109: createInstances() failed: the engine could not get 1282 MB more memory.',
 		details:
-			'Each instance row takes about 210 bytes, or about 300 with per-row colors or values. About 5 million rows fill 1 GiB, along with the rest of the scene. Building a mesh with normals to compute takes about 100 bytes per vertex for a moment.\n\nThe first frame copies every mesh of the scene. A scene with 84 MiB of meshes peaks at about 270 MiB on the direct path. It peaks at about 205 MiB on the indirect path.\n\nThe engine keeps the last 8 MiB under the limit for its own small requests. It tries again for about 45 seconds before it fails, and reports memory-wait through onProgress after 10 seconds.',
+			'Each instance row takes about 210 bytes, or about 300 with per-row colors or values. About 5 million rows fill 1 GiB, along with the rest of the scene. Building a mesh with normals to compute takes about 100 bytes per vertex for a moment.\n\nThe first frame copies every mesh of the scene. A scene with 84 MiB of meshes peaks at about 270 MiB on the direct path. It peaks at about 205 MiB on the indirect path.\n\nThe engine keeps the last 8 MiB under the limit for its own small requests. It tries again for about 45 seconds before it fails, and reports memory-wait through onProgress after 10 seconds.\n\nA browser can refuse memory sooner, as phones often do, or while an engine that stopped before still holds its memory.',
 		detailsSummary: 'memory figures and the retry',
+		fixCases: [
+			'For a huge mesh: split it into smaller meshes, or simplify it.',
+			'For a batch that draws no colors: give it colors only when it needs them.',
+			'For several engines on one page: destroy the engines you no longer use, or keep one and detach and attach it. A smaller maximum leaves room for more engines.',
+		],
 		see: ['guides/performance'],
 	},
 	E1110: {
 		title: 'Unmarked write to a static object',
 		cause:
-			"A static object's position, rotation, scale or bounding sphere changed without a setter. The engine recomputes a static object only in a frame where a setter marks it or its parent moves. The change can then show late, or never. A row of a static instance, sprite or point batch that changed without markDirty() raises it too. Development builds check for these writes in every frame; release builds leave the check out.",
+			"A static object's position, rotation, scale or bounding sphere changed without a setter. The engine updates a static object only in a frame where a setter marks it or its parent moves. A row of a static instance, sprite or point batch that changed without `markDirty()` raises it too.",
 		example: 'E1110: the position of "Crate" (slot 7) changed without a setter.',
+		details:
+			'The change can show late, or never. Development builds check for these writes in every frame. Release builds leave the check out, so no error comes, and the picture can stay wrong.',
+		detailsSummary: 'when the check runs',
 		see: ['concepts/static-dynamic'],
 	},
 	E1111: {
@@ -141,8 +149,14 @@ const DOCS = {
 	E1206: {
 		title: 'Invalid mesh arrays',
 		cause:
-			'geometry.fromArrays() received arrays that make no mesh, scene.createLines() received points that make no line, or scene.createPoints() received arrays that make no points. An array can have the wrong length for the vertex count, an index can name no vertex, or a value can be NaN or Infinity. Normals can also be missing, or both given and computed. A mesh can also take `targets` or `morphTargets`, not both. A line needs at least 2 points, and pairs of points need an even number. Points need at least 1 point, with 3 or 4 numbers of color each. Or mesh.updateVertices() received values that do not fit the mesh: an attribute the mesh lacks or that takes no updates, another array type than the mesh keeps, or vertices past its last one.',
+			'A call that builds or updates a mesh, a line or a set of points got arrays that do not fit. An array can have the wrong length, an index can name no vertex, or a value can be NaN or Infinity.',
 		example: 'E1206: geometry.fromArrays() got 9 numbers in normals for 4 vertices, not 12.',
+		details:
+			'| Call | Refuses |\n| --- | --- |\n| `geometry.fromArrays()` | an array of the wrong length, an index past the last vertex, a NaN or Infinity value, missing normals, normals both given and computed, both `targets` and `morphTargets`, and no indices with a vertex count that is not a multiple of three |\n| `scene.createLines()` | fewer than 2 points, an odd count for segment pairs, and colors that do not match the points |\n| `scene.createPoints()` | no points, and colors that are not 3 or 4 numbers per point |\n| `mesh.updateVertices()` | an attribute that the mesh lacks or that takes no updates, another array type than the mesh keeps, an array that does not hold every vertex, vertices past the last one, a mesh with joints or morph targets, and a start or count that is not a whole number of 0 or more |',
+		detailsSummary: 'what each call checks',
+		fixCases: [
+			'For `mesh.updateVertices()`: give values for every vertex, in the array type that the mesh keeps, for an attribute that the mesh has.',
+		],
 	},
 	E1207: {
 		title: 'Invalid layer mask',
@@ -168,8 +182,11 @@ const DOCS = {
 	E1213: {
 		title: 'Invalid setting',
 		cause:
-			'A call received a setting that it does not have, or a value that the setting does not take. Examples are a tone mapping that the engine does not know, a negative exposure, a grading control outside its range, and a built-in environment that the engine does not have. It also covers a glTF extension handler that names no extension, that another handler reads, or that returns a part without a mesh or a material. It also covers createEngine() sketchData that is not plain JSON data, or that takes more than 64 KiB as JSON.',
+			'A call received a setting that it does not have, or a value that the setting does not take. A tone mapping that the engine does not know, or a grading control outside its range, are examples.',
 		example: `E1213: post.set() got the tone mapping "filmic", which is not 'agx', 'agx-punchy', 'neutral', 'aces' or 'none'.`,
+		details:
+			'`post.set()` refuses a tone mapping that the engine does not know, a negative exposure, and a grading control outside its range.\n\n`assets.builtinEnvironment()` refuses a name that no built-in environment has.\n\n`assets.registerGltfExtension()` refuses a handler that names no extension, that another handler reads, or that returns a part without a mesh or a material.\n\n`createEngine()` refuses sketch data that is not plain JSON data, or that takes more than 64 KiB as JSON.',
+		detailsSummary: 'the calls and settings that raise it',
 		see: ['api/materials'],
 	},
 	E1214: {
@@ -181,17 +198,23 @@ const DOCS = {
 	E1215: {
 		title: 'Invalid custom WGSL',
 		cause:
-			'materials.shader(), post.addEffect(), post.set() or scene.setSkyLayer() received WGSL that it cannot draw with. The null3D Vite plugin compiles WGSL while it builds the project. The engine therefore takes only what the plugin compiled: a template literal after a /* wgsl */ comment, or a .wgsl file that a module imports. The WGSL of a custom material declares a surface function, a vertex offset or a lobe. A full shader instead has a @vertex entry point that takes an InstanceIn from null3d::mesh. An effect declares fn effect, a tone curve fn toneCurve, and a sky layer fn skyLayer.',
+			'`materials.shader()`, `post.addEffect()`, `post.set()` or `scene.setSkyLayer()` received WGSL that it cannot draw with. The engine takes only WGSL that the null3D Vite plugin compiled, as a shader of the kind that the call takes.',
 		example:
 			'E1215: materials.shader() got WGSL as text, which the null3D Vite plugin did not compile.',
+		fixDetails:
+			'| Call | WGSL declares |\n| --- | --- |\n| `materials.shader()`, surface | `fn surface(input: SurfaceInput) -> Surface`, with no `@vertex` or `@fragment` entry |\n| `materials.shader()`, vertex offset | `fn vertexOffset(input: VertexInput) -> vec3f` |\n| `materials.shader()`, lobe | `fn lobe(input: LobeInput) -> vec3f` |\n| `materials.shader()`, full shader | a `@vertex` entry that takes an `InstanceIn` from `null3d::mesh` |\n| `materials.shader()`, own vertices | a `@vertex` entry with `@builtin(vertex_index)` and `@builtin(instance_index)`, and no mesh attribute |\n| `post.addEffect()` | `fn effect(input: EffectInput) -> vec4f` |\n| `post.set({ toneMapping })` | `fn toneCurve(color: vec3f) -> vec3f` |\n| `scene.setSkyLayer()` | `fn skyLayer(input: SkyLayerInput) -> SkyLayer` |',
+		fixDetailsSummary: 'the WGSL that each call declares',
 		see: ['guides/custom-shaders'],
 	},
 	E1216: {
 		title: 'Invalid uniform or texture',
 		cause:
-			"A custom material's or effect's uniforms or textures did not match its WGSL. The uniforms option and set() take the names of the fields of struct Uniforms in the WGSL, each with a value of its type. A field cannot have the name of a standard value, such as color or roughness, because set() takes those too. The textures option takes the names of the WGSL's `var name: texture_2d<f32>;` and `var name: texture_2d_array<f32>;` declarations, each with a texture of the layers that its declaration takes.",
+			"A custom material's or effect's uniforms or textures did not match its WGSL. The options take the names of the fields of `struct Uniforms` and of the WGSL's texture declarations. Give each one a value or texture of the type that its declaration takes, and leave standard values such as `color` to `set()`.",
 		example:
 			"E1216: materials.shader.set() got speeed, which is not a uniform of the material's WGSL.",
+		fixDetails:
+			'| WGSL type | Give |\n| --- | --- |\n| `f32` | a number |\n| `i32` | a whole number |\n| `u32` | a whole number |\n| `vec2f` | an array of 2 numbers |\n| `vec3f` | an array of 3 numbers, or a color |\n| `vec4f` | an array of 4 numbers |\n| `texture_2d<f32>` | a texture of one layer |\n| `texture_2d_array<f32>` | a texture of one or more layers, from `textures.fromData()` with a depth or a KTX2 file of layers |',
+		fixDetailsSummary: 'the value that each WGSL type takes',
 		see: ['guides/custom-shaders'],
 	},
 	E1217: {
@@ -207,8 +230,17 @@ const DOCS = {
 	E1218: {
 		title: 'Invalid animation call',
 		cause:
-			"An animator call named a clip, layer or joint that the object's animation does not have. Or it got an option out of range, such as a negative fade. animator() was called on an object that has no animation clips. Or the engine refused animation data, such as a skeleton that lists a joint before its parent. Or setMorphWeight or getMorphWeight named a morph target that the mesh does not have. A clip of more than 4,194,304 keys, its frames times its tracks, is refused too, as a clip whose keys lie hours apart is.",
+			'An animation call, or animation data that the engine loads, named something that does not exist or gave a value out of range. The call can be an animator call, a morph-weight call or `animateProperty()`.',
 		example: `E1218: play() got "rnu", which names no clip of "Hero" (slot 3). Its clips are idle, run and walk.`,
+		cases: [
+			'An unknown clip, layer or joint.',
+			'An option out of range, such as a negative fade, a layer outside 0 to 3, or a weight outside 0 to 1.',
+			'`animator()` on an object that has no animation clips.',
+			'A morph target that the mesh does not have.',
+			'Two clips with the same name, or a clip event named `loop` or `finished`.',
+			'Animation data that the core refuses, such as a skeleton that lists a joint before its parent.',
+			'A clip of more than 4,194,304 keys, which is its frames times its tracks.',
+		],
 	},
 	E1219: {
 		title: 'Invalid label',
@@ -220,16 +252,22 @@ const DOCS = {
 	E1220: {
 		title: 'Invalid render pass',
 		cause:
-			'render.addPass() got options that it does not take: an unknown kind or option, no camera, a size outside 1 to the largest texture, both a size and a scale, an input image it does not know, a workgroup size or dispatch that a device cannot run, a format that a compute pass does not write, a compute pass on WebGL2 with no fallback, or a texture name or pass name that another pass has. Or the sketch added more passes than draw at once: 31. Or textures.fromPass(), render.setPassEnabled(), render.setPassUniform(), render.setPassUniforms() or render.removePass() got something that is not a render pass, render.setPassUniform() got a pass that is not a full-screen pass, or render.setPassUniforms() got a pass that is not a compute pass.',
+			'A render pass call got options that it does not take, or a pass of a kind that it does not work on. The message names the call and the rule that it breaks.',
 		example:
 			'E1220: render.addPass() got writes "minimap", which the pass "minimap" writes already. Give each pass a texture name of its own.',
+		details:
+			'`render.addPass()` refuses an unknown kind or option, no camera, and a size outside 1 to the largest texture. It refuses both a size and a scale, an unknown input image, and a workgroup size or dispatch that a device cannot run.\n\nIt refuses a format that a compute pass does not write, and a compute pass on WebGL2 with no fallback. It refuses a texture name or pass name that another pass has, and a 32nd live pass, since at most 31 passes draw at once.\n\n`textures.fromPass()`, `render.setPassEnabled()` and `render.removePass()` take any render pass. `render.setPassUniform()` takes a full-screen pass, and `render.setPassUniforms()` takes a compute pass and at most 32 numbers.',
+		detailsSummary: 'what each render call refuses',
 	},
 	E1221: {
 		title: 'Invalid levels of detail',
 		cause:
-			"mesh.setLevels() received levels that the mesh cannot take, or a glTF file's MSFT_lod levels could not become them. Each level's error, distance or coverage must be a finite number above 0, and its switch distance must lie farther than the level's before it. A coarser level covers more of the screen, so its coverage is smaller. A mesh takes at most 15 lower levels. Each level must be another live mesh of the same engine, with the same vertex attributes as the base mesh. A level's material, where it gives one, must be a live material of the same engine. mesh.buildLevels() refuses a mesh with joints, morph targets or a vertex record, whose shape poses or moves.",
+			"`mesh.setLevels()` received levels that the mesh cannot take, or a glTF file's MSFT_lod levels could not become them. Each level gives one of an error, a distance and a coverage, and the switch distances grow from level to level.",
 		example:
 			'E1221: mesh.setLevels() got an error of 0.02 for level 2, not above the 0.05 of level 1. Errors grow from level to level.',
+		details:
+			"A mesh takes at most 15 lower levels. Each level gives exactly one of an error, a distance and a coverage, as a finite number above 0. Its switch distance must lie farther than the level before it, and a coarser level covers more of the screen, so its coverage is smaller.\n\nEach level must be another live mesh of the same engine, with the same vertex attributes as the base mesh. A level's material, where it gives one, must be a live material of the same engine. The `fov` option sets the reference view, and lies between 0 and 180.\n\n`mesh.buildLevels()` refuses a mesh with joints, morph targets or a vertex record, whose shape poses or moves.",
+		detailsSummary: 'the rules for each level',
 	},
 	E1222: {
 		title: 'Invalid light probe grid texture',
@@ -241,9 +279,15 @@ const DOCS = {
 	E1223: {
 		title: 'Invalid feature description',
 		cause:
-			'defineFeature(), FeatureRegistry.add(), addFeatureDraw(), post.addFeatureEffect(), scene.setSkyLayer() or a compute pass of render.addPass() got a description that it cannot take: an unknown option, a name that is empty or longer than 64 characters, a frame point or kind that does not exist or does not go together, an order outside its band, an unknown resource, lighting slot or view, a resource or view without a frame point, an output with no neutral default, a feature name, output name or debug view name that another feature has, a lighting slot that another feature provides, a debug view name that names one of the views that the engine draws itself or gives no set callback, a draw at a frame point, view or alpha mode that the draw adapter does not place, a full-screen effect at another frame point or view, writing another resource, reading one the effect chain does not bind, publishing an output, providing a slot, or disagreeing with its WGSL about the scene depth, a sky layer that does not record at the background point, as a draw, providing the sky and drawing in the three views, or a compute pass at a frame point, view, scene resource read or output that the compute adapter does not place.',
+			'A call that registers a feature, a feature draw, a full-screen effect, a sky layer or a compute pass got a description it cannot take. The message names the value and the rule that it breaks.',
 		example:
 			"E1223: FeatureRegistry.add() got the slot 'ao', which the feature 'ambient-occlusion' provides already. One feature provides each lighting slot.",
+		details:
+			"- Names: a name that is empty, longer than 64 characters, or holds a line break. A feature, output or debug view name that another feature has. An output name that names one of the engine's own resources.\n- Frame points, kinds and order: a frame point or kind that does not exist, or two that do not go together. A kind, read, write or view without a frame point. An order outside its band.\n- Resources, slots, views and outputs: an unknown resource, lighting slot or view, or the same one twice. An output without a neutral default. A lighting slot that another feature provides. A debug view that names an engine view, or whose set is not a function.\n- Settings and budgets: an option that a description does not take. A setting whose presets are not four values from its range. A governor without a budget. A budget whose presets are not four times above 0, or whose minimum is outside 0 to 1.\n- The GPU scope: a pass that `render.addPass()` did not return.",
+		detailsSummary: 'every description that the engine refuses',
+		fixDetails:
+			"| Kind | Frame point | Views | Rules |\n| --- | --- | --- | --- |\n| Draw | 'opaque', 'transparent' or 'resolve' | main | The alpha mode must match the frame. |\n| Full-screen effect | 'resolve' | main | Reads 'sceneColor', and 'sceneDepth' when its WGSL reads the depth. Writes 'sceneColor' alone. |\n| Sky layer | 'background' | main, scenePass and reflection | Provides 'sky'. |\n| Compute pass | 'background', 'opaque', 'transparent', 'resolve' or 'post' | main | Reads no scene resource. Publishes one output texture, or fills an instance draw's buffers. |\n\nA full-screen effect publishes no texture and provides no lighting slot. A compute pass that fills an instance draw publishes no output. A budget gives its time in ms at full quality on each preset: four numbers above 0.",
+		fixDetailsSummary: 'what each kind of feature accepts',
 	},
 	E1224: {
 		title: 'Material cannot draw a mesh',
@@ -298,9 +342,12 @@ const DOCS = {
 	E1307: {
 		title: 'Pipeline not built',
 		cause:
-			"After the start, the GPU's driver could not build a pipeline that draws objects of the scene. It refused the pipeline among the other builds, and again when the engine built it alone. A driver does this when it runs short of memory as it compiles the shader, or when its compiler fails on the shader. On WebGL2, a program that the driver refuses to link twice counts the same. The message names the pipeline: its template, such as a custom material, and the pass that its build draws in. The objects that draw with it are missing from that pass. The engine reports the first time this happens on each GPU device, and draws on.",
+			"After the start, the GPU's driver could not build one pipeline that draws objects of the scene. The objects that draw with it are missing from the pass that the message names, and the engine draws on.",
 		example:
 			"E1307: the render worker's GPU driver could not build the pipeline of custom material 135, so the objects that draw with it are missing. It failed twice, the second time alone: CreateGraphicsPipelines failed with VK_ERROR_UNKNOWN.",
+		details:
+			'The driver refused the pipeline among the other builds, and again when the engine built it alone. A driver does this when it runs short of memory as it compiles the shader, or when its compiler fails on the shader.\n\nOn WebGL2, a program that the driver refuses to link twice counts the same. The engine reports the first failure of each kind on each GPU device.',
+		detailsSummary: 'how the engine builds the pipeline',
 	},
 	E1401: {
 		title: 'Not a sketch module',
@@ -336,9 +383,12 @@ const DOCS = {
 	E1406: {
 		title: 'Engine file not downloaded',
 		cause:
-			'A file of the engine core did not download whole, or a file that a call loads the first time. The first KTX2 file loads the KTX2 transcoder, and the first glTF file the glTF loader. The first mesh that plans its levels of detail loads the level planner and its simplifier. The first glTF file with meshopt compression loads the meshopt decoder, and the first with Draco compression the Draco decoder. The first color grading table loads its readers, and the first environment its reader. The first sprite or point batch loads the sprite code, and the first line batch the line code. The first feature draw, instance draw or full-screen effect loads that adapter. The server answered with an error or sent another file in its place, such as a web page, or the connection broke off.',
+			'A file of the engine core did not download whole, or a file that a call loads the first time it runs. The server answered with an error, sent another file in its place, such as a web page, or the connection broke off.',
 		example:
 			'E1406: the threaded engine core did not download from /assets/null3d_bg-3f9c1a2b.wasm: HTTP 404.',
+		details:
+			'| First use | File |\n| --- | --- |\n| a KTX2 texture | the KTX2 transcoder |\n| a glTF model | the glTF loader and its worker |\n| a mesh that plans its levels of detail | the level planner and its simplifier |\n| a glTF file with meshopt compression | the meshopt decoder |\n| a glTF file with Draco compression | the Draco decoder |\n| a color grading table | its readers |\n| an environment map | its reader |\n| a sprite or point batch | the sprite code |\n| a line batch | the line code |\n| a feature draw, instance draw or full-screen effect | that adapter |',
+		detailsSummary: 'the files that load on first use',
 	},
 	E1407: {
 		title: 'Invalid hold time',
@@ -363,7 +413,7 @@ const DOCS = {
 	E1410: {
 		title: 'Sketch module not loaded',
 		cause:
-			'The sketch module that createEngine got did not load. It did not download, or its code threw an error while the module loaded. The engine imports a module that does not load once more after a short wait, and the console notes that second import. The error comes only when the second import fails too, and it gives the reason of the first. A module whose code threw is not downloaded again, since it would throw again.',
+			'The sketch module that `createEngine()` got did not load: it did not download, or its code threw while the module loaded. The engine imports a module that does not load once more after a short wait, and notes that second import in the console. The error comes only when the second import fails too, and it gives the reason of the first. A module whose code threw is not downloaded again, since it would throw again.',
 		example:
 			'E1410: the sketch module https://example.com/assets/sketch-3f9c1a2b.js did not load: Failed to fetch dynamically imported module: https://example.com/assets/sketch-3f9c1a2b.js.',
 	},
@@ -377,9 +427,12 @@ const DOCS = {
 	E1412: {
 		title: 'Asset not decoded',
 		cause:
-			'A loading call downloaded its file but could not read it. The browser could not decode the image, as with a format it does not support. Or the file was a KTX2 file that the engine does not load, or not valid JSON. Or it was a color grading table that the engine does not read, such as a 1D table or one with a texel missing. Or it was not an environment map that `bunx @null3d/cli assets env` writes. The message says what in the file the engine could not read, with its line where it has one. A KTX2 file also fails before it transcodes when it passes a limit. It may be wider or taller than textures.maxSize, or hold more than 256 layers. It may hold more mip levels than its size has, or texels of more than 256 MiB. A PNG or JPEG file fails before it decodes when its header gives a side longer than textures.maxSize, or 16,384 for loadImageBitmap.',
+			'A loading call downloaded its file but could not read it. The message says what in the file the engine could not read, with its line where it has one.',
 		example:
 			'E1412: assets.loadTexture() could not decode https://example.com/tex/brick.tga as an image: The source image could not be decoded.',
+		details:
+			'- An image that the browser cannot decode, such as one in a format that it does not support.\n- A KTX2 file that the engine does not load.\n- A file that is not valid JSON.\n- A color grading table that the engine does not read, such as a 1D table or one with a texel missing.\n- A file that is not an environment map that `bunx @null3d/cli assets env` writes.\n\nA KTX2 file fails before it transcodes when it is wider or taller than `textures.maxSize`, or holds more than 256 layers. It also fails when it holds more mip levels than its size has, or texels of more than 256 MiB.\n\nA PNG, JPEG, WebP or AVIF file fails before it decodes when its header gives a side longer than `textures.maxSize`, or longer than 16,384 for `assets.loadImageBitmap()`.',
+		detailsSummary: 'the files that the readers refuse and their limits',
 	},
 	E1413: {
 		title: 'Asset from another origin blocked',
@@ -430,7 +483,7 @@ const DOCS = {
 	E1419: {
 		title: 'Canvas held by another engine',
 		cause:
-			'createEngine() got a canvas that another engine still draws on, or a canvas whose drawing thread ended, so no engine can draw on it again. That thread ends when it fails, or when the canvas leaves the page. It also ends when the page goes away, or when the browser refuses memory for a new engine. A canvas serves one engine at a time. After destroy(), a new engine can start on the same canvas.',
+			'`createEngine()` got a canvas that another engine still draws on, or a canvas whose drawing thread ended, so no engine can draw on it again. That thread ends when it fails, when the canvas leaves the page, or when the browser refuses memory for a new engine. A canvas serves one engine at a time, but after `destroy()` a new engine can start on it.',
 		example:
 			'E1419: createEngine() got a canvas that another engine draws on, which has not stopped.',
 	},
@@ -466,9 +519,12 @@ const DOCS = {
 	E1424: {
 		title: 'Custom shader builds not downloaded',
 		cause:
-			"A set of a custom shader's builds did not download. The null3D Vite plugin builds each custom material, effect and tone curve for every GPU path, and puts the builds in files of their own beside the sketch's files. A material's files are named material-*.js: one for each GPU path, each kind of device, and the builds that skin. An effect's and a tone curve's are named effect-*.js and curve-*.js: one for each GPU path. A page downloads its device's file when the sketch first uses the shader, and another material file when a pipeline needs it, such as the builds that skin for the first skinned mesh. The server answered with an error or sent another file in its place, such as a web page, or the connection broke off. The engine then draws no new frames.",
+			"A file that holds a custom shader's builds did not download, so the engine draws no new frames. The server answered with an error, sent another file in its place, such as a web page, or the connection broke off.",
 		example:
 			'E1424: the builds of a custom shader did not load: Failed to fetch dynamically imported module: https://example.com/assets/material-glsl-3-4c1d2e9a5b6f7081-Bx3kQ9.js.',
+		details:
+			"The null3D Vite plugin builds each custom material, effect and tone curve for every GPU path. It puts the builds in files of their own beside the sketch's files.\n\nA material's files are named material-*.js: one for each GPU path and each set of builds that the device fixes. Those sets hold the builds that tone map or skin. An effect's and a tone curve's files are named effect-*.js and curve-*.js: one for each GPU path.\n\nA page downloads its device's file when the sketch first uses the shader. It downloads another material file when a pipeline needs one, such as the builds that skin for the first skinned mesh.",
+		detailsSummary: 'the shader build files',
 	},
 	E1425: {
 		title: 'Pointer lock refused',
@@ -535,15 +591,27 @@ const DOCS = {
 	E1437: {
 		title: 'Chrome for Testing refused',
 		cause:
-			"The null3D command-line tool did not install Chrome for Testing, the browser that draws on the computer's GPU. The archive it downloaded does not have the SHA-256 hash that the tool records for the pinned version on this platform. Or the tool has no build, and so no hash, for this platform. The tool deletes a refused archive before it unpacks it, and never runs it. By default the command goes on: it prints this message as a warning and draws with the installed Google Chrome. The error stops the command only when NULL3D_CHROME=testing asks for Chrome for Testing alone.",
+			"The null3D command-line tool did not install Chrome for Testing, the browser that draws on the computer's GPU. The archive does not have the SHA-256 hash that the tool records for the pinned version, or the tool has no build for this platform. The tool deletes a refused archive before it unpacks it, and the command then draws with the installed Google Chrome.",
 		example:
 			'E1437: the Chrome for Testing 156.0.8078.80 archive for mac-arm64 has the SHA-256 hash 5d41402abc4b2a76b9719d911017c592ae2f4d3c1a0d9b7e6c9a3f5b8e7d2c10, not 8bc590d1b1acac042a000234c768f31830f25a3983a83ed5e067114c87c4cad1, so the tool deleted it.',
 	},
 	E1501: {
 		title: 'Render space full',
 		cause:
-			'The scene needs more room than the renderer has. The message names the full part: the material table, the upload space, the culling pass, skinning on WebGPU, the draw list, one GPU buffer, or the shadow atlas. On WebGPU the culling pass covers 2,097,152 objects and instance rows on every device, and more on devices with larger GPU buffers. On WebGL2 the number follows the largest texture the device allows. The number for the device is in engine.capabilities.maxInstances. On WebGPU, skinned meshes keep their skinned vertices in at most 8 GPU buffers. Those hold 1 GiB in all on most devices. Skinned meshes fill at most 32 mesh buffers. The draw list grows with the scene, so it fills only when memory runs out. A frame that fails draws nothing, and the canvas keeps the last whole frame.',
+			'The scene needs more room than the renderer has. The message names the full part, such as the material table, the texture table, the culling pass or the shadow atlas. A frame that fails draws nothing, and the canvas keeps the last whole frame.',
 		example: 'E1501: materials.standard() failed: the material table is full.',
+		details:
+			"| Full part | Limit |\n| --- | --- |\n| Material table | The message says it is full. |\n| Draw list | The megabytes that its commands may take, which it reaches only when memory runs out. |\n| Culling pass | 2,097,152 objects and instance rows on WebGPU, and more on devices with larger GPU buffers. On WebGL2 the number follows the largest texture. `engine.capabilities.maxInstances` gives the device's number. |\n| Skinning on WebGPU | 8 GPU buffers, 1 GiB in all on most devices, and 32 mesh pages. |\n| Views | 32, the camera's included. |\n| Shadow atlas | 1,024 MB. |\n| Texture table | The message says it is full. |\n| Upload space | The room that the frame sets aside. |\n| One GPU buffer | The bytes that one GPU buffer may take on the device. |\n| Rectangle lights | The most lights that show images at once. |\n| Light image size | The texels a side that an image takes. |",
+		detailsSummary: 'each full part and its limit',
+		fixCases: [
+			'For the culling pass: every row of a batch counts toward the limit, active or not, so size each batch for the rows it uses.',
+			'For skinned characters on WebGPU: each copy skins its own vertices, even when copies share a mesh.',
+			'For the shadow atlas: name a smaller `heroTileSize` or fewer `shadowTiles`.',
+			'For the views: destroy views that no longer draw.',
+			'For the texture table: use fewer textures, and share them.',
+			'For the upload space, the draw list or one GPU buffer: make that part smaller. The message gives the megabytes or bytes that it may take.',
+			'For rectangle lights or a light image: show images on fewer lights, or use a smaller image.',
+		],
 	},
 	E1502: {
 		title: 'Pass input missing',
@@ -567,8 +635,17 @@ const DOCS = {
 	E1505: {
 		title: 'Pass targets do not match',
 		cause:
-			"A render pass draws into targets that one GPU render pass cannot hold together. A target can have another size than the pass, or the targets can have different sample counts. The pass can also draw into two depth targets, into a whole texture array instead of one layer, or into no target. It can draw into more than four color targets, or into color targets of more than 32 bytes per sample, which some devices cannot hold. A resolve pass fails the same way when it cannot resolve its target into the canvas. That target must be multisampled, in the canvas's format and size, and read by no other running pass.",
+			'A render pass draws into targets that one GPU render pass cannot hold together. A target can have another size or sample count than the pass, or the pass can name no target.',
 		example: 'E1505: the pass "Blur" draws at half size into "sceneColor", which is full size.',
+		cases: [
+			'A target has another size than the pass.',
+			'The targets have different sample counts.',
+			'The pass draws into two depth targets.',
+			'The pass draws into a whole texture array instead of one layer, or into a layer that the target does not have.',
+			'The pass names no target.',
+			'The pass draws into more than four color targets, or into color targets of more than 32 bytes per sample in all.',
+			"A resolve pass cannot resolve its target into the canvas. The target is not multisampled, not in the canvas's format and size, or read by another running pass.",
+		],
 	},
 	E1506: {
 		title: 'Feature draw after the first frame',
