@@ -48,7 +48,7 @@ console.log(engine.mode.presetCheck); // { from: 'high', targetFps: 60, rounds: 
 | `shadowCascades`, `shadowMapSize`, `shadowTiles`, `shadowTileSize`, `heroTileSize`, `pointLightShadows`, `momentTransparency`, `gpuOcclusion`, `morphTargets` | Replace the preset's values of these settings, which stay fixed while the engine runs. [Quality presets](../concepts/quality-presets.md#moment-transparency) explains `momentTransparency` and its `?moments=` switch. |
 | `depthPrepass`, `cloudSteps`, `softwareOcclusion`, `textureMemoryMiB` | Replace the preset's values of these settings. A sketch can change them during play. |
 | `memory: { maximumMiB }` | Replaces the preset's memory maximum: [Page API](engine.md#memory). |
-| `?preset=low` to `?preset=ultra` | Fixes the preset for tests. It wins over the option, and the engine ignores earlier crashes and checks no preset. |
+| `?preset=low` to `?preset=ultra` | Fixes the preset for tests. It wins over the option, skips the preset check and starts outside the lowest tier. A crashed start still lowers the preset by one. |
 | `?tier=lowest` | Starts in the [lowest quality tier](../concepts/quality-presets.md#the-lowest-quality-tier), for tests and weak devices. |
 | `?tier=off` | Keeps the governor out of the lowest quality tier, so a test reads the presets' own settings and looks on a slow machine. |
 | `?target-fps=display` or `?target-fps=90` | Sets the target frame rate. It wins over the `targetFps` option. |
