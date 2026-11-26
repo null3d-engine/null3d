@@ -1,14 +1,10 @@
 ---
 id: porting/verification
 title: Verifying a port
-status: experimental
-since: "0.3"
 summary: "Parity images per camera view; performance comparison; the WebGL2 path; phones."
 ---
 
 # Verifying a port
-
-> Roadmap step 0.3, first released in null3D 0.1.0. The API is experimental, so it can still change between versions.
 
 ```mermaid
 flowchart LR

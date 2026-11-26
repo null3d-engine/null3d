@@ -3,7 +3,7 @@
 // the height field's heights, with a skirt around its edge that closes the seam where two blocks
 // of different levels meet. One material lights every pixel from normals baked over the whole
 // ground, so a coarse block keeps the hills' relief. The material blends up to four tiled layers
-// over all the blocks, and each layer's own height shows it through its neighbours at a boundary.
+// over all the blocks, and each layer's own height shows it through its neighbors at a boundary.
 // The terrain has no collision: a game reads `heightAt` and `normalAt` to place what stands on it.
 // The selection that picks the blocks and the build that writes their vertices run in the add-on's
 // WebAssembly module on the engine's job workers, so a frame only asks for the work.
@@ -76,7 +76,7 @@ export interface TerrainOptions {
 	steepFaces?: boolean;
 	/**
 	 * How far the skirt around each block hangs down, in meters. The default is four of the block's
-	 * cells, which closes the seam against a neighbour up to a level or two coarser.
+	 * cells, which closes the seam against a neighbor up to a level or two coarser.
 	 */
 	skirt?: number;
 	/**
@@ -199,7 +199,7 @@ export class Terrain {
 	private readonly selection: { selection: [number, number] } = { selection: [0, 0] };
 	private lastScale = Number.NaN;
 	/**
-	 * The sphere of each level's blocks: centred on the block's middle and reaching its farthest
+	 * The sphere of each level's blocks: centered on the block's middle and reaching its farthest
 	 * vertex, so one level's bounds hold every block of that level and a reused block keeps them.
 	 */
 	private readonly spheres = new Map<
@@ -469,7 +469,7 @@ export class Terrain {
 	}
 
 	/**
-	 * Multiplies every layer's colour, so a scene darkens its open ground with the hour: white
+	 * Multiplies every layer's color, so a scene darkens its open ground with the hour: white
 	 * leaves the ground as its maps give it. It sets the material's own color, which every block
 	 * shares, so a value that holds still costs nothing.
 	 */
@@ -805,7 +805,7 @@ export class Terrain {
 	}
 
 	/**
-	 * The sphere a block of this level reports: centred on the block's middle, with the radius to the
+	 * The sphere a block of this level reports: centered on the block's middle, with the radius to the
 	 * farthest corner of the level's ground. One sphere serves every block of a level, so a block that
 	 * takes another's mesh keeps it, and a cell crossing writes no new bounds.
 	 */

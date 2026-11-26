@@ -1,14 +1,10 @@
 ---
 id: guides/video-textures
 title: Video textures
-status: experimental
-since: "0.3"
 summary: "engine.registerVideo on the page and textures.fromVideo in the sketch; frame sizes and the upload budget; browser limits."
 ---
 
 # Video textures
-
-> Roadmap step 0.3, first released in null3D 0.1.0. The API is experimental, so it can still change between versions.
 
 ```mermaid
 flowchart LR
@@ -35,9 +31,7 @@ video.src = '/clips/intro.mp4';
 video.muted = true;
 video.loop = true;
 video.playsInline = true;
-// Keep the element in the page but out of sight. An element that display: none hides may give no
-// frame in some browsers, so park it past the page's edge instead. Its sound comes from the page
-// as any video's does.
+// Park the element past the page's edge; see Browser limits.
 video.style.position = 'absolute';
 video.style.left = '-10000px';
 video.style.width = '1px';
@@ -65,7 +59,9 @@ export default defineSketch(({ scene, geometry, materials, textures }) => {
 });
 ```
 
-The texture follows the video: pause, seek, loop and playback speed all show, because the page sends the frames that the video presents. The video has no pixels until its first frame arrives, and until then the material draws with its color alone. A video that is paused at the call still shows, because the sketch asks for the frame that it holds then.
+The texture follows the video: pause, seek, loop and playback speed all show, because the page sends the frames that the video presents. The engine never plays, pauses or seeks the element. The video has no pixels until its first frame arrives, and until then the material draws with its color alone. A video that is paused at the call still shows, because the sketch asks for the frame that it holds then.
+
+A page that shows a video in the scene and on the page at once runs one element and one timeline.
 
 Stop the frames with `texture.destroy()` in the sketch, or with the function that `engine.registerVideo` returns on the page.
 
@@ -93,14 +89,19 @@ The video's own frame rate sets the cost. A 30 frames a second video uploads its
 ## Browser limits
 
 - A browser plays the video formats that it supports, as for any video element. An H.264 MP4 file plays in the browsers that the engine runs on.
-- A page shows a video with sound only after the user acts, unless the video is muted. Start a muted video as the example does, or play it from a click.
+- A video with sound plays only after the user acts, unless it is muted. A refused video sends no frames, and the material draws with its color alone, with no error. Start a muted video as the example does, or play it from a click.
 - A video from another origin needs `video.crossOrigin = 'anonymous'` and the server's CORS headers. Without them, the browser refuses to copy the video's pixels into an image. No frames arrive, and the texture keeps the frame it had.
-- A browser that refuses to play the video, as an autoplay policy does before the user acts, sends no frames. The material then draws with its color alone, and the engine reports no error.
-- The engine reads each frame through `createImageBitmap`, which every supported browser has. It does not need `VideoFrame`, which Safari and Firefox cannot make from a video element.
+- Safari and Firefox cannot make a `VideoFrame` from a video element.
 - Keep the element in the page's layout, out of sight. An element that `display: none` hides may give no frame in some browsers.
-- A browser reports each frame that the video presents, and the page sends that frame. Some browsers report none for a video element that the page never shows. The page then checks the video's time on each display frame while it plays, and stops that check while the video is paused.
+- Some browsers report no frames for a video that the page never shows.
 - A phone plays a video at the rate that its heat allows, and the browser may lower that rate. A video that must keep time with the scene, such as a synchronized caption track, reads the video's time in the page.
-- The video's own element handles playback. The engine never plays, pauses or seeks it, so a page that shows a video in the scene and on the page at once runs one element and one timeline.
+
+<details>
+<summary>Technical details: how the page reads each frame</summary>
+
+The page makes each frame with `createImageBitmap`, which every supported browser has, so it does not need `VideoFrame`. It waits for the browser's report of each presented frame. When a browser gives no reports, the page checks the video's time on each display frame while the video plays, and stops that check while it is paused.
+
+</details>
 
 ## Related pages
 

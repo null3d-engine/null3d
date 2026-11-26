@@ -1,14 +1,10 @@
 ---
 id: api/textures
 title: Textures
-status: experimental
-since: "0.1"
 summary: "loadTexture options; KTX2 files; fromData; fromImageBitmap; fromCanvas; fromVideo; fromPass."
 ---
 
 # Textures
-
-> Roadmap step 0.1, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. Materials do not sample cube maps. A cube map can be a background: [Assets](assets.md) loads one with `assets.loadCubemap`.
 
 ```mermaid
 flowchart LR
@@ -80,6 +76,11 @@ const bricks = await assets.loadTexture('/tex/bricks.ktx2', { wrap: 'repeat' });
 console.log(bricks.format); // 'astc-4x4-unorm' on phones and tablets, 'bc7-rgba-unorm' on most desktop GPUs
 ```
 
+The engine picks the best compressed format that the device supports: `texture.format` says which one it got, and `texture.bytes` its GPU memory.
+
+<details>
+<summary>Technical details: which compressed format each device gets</summary>
+
 The engine turns the file's data into the first format on its list that the device supports:
 
 | Data in the file | Formats, in order |
@@ -92,8 +93,10 @@ The engine turns the file's data into the first format on its list that the devi
 - Phones and tablets have ASTC and ETC2. Desktop GPUs have BC7, and Macs with Apple chips have all three. A device with none gets `rgba8unorm`.
 - On WebGL2, a device with BC7 gets `bc7-rgba-unorm` for both kinds of data. Some desktop drivers, such as Mesa on Linux, offer ETC2 and ASTC on GPUs without them. They then decode those textures in software on the page's thread, which stalls the page. WebGPU offers a format only where the GPU has it.
 - UASTC HDR data holds colors brighter than white, with no alpha. A device with BC formats gets `bc6h-rgb-ufloat`, at 1 byte per texel. Devices without BC formats, such as the iPad and most phones, get `rgb9e5ufloat`: three 9-bit values with a shared exponent, at 4 bytes per texel. That is half the memory of `rgba16float`, and every device filters it. WebGPU and WebGL2 have no ASTC format for HDR data. The texture is always `linear`.
+
+</details>
+
 - A texture whose width or height is not a multiple of 4 texels gets `rgba8unorm` too, at 4 to 8 times the memory. HDR data then gets `rgb9e5ufloat`. WebGPU keeps compressed textures in whole blocks of 4 x 4 texels. Development builds warn when a file loads this way. `bunx @null3d/cli assets optimize` writes sides that are whole blocks.
-- `texture.format` says which format the device got, and `texture.bytes` its GPU memory.
 
 A KTX2 file takes the texture options above, with these differences:
 
@@ -221,11 +224,29 @@ A texture's `width`, `height` and `depth` give its size, and `bytes` its GPU mem
 
 Textures of one size, one format and one number of mip levels share a 2D texture array on the GPU. Each texture takes one layer of the array. Materials whose maps are in one array share one bind group when they sample their maps the same way. The GPU then switches textures less often between draws.
 
-An array holds at most 256 layers, the most that an iPad allows, and at most 128 MiB. It starts with room for a few textures, at most 8 MiB of them, and doubles its layers when it is full. The GPU copies the old array into the new one, so the textures that it holds keep their texels. For one frame the GPU holds both, so the cap of 128 MiB keeps that extra memory small. When a size has more textures than an array holds, another array holds the rest. When under a quarter of an array's layers hold textures, the array shrinks, and its textures move to its lowest layers. A texture from data with several layers has an array of its own, with exactly its layers. So does a texture in a compressed format, because WebGPU's compatibility mode cannot copy compressed texels into a larger array. A texture in `rgb9e5ufloat` has one too, because WebGL2 cannot copy that format.
+An array holds at most 256 layers, the most that an iPad allows, and at most 128 MiB. When a size has more textures than an array holds, another array holds the rest.
+
+<details>
+<summary>Technical details: how texture arrays grow and shrink</summary>
+
+An array starts with room for a few textures, at most 8 MiB of them, and doubles its layers when it is full. The GPU copies the old array into the new one, so the textures that it holds keep their texels. For one frame the GPU holds both, so the cap of 128 MiB keeps that extra memory small. When under a quarter of an array's layers hold textures, the array shrinks, and its textures move to its lowest layers.
+
+A texture from data with several layers has an array of its own, with exactly its layers. So does a texture in a compressed format, because WebGPU's compatibility mode cannot copy compressed texels into a larger array. A texture in `rgb9e5ufloat` has one too, because WebGL2 cannot copy that format.
+
+</details>
 
 Textures of many different sizes need many arrays. Give the textures of a scene a few common sizes where you can, such as 512 x 512 and 1024 x 1024. An update with an image of another size moves the texture to the array of that size.
 
-WebGL2 promises each shader stage only 16 textures, so on WebGL2 the maps of one standard material share at most six. Maps in one array that sample the same way share one of the six. So a material whose color maps have one size and whose data maps have one size takes two. Each compressed map takes one of its own. Past six, a material draws without the maps that change its look least. It drops its specular intensity map first, then its specular color map, then its light map. A material that lets light through keeps its transmission map in the specular intensity map's place and its thickness map in the specular color map's, so they drop in that same order. A glTF material needs more than six only when its seven maps all differ in size, format or sampling.
+On WebGL2, one standard material samples its maps through at most six texture units. Maps in one array that sample the same way share one unit, and each compressed map takes a unit of its own. A glTF material needs more than six only when its seven maps all differ in size, format or sampling. Past six, the material draws without the maps that change its look least.
+
+<details>
+<summary>Technical details: which maps WebGL2 drops first</summary>
+
+WebGL2 promises each shader stage only 16 textures, so on WebGL2 the maps of one standard material share at most six. A material whose color maps have one size and whose data maps have one size takes two units. Past six, a material draws without the maps that change its look least.
+
+It drops its specular intensity map first, then its specular color map, then its light map. A material that lets light through keeps its transmission map in the specular intensity map's place and its thickness map in the specular color map's, so they drop in that same order.
+
+</details>
 
 A texture can be at most 4096 texels wide and tall, the most that every WebGPU device allows. On a WebGL2 device that allows less, the device's own limit applies: at least 2048 texels. `textures.maxSize` gives the limit, and a larger image throws E1208.
 
@@ -233,7 +254,9 @@ A texture can be at most 4096 texels wide and tall, the most that every WebGPU d
 
 An image decodes off the main thread into an `ImageBitmap`, and then moves to the thread that draws without a copy. In the default pipelined mode, that thread is the render worker. Data goes into the engine's memory, which that thread reads.
 
-The engine spreads uploads over frames, so loading many textures does not make one frame slow. Each frame uploads no more texel bytes than the upload budget, the `uploadBytesPerFrame` setting of the [quality preset](../concepts/quality-presets.md#the-settings-of-each-preset). A large texture goes up in bands of rows, one band per frame. Textures upload in the order that they got their texels. The engine frees its copy of data once the upload is done. Texels from a KTX2 file go into the engine's memory as data does. They go up in bands of rows of blocks, each mip level in turn.
+The engine spreads uploads over frames, so loading many textures does not make one frame slow. Each frame uploads no more texel bytes than the upload budget, the `uploadBytesPerFrame` setting of the [quality preset](../concepts/quality-presets.md#the-settings-of-each-preset). A large texture goes up in bands of rows, one band per frame. Textures upload in the order that they got their texels.
+
+The engine frees its copy of data once the upload is done. Texels from a KTX2 file go into the engine's memory as data does. They go up in bands of rows of blocks, each mip level in turn.
 
 Until its texels are on the GPU, a texture draws as if the material had no map. A material then shows its base color alone.
 
@@ -249,13 +272,25 @@ Each texture has its own sampler settings, from its options:
 - The filter of magnified texels, of minified texels and between mip levels: linear or nearest. It is linear by default.
 - Anisotropic filtering, which keeps a texture sharp on a surface seen at a slant, such as a floor. It reaches at most 16 samples, or the quality preset's cap (`maxAnisotropy`) when that is lower. A nearest filter turns it off. It is off by default.
 
+Materials do not sample cube maps. A cube map can be a background: [Assets](assets.md) loads one with `assets.loadCubemap`.
+
 ## Color spaces
 
 Color maps, such as the base color of a surface, store sRGB colors. The GPU turns their texels into linear values as it samples them, so lighting works in linear color. Data maps, such as normal, roughness and metalness maps, store linear values, which the GPU reads as they are. Choose with the `colorSpace` option. [Color management](../concepts/color-management.md) explains the engine's color spaces.
 
 ## GPU memory
 
-A texture takes the GPU memory of its layers, with every mip level. The mip levels add a third to the image: a texture of 1024 x 1024 texels, at 4 bytes each, takes about 5.3 MiB. An `rgba16float` texel takes 8 bytes. A compressed texel takes 1 byte, or half a byte in `etc2-rgb8unorm`. An `rgb9e5ufloat` texel takes 4 bytes. The same texture from a KTX2 file then takes about 1.3 MiB or 0.7 MiB. An array also holds its free layers. The count in `textures.memoryBytes` holds them too. It also holds an array's old GPU texture after the array grows or shrinks, until the next frame frees it.
+A texture takes the GPU memory of its layers, with every mip level.
+
+| Format | Bytes per texel |
+| --- | --- |
+| `rgba8unorm` | 4 |
+| `rgba16float` | 8 |
+| `rgb9e5ufloat` | 4 |
+| Compressed | 1 |
+| `etc2-rgb8unorm` | 0.5 |
+
+The mip levels add a third to the image: a texture of 1024 x 1024 texels, at 4 bytes each, takes about 5.3 MiB. The same texture from a KTX2 file then takes about 1.3 MiB or 0.7 MiB. An array also holds its free layers. The count in `textures.memoryBytes` holds them too. It also holds an array's old GPU texture after the array grows or shrinks, until the next frame frees it.
 
 The quality preset's texture memory budget, `textureMemoryMiB`, caps the GPU memory of every texture. Past it, the engine drops the largest mip levels of textures from files, and loads them again when room returns. Each texture's `droppedLevels` gives the levels that it lost, from 0 to 3. Its `width` and `height` keep its own size, and its `bytes` give the memory that it takes now. [Quality presets](../concepts/quality-presets.md#texture-memory) explains the order of the drops.
 
@@ -265,7 +300,9 @@ WebGPU and WebGL2 store, upload and sample textures the same way, and make the s
 
 ## When the browser takes the GPU away
 
-When the browser takes the GPU away, the engine starts a new device and uploads the texels that it still holds. A texture from a file loads its file again. On a phone or a tablet the engine also keeps its copy of an image or of data after their upload, so the texture draws with its map again. The `keepTextureCopies` option of `createEngine` turns that on or off on any device ([Page API](engine.md#options)). Keeping the copies costs about one more copy of each image in memory. Where the engine keeps no copy, a texture whose texels it released draws without its map until the texture gets an update.
+When the browser takes the GPU away, the engine starts a new device and uploads the texels that it still holds. A texture from a file loads its file again. On a phone or a tablet the engine also keeps its copy of an image or of data after their upload, so the texture draws with its map again.
+
+The `keepTextureCopies` option of `createEngine` turns that on or off on any device ([Page API](engine.md#options)). Keeping the copies costs about one more copy of each image in memory. Where the engine keeps no copy, a texture whose texels it released draws without its map until the texture gets an update.
 
 ## API reference
 

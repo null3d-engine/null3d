@@ -84,8 +84,7 @@ const wedge = geometry.fromArrays(extrude({ shapes: outline, depth: 0.4, bevelEn
 The [geometry docs page](https://github.com/null3d-engine/null3d/blob/generated/docs/api/geometry.md#extra-shapes)
 shows the package beside the engine's own generators. Its
 [API reference](https://github.com/null3d-engine/null3d/blob/generated/docs/api/reference/geometry.md)
-lists every option and its default. The API is experimental, so it can still change between
-versions.
+lists every option and its default.
 
 ## License
 

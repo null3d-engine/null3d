@@ -588,7 +588,7 @@ const STAGE_HEADER = 4;
 
 /** One band of a tree of cluster patches, as a stage file holds it. */
 export interface StageBand {
-	/** Each patch's bounding sphere: its centre, then its radius. */
+	/** Each patch's bounding sphere: its center, then its radius. */
 	bounds: Float32Array;
 	/** Each patch's first index, count, parent's place plus one, and error's bits. */
 	records: Uint32Array;

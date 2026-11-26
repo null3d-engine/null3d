@@ -1257,18 +1257,20 @@ jobs:
     # the five full runs it was tuned from, against 25.6 for the weights before them. No weights
     # can go below the longest group alone: a test group stays whole in one shard and runs in
     # order, and that group sets the floor under the slowest shard.
-    # A slow machine runs the tests twice as slowly but pays the setup once, so the room a shard
-    # needs is 26 minutes; the limit rounds that up rather than doubling the setup as well. It is
-    # room for a slow machine, not for a hang.
+    # A slow machine runs the tests twice as slowly but pays the setup once, so a shard needs
+    # about 26 minutes of room. The limit keeps headroom above that and above the observed
+    # outliers: in run 45801609473 shards 31 and 34 took 26m21s and 24m09s, and shard 29 was
+    # cancelled at the 27-minute cap, as in main's run 45793390771; main's run 45779576200
+    # finished shard 29 at 26m54s. The room is for a slow machine, not for a hang.
     # The model reads low. The weights before these modelled their slowest shard at 25.6 minutes,
     # and that shard spent the whole room and was cancelled at 27.9. If that gap moves again, the
     # model's absolute reading is what to revisit, not the split. In run 39306888159 a shard
     # modelled at 11 minutes ran 71 of its 74 tests in 19.6.
     # A run asked for its drawings writes every picture it draws, which the weights do not model,
     # and the drawings that a late test draws matter most: a shard that ends at its limit before
-    # them has drawn nothing. So a drawing run takes the same room again, and an ordinary run keeps
-    # the tighter limit that ends a hang early.
-    timeout-minutes: ${{ inputs['drawn-images'] && 40 || 27 }}
+    # them has drawn nothing. So a drawing run takes more room, and an ordinary run keeps the
+    # tighter limit that ends a hang early.
+    timeout-minutes: ${{ inputs['drawn-images'] && 40 || 35 }}
     strategy:
       fail-fast: false
       matrix:

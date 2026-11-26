@@ -1,14 +1,10 @@
 ---
 id: porting/threejs-loop-and-threads
 title: The render loop, threads and the DOM
-status: experimental
-since: "0.3"
 summary: "What moves to the sketch worker; what stays on the page; messages."
 ---
 
 # The render loop, threads and the DOM
-
-> Roadmap step 0.3, first released in null3D 0.1.0. The API is experimental, so it can still change between versions.
 
 ```mermaid
 flowchart LR
@@ -225,5 +221,5 @@ A page without cross-origin isolation also runs the sketch on the main thread, i
 - [Architecture: threads and the frame](../concepts/architecture.md)
 - [Messages between sketch and page](../api/page.md)
 - [Sketch API](../api/sketch.md)
-- [UI, HTML overlays and labels](../guides/ui-overlays.md)
+- [HTML UI around the scene](../guides/ui-overlays.md)
 - [Porting React Three Fiber](react-three-fiber.md)

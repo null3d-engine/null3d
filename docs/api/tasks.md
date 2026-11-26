@@ -1,47 +1,56 @@
 ---
 id: api/tasks
 title: Tasks on the job workers
-status: experimental
-since: "0.3"
 summary: "runTask: an add-on's code and WebAssembly on the job workers; shared memory; ordering with the frames; failures."
 ---
 
 # Tasks on the job workers
 
-> Roadmap step 0.3, first released in null3D 0.1.0. The API is experimental, so it can still change between versions.
-
-An add-on can move heavy work off the thread that runs the sketch, and onto the engine's job workers. `runTask` runs a task there while the frames continue. An add-on that chooses what to draw, or in what order, from many objects uses this hook: the Gaussian splats add-on chooses each chunk's prefix there, nearest first. The engine's transparent pass then sorts the chosen rows on the job workers, as it does for every blended draw, so an add-on does not sort its drawn rows through a task.
+An add-on can move heavy work off the thread that runs the sketch, and onto the engine's job workers. `runTask` runs a task there while the frames continue.
 
 A task is an object with three parts: a name, the address of the module that runs, and the WebAssembly files that the module uses. The module exports `run`, and the worker calls it for each task. The answer travels back to the thread that called `runTask`.
 
 ```ts
 import { runTask, type Task } from '@null3d/engine';
 
-export const SORT_TASK: Task = {
-  name: 'splat-sort',
-  script: new URL('./sort-task.ts', import.meta.url),
+export const SELECT_TASK: Task = {
+  name: 'splats-select',
+  script: new URL('./select-task.ts', import.meta.url),
   wasm: [
-    { name: 'splat', url: new URL('./splat.wasm', import.meta.url), what: 'the splat sorter' },
+    { name: 'splats', url: new URL('./splats.wasm', import.meta.url), what: 'the splat selector' },
   ],
 };
 
-export async function sortRound(view: Int32Array): Promise<number[]> {
-  const answer = await runTask<{ order: number[] }>(SORT_TASK, { view });
-  return answer.order;
+export async function selectChunks(view: Int32Array): Promise<number[]> {
+  const answer = await runTask<{ chosen: number[] }>(SELECT_TASK, { view });
+  return answer.chosen;
 }
 ```
+
+The Gaussian splats add-on uses a task like this to choose each chunk's splats, nearest first. The engine's transparent pass sorts the chosen rows itself, as it does for every blended draw, so a task chooses rows but does not sort them for drawing.
 
 The module that the task's address names looks like this:
 
 ```ts
 export function run(input, wasm) {
-  const module = wasm('splat'); // the compiled WebAssembly module, by the name the task gives it
-  const sorter = startSorter(module); // the add-on's own start of its WebAssembly
-  const order = sorter.sort(input.view); // reads the caller's shared buffer
-  // ... write the order into the shared buffer ...
-  return { output: { order } };
+  const module = wasm('splats'); // the compiled WebAssembly module, by the name the task gives it
+  const selector = startSelector(module); // the add-on's own start of its WebAssembly
+  const chosen = selector.select(input.view); // reads the caller's shared buffer
+  // ... write the chosen chunks into the shared buffer ...
+  return { output: { chosen } };
 }
 ```
+
+`run` returns an object with the answer in `output`, and the promise of `runTask` resolves with that `output`. A `run` that returns its answer directly resolves the promise with `undefined`.
+
+<details>
+<summary>Technical details: what can pass to a worker, and moving buffers</summary>
+
+A task's input and output must pass to another worker: numbers, strings, plain objects and arrays, typed arrays, `ArrayBuffer`s and `SharedArrayBuffer`s.
+
+The engine copies an `ArrayBuffer` by default. To move one instead of copying it, name it in a transfer list. `run` can return `{ output, transfer: [buffer] }` to move a buffer back to the caller. `runTask(task, input, [buffer])` moves a buffer of the input to the worker. A moved buffer is empty on the side that sent it.
+
+</details>
 
 The engine imports the module once in each worker that runs the task, so the module keeps its state between tasks. Each WebAssembly file compiles once per page, and the engine sends the compiled module to the workers.
 
@@ -60,16 +69,16 @@ Throw a `TaskLoadError` when the module's code or WebAssembly cannot start. The 
 
 ## Shared memory
 
-A per-frame sort copies no data when its input and output live in one `SharedArrayBuffer`. The engine posts the buffer to the worker without copying it, and the task writes the result into it.
+A per-frame task copies no data when its input and output live in one `SharedArrayBuffer`. The engine posts the buffer to the worker without copying it, and the task writes the result into it.
 
 ```ts
 const shared = new SharedArrayBuffer(4 * (1 + count * 2));
 const view = new Int32Array(shared);
-// view[0] holds the count, view[1] to view[count] the values, and the task writes the sorted
-// values after them.
+// view[0] holds the count, view[1] to view[count] the values, and the task writes the chosen
+// indices after them.
 Atomics.store(view, 0, count);
-const answer = await runTask(SORT_TASK, { view });
-const sorted = view.subarray(count + 1, count + 1 + count);
+const answer = await runTask(SELECT_TASK, { view });
+const chosen = view.subarray(count + 1, count + 1 + count);
 ```
 
 While a task runs, both threads read the shared memory. Order the writes that both threads read with `Atomics`. Once the promise resolves, the worker has stopped writing, and the sketch reads the buffer as it stands.

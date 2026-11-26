@@ -1,14 +1,10 @@
 ---
 id: api/ui
-title: UI overlays and labels
-status: experimental
-since: "0.2"
+title: Labels that follow objects
 summary: "ui.trackLabel in the sketch; engine.labels.bind on the page."
 ---
 
-# UI overlays and labels
-
-> Roadmap step 0.2, first released in null3D 0.1.0. The API is experimental, so it can still change between versions.
+# Labels that follow objects
 
 A label is an HTML element that follows a scene object, such as a name tag or a health bar above a unit. The sketch tracks a label on an object under an id, and the page binds an element to the same id. The engine then moves the element over the object in every frame on screen. No message goes between the sketch and the page per frame.
 
@@ -78,7 +74,14 @@ The engine holds 4,096 labels at once by default, and 256 labels that are planes
 
 `engine.labels.bind(id, element)` binds an element to the label with the same id. The sketch can track the label before or after the bind. The element stays hidden until the label's first frame reaches the screen. The code that moves the elements downloads with the first bind, so a page without labels never downloads it.
 
-The engine places the element's center over the label, through its CSS `transform`. It also sets the element's `position` to `absolute` at the top left of its container. So put the elements in a container that covers the canvas exactly, as the example above does. Give the container `pointer-events: none`, so the canvas still gets the pointer. The elements of labels flat on the screen stack in the order of the page, whatever their distance to the camera. The engine owns the element's `transform`. To anchor another point of the element on the label, offset the content inside the element with CSS.
+The engine places the element's center over the label through its CSS `transform`, and sets its `position` to `absolute` at the top left of its container. So:
+
+- Put the elements in a container that covers the canvas exactly, as the example above does.
+- Give the container `pointer-events: none`, so the canvas still gets the pointer.
+- Do not set the element's `transform`: the engine owns it.
+- To anchor another point of the element on the label, offset the content inside the element with CSS.
+
+The elements of labels flat on the screen stack in the order of the page, whatever their distance to the camera.
 
 The engine sets `visibility: hidden` on the element while:
 
@@ -114,15 +117,20 @@ What the page does for such a label:
 
 ## Which frame the labels follow
 
-The engine draws a frame on one thread while the sketch computes the next one on another. A label placed from the sketch's current camera would run ahead of the image during a fast camera move.
+The engine draws a frame on one thread while the sketch computes the next one on another. A label placed from the sketch's current camera would run ahead of the image during a fast camera move. So the sketch places every label with the camera of each frame, as part of the frame's work.
 
-So the sketch places every label with the camera of each frame, as part of the frame's work. The thread that draws keeps the places of the frame it shows, and the page moves the elements to them. Each element therefore sits over its object in the frame on screen, in every thread mode. Where the page itself draws, it moves the elements right after it draws each frame, in the same update of the page.
+The thread that draws keeps the places of the frame it shows, and the page moves the elements to them. Each element therefore sits over its object in the frame on screen, in every thread mode. Where the page itself draws, it moves the elements right after it draws each frame, in the same update of the page.
+
+<details>
+<summary>Technical details: how labels stay in step with the frame</summary>
 
 The page writes a screen label's element only when the label moved by half a CSS pixel or more, or when it shows or hides. It writes a 3D element's transform only when its matrix changed. It reads every label before it writes any style, so the browser runs no layout between them. While no element is bound, the labels cost the page nothing.
 
+</details>
+
 ## Related pages
 
-- [UI, HTML overlays and labels](../guides/ui-overlays.md): HTML UI around the canvas, and labels in a full app.
+- [HTML UI around the scene](../guides/ui-overlays.md): HTML UI around the canvas, and labels in a full app.
 - [Cameras](cameras.md): `worldToScreen` places a single point on the canvas.
 - [Engine](engine.md): `createEngine` and its label options.
 - [Sketch](sketch.md): the sketch's context, which holds `ui`.

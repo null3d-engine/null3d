@@ -1,14 +1,10 @@
 ---
 id: porting/threejs-shaders
 title: "Porting shaders: GLSL, onBeforeCompile and TSL"
-status: experimental
-since: "0.3"
 summary: "GLSL to WGSL; three.js built-ins to engine built-ins; worked examples."
 ---
 
 # Porting shaders: GLSL, onBeforeCompile and TSL
-
-> Roadmap step 0.3, first released in null3D 0.1.0. The API is experimental, so it can still change between versions.
 
 ```mermaid
 flowchart LR
@@ -17,7 +13,8 @@ flowchart LR
     tsl["TSL or<br/>node material"] --> pick
     pick -- "changes a lit surface" --> surface["Surface function"]
     pick -- "moves vertices" --> offset["vertexOffset"]
-    pick -- "replaces the lighting" --> full["Full shader"]
+    pick -- "changes each light's response" --> lobe["Lobe function"]
+    pick -- "draws its own fixed light" --> full["Full shader"]
     pick -- "full-screen pass" --> effect["post.addEffect"]
 ```
 
@@ -32,7 +29,8 @@ A custom material takes its WGSL in one `wgsl` option, as a template literal tag
 | Changes the color, roughness, emission or alpha of a lit surface | A surface function |
 | Moves vertices | `vertexOffset`, with a surface function where needed |
 | Ignores the lights, such as a hologram or a fresnel glow | An unlit function, `fn unlit(input: SurfaceInput) -> vec4f`, which returns the color and the opacity with no lighting ([Unlit surfaces](../shaders/surface-functions.md#unlit-surfaces)) |
-| Replaces three.js's lighting | A full shader with the `null3d::lighting` helpers |
+| Adds a specular lobe for each light, such as a rim or a banded highlight | A lobe function, `fn lobe(input: LobeInput) -> vec3f`, called for the main directional light and each point and spot light. It adds to that light's specular, and the base lighting stays, so a toon look sets `s.baseColor` to black and `s.roughness` to 1 ([A material's own lobe](../shaders/surface-functions.md#a-materials-own-lobe), [toon recipe](threejs-materials.md)) |
+| Lights the surface its own way with fixed lights | A full shader with the `null3d::lighting` helpers. It gets no scene lights and no uniforms, so its light directions and colors are constants in the WGSL |
 | Is a full-screen pass | `post.addEffect`, or `render.addPass({ kind: 'fullscreen' })` when it writes a target of its own ([Porting post-processing](threejs-postprocessing.md)) |
 | Draws into a texture for another material | A scene pass of `render.addPass` |
 
@@ -62,7 +60,7 @@ A surface function keeps instancing, skinning, shadows, fog and both GPU paths. 
 | `lessThan(a, b)` | `a < b`, which gives a vector of bools |
 | `mix`, `step`, `smoothstep`, `clamp`, `fract`, `pow`, `dot`, `cross`, `normalize`, `reflect` | The same names |
 | `c ? a : b` | `select(b, a, c)`, with the false value first and the condition last |
-| `v.xy = w;` | `v = vec3f(w, v.z);`. Only Chrome allows assignment to a swizzle. |
+| `v.xy = w;` | `v = vec3f(w, v.z);`. The null3D build rejects an assignment to a swizzle ([WGSL rules](../shaders/wgsl-rules.md#language-features)). |
 | `discard;` | `discard;` |
 | `gl_FrontFacing` | `input.frontFacing` |
 | `gl_FragCoord` | `input.fragCoord`, from the top left (see [Conventions](#conventions)) |
@@ -94,7 +92,7 @@ The engine gives each surface function and vertex offset the values that three.j
 | A `time` uniform that the app updates | `frame.time` |
 | The fog, tone mapping and color space chunks | Nothing: the engine adds fog after the surface function, and the final pass tone maps and encodes once. |
 | The `<common>` and `<packing>` helpers | `null3d::math`, `null3d::depth` |
-| The lighting chunks and light uniforms | The engine lights a surface function. A full shader imports `null3d::lighting`. |
+| The lighting chunks and light uniforms | The engine lights a surface function. A lobe function reads each main, point and spot light. |
 
 The engine works relative to the camera, so positions stay precise far from the origin. That is why `object.worldMatrix` and `camera.view` hold no camera translation.
 
@@ -118,7 +116,7 @@ The engine works relative to the camera, so positions stay precise far from the 
 
 A `RawShaderMaterial` adds nothing by itself, so every matrix and attribute is in its source. The same steps apply.
 
-Uniforms take `f32`, `i32`, `u32`, `vec2f`, `vec3f` and `vec4f`, up to 32 numbers in all, less one for each texture. Pass a matrix as `vec4f` rows. Keep more numbers in a data texture from `textures.fromData`, and read them with `textureLoad`. Rename a uniform called `color`, `roughness` or another standard value, because those names belong to the material.
+Uniforms take `f32`, `i32`, `u32`, `vec2f`, `vec3f` and `vec4f`, in 32 numbers less one for each texture. Each `vec3f` and `vec4f` starts a group of four, so a matrix passed as four `vec4f` values takes 16. three.js's `elements` array and the engine both store a matrix by column, so pass its four columns. Keep more numbers in a data texture from `textures.fromData`, and read them with `textureLoad`. Rename a uniform called `color`, `roughness` or another standard value, because those names belong to the material.
 
 ## onBeforeCompile patches
 
@@ -130,7 +128,7 @@ Uniforms take `f32`, `i32`, `u32`, `vec2f`, `vec3f` and `vec4f`, up to 32 number
 | Adds glow in `<emissivemap_fragment>` | `s.emissive` |
 | Adds `discard`, for a dissolve or a cut-out | `alphaMode: 'mask'` and `s.alpha` |
 | Adds a varying such as a world position | `input.worldPosition` |
-| Replaces a lighting chunk | A full shader with `null3d::lighting` |
+| Replaces a lighting chunk | A lobe function, beside the base lighting; a full shader only when its lights can be fixed in the WGSL |
 | Keeps `shader.uniforms` to update them later | `material.set({ ... })`, or `frame.time` for time |
 
 Keep the original material's standard values on the new material. `materials.shader` takes every `materials.standard` option but the texture maps, and `defaultSurface()` starts from them. The original's maps become textures of the WGSL, which the surface function samples.
@@ -288,13 +286,13 @@ const dissolve = materials.shader({
 
 - A `textureSample` inside a branch that differs between pixels breaks a WGSL rule that GLSL does not have. Chrome refuses such a shader. Sample before the branch, or use `textureSampleLevel`.
 - `%` is not `mod`: negative inputs give other results.
-- WGSL has no assignment to a swizzle in most browsers. Write the whole vector.
+- The build rejects an assignment to a swizzle. Write the whole vector.
 - Flip y for `gl_FragCoord` and for full-screen coordinates.
 - Replace three.js's depth formulas with the `null3d::depth` helpers.
 - Convert raw sRGB constants from a `ShaderMaterial` to linear.
 - three.js's `normalMatrix` works in view space, and null3D's normals are in world space.
 - WGSL does not mix `f32` and `i32` in arithmetic, so convert explicitly.
-- A surface function shares its file with the engine's template. Rename GLSL helpers whose names clash with it, such as `frame`, `camera`, `object`, `material`, `shade` or `finish` ([WGSL rules](../shaders/wgsl-rules.md)).
+- A surface function shares its file with the engine's template. Rename GLSL helpers whose names clash with it, such as `frame`, `camera`, `object`, `material`, `shade` or `fs` ([Rules](../shaders/surface-functions.md#rules) lists every name).
 - Test on WebGL2 with `?gpu=webgl2`. The translated GLSL can meet limits that the WGSL did not.
 
 ## Related pages

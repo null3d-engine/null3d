@@ -1,5 +1,5 @@
 // The files of a baked impostor atlas, which `bunx @null3d/cli assets impostor` writes from a model:
-// a JSON file that describes the bake, and two PNG images that hold its colour and surface atlases.
+// a JSON file that describes the bake, and two PNG images that hold its color and surface atlases.
 // The command and `loadImpostorAtlas` share this module, so the writer and the reader agree on one
 // format. The module imports nothing from the engine, so the command runs it in Node.
 //
@@ -34,7 +34,7 @@ export interface ImpostorAtlasFile {
 	readonly atlas: OctahedralAtlas;
 	/** The texels on each side of a cell. */
 	readonly texels: number;
-	/** The colour atlas's PNG file, next to this file: sRGB colour, with the coverage in alpha. */
+	/** The color atlas's PNG file, next to this file: sRGB color, with the coverage in alpha. */
 	readonly color: string;
 	/** The surface atlas's PNG file, next to this file: linear normals, depth and coverage. */
 	readonly surface: string;

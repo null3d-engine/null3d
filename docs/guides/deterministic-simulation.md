@@ -1,14 +1,10 @@
 ---
 id: guides/deterministic-simulation
 title: Using null3D with a deterministic simulation
-status: experimental
-since: "0.3"
 summary: "The maths entry a simulation may import; createMath with an exact math library; input, picking and physics that decide a result stay out of the sketch; createEngine's input option; a camera that the player aims from recorded input; a production build of a game's engine files."
 ---
 
 # Using null3D with a deterministic simulation
-
-> Roadmap step 0.3, first released in null3D 0.1.0. The API is experimental, so it can still change between versions.
 
 ```mermaid
 flowchart LR
@@ -53,7 +49,14 @@ export function stepShip(position: number[], heading: number[], thrust: number):
 }
 ```
 
-Never import `@null3d/engine` itself in simulation code. Bun 1.4.3 bundles six helpers from it into 9,133 bytes, against 1,202 bytes from the sub-paths. The rest is engine code that the simulation never calls, with a top-level `FinalizationRegistry`, which a replaying engine's scan refuses. A bundler that keeps each re-exported namespace whole brings far more. Bun 1.3.11 does, and its bundle of the same six takes 87,857 bytes, with `Atomics`, `document`, `navigator`, `requestAnimationFrame`, and helpers that call `Math.sin`, `Math.cos`, `Math.acos`, `Math.exp` and `Math.random`.
+Never import `@null3d/engine` itself in simulation code. A bundler that drops unused code still keeps engine code that runs at load, such as a `FinalizationRegistry`. A replay that checks the simulation's bundle for page-only APIs refuses it. A bundler that keeps whole namespaces also brings page APIs, and helpers that call `Math.sin` and `Math.random`.
+
+<details>
+<summary>Technical details: measured bundle sizes</summary>
+
+Bun 1.4.3 bundles six helpers from the full entry into 9,133 bytes, against 1,202 bytes from the sub-paths. Bun 1.3.11, which keeps whole re-exported namespaces, takes 87,857 bytes for the same six, with `Atomics`, `document`, `navigator`, `requestAnimationFrame`, and helpers that call `Math.sin`, `Math.cos`, `Math.acos`, `Math.exp` and `Math.random`.
+
+</details>
 
 The maths entry leaves out four groups:
 
@@ -64,7 +67,7 @@ The maths entry leaves out four groups:
 
 ## Angles and exponentials: createMath
 
-`createMath({ sin, cos, acos, exp })` returns the eight helpers that the maths entry leaves out, built on the four functions that you pass. Pass an exact math library's functions, which give the same bits on every JavaScript engine. clockwork2's `dmath` is one:
+`createMath({ sin, cos, acos, exp })` returns the eight helpers that the maths entry leaves out, built on the four functions that you pass. Pass an exact math library's functions, which give the same bits on every JavaScript engine. The `dmath` entry of the [@clockwork2/engine](https://www.npmjs.com/package/@clockwork2/engine) package is one, and the [deterministic simulation demo](https://github.com/null3d-engine/null3d/tree/main/examples/replay) uses it:
 
 ```ts
 // sim/turn.ts: simulation code
@@ -107,7 +110,7 @@ The sketch still draws with the main entry's helpers, which use the browser's `M
 
 ## Input that another library records
 
-`createEngine({ input: false })` keeps the engine from listening for input. The engine then adds no listener that takes input: none for pointers, keys, the wheel, focus, the pointer lock or gamepads. It captures no pointer on the canvas, and leaves the canvas's context menu to the browser. It keeps its listeners that take no input, such as the `visibilitychange` that keeps a hidden page's time out of the sketch's steps. [Input off](../api/input.md#input-off) lists them. The library that records the player's input listens alone.
+`createEngine({ input: false })` keeps the engine from listening for input. The engine then adds no listener that takes input: none for pointers, keys, the wheel, focus, the pointer lock or gamepads. [Input off](../api/input.md#input-off) lists them. The library that records the player's input listens alone.
 
 ```ts
 // page.ts
@@ -163,7 +166,9 @@ export function step(state: State, counts: number): void {
 
 ## Sending the state to the sketch
 
-The page sends the simulation's state with `engine.postToSketch`. The sketch takes it with `page.onMessage`, as [Messages between the page and the sketch](../api/page.md) shows, and draws it in `onUpdate`. Send only the numbers that the sketch draws, in a small typed array. Send a new array each time: a sketch on the page's thread gets the very array that the page sent. When the sketch runs in a worker, the browser copies each message's data.
+The page sends the simulation's state with `engine.postToSketch`. The sketch takes it with `page.onMessage`, as [Messages between the page and the sketch](../api/page.md) shows, and draws it in `onUpdate`.
+
+Send only the numbers that the sketch draws, in a small typed array. Send a new array each time: a sketch on the page's thread gets the very array that the page sent. When the sketch runs in a worker, the browser copies each message's data.
 
 Until the first state arrives, as in a held frame, the sketch can draw the run's start. It imports the simulation's start function and builds the first state from the same seed, and it never steps the state.
 
@@ -215,7 +220,7 @@ The shader modules decide most of the folder's size. Copy only the builds of the
 2. Record the words from a run of the game's page, as [Build only the shader permutations you draw with](assets-pipeline.md#build-only-the-shader-permutations-you-draw-with) shows. The game's engine starts on a click, so name its page with `--live` and give the recorder the start control. Serve the game with its development folder, and give the recorder its address: `bunx @null3d/cli shaders record --base http://localhost:8080 --live /game.html --click "#play"`.
 3. Name the list in the engine folder's config, as `null3d({ shaders: { list: 'shader-permutations.txt' } })`, and build the folder in production again. The build copies only the listed builds, from the release asset, and compiles nothing.
 
-With null3D 0.1.0's shader set, a small scene drew with 6 words. Its build copied 218 shader files and 17 MB, against 7,597 files and 4,115 MB without a list.
+With null3D 0.1.0's shader set, a small scene drew with 6 words. Its build copied 218 shader files and 17 MB, against 7,597 files and 4,115 MB without a list. Build the set again after each engine upgrade.
 
 The shader modules in a release asset are the full set. A game that builds against that asset without a list copies every module into its files folder. The build then warns with the size that it copied. That can exceed the folder's file and byte limits. Record again after the game gains a feature that turns on a new word. The engine names a word that the list lacks the first time a pipeline needs it.
 

@@ -36,7 +36,7 @@ export interface ImpostorContext {
  * @category api/impostors
  */
 export interface ImpostorOptions {
-	/** The colour of every view, in sRGB: one cell per view, in the cells of `atlas`. */
+	/** The color of every view, in sRGB: one cell per view, in the cells of `atlas`. */
 	readonly color: Texture;
 	/**
 	 * The surface of every view, in the same cells as `color`: red and green hold the octahedral
@@ -164,8 +164,10 @@ const QUAD: MeshArrays = {
 /**
  * Makes a batch of impostor cards: one card per position, drawn from the three atlas views nearest
  * the direction from the card toward the eye, and lit by the scene's lights. The cards need no
- * `update` call: the material reads the eye from the frame's camera. A card's turn, in `turn`,
- * turns its views and its light by the same angle about the world's up, so a turned tree hands
+ * `update` call: the material reads the eye from the frame's camera.
+ *
+ * A card's turn, in `turn`, turns its views and its light by the same angle about the world's up,
+ * so a turned tree hands
  * over to a card whose crown matches it. A batch that casts the sun's shadow cuts that shadow to
  * the crown's shape, and a batch that receives shadows reads them at the surface that it shows.
  *

@@ -1,14 +1,10 @@
 ---
 id: api/splats
 title: Gaussian splats (@null3d/splats)
-status: experimental
-since: "0.3"
 summary: "createSplats: SPZ files, streamed chunk files and KHR_gaussian_splatting models drawn as Gaussian splats, with detail levels, a budget that follows the preset and the GPU path, and a soft mix with meshes."
 ---
 
 # Gaussian splats
-
-> Roadmap step 0.3, first released in null3D 0.1.0. The API is experimental, so it can still change between versions.
 
 ```mermaid
 flowchart LR
@@ -37,6 +33,12 @@ The add-on reads three kinds of file:
   has downloaded.
 - **glTF** models that carry `KHR_gaussian_splatting`. Importing the add-on registers the reader for
   every sketch of the thread, so `assets.loadGltf` loads such a model with no other call.
+
+The package is an add-on. Install it beside the engine.
+
+```sh
+bun add @null3d/splats
+```
 
 ```ts
 import { defineSketch } from '@null3d/engine';
@@ -80,7 +82,9 @@ so the engine plans no levels for it.
 A splat's shader computes the covariance that its spreads and rotation make, projects it to the
 screen once for each corner of its card, and spans a camera-facing card along the ellipse's own
 axes. All three of the splat's spreads add to that ellipse, so a flat splat seen edge on still gets
-a card that covers it. A pixel's place on the card is its distance from the center in standard
+a card that covers it.
+
+A pixel's place on the card is its distance from the center in standard
 deviations, so a fragment fades by it with no math of its own, and the card is a Gaussian, not a
 disc. A pixel too faint to show is dropped before it blends.
 
@@ -103,6 +107,7 @@ writes only the rows that its budget keeps.
 cover the most surface: a splat's opacity times the area of its largest cross-section. A prefix of
 a chunk is a coarser level of it: all of it, a half, a quarter and an eighth. As a chunk is built,
 the add-on measures how much of the chunk's surface each prefix covers, seen from three directions.
+
 A prefix grows the splats that it keeps by what it leaves uncovered, up to three times. So a scan's
 ground of small flat splats draws as the same surface with fewer, larger splats rather than a
 sparse one, and a dense cloud whose splats overlap barely grows.
@@ -111,17 +116,19 @@ sparse one, and a dense cloud whose splats overlap barely grows.
 chunk draws. Every chunk the budget reaches keeps an eighth of itself first. The budget then
 gives the nearest chunks a finer prefix, up to the level that their distance asks for. A chunk's
 level follows its distance measured in the radius of the whole cloud, so a finer cut does not thin
-the view. A budget too small for every level then thins the whole cloud. A chunk nearer the camera
+the view. A budget too small for every level then thins the whole cloud.
+
+A chunk nearer the camera
 still keeps more of its splats than a far one. The budget stops the total. The selection and its
 distance sort run in the add-on's Rust module on the job worker, so a large scene costs the
-sketch's thread nothing. A change of the camera or of the budget starts a new selection. The core
+sketch's thread nothing.
+
+A change of the camera or of the budget starts a new selection. The core
 then packs the chosen rows into the batch in its own memory, so a moved frame copies no rows
 through the sketch's heap.
 
 `createSplats` starts the selection's task and the SPZ reader as it starts, beside the download of
-the index or the file. So the first selection and the first chunk's decode wait for neither. In the
-splat demo, on a simulated phone connection, the reader arrived at 4.4 seconds instead of 7.9. The
-first parts showed at 7.0 seconds instead of 8.3.
+the index or the file. So the first selection and the first chunk's decode wait for neither download. In the splats demo on a simulated phone connection, the SPZ reader is ready at about 4.4 seconds and the first parts show at about 7 seconds.
 
 The budget follows the quality preset. On each preset the add-on draws at most:
 
@@ -139,7 +146,7 @@ preset's value, and `capacity` sets the rows that the batch holds.
 
 The batch allocates its rows when `createSplats` runs, from the preset in use then. A move to a
 higher preset after that draws no more splats, while a move to a lower one draws fewer. A scene
-that offers the Quality control at run time passes `capacity` for the highest preset it may reach,
+that offers a quality menu at run time passes `capacity` for the highest preset it may reach,
 and pays that memory on every preset.
 
 A splat's color is the light recorded with it, so the scene's lights do not relight a cloud. Splats
@@ -149,7 +156,9 @@ A whole file appears as its chunks are cut: the first chunks draw while the rest
 large file never holds up a frame. `ready` resolves when every chunk of a file is ready. For a
 stream, it resolves once the nearest chunks have arrived, which takes about a megabyte of files, or
 the nearest chunk alone: the first view draws from those, and the cloud fills in as the rest
-arrive. Call `update` once before you await it. `settle()` resolves once the chosen splats are
+arrive.
+
+Call `update` once before you await it. `settle()` resolves once the chosen splats are
 packed, and for a stream once the chunks that they need have arrived, which a still picture waits
 for.
 
@@ -209,8 +218,21 @@ total size and `splats.loadedBytes` gives the part that has arrived.
 | `checkSplats(data, what)` | The same `data`, once its arrays hold the number of splats that it names. Otherwise it throws E2101, whose message names `what` |
 | `SPLAT_EXTENSION` | The name of the glTF extension that the add-on reads, `'KHR_gaussian_splatting'` |
 
-`Splats` gives `update(eye)`, `setBudget(count)`, `settle()`, `ready`, `total`, `drawn`, `chunks`,
-`loaded`, `failed`, `bytes`, `loadedBytes`, `feature` and `draw`, and `destroy()` frees it.
+`update(eye)` chooses the splats that draw from the camera's position, and `setBudget(count)` caps the splats that draw below the preset's count. The other members are:
+
+| Member | What it does |
+| --- | --- |
+| `update(eye)` | Chooses the splats that draw from the camera's position. Call it once a frame |
+| `setBudget(count)` | Caps the splats that draw below the preset's count |
+| `ready` | Resolves when the cloud can draw its first view |
+| `settle()` | Resolves once the chosen splats are packed and their chunks have arrived |
+| `total`, `drawn` | The splats that the cloud holds, and the splats that draw now |
+| `chunks`, `loaded`, `failed` | The cloud's chunks, the ones that have loaded, and the ones that stayed unreachable |
+| `bytes`, `loadedBytes` | The cloud's total size, and the part that has arrived |
+| `feature`, `draw` | The add-on feature, whose settings, budget and figures the engine resolves, and the draw, whose batch rows are the splats that draw |
+| `destroy()` | Frees the cloud |
+
+The [API reference](reference/splats.md#splats) gives each member's type.
 
 ## Costs and limits
 
@@ -224,7 +246,7 @@ total size and `splats.loadedBytes` gives the part that has arrived.
 - A glTF model's splats draw in the file's order inside each part. For a large cloud, use an SPZ
   file or a splat stream, whose rows the engine sorts one by one.
 - A splat casts no shadow and receives none.
-- The cards need the scene's depth copy, which a material that reads the scene's depth makes. It
+- The cards need the scene's depth copy, which the splat cards' material makes. It
   costs one full-screen pass and one texture of four bytes for each pixel.
 - A stream spends one request for each chunk that the view needs. Keep the chunks large enough that
   the requests do not dominate, and small enough that the first view arrives quickly: before that

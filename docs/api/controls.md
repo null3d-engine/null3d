@@ -1,14 +1,10 @@
 ---
 id: api/controls
 title: "Controls (@null3d/controls)"
-status: experimental
-since: "0.1"
 summary: "Orbit and map controls; fly and first-person controls, with pointer lock; drag, rotate and scale gizmos."
 ---
 
 # Controls (@null3d/controls)
-
-> Roadmap step 0.1, first released in null3D 0.1.0. The API is experimental, so it can still change between versions.
 
 ```mermaid
 flowchart LR
@@ -18,7 +14,16 @@ flowchart LR
     update --> gizmo["A held handle moves,<br/>turns or scales an object"]
 ```
 
-The `@null3d/controls` package moves a camera with the mouse, the wheel, a trackpad, touch and the keyboard, and it moves, turns and scales scene objects with gizmos. Orbit controls turn the camera around a target point, as in a model viewer. Map controls pan over the ground, as in a map or a strategy game. [Fly controls](#fly-controls) move the camera in all directions, as in a flight game. [First-person controls](#first-person-controls) walk it over the ground and look around, as in a first-person game. [Gizmos](#gizmos) draw handles on an object that the user drags, as an editor does.
+The `@null3d/controls` package moves a camera with the mouse, the wheel, a trackpad, touch and the keyboard, and it moves, turns and scales scene objects with gizmos.
+
+| Controls | Call | Moves like |
+| --- | --- | --- |
+| Orbit | `createOrbitControls` | A model viewer: the camera turns around a target point |
+| Map | `createMapControls` | A map or a strategy game: the camera pans over the ground |
+| [Fly](#fly-controls) | `createFlyControls` | A flight game: the camera moves in every direction |
+| [First-person](#first-person-controls) | `createFirstPersonControls` | A first-person game: the camera walks over the ground and looks around |
+| [Gizmos](#gizmos) | `createTransformControls` | An editor: handles move, turn or scale an object |
+| [Drag](#drag-controls) | `createDragControls` | Drags objects over a plane that faces the camera |
 
 The controls run in the sketch, where the camera is. They add no DOM listeners: `controls.update(dt)` reads [`ctx.input`](input.md) once per frame and moves the camera, or the object that a gizmo holds.
 
@@ -103,7 +108,7 @@ Each option is also a property of the controls, with the same name. A sketch can
 
 Call `controls.update(dt)` once per frame in `onUpdate`, with the step that `onUpdate` receives. It returns true when the camera or the target moved.
 
-- `update` allocates nothing. `tests/image/controls.spec.ts` checks it through every gesture, and `bun run bench:allocation --calls` samples it in every frame.
+- `update` allocates nothing, so you can call it in every frame. The engine's allocation benchmark checks this in every frame and through every gesture.
 - With damping, each frame applies a share of the motion that remains: `dampingFactor` at 60 frames per second. The share suits the frame's step, so the motion takes the same time at every frame rate.
 - The sketch can move the camera itself with `camera.setPosition`. The controls carry on from the new position at the next `update`.
 - Auto-rotation stops while the user asks for less motion. [Accessibility](../guides/accessibility.md) explains the preference.
@@ -196,9 +201,26 @@ return {
 - A drag turns the view at a speed that grows with the drag's length, in `lookSpeed` degrees per second for each pixel. While a key walks forward or back, a press only looks.
 - When two fingers are down, the first finger's movement turns the view.
 - Moves and turns start and stop smoothly: each frame applies a share of the change of speed that remains, `dampingFactor` at 60 frames per second. The share suits the frame's step, so the motion takes the same time at every frame rate.
-- The controls turn the camera with no roll. A drag tips the view at most 85 degrees above or below the level. `constrainVertical` with `verticalMin` and `verticalMax` limits it further, and `lookVertical: false` keeps the view level.
+- The controls turn the camera with no roll. A drag tips the view at most 85 degrees above or below the level. `constrainVertical` with `verticalMin` and `verticalMax` maps the view's angle into that range, and `lookVertical: false` keeps the view level.
 - `heightSpeed`, with `heightCoef`, `heightMin` and `heightMax`, walks faster forward the higher the camera is. `autoForward` walks forward along the view all the time.
 - `lookAt(x, y, z)` turns the camera toward a point.
+
+### Moving from code
+
+To move the camera from the sketch's own code, set `movementSpeed: 0`, so the keys do not walk, and call the controls' `moveForward(distance)` and `moveRight(distance)`. The call `moveForward` walks over the ground at right angles to the camera's right, and `getDirection(out)` gives the direction of the view:
+
+```ts
+const controls = createFirstPersonControls(ctx, camera, { movementSpeed: 0 });
+return {
+  onUpdate(dt) {
+    controls.update(dt);
+    const walk = (ctx.input.isDown('KeyW') ? 1 : 0) - (ctx.input.isDown('KeyS') ? 1 : 0);
+    const strafe = (ctx.input.isDown('KeyD') ? 1 : 0) - (ctx.input.isDown('KeyA') ? 1 : 0);
+    controls.moveForward(walk * 5 * dt); // 5 meters a second
+    controls.moveRight(strafe * 5 * dt);
+  },
+};
+```
 
 ## Pointer lock
 
@@ -221,22 +243,9 @@ While the pointer is locked, `ctx.input.pointer.locked` is true, and `pointer.dx
 - The view stays between `minPolarAngle` and `maxPolarAngle` from +Y. The limits apply after a frame's moves add up.
 - A drag looks around no more, and the buttons do not walk, so the sketch can use them, for example to fire.
 
+These options follow three.js's PointerLockControls, and the drag options follow its FirstPersonControls. The 85-degree cap applies only to a drag, and `minPolarAngle` and `maxPolarAngle` apply only while the pointer is locked. `constrainVertical` maps the view's angle into `verticalMin` to `verticalMax` in both cases.
+
 The user ends the lock with Esc, and the page with `document.exitPointerLock()`. Destroying the engine also ends it.
-
-To move the camera from the sketch's own code, set `movementSpeed: 0`, so the keys do not walk, and call the controls' `moveForward(distance)` and `moveRight(distance)`. The call `moveForward` walks over the ground at right angles to the camera's right, and `getDirection(out)` gives the direction of the view:
-
-```ts
-const controls = createFirstPersonControls(ctx, camera, { movementSpeed: 0 });
-return {
-  onUpdate(dt) {
-    controls.update(dt);
-    const walk = (ctx.input.isDown('KeyW') ? 1 : 0) - (ctx.input.isDown('KeyS') ? 1 : 0);
-    const strafe = (ctx.input.isDown('KeyD') ? 1 : 0) - (ctx.input.isDown('KeyA') ? 1 : 0);
-    controls.moveForward(walk * 5 * dt); // 5 metres a second
-    controls.moveRight(strafe * 5 * dt);
-  },
-};
-```
 
 The [first-person and fly controls demo](https://github.com/null3d-engine/null3d/tree/main/examples/walk-and-fly) walks through a ruined temple. A click asks for the pointer lock, and Space switches between first-person and fly controls.
 
@@ -278,7 +287,14 @@ A press on a handle begins a drag, and the pointer then moves, turns or scales t
 - The handles draw over the scene, so a handle that lies behind a wall still shows and still takes the pointer.
 - The handle meshes take `levels: false`. The handles keep one share of the screen, so a level would never switch.
 
-The handles answer a raycast on a layer of their own, so a press tests the gizmo alone. No scene object stands between the pointer and a handle. A click on a handle reaches the handle and its parents alone. A click handler on the object behind it does not hear it. `layers` sets the layer that the handles draw on, which the controls add to the camera's layers and take away at `destroy`. `pickLayers` sets the layer of the handles that answer a raycast, which no camera draws. Both default to layers out of the way of a scene's own: 30 and 29. Give a camera that draws every layer another pair, or its image shows the pickers.
+The handles answer a raycast on a layer of their own, so a press tests the gizmo alone. No scene object stands between the pointer and a handle. A click on a handle reaches the handle and its parents alone, and a click handler on the object behind it does not hear it. By default the handles use layers 30 and 29. When a camera draws every layer, set `layers` and `pickLayers` to two other layers, as masks such as `1 << 28`.
+
+<details>
+<summary>Technical details: the gizmo's layers</summary>
+
+`layers` is the layer that the handles draw on, which the controls add to the camera's layers and take away at `destroy`. `pickLayers` is the layer of the handles that answer a raycast, which no camera draws.
+
+</details>
 
 `gizmo.destroy()` removes the handles and gives the camera back its own layers. `gizmo.detach()` hides the handles and leaves the object where it is.
 

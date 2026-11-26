@@ -99,8 +99,8 @@ Add-ons reach the engine only through `@null3d/engine`'s public entry points. Th
 ### 3. Hooks grow with their users
 
 - A hook is built with its first user, never before. M3-A2 to M3-A5 follow this.
-- A new hook is marked experimental in its docs and types. It becomes stable once a second add-on uses it, the engine's or another developer's.
-- Stable hooks freeze with the API at 1.0. Experimental hooks stay marked, and may change in a 1.x release with a note.
+- A new hook is experimental until a second add-on uses it, the engine's or another developer's. The hooks table records each hook's state. Its docs page carries no experimental label unless the owner adds one ([D-397](D-397-docs-without-labels.md)).
+- Stable hooks freeze with the API at 1.0. Experimental hooks may change in a 1.x release with a note.
 - Each hook works on both GPU paths, or its docs state the fallback, as [the hooks table](#hooks-each-with-its-first-user) does.
 - Each hook comes with the first user that the hooks table names.
 - M3-R1 defines one public feature description that every hook is an instance of, before H3. Built-in renderer features stay internal and do not use these hooks; a feature that leaves the core uses them.

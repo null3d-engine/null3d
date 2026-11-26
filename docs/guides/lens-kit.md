@@ -1,14 +1,10 @@
 ---
 id: guides/lens-kit
 title: Lens kit
-status: experimental
-since: "0.3"
-summary: "One look for the camera's marks: a grade, a sharpening, a vignette, film grain, color fringes, an anamorphic streak read from bloom, and a speed blur."
+summary: "An example add-on you copy: one look for the camera's marks: a grade, a sharpening, a vignette, film grain, color fringes, an anamorphic streak read from bloom, and a speed blur."
 ---
 
 # Lens kit
-
-> Roadmap step 0.3, first released in null3D 0.1.0. The API is experimental, so it can still change between versions.
 
 The lens kit gives a scene one camera look. It sets the engine's own grade, sharpening and
 vignette from one object. It draws the camera's smaller marks in a single full-screen effect: film
@@ -30,21 +26,24 @@ an npm package. Copy the folder into your project and import its entry point.
 ## Use it
 
 ```ts
+import { defineSketch } from '@null3d/engine';
 import { createLensKit } from './addons/lens-kit';
 
-const lens = createLensKit(ctx, {
-	sharpen: 0.35,
-	vignette: { intensity: 0.55, size: 1.05, falloff: 2.2 },
-	grading: { lift: [-0.02, -0.02, -0.02], gain: [1.05, 1.05, 1.05], saturation: 1.08 },
-	bloomLevel: 2,
-	aberration: 0.8,
-	streak: 0.45,
-	grain: 0.045,
-	speedBlur: 0,
-});
+export default defineSketch((ctx) => {
+	const lens = createLensKit(ctx, {
+		sharpen: 0.35,
+		vignette: { intensity: 0.55, size: 1.05, falloff: 2.2 },
+		grading: { lift: [-0.02, -0.02, -0.02], gain: [1.05, 1.05, 1.05], saturation: 1.08 },
+		bloomLevel: 2,
+		aberration: 0.8,
+		streak: 0.45,
+		grain: 0.045,
+		speedBlur: 0,
+	});
 
-// Later, change part of the look. A value that a call leaves out keeps its own.
-lens.set({ vignette: false });
+	// Later, change part of the look. A value that a call leaves out keeps its own.
+	lens.set({ vignette: false });
+});
 ```
 
 ## Options
@@ -104,16 +103,18 @@ a look leaves at 0 skips its reads. The fringes take 2, the streak 10 and the sp
 grain takes none. A look with only the grain therefore pays no neighbor read. A look with every mark
 at 0, such as one that wants the grade alone, adds no pass at all.
 
-The grade and the vignette run inside the final pass and add no pass of their own. The sharpening at
-the whole canvas's render scale adds the first step of the two-step pass, as any `sharpen` value
-does. Below the whole canvas's render scale, effects do not join passes, so each draws one.
+The grade and the vignette run inside the final pass and add no pass of their own. The sharpening adds one full-screen pass, about 1 ms at the size below.
 
-On a MacBook Pro with an M3 Max, the canvas is 3840 by 2160 CSS pixels with the pixel ratio held at
-2. That draws 33 megapixels. There the whole look costs about 3 to 4 ms of GPU time a frame, on
-WebGPU and in compatibility mode. The cost follows the pixels: a megapixel costs about a tenth of
-a millisecond. WebGL2 keeps no figure for the whole look, because its cleared frame moves by more
-than the look there. Its marks stand instead. The add-on's README holds the figure at each preset
-and for each mark.
+On a MacBook Pro with an Apple M3 Max, the canvas is 3840 by 2160 CSS pixels with the pixel ratio held at 2. That draws 33 megapixels. There the whole look costs about 3 to 4 ms of GPU time a frame, on WebGPU and in compatibility mode. The cost follows the pixels: a megapixel costs about a tenth of a millisecond. The add-on's README gives the figure at each preset and for each mark.
+
+<details>
+<summary>Technical details: how the kit's passes join, and WebGL2</summary>
+
+The sharpening reads display color, so it splits the final pass into two steps at every render scale ([Sharpening](../concepts/post-processing.md#sharpening)). Below the whole canvas's render scale, the kit's last effect does not fold into the final pass, so it draws a pass of its own ([Below the whole canvas's render scale](../concepts/post-processing.md#below-the-whole-canvass-render-scale)).
+
+WebGL2 keeps no figure for the whole look. Its whole-frame timer reads about 9 ms and varies by about 1 ms between rounds, which hides the look's own cost. The README gives WebGL2 a figure for each mark instead.
+
+</details>
 
 ## Limits
 

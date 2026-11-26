@@ -19,7 +19,7 @@ The engine docs are the source of truth. This skill describes null3D 0.1.0. A pr
 2. Read docs pages by ID, in this order:
    - inside the null3D repository itself: `docs/<id>.md`;
    - in a null3D project: `node_modules/@null3d/engine/docs/<id>.md`.
-3. Each page starts with front matter. Its `status` is `stable` or `experimental`, and experimental APIs may still change. Use only the APIs that the installed engine's docs and type declarations show. A name that is absent there does not exist, so do not invent it. A page also names the limits of its feature. When a limit affects the task, tell the user and use the workaround that the page gives.
+3. Use only the APIs that the installed engine's docs and type declarations show. A name that is absent there does not exist, so do not invent it. A page also names the limits of its feature. When a limit affects the task, tell the user and use the workaround that the page gives.
 4. If the docs and this skill disagree, follow the docs and report the difference, so the skill can be fixed.
 
 Doc IDs appear in backticks, for example `concepts/architecture`.

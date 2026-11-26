@@ -5,10 +5,8 @@
 import { spawn } from 'node:child_process';
 import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { PAGES, pagePath } from './docs';
 import { checkDocsStyle, DECISION_RECORD_SOURCE, INTERNAL_REFERENCE_SOURCE } from './docs-style';
 import { readIfExists } from './files';
-import { parseFrontMatter } from './frontmatter';
 import { repositoryEnv } from './git-env';
 
 export interface ParsedCommit {
@@ -102,8 +100,7 @@ export type ReleaseType = 'auto' | 'major' | 'minor' | 'patch';
 
 /**
  * The bump that a set of commits implies: a patch for any conventional commit. Minor and major
- * versions follow the roadmap, where each one is a set of features and the docs label pages with
- * the version that ships them. So a person picks a minor or major bump when that set is done.
+ * versions mark a set of features, so a person picks a minor or major bump when that set is done.
  */
 export function computeBump(commits: readonly ParsedCommit[]): Bump {
 	return commits.some((c) => c.type !== '') ? 'patch' : 'none';
@@ -419,55 +416,20 @@ export function extractReleaseNotes(changelog: string, version: string): string 
 	return (end === -1 ? rest : rest.slice(0, end)).join('\n').trim();
 }
 
-export interface PageStatus {
-	id: string;
-	status: string;
-	since: string;
-}
-
-/** The status and first version of every page in the docs inventory. */
-export function pageStatuses(root: string): PageStatus[] {
-	return PAGES.flatMap((page) => {
-		const text = readIfExists(root, pagePath(page.id));
-		const fm = text === null ? null : parseFrontMatter(text);
-		return fm
-			? [{ id: page.id, status: String(fm.data.status), since: String(fm.data.since) }]
-			: [];
-	});
-}
-
 /** The README's roadmap: its section and the table of planned features by version. */
 const ROADMAP = /^## Roadmap$|Everything else planned, by version/m;
 
 /**
- * Why a version cannot be released yet. A minor or major release ships the features of every
- * page with that version or an earlier one, so none of those pages may still be planned. From
- * 0.1.0 on, releases are public, and the roadmap is internal, so the README must not carry it.
+ * Why a version cannot be released yet. From 0.1.0 on, releases are public, and the roadmap is
+ * internal, so the README must not carry it.
  */
-export function releaseProblems(
-	version: string,
-	pages: readonly PageStatus[],
-	readme: string,
-): string[] {
-	const [major, minor, patch] = parseVersion(version);
-	const isPublic = major > 0 || minor > 0;
-	const problems: string[] = [];
-	if (isPublic && patch === 0) {
-		for (const page of pages) {
-			const since = /^(\d+)\.(\d+)$/.exec(page.since);
-			if (page.status !== 'planned' || !since) continue;
-			const [sinceMajor, sinceMinor] = [Number(since[1]), Number(since[2])];
-			if (sinceMajor < major || (sinceMajor === major && sinceMinor <= minor))
-				problems.push(
-					`${pagePath(page.id)} is still planned, and ${version} ships its feature (since ${page.since})`,
-				);
-		}
-	}
-	if (isPublic && ROADMAP.test(readme))
-		problems.push(
+export function releaseProblems(version: string, readme: string): string[] {
+	const [major, minor] = parseVersion(version);
+	if ((major > 0 || minor > 0) && ROADMAP.test(readme))
+		return [
 			`README.md still has the roadmap, which is internal; remove it before the public ${version} release`,
-		);
-	return problems;
+		];
+	return [];
 }
 
 /** A file that holds the release version, and where in the file the version sits. */

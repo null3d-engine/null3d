@@ -1,14 +1,10 @@
 ---
 id: guides/custom-passes
 title: Custom passes and render targets
-status: experimental
-since: "0.2"
 summary: "Custom effects and tone curves in WGSL; declaring passes; reading and writing named textures; layer masks; reflections and a water recipe; full-screen passes, a soft outline glow and effects that read textures."
 ---
 
 # Custom passes and render targets
-
-> Roadmap step 0.2, first released in null3D 0.1.0. The API is experimental, so it can still change between versions.
 
 ```mermaid
 flowchart LR
@@ -22,7 +18,16 @@ flowchart LR
     final --> canvas["Canvas"]
 ```
 
-A custom effect is a full-screen pass of your own WGSL. It reads the scene's color, and its depth if it asks for it, and writes a new color for each pixel. Effects run after the scene passes, on linear HDR color, before bloom and the tone curve. A custom tone curve takes the place of the built-in curves in the final pass. A scene pass draws the scene from another camera into a texture, which materials show: see [Render to a texture](#render-to-a-texture). A full-screen pass runs an effect's WGSL into a texture of its own, which materials, effects and other passes read: see [Full-screen passes](#full-screen-passes).
+A custom pass adds work of your own to the frame. This page covers six kinds:
+
+| Kind | Reads | Writes | Section |
+| --- | --- | --- | --- |
+| Custom effect | The scene's color, and its depth if it asks | A new color for the screen | [Custom effects](#custom-effects) |
+| Custom tone curve | Linear color after bloom | The final display color | [Custom tone curves](#custom-tone-curves) |
+| Scene pass | The scene, from a camera of its own | A texture that materials show | [Render to a texture](#render-to-a-texture) |
+| Reflection pass | The scene, mirrored across a plane | A texture that materials read | [Reflections](#reflections) |
+| Full-screen pass | An effect's WGSL, and an input image | A texture of its own | [Full-screen passes](#full-screen-passes) |
+| Compute pass | A compute shader | A storage texture | [Compute passes](#compute-passes) |
 
 ## Custom effects
 
@@ -84,7 +89,7 @@ Effects import from the shader library as materials do, such as `#import null3d:
 
 ### Uniforms
 
-Declare uniforms as `struct Uniforms`, and read them as `uniforms.name`. The rules are those of custom materials:
+Declare uniforms as `struct Uniforms`, and read them as `uniforms.name`. A custom material reads its own as `material.name`, but the other rules are the same:
 
 - The types are `f32`, `i32`, `u32`, `vec2f`, `vec3f` and `vec4f`, in at most 32 numbers. Each `vec3f` and `vec4f` starts a group of four.
 - A `vec3f` also takes a color string or a hex number, which the engine converts from sRGB to linear.
@@ -213,15 +218,21 @@ For caustics on the bed, find each pixel's point in the world as `eye + line.xyz
 ### Cost
 
 - A full-screen pass reads and writes 8 bytes per pixel of the render size, in `rgba16float`. On a phone at full resolution each pass costs tens of megabytes of memory traffic per frame. One pass at full size costs about 0.05 ms of GPU time on a MacBook Pro, 0.1 ms on an iPad Pro with the A12X, and 0.25 to 0.31 ms on a Pixel 10.
-- The engine joins effects to save passes, while the render scale cannot drop below the whole canvas. An effect that reads only its own pixel joins the pass of the effect before it: the pass runs both, one after the other, for each pixel. So you need not join such effects into one function yourself. While the scale can drop, the engine runs each effect in a pass of its own, at every scale, because the final pass then works in two steps ([The post-processing chain](../concepts/post-processing.md#below-the-whole-canvass-render-scale)).
+- The engine joins effects at every render scale. An effect that reads only its own pixel joins the pass of the effect before it: the pass runs both, one after the other, for each pixel. So you need not join such effects into one function yourself.
+- The last pass of effects folds into the final pass only in frames at the whole canvas's scale, with bloom, depth of field and FXAA off. While the scale can drop below the whole canvas, nothing folds, even in a frame at scale 1 ([The post-processing chain](../concepts/post-processing.md#below-the-whole-canvass-render-scale)).
+- Adding or removing an effect changes the frame's passes. A new effect's pipeline builds while the last image stays on screen, as a custom material's does. So a new effect shows a few frames after `addEffect`. To show it at a set moment, add it a little before.
+
+<details>
+<summary>Technical details: how the engine joins and folds effects</summary>
+
 - An effect that calls `effectPixel` or `effectColor` reads other pixels of the color before it. So it starts a pass of its own. The effects after it can join it. Depth reads do not stop an effect from joining.
-- The last pass of effects folds into the final pass when nothing reads the image between them. That needs bloom and FXAA off, and it needs the render scale to stay at the whole canvas: while the scale can drop below it, nothing folds, also in frames that draw at scale 1. One effect that reads only its own pixel then costs no pass of its own.
 - A joined pass needs a shader that the engine makes from the effects' WGSL. It builds in the background after the effects' own shaders. Until it is built, each effect draws a pass of its own, so no frame waits for it.
 - Some browsers cannot compile WebGL2 shaders in the background, such as Chrome on the Android phones tested. On WebGL2 they join only the effects that are there before the first frame. Effects added or reordered later draw a pass each there. A joined shader would hold up a frame while it compiles. Add your effects before the first frame to get the joined passes on those devices. Development builds tell you once in the console when this happens.
 - Between joined effects the color keeps 32-bit precision instead of the 16 bits of a target. So the image can differ from separate passes in the last bits.
 - The effects share two targets, whatever their number. They follow the render scale, so a new scale makes no new target.
 - A depth read costs one texture read per call. The scene's render pass then keeps its depth in memory.
-- Adding or removing an effect changes the frame's passes. A new effect's pipeline builds while the last image stays on screen, as a custom material's does. So a new effect shows a few frames after `addEffect`. To show it at a set moment, add it a little before.
+
+</details>
 
 ### Devices without HDR color
 
@@ -303,15 +314,37 @@ A pass that need not change every frame draws every few frames. `setPassEvery` g
 render.setPassEvery(map, 4);
 ```
 
-The call compiles nothing, so a sketch may change the cadence whenever the quality preset or the frame budget moves, as often as once a frame. A material that samples the pass's texture in a frame that the pass skips shows the last image that it drew: the target is neither culled nor cleared. Pace a pass with the cadence, not with the switch. A pass that has never drawn is out of the plan while it is off, so switching it on compiles the render graph. Once a pass has drawn, its passes stay in the plan while it is off: the switch only skips its recording, and compiles nothing.
+`setPassEvery` compiles nothing, so a sketch may change the cadence as often as once a frame, for example when the quality preset or the frame budget moves. In a frame that the pass skips, a material that samples its texture shows the last image that it drew.
+
+`render.setPassEnabled(pass, false)` turns a pass off, and its texture keeps its last image. Use the switch when a feature starts or stops, and the cadence to draw less often. Switching on a pass that has never drawn compiles the render graph. [Switching and removing passes](../api/render.md#switching-and-removing-passes) gives the full rule.
+
+<details>
+<summary>Technical details: cadence, the switch and the compiled plan</summary>
+
+The engine compiles the render graph into a plan of GPU passes. A skipped frame neither culls nor clears the pass's target. A pass that has never drawn is out of the plan while it is off, so switching it on compiles the graph. Once a pass has drawn, its GPU passes stay in the plan while it is off: the switch only skips their recording and compiles nothing. [Render graph](../concepts/render-graph.md) explains the plan.
+
+</details>
 
 In [hold mode](testing.md#hold-mode) every pass draws in every frame, whatever its cadence. The engine draws only the hold's last frames, so a pass that skipped one of them would show an image that no drawn frame made: an empty mirror, for one.
 
 ### What a scene pass draws
 
-A scene pass draws with the scene's materials, the sun and its shadows where the camera's shadow cascades reach. It draws the ambient and hemisphere lights, the environment's light and the fog. It also draws the point and spot lights that its camera sees. It draws the scene's background behind them, the sky included. With a `clearColor` the texture clears to that color and shows no background, which suits a minimap. A pass draws no ambient occlusion.
+A scene pass draws with the scene's materials, the sun and its shadows where the camera's shadow cascades reach. It draws:
 
-A point or spot light casts its shadow in a pass when the camera's view gives it a shadow. The engine gives shadows only to the lights that the camera sees. So a light that only the pass sees lights the pass without a shadow. Reflection passes draw these lights the same way. A pass that sees a point or spot light keeps its own list of lights, as the camera's view does. The list takes under 1 MB of memory. A pass that sees none keeps no list.
+- the ambient and hemisphere lights, the environment's light and the fog;
+- the point and spot lights that its camera sees;
+- the scene's background behind them, the sky included.
+
+With a `clearColor` the texture clears to that color and shows no background, which suits a minimap. A pass draws no ambient occlusion.
+
+A point or spot light casts its shadow in a pass when the camera's view gives it a shadow. The engine gives shadows only to the lights that the camera sees. So a light that only the pass sees lights the pass without a shadow.
+
+<details>
+<summary>Technical details: lights and shadows in a scene pass</summary>
+
+Reflection passes draw these lights the same way. A pass that sees a point or spot light keeps its own list of lights, as the camera's view does. The list takes under 1 MB of memory. A pass that sees none keeps no list.
+
+</details>
 
 The texture holds linear color after the exposure, so a material that shows it gives the camera the light that the pass saw. On devices that draw 8-bit color, each material tone maps its own color. In compatibility mode with MSAA, the texture holds that color turned back to linear, so the tone curve applies twice and the image looks a little lighter in the middle tones. On WebGL2 devices without float targets, the texture holds display color, which looks brighter and flatter.
 
@@ -333,7 +366,9 @@ const water = materials.shader({ wgsl: waterWgsl, textures: { mirror: textures.f
 
 For water in a scene, use [`@null3d/water`](../api/water.md): it draws a river and a lake from one shape, with the waves, the foam, the soft shore and the reflection that this recipe builds by hand. This recipe shows the pieces that the add-on builds on, for a water surface of your own.
 
-This surface function makes a stream. It has ripples that move, a tint that deepens with the depth, foam at the banks, and the reflection of the banks and the sky. It needs the height of the bed under each point of the water. A terrain made in code gives it with the same function that shapes the terrain. A loaded terrain gives it with a height map texture, which the function samples instead.
+This surface function makes a stream. It has ripples that move, a tint that deepens with the depth, foam at the banks, and the reflection of the banks and the sky.
+
+It needs the height of the bed under each point of the water. A terrain made in code gives it with the same function that shapes the terrain. A loaded terrain gives it with a height map texture, which the function samples instead.
 
 ```ts
 const waterWgsl = /* wgsl */ `
@@ -418,8 +453,7 @@ surface.setRotationEuler(-Math.PI / 2, 0, 0);
 - `ripple` sets how far the waves tilt the normal. The tilt bends the reflection and the sun's highlights.
 - The foam hides the reflection where it lies, through the reflection's share in `a`.
 - The water is opaque, so the bed does not show through it. The shallow tint stands in for the bed's color.
-- Without a height map of the bed, a blended sheet reads the depth of the opaque scene behind it with `sceneInputs: ['sceneDepth']`. The water's depth along the view ray is the gap between the sheet and the geometry behind the pixel. Convert the pixel's own depth to a distance with the camera's range in `engine_frame.camera_range`, then subtract it from `sceneDistance(uv)`. Fade the water's alpha to zero over the last centimeters of the gap. The water then thins and foams against the bank, so its shore ends softly. Such a sheet takes up to 6 textures of its own, as every custom material does. So this recipe's mirror and a foam map join it. [Materials](../api/materials.md#the-scene-behind-a-surface) shows the options.
-
+- Without a height map of the bed, a blended sheet can read the scene's depth with `sceneInputs: ['sceneDepth']` and fade its alpha near the bank for a soft shore. [Materials](../api/materials.md#the-scene-behind-a-surface) shows the WGSL.
 - Waves that move the surface's vertices need `setBounds`, as [Culling](../concepts/culling.md) explains. The reflection's plane stays flat, which suits small waves.
 
 ## Full-screen passes

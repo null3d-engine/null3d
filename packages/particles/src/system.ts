@@ -36,8 +36,10 @@ export type ParticleRange = number | readonly [number, number];
 /**
  * Where an emitter's particles are born, in its own space, and which way they set off. A `point`
  * emits at the emitter, along `direction`. A `sphere` emits inside a ball of `radius`, or on its
- * surface with `surface`, and sends particles outward. A `cone` emits on a disc of `radius` across
- * the emitter's +y axis. It sends particles up within `angle` radians of that axis, as a fountain
+ * surface with `surface`, and sends particles outward.
+ *
+ * A `cone` emits on a disc of `radius` across the emitter's +y axis. It sends particles up within
+ * `angle` radians of that axis, as a fountain
  * or a flame does. A `box` emits inside a box of `size`, centered on the emitter, along
  * `direction`. A `disc` emits on a disc of `radius` across the +y axis, along `direction`.
  *

@@ -263,6 +263,99 @@ function blocks(md: string): Block[] {
 	return out;
 }
 
+/** The summary line of a technical details block, with what the block holds after the prefix. */
+const DETAILS_SUMMARY = /^<summary>Technical details: (\S.*[^.\s])<\/summary>$/;
+
+/**
+ * Problems with the collapsible technical details blocks of one Markdown file, as line and
+ * message. A block is `<details>` and its summary line at the start of a line, a blank line, the
+ * Markdown body, a blank line and `</details>`. Its body holds no heading, no other block and no
+ * Mermaid diagram, so that anchors, the outline and diagrams stay in the main text.
+ */
+export function detailsBlockProblems(md: string): [line: number, message: string][] {
+	const lines = md.split('\n');
+	const problems: [number, string][] = [];
+	// The open fence's character and length: a fence closes on a run of the same character that
+	// is at least as long, as CommonMark reads it.
+	let fence: { char: string; length: number } | null = null;
+	let open: number | null = null;
+	let bodyHasText = false;
+	for (let i = 0; i < lines.length; i++) {
+		const line = lines[i] ?? '';
+		const marker = line.trim().match(/^(`{3,}|~{3,})\s*(\S*)/);
+		if (fence !== null) {
+			if (
+				marker &&
+				marker[1]?.[0] === fence.char &&
+				(marker[1]?.length ?? 0) >= fence.length &&
+				!marker[2]
+			)
+				fence = null;
+			continue;
+		}
+		if (marker) {
+			fence = { char: marker[1]?.[0] ?? '`', length: marker[1]?.length ?? 3 };
+			if (open !== null) {
+				bodyHasText = true;
+				if (marker[2] === 'mermaid')
+					problems.push([
+						i + 1,
+						'A Mermaid diagram belongs in the main text, not in a technical details block.',
+					]);
+			}
+			continue;
+		}
+		if (line === '<details>') {
+			if (open !== null) {
+				problems.push([i + 1, 'A technical details block cannot hold another block.']);
+				continue;
+			}
+			open = i + 1;
+			bodyHasText = false;
+			if (!DETAILS_SUMMARY.test(lines[i + 1] ?? ''))
+				problems.push([
+					i + 2,
+					'Follow <details> with "<summary>Technical details: what it holds</summary>", with no final period.',
+				]);
+			if ((lines[i + 2] ?? '') !== '')
+				problems.push([
+					i + 3,
+					'Leave a blank line after the summary, so the body renders as Markdown.',
+				]);
+			i++;
+			continue;
+		}
+		if (line === '</details>') {
+			if (open === null) problems.push([i + 1, '</details> closes no block.']);
+			else {
+				if ((lines[i - 1] ?? '') !== '')
+					problems.push([i + 1, 'Leave a blank line before </details>.']);
+				if (!bodyHasText) problems.push([open, 'This technical details block is empty.']);
+			}
+			open = null;
+			continue;
+		}
+		const visible = line.replace(/`[^`]*`/g, '');
+		if (/<\/?(details|summary)\b/.test(visible))
+			problems.push([
+				i + 1,
+				'Put <details>, its summary line and </details> each on a line of its own, at the start of the line.',
+			]);
+		if (open === null) continue;
+		if (line.trim() !== '') bodyHasText = true;
+		const previous = lines[i - 1] ?? '';
+		const underline =
+			/^(=+|-+)\s*$/.test(line) && previous.trim() !== '' && !/^\s*([-*+]|\d+\.|\|)/.test(previous);
+		if (/^#{1,6}\s/.test(line) || /<h[1-6]\b/i.test(visible) || underline)
+			problems.push([
+				i + 1,
+				'A heading cannot sit inside a technical details block; put it above the block.',
+			]);
+	}
+	if (open !== null) problems.push([open, 'This technical details block has no </details>.']);
+	return problems;
+}
+
 const excerptOf = (text: string) => (text.length <= 80 ? text : `${text.slice(0, 77)}...`);
 
 function wordsIn(sentence: string): number {
@@ -324,6 +417,9 @@ export function checkDocsStyle(md: string, audience: DocsAudience = 'users'): St
 				'Show the command with Bun: `bun add`, `bun install`, `bun run` or `bunx`.',
 			);
 	}
+
+	for (const [line, message] of detailsBlockProblems(md))
+		add('details_block', 'error', line, lines[line - 1] ?? '', message);
 
 	for (const block of blocks(md)) {
 		const text = visibleText(block.text);

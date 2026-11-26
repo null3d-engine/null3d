@@ -37,7 +37,8 @@ Never commit a generated file, unless [D-105](decisions/D-105-generated-files-ou
 | --- | --- | --- |
 | The skills copy for Claude Code, `.claude/skills/` | `skills/`, without each skill's evals | `bun run skills` |
 | The API reference pages, `docs/api/reference/` | The doc comments on the engine's exports | `bun run docs` |
-| The list of all pages, `docs/pages.md` | Each page's front matter | `bun run docs` |
+| The list of all pages, `docs/pages.md` | The inventory's areas and groups in `tools/lib/docs.ts`, and each page's front matter | `bun run docs` |
+| The website's navigation, `docs/nav.json` | The inventory's areas and groups in `tools/lib/docs.ts` | `bun run docs` |
 | The error pages, `docs/errors/` | The engine's error table | `bun run docs` |
 | The quality preset tables, `docs/concepts/quality-preset-tables.md` | The quality chooser's constants and the preset table | `bun run docs` |
 | The page of shaders that load on first use, `docs/guides/first-use-shaders.md` | The shader manifest's `[first_use.*]` tables, and the descriptions in `tools/lib/first-use-docs.ts` | `bun run docs` |

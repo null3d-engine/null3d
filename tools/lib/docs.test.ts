@@ -1,13 +1,21 @@
 import { describe, expect, it } from 'bun:test';
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { ERRORS } from '../../packages/engine/src/errors/codes.ts';
 import type { ApiReference, ApiSymbol } from './api-docs';
 import {
+	AREAS,
 	checkDocs,
 	frontMatterProblems,
 	generateDocs,
+	inventoryProblems,
+	mappingMarkdown,
+	movesProblems,
+	navigation,
 	PAGES,
+	type PageEntry,
 	pageList,
+	placementProblems,
 	referenceLinkProblems,
 	referenceProblems,
 } from './docs';
@@ -18,14 +26,11 @@ const repoRoot = join(import.meta.dir, '../..');
 
 const MAPPING = JSON.stringify({
 	statusLegend: { direct: 'Same.' },
-	sinceLegend: { '0.1': 'the core renderer' },
 	entries: [],
 });
 const INDEX = `${renderFrontMatter([
 	['id', 'index'],
 	['title', 'Docs'],
-	['status', 'experimental'],
-	['since', '0.1'],
 	['summary', 'The docs.'],
 ])}\n# Docs\n\nSee [All pages](pages.md).\n`;
 const NO_API: ApiReference = { symbols: [], problems: [] };
@@ -43,8 +48,6 @@ const writtenObjects = (body: string) =>
 	`${renderFrontMatter([
 		['id', 'api/objects'],
 		['title', 'Objects'],
-		['status', 'experimental'],
-		['since', '0.1'],
 		['summary', 'Written.'],
 	])}\n# Objects\n\n${body}\n\nMore text.\n`;
 
@@ -57,15 +60,12 @@ describe('front matter', () => {
 		expect(yamlString('yes')).toBe('"yes"');
 	});
 
-	it('round-trips every inventory page through its front matter', () => {
+	it("round-trips every inventory page's title and summary through front matter", () => {
 		for (const page of PAGES) {
-			const fields = {
-				id: page.id,
-				title: page.title,
-				status: 'experimental',
-				since: page.since,
-				summary: page.summary,
-			};
+			const data = page.generated
+				? page
+				: parseFrontMatter(readFileSync(join(repoRoot, `docs/${page.id}.md`), 'utf8'))?.data;
+			const fields = { id: page.id, title: String(data?.title), summary: String(data?.summary) };
 			expect(parseFrontMatter(renderFrontMatter(Object.entries(fields)))?.data).toEqual(fields);
 		}
 	});
@@ -75,99 +75,176 @@ describe('front matter', () => {
 	});
 });
 
-/** The written handles page with a status, and the note that the check asks under its title. */
-function writtenHandles(status: string): string {
-	const page = PAGES.find((p) => p.id === 'concepts/handles')!;
-	return `${renderFrontMatter([
-		['id', page.id],
-		['title', page.title],
-		['status', status],
-		['since', page.since],
-		['summary', page.summary],
-	])}
-# ${page.title}
-
-> Roadmap step ${page.since}, first released in null3D 0.1.0. The API is experimental, so it can still change between versions.
+/** The written handles page, with optional labels in its front matter. */
+function writtenHandles(labels: [string, string][] = []): string {
+	return `${renderFrontMatter([['id', 'concepts/handles'], ['title', 'Handles'], ...labels, ['summary', 'S']])}
+# Handles
 `;
 }
 
 describe('frontMatterProblems', () => {
 	const inventory = new Set(['concepts/handles']);
-	it('accepts a valid page', () => {
+	it('accepts a page with no labels, and one with labels the owner chose', () => {
+		expect(frontMatterProblems('docs/concepts/handles.md', writtenHandles(), inventory)).toEqual(
+			[],
+		);
 		expect(
-			frontMatterProblems('docs/concepts/handles.md', writtenHandles('experimental'), inventory),
+			frontMatterProblems(
+				'docs/concepts/handles.md',
+				writtenHandles([
+					['status', 'experimental'],
+					['since', '1.2'],
+				]),
+				inventory,
+			),
 		).toEqual([]);
 	});
 
-	it('reports a wrong id, a bad status, a bad version and a page outside the inventory', () => {
+	it('reports a wrong id, a bad label, a bad generated mark and a page outside the inventory', () => {
 		const text = renderFrontMatter([
 			['id', 'concepts/other'],
 			['title', 'T'],
 			['status', 'done'],
 			['since', 'soon'],
+			['generated', 'maybe'],
 			['summary', 'S'],
 		]);
 		const problems = frontMatterProblems('docs/concepts/other.md', text, inventory);
 		expect(problems.join('\n')).toContain('status "done"');
 		expect(
-			frontMatterProblems('docs/concepts/handles.md', writtenHandles('planned'), inventory).join(
-				'\n',
-			),
+			frontMatterProblems(
+				'docs/concepts/handles.md',
+				writtenHandles([['status', 'planned']]),
+				inventory,
+			).join('\n'),
 		).toContain('status "planned" is not allowed');
 		expect(problems.join('\n')).toContain('since "soon"');
+		expect(problems.join('\n')).toContain('generated must be true');
 		expect(problems.join('\n')).toContain('not in the inventory');
 		expect(frontMatterProblems('docs/concepts/x.md', text, inventory).join('\n')).toContain(
 			'id is "concepts/other"',
 		);
 	});
 
-	it('asks a written page to open its note with the release of its step', () => {
-		const page = (since: string, note: string) =>
-			`${renderFrontMatter([
-				['id', 'concepts/handles'],
-				['title', 'T'],
-				['status', 'experimental'],
-				['since', since],
-				['summary', 'S'],
-			])}\n# T\n\n> ${note}\n`;
-		const problems = (since: string, note: string) =>
-			frontMatterProblems('docs/concepts/handles.md', page(since, note), inventory).join('\n');
-		expect(problems('0.2', 'Roadmap step 0.2, first released in null3D 0.1.0. More.')).toBe('');
-		expect(problems('0.2', 'Ships in null3D 0.2.')).toContain(
-			'must start "Roadmap step 0.2, first released in null3D 0.1.0."',
+	it('takes a generated page that the inventory leaves out', () => {
+		const text = renderFrontMatter([
+			['id', 'concepts/other'],
+			['title', 'T'],
+			['generated', true],
+			['summary', 'S'],
+		]);
+		expect(frontMatterProblems('docs/concepts/other.md', text, inventory)).toEqual([]);
+	});
+});
+
+describe('navigation', () => {
+	it('places every inventory page but the home once, under its area and group', () => {
+		const nav = navigation();
+		const ids = nav.flatMap((a) => a.groups.flatMap((g) => g.pages));
+		expect(ids.sort()).toEqual(
+			PAGES.map((p) => p.id)
+				.filter((id) => id !== 'index')
+				.sort(),
 		);
-		expect(
-			problems(
-				'0.1',
-				'Roadmap step 0.1, first released in null3D 0.1.0, with picking from null3D 0.2.',
-			),
-		).toContain('names null3D 0.2, a roadmap step and not a release');
+		expect(nav.map((a) => a.id)).toEqual(AREAS.map((a) => a.id));
+		const concepts = nav.find((a) => a.id === 'concepts');
+		expect(concepts?.groups[0]?.title).toBe('How the engine runs');
+		expect(nav.find((a) => a.id === 'cookbook')?.groups).toEqual([
+			{ title: null, pages: ['cookbook/index'] },
+		]);
+	});
+
+	it('finds no problem with the inventory', () => {
+		expect(inventoryProblems()).toEqual([]);
+	});
+
+	it('reports a missing group, a wrong group, an empty group and a title on a written page', () => {
+		const areas = [
+			{ id: 'concepts', title: 'Concepts', groups: ['One', 'Two'] },
+			{ id: 'cookbook', title: 'Cookbook' },
+		];
+		const pages = [
+			{ id: 'concepts/a' },
+			{ id: 'concepts/b', group: 'Three' },
+			{ id: 'cookbook/index', group: 'One' },
+			{ id: 'concepts/c', group: 'One', title: 'C', summary: 'S' } as PageEntry,
+			{ id: 'other/d' },
+		];
+		expect(inventoryProblems(pages, areas)).toEqual([
+			'concepts/a needs a group of concepts: One, Two',
+			'concepts/b needs a group of concepts: One, Two',
+			'cookbook/index has a group, but cookbook has no groups',
+			'concepts/c is a written page; its title and summary belong in its front matter',
+			'other/d is in no area of AREAS',
+			'the group Two of concepts has no pages',
+		]);
 	});
 });
 
 describe('pageList', () => {
-	it('groups pages by area in inventory order and links them relative to docs/', () => {
-		const list = pageList([
+	it('lists each area and group in navigation order and links pages relative to docs/', () => {
+		const nav = [
 			{
-				id: 'concepts/handles',
-				title: 'Handles',
-				status: 'experimental',
-				since: '0.1',
-				summary: 'a | b',
+				id: 'concepts',
+				title: 'Concepts',
+				groups: [{ title: 'First', pages: ['concepts/architecture', 'concepts/handles'] }],
 			},
-			{
-				id: 'concepts/architecture',
-				title: 'Architecture',
-				status: 'experimental',
-				since: '0.1',
-				summary: 'x',
-			},
-		]);
+			{ id: 'cookbook', title: 'Cookbook', groups: [{ title: null, pages: ['cookbook/index'] }] },
+		];
+		const info = (id: string, title: string, summary: string) =>
+			[id, { id, title, summary }] as const;
+		const list = pageList(
+			nav,
+			new Map([
+				info('concepts/handles', 'Handles', 'a | b'),
+				info('concepts/architecture', 'Architecture', 'x'),
+				info('cookbook/index', 'Cookbook', 'y'),
+			]),
+		);
 		expect(list.indexOf('concepts/architecture.md')).toBeLessThan(
 			list.indexOf('concepts/handles.md'),
 		);
-		expect(list).toContain('## Concepts');
+		expect(list).toContain('## Concepts\n\n### First\n\n| Page |');
+		expect(list).toContain('## Cookbook\n\n| Page |');
 		expect(list).toContain('a \\| b');
+	});
+});
+
+describe('movesProblems', () => {
+	const isPage = (id: string) => ['concepts/new', 'concepts/newest'].includes(id);
+	it('accepts an empty file and moves that lead to a page, through a chain', () => {
+		expect(movesProblems('{}\n', isPage)).toEqual([]);
+		expect(
+			movesProblems('{"concepts/old":"concepts/new","concepts/older":"concepts/old"}', isPage),
+		).toEqual([]);
+	});
+
+	it('reports a missing file, a dead end, an old ID that is a page again, and a removed entry', () => {
+		expect(movesProblems(null, isPage)[0]).toContain('is missing');
+		expect(movesProblems('{"concepts/old":"concepts/gone"}', isPage)[0]).toContain(
+			'leads to concepts/gone',
+		);
+		expect(movesProblems('{"concepts/new":"concepts/newest"}', isPage)[0]).toContain(
+			'is a page again',
+		);
+		expect(movesProblems('{}', isPage, '{"concepts/old":"concepts/new"}')).toEqual([
+			'docs/moves.json: the entry for concepts/old was removed; keep it',
+		]);
+	});
+});
+
+describe('placementProblems', () => {
+	it('reports a generated page that the inventory does not place', () => {
+		const generated = new Map(
+			PAGES.filter((p) => p.generated).map((p) => [`docs/${p.id}.md`, ''] as const),
+		);
+		expect(placementProblems(generated)).toEqual([]);
+		generated.set('docs/concepts/stray.md', '');
+		generated.set('docs/errors/E1101.md', '');
+		generated.set('docs/api/reference/scene.md', '');
+		expect(placementProblems(generated)).toEqual([
+			'concepts/stray is generated, but the inventory does not place it',
+		]);
 	});
 });
 
@@ -176,8 +253,6 @@ describe('generateDocs', () => {
 		const written = `${renderFrontMatter([
 			['id', 'concepts/handles'],
 			['title', 'Handles'],
-			['status', 'experimental'],
-			['since', '0.1'],
 			['summary', 'Written.'],
 		])}\n# Handles\n`;
 		const root = fixture({
@@ -190,11 +265,13 @@ describe('generateDocs', () => {
 		expect(out.has('docs/index.md')).toBe(false);
 		expect(out.has('docs/concepts/architecture.md')).toBe(false);
 		const pages = out.get('docs/pages.md') ?? '';
-		expect(pages).toContain('status: generated');
+		expect(pages).toContain('generated: true');
 		expect(pages).toContain('[Handles](concepts/handles.md)');
 		expect(pages).toContain('## Concepts');
+		expect(pages).toContain('### How the engine runs');
 		expect(pages).not.toContain('(index.md) |');
-		expect(out.get('docs/porting/threejs-mapping.md')).toContain('status: generated');
+		expect(JSON.parse(out.get('docs/nav.json') ?? '{}').areas[0].id).toBe('getting-started');
+		expect(out.get('docs/porting/threejs-mapping.md')).toContain('generated: true');
 	});
 
 	it("puts each export on its page's reference page, and writes none for a page that is missing", () => {
@@ -209,10 +286,10 @@ describe('generateDocs', () => {
 		expect(out.has('docs/api/objects.md')).toBe(false);
 		const reference = out.get('docs/api/reference/objects.md') ?? '';
 		expect(reference).toContain('id: api/reference/objects');
-		expect(reference).toContain('status: generated');
-		expect(reference).toContain('# Objects and transforms: API reference');
+		expect(reference).toContain('generated: true');
+		expect(reference).toContain('# Objects: API reference');
 		expect(reference).toContain('## `Thing`');
-		expect(reference).toContain('[Objects and transforms](../objects.md)');
+		expect(reference).toContain('[Objects](../objects.md)');
 		expect(out.get('docs/pages.md')).not.toContain('api/reference/');
 	});
 });
@@ -240,7 +317,7 @@ describe('the quality preset tables', () => {
 			'docs/data/threejs-mapping.json': MAPPING,
 		});
 		const page = generateDocs(root, NO_API).get('docs/concepts/quality-preset-tables.md') ?? '';
-		expect(page).toContain('status: generated');
+		expect(page).toContain('generated: true');
 		expect(page).toContain('## Starting preset of each device');
 		expect(page).toContain('| Phone | coarse | under 600 CSS pixels | Low |');
 		expect(page).toContain('| Desktop or laptop | fine | any | High |');
@@ -262,6 +339,67 @@ describe('the quality preset tables', () => {
 	});
 });
 
+describe('mappingMarkdown', () => {
+	const mapping = {
+		statusLegend: { direct: 'Same.' },
+		entries: [
+			{
+				id: 'widget',
+				category: 'Widgets',
+				three: 'Widget',
+				target: 'widget()',
+				status: 'direct',
+				notes: 'Call it. See (concepts/handles) and (three/webgpu).',
+				details: 'Extra detail, also (concepts/handles).',
+				docs: 'concepts/handles',
+			},
+		],
+	};
+	const titles = new Map([['concepts/handles', 'Handles']]);
+	const text = { title: 'Mapping', summary: 'The map.' };
+
+	it('links the docs column and a page id in a note, and points to the block', () => {
+		const page = mappingMarkdown(mapping, text, false, titles);
+		expect(page).toContain('| [Handles](../concepts/handles.md) |');
+		expect(page).toContain('Call it. See ([Handles](../concepts/handles.md)) and (three/webgpu).');
+		expect(page).toContain('Details below the table.');
+		expect(page).toContain('<summary>Technical details: Widget</summary>');
+		expect(page).toContain('Extra detail, also ([Handles](../concepts/handles.md)).');
+	});
+
+	it('keeps page ids in code font for the skill copy', () => {
+		const copy = mappingMarkdown(mapping, text, true, titles);
+		expect(copy).toContain('| `concepts/handles` |');
+		expect(copy).not.toContain('../concepts/handles.md');
+		expect(copy).toContain('<summary>Technical details: Widget</summary>');
+		expect(copy).toContain('Extra detail, also (concepts/handles).');
+	});
+
+	it('leaves an unknown page id in a note as plain text', () => {
+		const page = mappingMarkdown(
+			{
+				statusLegend: { direct: 'Same.' },
+				entries: [
+					{
+						id: 'other',
+						category: 'Widgets',
+						three: 'Other',
+						target: 'other()',
+						status: 'direct',
+						notes: 'See (three/webgpu).',
+						docs: 'concepts/handles',
+					},
+				],
+			},
+			text,
+			false,
+			titles,
+		);
+		expect(page).toContain('See (three/webgpu).');
+		expect(page).toContain('| [Handles](../concepts/handles.md) |');
+	});
+});
+
 describe('referenceProblems', () => {
 	it('adds a page tag that names no inventory page to the reader problems', () => {
 		const api = { symbols: [{ ...SET_THING, page: 'api/nope' }], problems: ['x has no summary'] };
@@ -280,7 +418,7 @@ describe('error pages', () => {
 			expect(out.get(`docs/errors/${code}.md`)).toContain(`# ${code}: `);
 			expect(index).toContain(`[${code}](${code}.md)`);
 		}
-		expect(parseFrontMatter(index)?.data.status).toBe('generated');
+		expect(parseFrontMatter(index)?.data.generated).toBe(true);
 	});
 });
 

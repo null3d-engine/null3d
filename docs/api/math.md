@@ -1,14 +1,10 @@
 ---
 id: api/math
 title: Math helpers
-status: experimental
-since: "0.1"
 summary: "vec3, quat, mat4 and color on plain arrays; math.clamp, lerp, damp and a random generator that hold mode seeds; the maths entry and createMath for a deterministic simulation."
 ---
 
 # Math helpers
-
-> Roadmap step 0.1, first released in null3D 0.1.0. The API is experimental, so it can still change between versions.
 
 The math helpers work on plain arrays, in the style of the gl-matrix library. A helper that makes a vector, a rotation, a matrix or a color writes it into the array you pass first, `out`. It also returns that array. The helpers allocate nothing, so create your arrays once in the setup and reuse them in every frame.
 
@@ -122,7 +118,9 @@ const exact = createMath({ sin, cos, acos, exp }); // once, at load
 const turn = exact.quat.setAxisAngle(quat.create(), [0, 1, 0], 0.5);
 ```
 
-The entry leaves out the helpers that need a sine, a cosine, an arc cosine or an exponential, which `Math` computes differently on different engines. They are `quat.setAxisAngle`, `fromEuler`, `rotateX`, `rotateY`, `rotateZ` and `slerp`, `vec3.angle` and `math.damp`. The call `createMath({ sin, cos, acos, exp })` builds those eight on the functions that you pass, with the main entry's arithmetic. It also leaves out the random helpers, which start from `Math.random`, and `color`. [Using null3D with a deterministic simulation](../guides/deterministic-simulation.md) lists each sub-path's helpers, and says what else stays out of a simulation.
+The entry leaves out the helpers that need a sine, a cosine, an arc cosine or an exponential, which `Math` computes differently on different engines. They are `quat.setAxisAngle`, `fromEuler`, `rotateX`, `rotateY`, `rotateZ` and `slerp`, `vec3.angle` and `math.damp`. The call `createMath({ sin, cos, acos, exp })` builds those eight on the functions that you pass, with the main entry's arithmetic.
+
+It also leaves out the random helpers, which start from `Math.random`, and `color`. [Using null3D with a deterministic simulation](../guides/deterministic-simulation.md) lists each sub-path's helpers, and says what else stays out of a simulation.
 
 ## API reference
 

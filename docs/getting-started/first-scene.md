@@ -1,14 +1,10 @@
 ---
 id: getting-started/first-scene
 title: Your first scene
-status: experimental
-since: "0.1"
 summary: "page.ts with createEngine; sketch.ts with defineSketch; camera, light, mesh; running it with Vite."
 ---
 
 # Your first scene
-
-> Roadmap step 0.1, first released in null3D 0.1.0. The API is experimental, so it can still change between versions.
 
 ```mermaid
 flowchart LR
@@ -19,7 +15,7 @@ flowchart LR
 
 A null3D project has two modules. The page module, `page.ts`, runs on the page's main thread: it creates the engine and keeps the HTML. The sketch module, `sketch.ts`, builds the 3D scene and updates it every frame, in a worker of its own. This page builds a turning box with a camera and two lights.
 
-Put the four files below in one folder. The project needs the `@null3d/engine` package, and Vite with the `@null3d/vite-plugin` package: [Install null3D](install.md) lists them.
+Put the four files below in one folder. The project needs the `@null3d/engine` package, and Vite with the `@null3d/vite-plugin` package: [Install null3D](install.md) lists them. `bunx @null3d/cli create` writes this same project for you, with the two modules in `src/`. See [Project structure](project-structure.md).
 
 ## The HTML page
 
@@ -47,19 +43,26 @@ CSS sets the canvas's size. The engine draws at that size times the screen's pix
 
 ```ts
 // page.ts
-import { createEngine } from '@null3d/engine';
+import { createEngine, EngineError } from '@null3d/engine';
 
 const canvas = document.querySelector('canvas')!;
-const engine = await createEngine({
-  canvas,
-  sketch: new URL('./sketch.ts', import.meta.url),
-});
-await engine.firstFrame; // the first frame is on the screen
+try {
+  const engine = await createEngine({
+    canvas,
+    sketch: new URL('./sketch.ts', import.meta.url),
+  });
+  await engine.firstFrame; // the first frame is on the screen
+} catch (error) {
+  if (!(error instanceof EngineError)) throw error;
+  const note = document.createElement('p');
+  note.textContent = 'This browser cannot show the 3D scene.';
+  canvas.replaceWith(note);
+}
 ```
 
 `createEngine` picks the GPU path, starts the engine's threads and runs the sketch's setup. It resolves once the setup has run. `engine.firstFrame` resolves once the GPU has finished the first frame, which is the moment to remove a loading screen.
 
-`createEngine` rejects with an `EngineError` when the browser cannot run the engine. Examples are Safari before 18 ([E1306](../errors/E1306.md)), a browser without WebAssembly SIMD ([E1303](../errors/E1303.md)), and one without a usable GPU path ([E1301](../errors/E1301.md)). Catch it, and show the page without the scene.
+`createEngine` rejects with an `EngineError` when the browser cannot run the engine. Examples are Safari before 18 ([E1306](../errors/E1306.md)), a browser without WebAssembly SIMD ([E1303](../errors/E1303.md)), and one without a usable GPU path ([E1301](../errors/E1301.md)). The `catch` above shows the page without the scene. [Debugging](../guides/debugging.md#where-problems-appear) lists every error the start can give, and `engine.onFailure` for failures after the start.
 
 ## The sketch module
 
@@ -123,6 +126,11 @@ Open the address that Vite prints. `bunx vite build` writes the production files
 
 ## Next steps
 
+- [Show a model](../cookbook/index.md#a-loading-screen-for-models): load a glTF file and an environment, and wait for the first frame.
+- [Orbit controls](../api/controls.md): let the user turn and zoom the camera.
+- [Lighting and environment](../concepts/lighting.md): light types, environment maps and fog.
+- [Project structure](project-structure.md): start from the `product` template, which has orbit controls and soft studio light.
+- glTF model example: a full sketch that shows a model on a turntable.
 - [Objects and transforms](../api/objects.md): move, turn, parent and hide objects.
 - [Static and dynamic objects](../concepts/static-dynamic.md): when to pass `dynamic: true`.
 - [Instances and batching](../concepts/instances.md): draw thousands of copies of one mesh.

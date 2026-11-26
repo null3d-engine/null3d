@@ -1,14 +1,10 @@
 ---
 id: guides/start-time
 title: A fast start
-status: experimental
-since: "0.1"
 summary: "Where a page's start goes, on a simulated phone link and on real phones; compression, cache headers, the compiled core and HTTP/2 on the host; the early core script; what the engine does while the core downloads; downloads of the first view and of the rest; the preset check; pipelines on phones; testing and measuring a start."
 ---
 
 # A fast start
-
-> Roadmap step 0.1, first released in null3D 0.1.0. The API is experimental, so it can still change between versions.
 
 ```mermaid
 flowchart LR
@@ -24,77 +20,61 @@ flowchart LR
 
 A visitor waits from the moment the page's address loads until the first frame shows. Most of that wait is downloads, the round trips between them, and on a phone the GPU's pipeline builds. A round trip takes 150 to 560 ms on a phone's network, so each download that waits for another one adds that much. The host, the page and the sketch each decide part of the start. This guide gives the steps that shorten it, in the order of the start.
 
+The steps that shorten a start, in the order of the start:
+
+1. [Compress every file](#compress-every-file), `.wasm` included.
+2. [Let the browser keep the files](#let-the-browser-keep-the-files).
+3. [Serve over HTTP/2](#serve-over-http2).
+4. [Keep the early core script](#keep-the-early-core-script), and create the engine as soon as the page can.
+5. [Start the first view's downloads at the top of the setup](#start-the-first-views-downloads-at-the-top-of-the-setup).
+6. [Draw the first frame before the large models](#draw-the-first-frame-before-the-large-models).
+7. [Keep the first view's pipelines few](#pipelines-on-phones).
+8. [Start an offline cache only after the first frame](#cache-for-offline-play-after-the-first-frame).
+9. [Test a production build](#test-a-production-build), and [measure the start](#measure-a-start).
+
 ## Where the time goes
 
-The engine's demos were timed as a production build over a simulated phone connection. It had 150 ms for each round trip and 10 Mbit/s, and the browser's cache was empty. Before the changes that this guide describes, a first visit spent its time on these steps:
+The engine's demos were timed as a production build over a simulated phone connection. It had 150 ms for each round trip and 10 Mbit/s, and the browser's cache was empty. These are the steps of a first visit today, with what each costs when it is skipped:
 
-| Step | Time | What the browser waited for |
+| Step | Cost when skipped | What shortens it |
 | --- | --- | --- |
-| The HTML page | 0.5 s | Three round trips on a new connection: TCP, TLS and the request |
-| The engine core | 2.3 s | The core's WebAssembly file, 2.0 MB as the server sent it, with no compression. Brotli makes it about 0.6 MB |
-| The sketch module's imports | 0.6 to 1.0 s | Three or four rounds of imports, one after another, which started once the core was ready |
-| The sketch module's top-level code | 1.2 s in one scene | Terrain that the module built as it loaded, before its setup could start |
-| The scene's own files | 22 s in one scene | 18 MB of models in two batches. The second batch started only once the first was built |
-| The first frame's pipelines | 0.7 to 1.3 s | The shaders that the first frame needs, compiled while the last files downloaded |
+| The HTML page | 0.5 s | Three round trips on a new connection: TCP, TLS and the request. [Serve over HTTP/2](#serve-over-http2) |
+| The engine core | 2.3 s | 2.0 MB of WebAssembly with no compression. [Compress every file](#compress-every-file) makes it about 0.6 MB |
+| The sketch module's imports | 0.6 to 1.0 s | Three or four rounds of imports, one after another. [The import chain, asked for at once](#what-the-engine-does-while-the-core-downloads) |
+| The sketch module's top-level code | 1.2 s in one scene | Terrain built as the module loaded. [Start the first view's downloads early](#start-the-first-views-downloads-at-the-top-of-the-setup) |
+| The scene's own files | 22 s in one scene | 18 MB of models in two batches. [Draw the first frame before the large models](#draw-the-first-frame-before-the-large-models) |
+| The first frame's pipelines | 0.7 to 1.3 s | Shaders compiled while the last files downloaded. [Keep the first view's pipelines few](#pipelines-on-phones) |
 
-Three demos whose first view needs no large file drew their first frame 4.6 to 8.9 seconds after the address loaded. The demo that waited for 18 MB of models took 25.7 seconds. The same demos took 27 to 85 seconds from the Vite dev server over the same connection, as [Test a production build](#test-a-production-build) explains.
+With these steps applied, the engine's demos draw the first frame in 2.7 to 7.6 seconds over that link. On real phones, they draw it in 3.5 to 39 seconds. The block below gives each demo's figure.
 
-Each change below was then measured alone, on the same connection:
+<details>
+<summary>Technical details: measured starts on a simulated phone link and on real phones</summary>
 
-| Change | Measured | Before | After |
-| --- | --- | --- | --- |
-| [Compress every file](#compress-every-file), `.wasm` included, with a smaller page script and no offline cache | A small demo's first frame | 4.6 s | 3.0 s |
-| The same | The creek demo's repeat visit | 3.0 s, or 5.6 s with its offline cache | 1.7 s |
-| [The sketch module loads while the core downloads](#what-the-engine-does-while-the-core-downloads) | From the core's arrival to the setup's start | 0.64 to 0.96 s | 0.15 to 0.51 s |
-| [The sketch's whole import chain is asked for at once](#what-the-engine-does-while-the-core-downloads), over HTTP/2 with Brotli | A small demo's first frame, and the skyway demo's | 3.24 s and 3.52 s | 2.90 s and 3.23 s |
-| [The stored list of the first frame's pipelines](#pipelines-on-phones) | The island's repeat visit on a Galaxy S25, from the setup's end to the first frame | 3.81 s | 1.56 s |
-| [The first frame before the large models](#draw-the-first-frame-before-the-large-models) | The creek demo's first frame | 25.7 s | 5.7 s, with every model in at 25.0 s |
-| The same for the island's trees, town and people, with its heavy work moved to first use | The island demo's first frame on WebGPU, and on WebGL2 | 9.37 s and 23.56 s | 6.84 s and 7.97 s |
-| The splat scan draws once the nearest parts are in | The splat demo's first frame | 29.1 s | 8.8 s, with every part in at 28.2 s |
-| The splats add-on starts its decoder and its selection beside its first download | The splat demo's first parts on screen | 8.3 s | 7.0 s |
-| [The download list](#start-the-first-views-downloads-at-the-top-of-the-setup) names the creek demo's eleven models, with every model drawn before the first frame | The creek demo's first frame, and the time with nothing downloading before it | 25.9 s and 3.3 s | 21.3 s and 0.2 s |
-| [The first view's downloads start together](#start-the-first-views-downloads-at-the-top-of-the-setup): a light map and a model | The character demo's first frame | 8.55 s | 8.2 s |
-| [The preset check during play](#the-preset-check) | A small demo's loading screen on a first visit, at full speed on a MacBook Pro | 1.18 s | 0.49 s |
-| [Chrome keeps the compiled core](#let-the-browser-keep-the-files) | A repeat visit's first frame on the engine's test page, at full speed, and the core's functions that it compiled again | 176 to 180 ms, 273 functions | 160 ms, 3 functions |
-
-With every change together, the same Mac timed the engine before and after the changes in turns, over the same simulated phone connection. Each figure is the median of three loads, in seconds to the first finished frame. A cold load starts with an empty cache. A reload comes after a first visit that ran for 30 seconds. The load average is the Mac's during each pair of loads, before and after.
+Each figure is the median of three loads, in seconds to the first finished frame. A cold load starts with an empty cache, and a reload comes after a first visit of 30 seconds.
 
 Over HTTP/1.1:
 
-| Demo and load | Before | After | Load average, before and after |
-| --- | --- | --- | --- |
-| Small demo, cold | 4.6 s | 2.9 s | 4.2 and 3.5 |
-| Skyway, cold | 5.7 s | 3.5 s | 7.0 and 5.7 |
-| Island, cold | 8.9 s | 7.6 s | 11.5 and 7.9 |
-| Creek, cold | 25.7 s | 4.3 s | 3.9 and 4.2 |
-| Island, reload | 4.7 s | 2.2 s | 3.9 and 4.1 |
-| Creek, reload | 2.6 s | 1.3 s | 9.6 and 4.2 |
+| Demo and load | Time |
+| --- | --- |
+| Small demo, cold | 2.9 s |
+| Skyway, cold | 3.5 s |
+| Island, cold | 7.6 s |
+| Creek, cold | 4.3 s |
+| Island, reload | 2.2 s |
+| Creek, reload | 1.3 s |
 
 Over HTTP/2:
 
-| Demo and load | Before | After | Load average, before and after |
-| --- | --- | --- | --- |
-| Small demo, cold | 4.5 s | 2.7 s | 13.7 and 10.7 |
-| Skyway, cold | 5.3 s | 2.8 s | 3.5 and 3.3 |
-| Island, cold | 10.2 s | 7.0 s | 4.4 and 3.1 |
-| Creek, cold | 27.7 s | 3.3 s | 9.4 and 4.3 |
-| Island, reload | 3.9 s | 2.4 s | 3.8 and 5.1 |
-| Creek, reload | 2.3 s | 0.9 s | 3.3 and 2.7 |
+| Demo and load | Time |
+| --- | --- |
+| Small demo, cold | 2.7 s |
+| Skyway, cold | 2.8 s |
+| Island, cold | 7.0 s |
+| Creek, cold | 3.3 s |
+| Island, reload | 2.4 s |
+| Creek, reload | 0.9 s |
 
-### On real phones
-
-The same demos also ran on real phones, over a tunnel of about 105 ms for each round trip and 1 to 60 Mbit/s. Before the changes, a first visit drew its first frame in these times:
-
-| Device | Small demo | Skyway | Island | Creek |
-| --- | --- | --- | --- | --- |
-| Galaxy S25, Chrome | 4.7 s | 7.8 s | 13.4 s | 25.1 s |
-| Pixel 9, Chrome | 6.5 s | 10.3 s | 18.8 s | 38.8 s |
-| Galaxy Tab A9 Plus, Chrome | 9.1 s | 20.2 s | 46.7 s | failed |
-| iPhone 17, Safari | 11.6 s | 19.0 s | 24.4 s | 34.5 s |
-
-Safari on the iPhone 17 kept the files and its compiled shaders between visits. Its repeat visits drew their first frame in 0.9 to 5.5 seconds. Chrome on the Android devices kept no file between visits, because they had accepted the test server's certificate after a warning ([Test a production build](#test-a-production-build)).
-
-With the changes, on the same devices, a first visit in a fresh session drew its first frame in these times. The tunnel ran at about 100 ms for each round trip and 4 to 9 Mbit/s:
+The same demos ran on real phones, over a tunnel of about 100 ms for each round trip and 4 to 9 Mbit/s. A first visit in a fresh session drew its first frame in these times:
 
 | Device | Small demo | Skyway | Island | Creek |
 | --- | --- | --- | --- | --- |
@@ -105,23 +85,22 @@ With the changes, on the same devices, a first visit in a fresh session drew its
 
 The phones start at Low and run no preset check. On the Galaxy Tab A9 Plus, the check runs during play for 12 to 38 seconds after the first frame, and settles on Low. There the creek demo lost its GPU in 2 of 6 loads. The iPhone 17's repeat visits drew their first frame in 0.4 to 3.1 seconds. The small demo's times follow the tunnel's speed, which differed between the two runs.
 
+</details>
+
 A phone's processor makes the largest difference from a computer. The first frame's pipeline builds take seconds there, as [Pipelines on phones](#pipelines-on-phones) shows. The Galaxy Tab A9 Plus failed to build one custom material's pipeline in the creek demo, and on repeat visits of the island.
 
 The engine builds a pipeline that the driver refuses once more, alone. When the driver refuses it again, the engine leaves that pipeline's objects out and draws on, with [E1307](../errors/E1307.md), which does not stop it. So the island draws on that tablet without its far tree cards, at 1.1 frames a second at Low. The creek demo reaches its first frame at 71 seconds there, but the tablet runs out of GPU memory 4 seconds later ([E1302](../errors/E1302.md)).
 
 ## Compress every file
 
-The host's compression decides the size of the start's largest downloads. Send every file of the build with Brotli where the host has it, and with gzip where it does not:
+The host's compression decides the size of the start's largest downloads. Send every file of the build with Brotli where the host has it, and with gzip where it does not. A device loads one start shader file, picked by what its GPU supports:
 
 | File | As it is | gzip | Brotli |
 | --- | --- | --- | --- |
-| The engine core, `null3d_bg-<hash>.wasm` | 1.9 MB | 0.8 MB | 0.6 MB |
 | The largest WebGL2 start shader file | 1.4 MB | 0.21 MB | 0.06 MB |
 | The largest WebGPU start shader file | 0.47 MB | 0.09 MB | 0.04 MB |
 
-A device loads one start shader file, picked by what its GPU supports. [Send the files with Brotli](../getting-started/hosting.md#send-the-files-with-brotli) gives the size of the engine's whole start for each kind of compression.
-
-Many servers compress only text, and send `.wasm` files as they are. Open the browser's network panel, and compare the core's transferred size with its size. With nginx, add `application/wasm` to `gzip_types`, or send files that you compress when you deploy, as [Hosting](../getting-started/hosting.md#send-the-files-with-brotli) shows.
+The engine core's `.wasm` file takes about 0.6 MB with Brotli ([Send the files with Brotli](../getting-started/hosting.md#send-the-files-with-brotli)).
 
 The null3D Vite plugin compresses in both of its servers. `vite preview` compresses the build's files and models with Brotli, `.wasm` included, for every visitor. The dev server compresses its answers to other devices, such as a phone on the network, and leaves `localhost` as it is.
 
@@ -132,14 +111,22 @@ Models compress less, because their textures are compressed already. Brotli save
 A repeat visit is fast when the browser keeps what the first visit downloaded. Vite names each file in `assets/` with a hash of its content. Serve those files as immutable, and the HTML page so that the browser checks it each time, as [Hosting](../getting-started/hosting.md#let-browsers-keep-the-build-files) shows. A repeat visit then downloads only the page.
 
 - A file served with `no-cache` costs one round trip on every visit, even when it has not changed. Give your own large files, such as models, a hash or a version in their addresses, such as `statue-v3.glb`, and serve those addresses as immutable. Serve every other address with `no-cache`, so a changed file never shows its old copy.
-- Send no `Vary: Origin` header with the build's files when they come from the page's own origin. A worker's request for a module carries an `Origin` header that the page's own download of the file does not. With `Vary: Origin`, the browser checks the file again, one round trip, instead of taking its copy.
-- Send `.wasm` files with `Content-Type: application/wasm`, with nothing after it. Chrome 157 and later then keep the compiled engine core beside the file, and a repeat visit skips most of its compile. Chrome writes that code a few seconds into a visit, about 6 seconds after the first frame on the engine's test page. Chrome 156 and earlier rarely write it ([Let Chrome keep the compiled core](../getting-started/hosting.md#let-chrome-keep-the-compiled-core)).
+- Send the build's files as [Hosting](../getting-started/hosting.md#let-browsers-keep-the-build-files) shows, including the header that lets Chrome keep the compiled core ([let Chrome keep the compiled core](../getting-started/hosting.md#let-chrome-keep-the-compiled-core)).
+
+On the engine's test page, a repeat visit took 160 ms to the first frame with the compiled core kept. It took 176 to 180 ms with only the file kept. Chrome recompiled 3 functions in the first case, and 273 in the second.
 
 ## Serve over HTTP/2
 
 Over HTTP/1.1, a browser opens at most six connections to a host. The page, every engine worker and every download share them. A large download holds a connection, and the other requests wait in a queue. Over HTTP/2 or HTTP/3, one connection carries every request at once. Cloudflare Pages, Netlify, Vercel and most CDNs serve HTTP/2. The network panel's Protocol column shows `h2` or `h3` for each file.
 
-The null3D Vite plugin serves its HTTPS over HTTP/1.1 by default, in `vite` and in `vite preview`. Over HTTP/2, Safari on an iPad sometimes stalls while a worker loads its modules from the dev server. The plugin's `http2: true` option serves HTTP/2 for other browsers. Over the simulated phone connection, it cut a small demo's first visit from the dev server from 13.8 to 7.2 seconds. Its reload fell from 11.7 to 4.7 seconds.
+The null3D Vite plugin serves its dev server over HTTP/1.1, because Safari on an iPad sometimes stalls over HTTP/2. Its `http2: true` option serves HTTP/2 for other browsers ([During development](../getting-started/hosting.md#during-development)).
+
+<details>
+<summary>Technical details: HTTP/2 on the dev server</summary>
+
+Over the simulated phone connection, HTTP/2 cut a small demo's first visit from the dev server from 13.8 to 7.2 seconds. Its reload fell from 11.7 to 4.7 seconds.
+
+</details>
 
 ## Keep the early core script
 
@@ -161,11 +148,20 @@ A production build with the null3D Vite plugin adds a small script to the head o
 
 So when the core arrives, the setup starts almost at once.
 
-The Vite plugin also writes into the built sketch module every file that the module reaches through its imports. So the sketch worker asks for all of them as soon as the module arrives. It needs no round trip for each step of the chain. A sketch's code then arrives in about 2 rounds instead of 4 to 6. Over HTTP/1.1 the six connections still queue those files, so the gain there is small. The engine's package keeps no `sideEffects` list: one was measured, and it made the start slower.
+Because the sketch worker imports the sketch module during the download, the module's top-level code runs before the engine has started. It also runs when the start fails.
+
+Work there must not need the engine: a call that makes scene data before the core starts fails with [E1403](../errors/E1403.md). Work that needs no engine can run there and overlap the download, such as a height grid that the first view reads. Hold mode, a replay and a recording load the module only after the engine has started. There, such work still holds up the setup ([Sketch API](../api/sketch.md)).
+
+The Vite plugin also writes into the built sketch module every file that the module reaches through its imports. So the sketch worker asks for all of them as soon as the module arrives. It needs no round trip for each step of the chain. A sketch's code then arrives in about 2 rounds instead of 4 to 6. Over HTTP/1.1 the six connections still queue those files, so the gain there is small.
+
+<details>
+<summary>Technical details: the engine package's sideEffects field</summary>
+
+The engine's package declares no `sideEffects` list. A build with one started more slowly.
+
+</details>
 
 `engine.measure()` reports when the thread that draws had its device, its shader file and its renderer, in `load.drawingStart` ([Measure a start](#measure-a-start)).
-
-The sketch module's top-level code therefore runs before the engine has started, and also when the start fails. Work there must not need the engine: a call that makes scene data before the core starts fails with [E1403](../errors/E1403.md). Work that needs no engine can run there and overlap the download, such as a height grid that the first view reads. Hold mode, a replay and a recording load the module only after the engine has started. There, such work still holds up the setup ([Sketch API](../api/sketch.md)).
 
 ## Start the first view's downloads at the top of the setup
 
@@ -199,7 +195,16 @@ The engine's add-ons follow the same rule. The sound add-on downloads its record
 
 Post the first loading message on the setup's first line, so the loading screen names the scene's own work from the start.
 
-Name the first view's files in the `downloads` option of `defineSketch`, in the order that the setup needs them: `defineSketch(setup, { downloads: [...] })`. They start to download as soon as the sketch module loads, often before the core has arrived. Two download at a time, at a low priority, so the engine's own files still find free connections. A load that waits for a listed file moves it to the front, and up to four then download at once. Hold mode, replays and recordings ignore the list ([The download list](../api/sketch.md#the-download-list)).
+Name the first view's files in the `downloads` option of `defineSketch`, in the order that the setup needs them: `defineSketch(setup, { downloads: [...] })`. They start to download as soon as the sketch module loads, often before the core has arrived.
+
+<details>
+<summary>Technical details: how the download list is scheduled</summary>
+
+Two files download at a time, at a low priority, so the engine's own files still find free connections. A load that waits for a listed file moves it to the front, and up to four then download at once. Hold mode, replays and recordings ignore the list ([The download list](../api/sketch.md#the-download-list)).
+
+</details>
+
+Over the simulated phone link, the creek demo's eleven models took 21.3 seconds with the download list. They took 25.9 seconds without it, with every model drawn before the first frame. With nothing downloading before the first frame, it took 0.2 seconds with the list and 3.3 seconds without.
 
 List only the files that the first frame needs, and start the rest from `engine.firstFrame`, as the next section shows. A development build warns once in a live start when a scene's own load started only after another one finished, with nothing else downloading. Pass `serialLoadWarning: false` to turn the warning off where the second address comes from the first file.
 
@@ -208,6 +213,8 @@ List only the files that the first frame needs, and start the rest from `engine.
 The first frame waits for the setup. When the setup awaits a large model, the visitor sees the loading screen for the whole download. So build the first view in the setup, and let the large models that it does not need arrive after the first frame. Each one appears as it lands.
 
 Start those downloads after the first frame, not in the setup. Over HTTP/1.1, large files that the setup starts take all six connections, and the first frame's own shader and code files wait behind them. A lower fetch priority does not help: the large files take the free connections before the shader requests exist. Started with the setup, a scene's 2.85 MB of town models made its first frame 0.7 to 1.0 seconds later.
+
+On the simulated phone link, the creek demo's first frame takes 5.7 seconds when its large models come after it. It takes 25.7 seconds when the setup waits for them.
 
 In the sketch, `engine.firstFrame` resolves once the GPU has finished the first frame, as `engine.firstFrame` does on the page. Unlike the page's promise, it never rejects: when the engine stops first, it stays pending. Start the later downloads when it resolves:
 
@@ -231,7 +238,7 @@ export default defineSketch(async ({ assets, engine, scene }) => {
 
 Never await `engine.firstFrame` in the setup, because the first frame waits for the setup. A frame number is no such signal. The thread that draws can still be drawing the first frame while the sketch runs the second ([The engine field](../api/sketch.md#the-engine-field)).
 
-`engine.held` is true in hold mode and in a replay, so tests still draw the finished scene. A held start that waits for many files starts them all on the setup's first line with `assets.preload`. It then builds the scene in one fixed order. The engine's showcase demos take a `?grown` switch that does the same on a live page. A page that measures frame rates then measures the finished scene.
+`engine.held` is true in hold mode and in a replay, so tests still draw the finished scene. A held start that waits for many files starts them all on the setup's first line with `assets.preload`. It then builds the scene in one fixed order. The Island demo takes a `?grown` switch that does the same on a live page. A page that measures frame rates then measures the finished scene.
 
 While the engine holds frames or replays, the sketch's `assets` calls run one at a time, in the order the sketch made them. So the held picture never depends on which file lands first ([Hold mode](testing.md#hold-mode)).
 
@@ -243,11 +250,9 @@ The same holds for work that the first view does not need. Light maps that a sce
 
 ## The preset check
 
-When the engine picks the quality preset itself, it checks the preset in the first frames of play on a first visit. The loading screen goes at the first frame, and the check measures while the sketch plays. Where the GPU misses the target frame rate, the engine lowers the preset in front of the viewer. `engine.presetChecked` resolves once the check has ended. A page or a tool that measures steady play waits for it, because the check can lower the preset inside the measured window. A repeat visit takes the stored result and runs no check, and a phone starts at Low, which has no check.
+When the engine picks the quality preset itself, it checks the preset in the first frames of play on a first visit. The check can lower the preset in front of the viewer. On a Galaxy Tab A9 Plus, a check during play ran 12 to 38 seconds after the first frame. A check before play held the loading screen 8 to 18 seconds after it. `presetCheck: 'before-play'` hides the change behind the loading screen, and `createEngine` waits for it. The `?preset-check=` switch sets the same from the page's address ([The preset check](loading-screens.md#the-preset-check)).
 
-A check before play costs a slow tablet the most. On a Galaxy Tab A9 Plus, it held the loading screen 8 to 18 seconds after the first frame. A page that would rather hide a change of preset behind its loading screen passes `presetCheck: 'before-play'` to `createEngine`. The check then runs before play, and `createEngine` waits for it, at least three quarters of a second for each preset that it measures. The `?preset-check=` switch sets the same from the page's address ([The preset check](loading-screens.md#the-preset-check)).
-
-On a slow tablet the check can take many seconds, as each lighter preset builds its pipelines. It stores its rounds each time it lowers the preset, so a viewer who leaves during the check loses none of them. The next start begins at the preset that the check had lowered to. The check's target starts at the display's rate measured before its first frame, and never falls under the check's own load. Its first round waits for the first frame's pipelines, then for frames at play's rate, for at most 4 seconds. A preset under a quarter of its target goes straight to Low. When Low is that slow too, the governor takes the [lowest quality tier](../concepts/quality-presets.md#the-lowest-quality-tier) during play, as it does on any device.
+On a slow tablet the check takes many seconds, as each lighter preset builds its pipelines. It stores each round as it lowers the preset, so the next start begins at the preset that it reached. A page or a tool that measures steady play waits for `engine.presetChecked`, because the check can lower the preset inside the measured window. A repeat visit takes the stored result and runs no check, and a phone starts at Low, which has no check.
 
 ## Pipelines on phones
 
@@ -261,19 +266,35 @@ Building the first frame's pipelines is the largest processor cost of a start on
 | iPhone 17 | 2.4 s | 11.8 s | 13.1 s | 16.5 s |
 | MacBook Pro | 0.1 s | 0.2 s | 0.3 s | 0.7 s |
 
-The phones built 16 to 17, 53 to 55, 61 to 63 and 45 to 46 pipelines for the four demos. The MacBook Pro built 31, 73, 84 and 73 at its higher preset, in a fraction of the time. With the changes, a first visit's builds took 0.4 to 3.6 seconds on the Galaxy S25, and 0.8 to 6.5 seconds on the Pixel 9. They took 3 to 23 seconds on the Galaxy Tab A9 Plus, and 2.4 to 13 seconds on the iPhone 17.
+The phones built 16 to 17, 53 to 55, 61 to 63 and 45 to 46 pipelines for the four demos. The MacBook Pro built 31, 73, 84 and 73 at its higher preset, in a fraction of the time.
 
-On a repeat visit, Safari reused its compiled shaders, and the iPhone 17 built each demo's pipelines in 0.2 seconds or less. In Chrome on Android, the small demo built its pipelines 4 to 5 times faster, and the larger demos built theirs no faster. Chrome on Android keeps about 2 MB of a site's compiled WebGPU pipelines between visits, and 128 KB on a low-end phone. A computer keeps 6 MB. A scene with many large shaders overflows it, so the engine keeps a list of its own.
+On a repeat visit, Safari reused its compiled shaders, and the iPhone 17 built each demo's pipelines in 0.2 seconds or less. In Chrome on Android, the small demo built its pipelines 4 to 5 times faster, and the larger demos built theirs no faster.
+
+<details>
+<summary>Technical details: Chrome's pipeline cache</summary>
+
+Chrome on Android keeps about 2 MB of a site's compiled WebGPU pipelines between visits, and 128 KB on a low-end phone. A computer keeps 6 MB. A scene with many large shaders overflows it, so the engine keeps a list of its own.
+
+</details>
 
 - Keep the first view's pipelines few. A pipeline serves every object of one shading model, vertex format and set of material features, as the [Performance guide](performance.md#how-the-engine-batches-builds-pipelines-and-times-frames) lists. A new feature on one material, such as a normal map, makes a new pipeline.
 - Warm up behind the loading screen, so play builds no pipeline ([Loading screens and warm-up](loading-screens.md#pipelines-and-warm-up)).
 - Time the start on the phones and tablets of your audience. A desktop browser that emulates a phone builds pipelines at the computer's speed.
 
-The engine keeps a list of the pipelines that a sketch's first frame built, in the page's `localStorage`. The list is kept for each engine version, GPU path, set of the device's shader bits, preset and canvas format. On the next start, the thread that draws builds each of those pipelines as soon as its shader arrives. The engine downloads and the setup runs meanwhile. Before the first frame, the engine also builds in the background the pipelines that the frame's list asks for partway through. Identical pipelines share one build. Hold mode, replays and recordings neither read nor store the list, and `?builds=fresh` turns it off ([Repeat visits](loading-screens.md#repeat-visits)).
+The engine keeps a list of the pipelines that a sketch's first frame built, in the page's `localStorage`. On the next start, the thread that draws builds each of those pipelines as soon as its shader arrives. The engine downloads and the setup runs meanwhile. Hold mode, replays and recordings neither read nor store the list, and `?builds=fresh` turns it off ([Repeat visits](loading-screens.md#repeat-visits)).
+
+<details>
+<summary>Technical details: how the stored pipeline list works</summary>
+
+The list is kept for each engine version, GPU path, set of the device's shader bits, preset and canvas format. A scene that changed since the last start builds some pipelines that no frame takes, and its first frame stores a new list. Before the first frame, the engine also builds in the background the pipelines that the frame's list asks for partway through. Identical pipelines share one build.
+
+</details>
+
+On a repeat visit, the stored list cut the island's time on a Galaxy S25 from 3.81 to 1.56 seconds. It measures from the setup's end to the first frame.
 
 These figures run from the setup's end to the first frame:
 
-| Demo and device | Before | After |
+| Demo and device | Without the list | With the list |
 | --- | --- | --- |
 | Island, Galaxy S25, first visit | 5.79 s | 3.77 s |
 | Island, Galaxy S25, repeat visit | 3.81 s | 1.56 s |
@@ -283,7 +304,7 @@ These figures run from the setup's end to the first frame:
 
 ## Cache for offline play after the first frame
 
-A service worker that caches the build for offline play downloads files of its own. When it starts at the page's load, its downloads share the connection with the start. A worker that caches every file of a large build makes every first visit slower, and every repeat visit too until its cache is complete. The engine's demo page dropped such a worker: it sent about 1,570 requests and 820 MB over the start's connections.
+A service worker that caches the build for offline play downloads files of its own. When it starts at the page's load, its downloads share the connection with the start. A worker that caches every file of a large build makes every first visit slower, and every repeat visit too until its cache is complete. On the engine's demo page, a worker that cached every file sent about 1,570 requests and 820 MB over the start's connections.
 
 - Register the service worker once `engine.firstFrame` has resolved.
 - Cache only what the game needs: its pages, the start's files and the features that it uses, as [Offline play](../getting-started/hosting.md#offline-play) shows.
@@ -319,7 +340,12 @@ In the browser's developer tools, pick the Slow 4G profile. Time a first visit w
 
 Chrome's network throttling does not slow a service worker's own downloads. Its CPU throttling slows the page's thread, while the engine's setup and drawing run in workers. So time the setup's work and the pipeline builds on a real phone, through remote debugging.
 
-The engine's repository times the engine's own start with `bun run bench:startup`. It loads the engine's test page cold and warm in Chrome, on Slow 4G by default. It prints the median of each stage, with the drawing thread's device, shader file and renderer.
+<details>
+<summary>Technical details: how the engine's own start is timed</summary>
+
+The engine's repository times its own start with `bun run bench:startup`. It loads the engine's test page cold and warm in Chrome, on Slow 4G by default. It prints the median of each stage, with the drawing thread's device, shader file and renderer.
+
+</details>
 
 ## Related pages
 

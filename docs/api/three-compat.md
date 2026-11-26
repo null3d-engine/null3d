@@ -1,14 +1,10 @@
 ---
 id: api/three-compat
 title: three.js looks (@null3d/three-compat)
-status: experimental
-since: "0.3"
 summary: "Reinhard and Cineon tone curves for post.set, and an outline with three.js OutlinePass's glow, pulse and blurred edge. It runs no three.js code."
 ---
 
 # three.js looks (@null3d/three-compat)
-
-> Roadmap step 0.3, first released in null3D 0.1.0. The API is experimental, so it can still change between versions.
 
 ```mermaid
 flowchart LR

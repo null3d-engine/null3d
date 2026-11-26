@@ -1,14 +1,10 @@
 ---
 id: api/cameras
 title: Cameras
-status: experimental
-since: "0.1"
 summary: "Perspective and orthographic cameras; a perspective camera's focal length; lens shift; screenToRay; worldToScreen; layers."
 ---
 
 # Cameras
-
-> Roadmap step 0.1, first released in null3D 0.1.0. The API is experimental, so it can still change between versions.
 
 A camera is the object that the engine draws the scene from. There are two kinds: `scene.createPerspectiveCamera` makes a perspective camera, and `scene.createOrthographicCamera` makes an orthographic one. `scene.setActiveCamera` picks the camera that the canvas shows.
 
@@ -165,7 +161,9 @@ export default defineSketch(({ scene, input, page }) => {
 
 The engine draws a frame on one thread while the sketch computes the next one on another. A click therefore lands on a frame that is older than the sketch's current camera. During a fast pan, a ray from the current camera would miss what the user clicked.
 
-So the engine keeps the cameras of the last four views that it drew. Frames in a row with the same view count as one view. The frames that the engine draws while the setup runs count too, so a click during the setup picks what that frame showed. When `x` and `y` come from `input.pointer` or a finger in `input.touches`, the ray uses the camera of the frame on screen at that event. Any other point uses the camera of the frame that last ran, with its lens as it is now. This holds in every thread mode.
+So the engine keeps the cameras of the last four views that it drew. Frames in a row with the same view count as one view. The frames that the engine draws while the setup runs count too, so a click during the setup picks what that frame showed. When `x` and `y` come from `input.pointer` or a finger in `input.touches`, the ray uses the camera of the frame on screen at that event.
+
+Any other point uses the camera of the frame that last ran, with its lens as it is now. This holds in every thread mode.
 
 Objects keep their current positions. A ray finds a moving object where it is now. That can be up to a frame of its motion away from where the user saw it.
 
@@ -175,7 +173,7 @@ A view from `scene.createView` draws its camera into a rectangle of the canvas, 
 
 ## Several cameras
 
-A scene can have several cameras, and `setActiveCamera` switches between them. The canvas shows the scene from one camera at a time. Until you pick one, and after the engine removes the active camera, the canvas shows only the background.
+A scene can have several cameras, and `setActiveCamera` switches between them. The active camera fills the canvas. `scene.createView` draws more cameras into rectangles of it ([Multiple views](../guides/multiple-views.md)). Until you pick an active camera, and after the engine removes it, the canvas shows only the background.
 
 ## Related pages
 

@@ -94,7 +94,7 @@ export const CHROME_REFUSED = 'E1437';
 
 /** The fix that ends the refusal's message, which a unit test keeps equal to the engine's table. */
 export const CHROME_REFUSED_FIX =
-	"Run the command again. A download that broke off, or that something changed on the way, fails the check. If the check fails again, a proxy or a mirror between this computer and Google's storage changes the file, so download without it. On a platform that has no Chrome for Testing build, set CI=1 to draw with Playwright's Chromium on the software GPU, or NULL3D_CHROME=installed to draw with the installed Google Chrome.";
+	"Run the command again: a download that broke off, or that something changed on the way, fails the check. If the check fails again, a proxy or a mirror between this computer and Google's storage changes the file, so download without it. A refused archive is a warning, and stops the command only when `NULL3D_CHROME=testing` asks for Chrome for Testing alone. A platform with no Chrome for Testing build draws with the installed Google Chrome, or with Playwright's Chromium when `CI=1` is set.";
 
 /**
  * A refusal to install Chrome for Testing, worded as the engine words its errors: the code, what

@@ -1,14 +1,10 @@
 ---
 id: api/wind
 title: "Wind (@null3d/wind)"
-status: experimental
-since: "0.3"
 summary: "createWind: one field of air that plants, flags, smoke and water read, from an analytic wind of place and time with traveling gusts and pushes, held in a grid that follows the camera."
 ---
 
 # Wind (@null3d/wind)
-
-> Roadmap step 0.3, first released in null3D 0.1.0. The API is experimental, so it can still change between versions.
 
 ```mermaid
 flowchart LR
@@ -21,7 +17,9 @@ flowchart LR
     cpu["sample: the<br/>mirror on the CPU"] --> page
 ```
 
-`@null3d/wind` makes the air in a scene. One field moves every plant, flag and smoke card that reads it, so a gust that crosses a field reaches all of them together. The air is solved: a grid that follows the camera carries it from frame to frame. A gust therefore bends through the scene, and a body leaves a wake that outlives it. A steady wind slows near the ground, and swirls turn without piling up. A page can also shove the air at a point, as a body moving through it does.
+`@null3d/wind` makes the air in a scene. One field moves every plant, flag and smoke card that reads it, so a gust that crosses a field reaches all of them together. The air is solved: a grid that follows the camera carries it from frame to frame.
+
+A gust therefore bends through the scene, and a body leaves a wake that outlives it. A steady wind slows near the ground, and swirls turn without piling up. A page can also shove the air at a point, as a body moving through it does.
 
 ```sh
 bun add @null3d/wind
@@ -54,7 +52,14 @@ export default defineSketch((ctx) => {
 });
 ```
 
-Call `update` once in each frame. It places the box about the camera and sends the field's values to the GPU. The add-on's calls make no object of their own, so a sketch may make them in every frame. A `read` in each frame also takes the task's promise, which the engine makes. Until the browser has optimized the add-on's functions, a fraction that crosses one of its calls becomes an object, as in the engine's own steps. A sketch that pushes in every frame keeps one two-number array for the place, rather than a new one each time.
+Call `update` once in each frame. It places the box about the camera and sends the field's values to the GPU. The add-on's calls make no object of their own, so a sketch may make them in every frame. A sketch that pushes in every frame keeps one two-number array for the place, rather than a new one each time.
+
+<details>
+<summary>Technical details: allocation in a frame</summary>
+
+A `read` in each frame also takes the task's promise, which the engine makes. Until the browser has optimized the add-on's functions, a fraction that crosses one of its calls becomes an object, as in the engine's own steps.
+
+</details>
 
 ## The calls
 
@@ -74,11 +79,21 @@ Call `update` once in each frame. It places the box about the camera and sends t
 
 The ring holds the three newest pushes, and each fades over three seconds. A page that pushes often therefore keeps a wake behind the body it moves. The newest gust has a slot of its own, so a page's pushes never push its gust out. A gust's wave travels for as long as its reach holds it.
 
-`read` asks the air at places the way a page's own motion needs it. The field's walk over the pushes runs in the add-on's WebAssembly, on the engine's job workers. One call takes up to about five thousand places. A call that arrives while an answer is still on its way sends one more ask when that answer comes. A third call that arrives before either answer replaces the queued one: the newest ask wins, the one it replaces is dropped, and its array keeps the numbers it held. A page that asks in every frame therefore queues about one ask a frame, and the add-on reports a dropped ask once. The answer gives the air at the frame's own time, and lands before the next frame's update.
+`read` works out the air on the engine's job workers, up to about five thousand places a call. The answer gives the air at the frame's own time and lands before the next frame's update.
+
+<details>
+<summary>Technical details: how read queues its asks</summary>
+
+The field's walk over the pushes runs in the add-on's WebAssembly, on the engine's job workers. A call that arrives while an answer is still on its way sends one more ask when that answer comes. A third call that arrives before either answer replaces the queued one: the newest ask wins, the one it replaces is dropped, and its array keeps the numbers it held. A page that asks in every frame therefore queues about one ask a frame, and the add-on reports a dropped ask once.
+
+</details>
 
 ## Reading the field in your own WGSL
 
-A material reads the field with one texture. `field.texture` holds the air over `field.origin` and `field.size`. The shader build resolves only the engine's library. So your WGSL holds copies of the add-on's two blocks: the steady field, which every reader shares, and the sampling function. Copy both from `shaders/field.wgsl` in the package, or from the blocks below.
+A material reads the field with one texture. `field.texture` holds the air over `field.origin` and `field.size`. The shader build resolves only the engine's library. So your WGSL holds copies of the add-on's two blocks: the steady field, which every reader shares, and the sampling function. Copy both from `shaders/field.wgsl` in the package, or open the two blocks below.
+
+<details>
+<summary>Technical details: the steady field block to copy (wind-steady)</summary>
 
 ```wgsl
 #import null3d::noise::{value3}
@@ -223,6 +238,11 @@ fn wind_steady(air: WindAir, p: vec3f) -> vec3f {
 // </wind-steady>
 ```
 
+</details>
+
+<details>
+<summary>Technical details: the sampling block to copy (wind-sample)</summary>
+
 ```wgsl
 // <wind-sample>
 /// The air's steady settings as a reader holds them: the base wind in the first vector, the gust in
@@ -269,7 +289,11 @@ fn wind_sample(world: vec3f, origin: vec2f, size: f32, layer: i32, air: WindAir)
 // </wind-sample>
 ```
 
-Inside the box, the sampling function gives the air with one texture read. Outside it, it works the air out from the steady field, at the height that the grid samples at. So the two meet at the box's edge, and a plant past the box moves with the air at its own place. A page's pushes and a gust that the page sends turn the air inside the box, so a plant past the box does not see them. A device that keeps no grid works the air out everywhere.
+</details>
+
+Inside the box, the sampling function gives the air with one texture read. Outside it, it works the air out from the steady field, at the height that the grid samples at. So the two meet at the box's edge, and a plant past the box moves with the air at its own place.
+
+A page's pushes and a gust that the page sends turn the air inside the box, so a plant past the box does not see them. A device that keeps no grid works the air out everywhere.
 
 ```ts
 const leaf = ctx.materials.shader({
@@ -323,7 +347,9 @@ The box follows the camera, so update the material's `origin` values in each fra
 
 A vertex offset that reads the field orders the pass before every pass that draws the material. The shadows and the motion vectors therefore move with the plant.
 
-Trees and plants sway through such a material. The forest demo, `examples/forest`, draws the bark of its trees made in code with one custom material, and their leaf cards with a standard material. The bark's vertex offset samples this field's block at each vertex, as the example above does. Its sway fades to nothing at the material's `swayDistance`. So a tree past it stands still, and its far shadow cascades keep their layers. A tree loaded from a glTF file sways the same way: give its meshes such a material with `setMaterial`. The grass package, [`@null3d/grass`](grass.md), reads the field for its blades. Its `swayDistanceFor(preset)` gives each quality preset's sway distance.
+Trees and plants sway through such a material. The forest demo, `examples/forest`, draws the bark of its trees made in code with one custom material, and their leaf cards with a standard material. The bark's vertex offset samples this field's block at each vertex, as the example above does. Its sway fades to nothing at the material's `swayDistance`. So a tree past it stands still, and its far shadow cascades keep their layers.
+
+A tree loaded from a glTF file sways the same way: give its meshes such a material with `setMaterial`. The grass package, [`@null3d/grass`](grass.md), reads the field for its blades. Its `swayDistanceFor(preset)` gives each quality preset's sway distance.
 
 Every reader takes the field as a plain texture and its box, so it needs no code from this add-on. A page's own material reads it, as the forest demo's does. The grass package's blades read it, and the water add-on's `wind` option lifts a water surface. They read the same sampling block, and each copy costs the reader one of its material's six texture slots. Tests hold the readers' blocks equal to this page's.
 
@@ -335,7 +361,7 @@ Each cycle pulls the air toward an analytic field of place and time. It injects 
 
 The air starts when a page makes the wind, so a field made late in a sketch runs no air from before it.
 
-A held page steps its sketch's updates up to the held time. The first frame that draws runs the air that the hold owes, up to ten seconds of it. So a held picture carries the air that the hold built. Two held pages at two times within ten seconds of the wind's start therefore differ by the air that moved between them. A longer hold runs only ten seconds of air.
+In [hold mode](../guides/testing.md#hold-mode), the engine steps the sketch's updates up to the held time. The first frame that draws runs the air that the hold owes, up to ten seconds of it. So a held picture carries the air that the hold built. Two held pages at two times within ten seconds of the wind's start therefore differ by the air that moved between them. A longer hold runs only ten seconds of air.
 
 Beyond its box the field carries on. The box sets the detail, not the field's extent. So a plant past the box reads the air at its own place.
 
@@ -358,7 +384,10 @@ Low keeps no grid: every reader works the air out from the steady field. A page 
 
 The grid is one flat slice at the crown's height, with no layered or volume grid. High and Ultra use the flat 128 and 256 grids.
 
-The field's own budget is 0.5, 1.2, 4.9 and 6.25 ms a frame from Low to Ultra. That budget is its own, and it is smaller than the room that each preset's frame leaves beside the plants' own budget. A frame that spends both grows by the field's share, and the governor is what holds it. The governor lowers the field's share by a quarter at each of its steps, down to a quarter of the budget. The field still moves at the lowest step: the step interval reaches at most 133 ms, and the pressure count stays above zero. The overlay row reads the field's cost in a frame, which grows when a slow display owes the field more than one cycle in that frame. The stats overlay shows one line for the add-on. This example is the Medium row, with an example GPU time: `wind  gpu 0.62 ms  windStepMs 33 · windPressureSteps 16 · windSpringTrees 8 · windGrid 64 · budget 1.2 of 1.2 ms · memory 0.1 MiB`.
+The field's own budget is 0.5, 1.2, 4.9 and 6.25 ms a frame from Low to Ultra.
+
+- The governor lowers the field's share by a quarter at each of its steps, down to a quarter of the budget. The field still moves at the lowest step: the step interval reaches at most 133 ms, and the pressure count stays above zero.
+- The overlay row reads the field's cost in a frame, which grows when a slow display owes the field more than one cycle in that frame. This example is the Medium row, with an example GPU time: `wind  gpu 0.62 ms  windStepMs 33 · windPressureSteps 16 · windSpringTrees 8 · windGrid 64 · budget 1.2 of 1.2 ms · memory 0.1 MiB`.
 
 A preset change that changes the grid makes the grid again at the new size. The air starts empty on the new grid. A reader takes `field.texture` again after that, because the texture is a new one.
 
@@ -369,7 +398,23 @@ A preset change that changes the grid makes the grid again at the new size. The 
 - A vertex inside the box costs one texture read. A vertex outside it costs the steady field's arithmetic instead: four reads of the engine's value noise, with a few trigonometric and exponential calls.
 - A WebGL2 device whose float targets fail the engine's probe cannot hold the grid, so it keeps no pass. There `field.size` is zero and a reader's samples are the steady field worked out, so a plant still moves. The texture it declares holds a single black texel that it never reaches.
 - With no grid, every reader works the steady field out: the base wind, the swirl, the preset's own traveling gust and the gust that a page sends. A reader takes that gust in the fourth vector of its settings, so the surface, the leaves or the blades it draws answer it. The sent gust travels from the place it was sent and fades over 8 s. A push reaches readers only through the grid, so a point with no grid, or beyond the box, reads no push.
-- The add-on makes no object of its own in a frame, and its texture exists only while something reads it. `read` sends one request to a job worker and takes the task's promise. Where the page shares its memory, the worker writes the answer in place; otherwise the answer comes back as one buffer. The add-on's WebAssembly holds the walk over the pushes and the places, so a page's own motion costs the sketch's thread one message and one copy of the answer. Each fraction that the add-on works out reaches a call in an array that the add-on made once, so a call the browser does not inline boxes none of them. Run `bun run bench:allocation --wind` to see the bytes that the add-on's code allocates in a frame.
+- The add-on makes no object of its own in a frame, and its texture exists only while something reads it. `read` sends one request to a job worker and takes the task's promise. The engine's repository measures the bytes with `bun run bench:allocation --wind`.
 
-[The API reference](reference/wind.md) lists every export of this page with its type and
-description. The engine's doc comments make it.
+<details>
+<summary>Technical details: what the calls allocate</summary>
+
+Where the page shares its memory, the worker writes the answer in place; otherwise the answer comes back as one buffer. The add-on's WebAssembly holds the walk over the pushes and the places, so a page's own motion costs the sketch's thread one message and one copy of the answer. Each fraction that the add-on works out reaches a call in an array that the add-on made once, so a call the browser does not inline boxes none of them.
+
+</details>
+
+## Related pages
+
+- [Grass](grass.md): reads the field for its blades.
+- [Water](water.md): its `wind` option lifts a water surface.
+- [Materials](materials.md): a custom material's vertex offset reads the field.
+- [Add-on feature descriptions](features.md): the feature that declares the field's work.
+- [Quality API](quality.md): the presets that set the field's grid and steps.
+
+## API reference
+
+[The API reference](reference/wind.md) lists every export of this page with its type and description. The engine's doc comments make it.
