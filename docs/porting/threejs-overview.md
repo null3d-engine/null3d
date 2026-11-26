@@ -69,7 +69,7 @@ These parts have no automatic route. Plan time for them before you start.
 
 | three.js | null3D | Page |
 | --- | --- | --- |
-| GLSL in `ShaderMaterial` and `RawShaderMaterial` | WGSL in `materials.shader`, as a surface function or a full shader | [Porting shaders](threejs-shaders.md) |
+| GLSL in `ShaderMaterial` and `RawShaderMaterial` | WGSL in `materials.shader`, as a surface function, an unlit function or a full shader | [Porting shaders](threejs-shaders.md) |
 | `onBeforeCompile` patches | A surface function or a vertex offset function | [Porting shaders](threejs-shaders.md) |
 | TSL and node materials | A WGSL surface function | [Porting shaders](threejs-shaders.md) |
 | `MeshToonMaterial` | A surface function that steps the light into bands | [Porting materials and textures](threejs-materials.md) |

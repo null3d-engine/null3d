@@ -275,7 +275,7 @@ This table says who calls each callback:
 | Callback | Who calls it |
 | --- | --- |
 | `quality` | `FeatureHost`, when the preset or its settings change |
-| `ready` | The full-screen adapter, when it places a feature and on each quality change, and `effect.refresh()` when the add-on calls it. The draw, instance, compute and sky-layer adapters do not ask it. |
+| `ready` | The full-screen adapter, when it places a feature and on each quality change, and `effect.refresh()` when the add-on calls it. The instance adapter asks it once each frame. The draw, compute and sky-layer adapters do not ask it. |
 | `resize`, `reset` | Nothing in the engine. An add-on that keeps targets or history keeps its own size and reset state. |
 | `destroy` | The full-screen adapter's handle, when the add-on destroys it. Otherwise the owner of the feature calls it. |
 
@@ -287,13 +287,14 @@ Adapters turn a checked description into work in the frame. Five exist:
 - **Instance draws:** [`scene.addComputeInstances(description, options)`](feature-instances.md) draws a capacity of instances from the add-on's own buffer. The count comes from the GPU on WebGPU, and from the page on WebGL2. The adapter places the main view alone, at the opaque point.
 - **Full-screen effects:** [`post.addFeatureEffect(description, options)`](feature-effects.md) runs the add-on's WGSL over the whole image, at the `'resolve'` point. The pass reads the scene's color, and its depth when the description declares it, and writes the color. The adapter draws it only while the feature is ready, and asks `ready` again when the quality changes.
 - **Compute passes:** [`render.addPass({ kind: 'compute', description, ... })`](render.md#compute-passes) runs the add-on's compute shader over a storage texture, which materials, effects and passes sample in the same frame. The adapter places the main view alone, binds no scene resource, and publishes the description's one output. A WebGL2 page runs the pass's fragment form, or the call throws.
-- **Sky layers:** [`scene.setSkyLayer(description, options)`](scene.md#sky-layers) draws the add-on's WGSL over the background, at the `'background'` point as a `'draw'`, with the `'sky'` slot and the three views. The engine places it itself, because the background draws it before the opaque objects. Its function reads the core sky's values (D-242).
+- **Sky layers:** [`scene.setSkyLayer(description, options)`](scene.md#sky-layers) draws the add-on's WGSL over the background, at the `'background'` point as a `'draw'`, with the `'sky'` slot and the three views. The engine places it itself, because the background draws it before the opaque objects. Its function reads the core sky's values.
 
 The descriptions serve these five adapters alone. Some kinds of add-on have no hook:
 
 | Kind of add-on | What the engine does |
 | --- | --- |
-| Material lobes, baked-data formats and glTF extension handlers | They are not frame features, and no hook takes them. |
+| Material lobes and glTF extension handlers | They are not frame features. A custom material declares its own lobe ([A material's own lobe](../shaders/surface-functions.md#a-materials-own-lobe)), and `assets.registerGltfExtension` takes a handler ([Assets](assets.md#extensions-that-add-ons-read)). |
+| Baked-data formats | They are not frame features, and no hook takes them. |
 | An effect after the tone curve, a pass in another view, and reads of the normals, motion, history or shadows | The adapters refuse them with E1223. |
 | A scene input behind a material | A custom material declares its depth input itself ([Materials](materials.md#the-scene-behind-a-surface)). |
 

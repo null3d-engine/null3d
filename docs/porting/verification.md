@@ -89,6 +89,7 @@ With `WebGLRenderer`, a read of the canvas in the same task as the render works 
 
 3. Copy each three.js image to `tests/references/<environment>/<tier>/<name>.png`, once for each tier: `webgpu`, `compat` and `webgl2`. The environment is `chrome-real-gpu` on your computer's GPU, and `chromium-swiftshader` with `CI=1`.
 4. Run `bunx @null3d/cli test`. For a view that fails, open its image and its `-diff.png` in `test-results/null3d/<environment>/<tier>/`.
+5. To find the object that differs, open the port's view with `?inspect` on the dev server. The panel lists the scene, and shows each object's transform and material values ([Debugging](../guides/debugging.md#the-in-page-inspector)).
 
 A view passes when at most 0.1% of its pixels differ by more than 10% of the color range, as in three.js's own image tests. The pixels on anti-aliased edges never count.
 
@@ -136,8 +137,8 @@ It warms up for 5 seconds by default, which leaves out the shader builds, and re
 | Frame time at the 50th, 95th and 99th percentile | The intervals between frames that drew, counted as below | `intervalMs` from `engine.measure(seconds)`, or from `bench`, with `completedFps` beside it |
 | CPU time per frame on the busiest thread | `performance.now()` around the update and the render | `cpuMs`, with each thread's phases in `threads` |
 | Main thread time per frame | The same as above, because everything runs there | Close to zero |
-| Memory | The browser's memory panel | `memory` from `engine.measure()` |
-| Time to the first frame | From navigation to the first frame that drew | `load` from `engine.measure()` |
+| Memory | The browser's memory panel | `memory` from `engine.measure(seconds)` |
+| Time to the first frame | From navigation to the first frame that drew | `load` from `engine.measure(seconds)` |
 | Download size | The network panel, compressed | The same |
 
 A `requestAnimationFrame` callback keeps firing while the GPU falls behind. `WebGPURenderer` can also return from a render with nothing drawn while its pipelines build. So count the three.js frames that drew and the frames that the GPU finished, and compare with the lower rate:

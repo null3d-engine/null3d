@@ -127,7 +127,7 @@ trees.rotations.set(q, 42 * 4);
 trees.markDirty(42, 1); // recompute and upload row 42 only
 ```
 
-A mark past the batch's capacity throws [E1108](../errors/E1108.md). Development builds check the rule. Before each batch update, they note the marked rows, and compare up to 8,192 drawn rows of each static batch with the values they read before. The next frame takes the next rows, so the check finds a write within a few frames, and costs a bounded time per frame. A row that changed without a mark raises [E1110](../errors/E1110.md), which names the row. Sprite and point batches get the same check. Release builds leave it out. A dynamic batch needs no marks, because it recomputes every row in use in every frame. [Static and dynamic objects](static-dynamic.md) compares what each kind uploads.
+A mark past the batch's capacity throws [E1108](../errors/E1108.md). Development builds check the rule. Before each batch update, they note the marked rows, and compare up to 4,096 drawn rows a frame, over all static batches, with the values they read before. The next frame takes the next rows, so the check finds a write within a few frames, and costs a bounded time per frame. A row that changed without a mark raises [E1110](../errors/E1110.md), which names the row. Sprite and point batches get the same check. Release builds leave it out. A dynamic batch needs no marks, because it recomputes every row in use in every frame. [Static and dynamic objects](static-dynamic.md) compares what each kind uploads.
 
 ## Rows that arrive in chunks
 
@@ -196,7 +196,7 @@ Some calls change the scene's structure: creating or destroying a batch or an ob
 ## Limits
 
 - Every row of a batch casts and receives shadows alike: give `castShadows` and `receiveShadows` to `createInstances`, or call `batch.setCastShadows(true)` and `batch.setReceiveShadows(true)`. Both are false by default. [Shadows](shadows.md) explains them. Sprite, point and line batches take no shadows.
-- An engine holds up to 256 instance batches. One more throws [E1102](../errors/E1102.md).
+- An engine holds up to 512 instance batches, sprite, point and line batches included. One more throws [E1102](../errors/E1102.md).
 - Every row counts toward the device's limit of objects and instance rows, whether it draws or not. `engine.capabilities.maxInstances` gives the limit. The places in the scene's object tables count toward it too, used or not. They start at 1,024 and double as the scene grows. So the batches of a scene hold at most the limit less those places. A `createInstances` call that would pass it throws [E1501](../errors/E1501.md).
 - Each row takes about 210 bytes of engine memory, or about 300 with colors or values. When the engine cannot get more memory, `createInstances` throws [E1109](../errors/E1109.md). Rows with colors or values also take 32 bytes each of GPU memory.
 - On WebGL2 the limit follows the largest texture the device allows. A device whose textures reach only 2,048 pixels, the least that WebGL2 allows, draws 1,048,576. That leaves 1,047,552 rows for batches beside a scene of up to 1,023 objects. [GPU tiers and backends](backends.md#the-portable-budget) gives the numbers.

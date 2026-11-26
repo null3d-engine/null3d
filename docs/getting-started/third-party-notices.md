@@ -16,20 +16,20 @@ Some null3D packages ship code from other projects, as the original file or as a
 
 | Package | Third-party code | License | Where | Notices |
 | --- | --- | --- | --- | --- |
-| `@null3d/engine` | Basis Universal 2.50 with Zstandard, meshoptimizer 1.3.0, Draco 1.5.7, three.js 0.186.1, TinyEXR and OpenEXR, Linearly transformed cosines, Filament, KinoBokeh and Unity's post-processing stack v1, AMD FidelityFX FSR 1 and SSSR, Qualcomm Snapdragon GSR 1, and the core's Rust crates | Apache License 2.0, BSD 3-Clause and MIT | `vendor/`, the shader modules, `panorama-worker.js`, `dist/wasm` | `THIRD-PARTY-NOTICES.txt` |
+| `@null3d/engine` | Basis Universal 2.50 with Zstandard, meshoptimizer 1.3.0, Draco 1.5.7, three.js 0.186.1, TinyEXR and OpenEXR, Linearly transformed cosines, Filament, KinoBokeh and Unity's post-processing stack v1, AMD FidelityFX FSR 1 and SSSR, Qualcomm Snapdragon GSR 1, SMAA 1x, and the core's Rust crates | Apache License 2.0, BSD 3-Clause and MIT | `vendor/`, the shader modules, `panorama-worker.js`, `dist/wasm` | `THIRD-PARTY-NOTICES.txt` |
 | `@null3d/cli` | Basis Universal 2.50 with Zstandard, ufbx 0.23.1, the `exr` and `lebe` crates, three.js 0.186.1, and the asset module's other crates | Apache License 2.0, BSD 3-Clause and MIT | `vendor/`, `dist/assets.wasm` | `THIRD-PARTY-NOTICES.txt` |
-| `@null3d/vite-plugin` | naga and naga-types 30.0.1, naga_oil 0.23.0, serde, serde_json, toml, the shader compiler's other crates, and the engine shaders it embeds: three.js 0.186.1, Filament, KinoBokeh and Unity's post-processing stack v1, AMD FidelityFX, Qualcomm Snapdragon GSR 1 | MIT, Apache License 2.0, BSD 3-Clause and Zlib | `dist/shader-compiler.wasm` | `THIRD-PARTY-NOTICES.txt` |
+| `@null3d/vite-plugin` | naga and naga-types 30.0.1, naga_oil 0.23.0, serde, serde_json, toml, the shader compiler's other crates, and the engine shaders it embeds: three.js 0.186.1, Filament, KinoBokeh and Unity's post-processing stack v1, AMD FidelityFX, Qualcomm Snapdragon GSR 1, SMAA 1x | MIT, Apache License 2.0, BSD 3-Clause and Zlib | `dist/shader-compiler.wasm` | `THIRD-PARTY-NOTICES.txt` |
 | `@null3d/controls` | three.js 0.186.1, the math and the option names of its controls | MIT | `lib/index.js` | `THIRD-PARTY-NOTICES.txt` |
 | `@null3d/geometry` | three.js 0.186.1, its generators, curves, paths and shapes; earcut 3.0.2 | MIT and ISC | `lib/index.js` | `THIRD-PARTY-NOTICES.txt` |
 | `@null3d/three-compat` | three.js 0.186.1, its tone curves and its outline pass | MIT | `lib/index.js` | `THIRD-PARTY-NOTICES.txt` |
 | `@null3d/grass` | None, its own code | None | `lib/index.js` | None |
 | `@null3d/impostors` | None, its own code | None | `lib/index.js` | None |
 | `@null3d/particles` | None, its own code | None | `lib/index.js` | None |
-| `@null3d/sound` | None, its own code | None | `lib/index.js`, `lib/page.js` | None |
-| `@null3d/splats` | None, its own code, which reads Niantic's published SPZ format | None | `lib/index.js` | None |
-| `@null3d/terrain` | None, its own code | None | `lib/index.js` | None |
+| `@null3d/sound` | The Rust core library and libm 0.2.16 in its mixer, beside its own code | MIT | `dist/sound.wasm` | `THIRD-PARTY-NOTICES.txt` |
+| `@null3d/splats` | The Rust core library and libm 0.2.16 in its selection, beside its own code, which reads Niantic's published SPZ format | MIT | `dist/splats.wasm` | `THIRD-PARTY-NOTICES.txt` |
+| `@null3d/terrain` | The Rust core library and libm 0.2.16 in its builder, beside its own code | MIT | `dist/terrain.wasm` | `THIRD-PARTY-NOTICES.txt` |
 | `@null3d/water` | None, its own code | None | `lib/index.js` | None |
-| `@null3d/wind` | None, its own code | None | `lib/index.js` | None |
+| `@null3d/wind` | The Rust standard library in its field module, beside its own code | MIT | `dist/wind.wasm` | `THIRD-PARTY-NOTICES.txt` |
 
 The null3D packages themselves are offered under the MIT License or the Apache License 2.0. A production build writes the notices of every package that a page ships into `null3d-third-party-notices.txt`.
 
@@ -51,7 +51,7 @@ The null3D packages themselves are offered under the MIT License or the Apache L
 | TinyEXR and OpenEXR, whose code the EXR decoders follow | BSD 3-Clause | `panorama-worker.js` |
 | Linearly transformed cosines, the area light tables | BSD 3-Clause | `vendor/ltc` |
 | SMAA, the subpixel morphological anti-aliasing that smooths the moment transparency layer's edges | MIT | the renderer's moment layer tables and shaders |
-| The Rust crates of the core: the standard library, wasm-bindgen, bumpalo, cfg-if, once_cell and dlmalloc | MIT or Apache License 2.0 | `dist/wasm` |
+| The Rust crates of the core: the standard library, wasm-bindgen, cfg-if, once_cell and dlmalloc | MIT or Apache License 2.0 | `dist/wasm` |
 
 The full texts are in the engine's `THIRD-PARTY-NOTICES.txt`.
 
@@ -81,6 +81,7 @@ The command-line tool and the Vite plugin put no code in a page. Their packages 
 | The engine shaders in the module: KinoBokeh and Unity's post-processing stack v1 | MIT |
 | The engine shaders in the module: AMD FidelityFX FSR 1's RCAS and SSSR's ray march | MIT |
 | The engine shaders in the module: Qualcomm Snapdragon GSR 1 | BSD 3-Clause |
+| The engine shaders in the module: SMAA 1x's three steps | MIT |
 
 ## The example add-ons
 

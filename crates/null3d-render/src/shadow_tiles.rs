@@ -1714,12 +1714,18 @@ mod tests {
             size: 2048,
         };
         assert!(atlas_bytes(high) <= MAX_ATLAS_BYTES);
-        // Ultra's 4,096 tile with 24 light tiles takes 1,600 MiB, which the renderer refuses.
+        // Ultra's hero tile at 4,096 with all 23 light tiles that leave it room takes 1,536 MiB,
+        // which the renderer refuses. With 15 light tiles it takes 1,024 MiB, which still fits.
         let ultra = AtlasShape {
-            layers: 25,
+            layers: 24,
             size: 4096,
         };
         assert!(atlas_bytes(ultra) > MAX_ATLAS_BYTES);
-        assert_eq!(atlas_bytes(ultra), 25 * 4096 * 4096 * 4);
+        assert_eq!(atlas_bytes(ultra), 24 * 4096 * 4096 * 4);
+        let ultra_fits = AtlasShape {
+            layers: 16,
+            size: 4096,
+        };
+        assert!(atlas_bytes(ultra_fits) <= MAX_ATLAS_BYTES);
     }
 }

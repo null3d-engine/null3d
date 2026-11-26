@@ -44,7 +44,7 @@ export const LIMITS_ACK_RULE: AckRule = {
 		'references, the commit gates and the download sizes that this checkout last built, and it',
 		'names the command for each limit that only a build or a heavy run measures. Then add a',
 		'trailer that says what it reported, for example:\n',
-		'  Limits-Checked: bun run limits: every reference present, the largest start 182,147 of 186,368 bytes',
+		'  Limits-Checked: bun run limits: every reference present, the largest start 196,291 of 262,144 bytes',
 		'  Limits-Checked: bun run limits: one missing software-GPU reference, drawn and accepted here',
 	],
 };

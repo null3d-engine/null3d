@@ -51,11 +51,13 @@ screen.mesh.setPosition(0, 1.4, -3);
 changes its reading each frame repaints only the part that changed:
 
 ```ts
-onUpdate(() => {
-  paintTheReading(context);          // the number, the bar and the lights
-  screen.mark({ x: 24, y: 150, width: 464, height: 290 });
-  screen.flush();                    // sends a change that the rate held back
-});
+return {
+  onUpdate() {
+    paintTheReading(screen.context);   // the number, the bar and the lights
+    screen.mark({ x: 24, y: 150, width: 464, height: 90 });
+    screen.flush();                    // sends a change that the rate held back
+  },
+};
 ```
 
 `screen.paint(draw, changed)` draws and uploads the rectangle that changed. Without a rectangle it

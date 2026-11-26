@@ -147,7 +147,6 @@ import {
 	PERMUTATION_TRANSLUCENCY,
 	PERMUTATION_TRANSMISSION,
 	SIZE_MAP_ROWS,
-	SIZE_MAP_SLOTS,
 } from '../generated/gpu';
 import type { ShaderVariants } from '../generated/shaders';
 import { linearToSrgb } from '../math/color';
@@ -2487,9 +2486,10 @@ export interface ShaderOptions<Wgsl extends string | CompiledWgsl = string | Com
 	 * the WGSL calls `sceneDepth(uv)` or `sceneDistance(uv)`, and the engine binds the copy of the
 	 * opaque scene's depth. A material that declares it draws after that copy exists, so it reads
 	 * it in the transparent pass; a surface that draws earlier reads 0, the far plane. A material
-	 * that declares it takes at most seven textures of its own: its maps' group gives up one slot,
-	 * so that the copy fits the fragment stage beside the maps under WebGPU's limit of sixteen
-	 * sampled textures. The engine checks that the declaration and the WGSL agree.
+	 * that declares it samples at most six textures of its own, as every custom material does. Its
+	 * maps' group gives the copy a slot that those textures leave free, under WebGPU's limit of
+	 * sixteen sampled textures in the fragment stage. The engine checks that the declaration and
+	 * the WGSL agree.
 	 */
 	sceneInputs?: readonly SceneInput[];
 	/**
@@ -3802,11 +3802,12 @@ const SCENE_INPUTS: readonly SceneInput[] = [
 ];
 
 /**
- * The most textures a material that reads the scene's depth takes. Its maps' group leaves out the
- * last slot, so the frame group's eight sampled textures, the maps' and the copy stay within the
- * sixteen that WebGPU's fragment stage allows.
+ * The most textures a material that reads the scene's depth takes: the 6 that the shader compiler
+ * gives every custom material. Its maps' group leaves the last slot free in any case, so the frame
+ * group's eight sampled textures, the maps' and the copy stay within the sixteen that WebGPU's
+ * fragment stage allows.
  */
-const MAX_SCENE_DEPTH_TEXTURES = SIZE_MAP_SLOTS - 1;
+const MAX_SCENE_DEPTH_TEXTURES = 6;
 
 /**
  * Checks the scene inputs that a custom material declares against the ones its WGSL reads. Today
@@ -3852,7 +3853,7 @@ function checkSceneInputs(
 	if (sceneDepth && textures > MAX_SCENE_DEPTH_TEXTURES)
 		throw new EngineError(
 			'E1217',
-			`${call}() got WGSL that reads the scene's depth and declares ${textures} textures. A material that reads the depth takes at most ${MAX_SCENE_DEPTH_TEXTURES}: its maps' group gives up one slot so that the copy of the depth fits the fragment stage beside them. Drop ${textures - MAX_SCENE_DEPTH_TEXTURES} of the textures, or read the depth another way.`,
+			`${call}() got WGSL that reads the scene's depth and declares ${textures} textures. A material that reads the depth takes at most ${MAX_SCENE_DEPTH_TEXTURES}, as every custom material does. Drop ${textures - MAX_SCENE_DEPTH_TEXTURES} of the textures, or read the depth another way.`,
 		);
 }
 

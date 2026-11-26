@@ -156,7 +156,7 @@ A raycast hits a segment when the ray passes within half the line's width of it.
 
 A segment costs about as much as an instance row on the GPU and in culling. The engine packs each segment into the data that it keeps for an instance row. So segments share the culling, sorting and drawing of instance batches. One batch of 100,000 segments draws in one draw on WebGPU and WebGL2.
 
-Every segment counts toward the device's limit of objects and instance rows, as an instance row does ([Instances and batching](../concepts/instances.md#limits)). Each point takes about 170 bytes of engine memory. Line batches count toward the limit of 256 instance batches.
+Every segment counts toward the device's limit of objects and instance rows, as an instance row does ([Instances and batching](../concepts/instances.md#limits)). Each point takes about 170 bytes of engine memory. Line batches count toward the limit of 512 instance batches.
 
 ## API reference
 

@@ -4,7 +4,7 @@ The command-line tool for [null3D](https://github.com/null3d-engine/null3d), a h
 
 You do not need this tool to use the engine. Install `@null3d/engine` from npm, add `@null3d/vite-plugin` to your Vite config, and run Vite. This tool adds jobs that a bundler does not do, such as headless tests, screenshots and benchmarks.
 
-The tool has seven commands:
+The tool has eight commands:
 
 - `create` writes a new project from a template. The project holds an `AGENTS.md` for AI agents and one hook that Claude Code and Codex both run. Its templates are `empty`, a turning cube, `product`, a product viewer, and `game`, a small game.
 - `shot` draws one frame of your project's page in a headless browser and saves it as a PNG file.
@@ -12,6 +12,7 @@ The tool has seven commands:
 - `bench` measures the engine on a production build of your page: CPU time per frame by thread, GPU time and frame rates, over fresh runs.
 - `check-addon` runs the engine's gates on an add-on package: its public imports, the plugin interface it declares, its shaders on both GPU paths, the size of the files it loads after the start, and, with a page, its start from another origin under the strict policy, its cost per quality preset, and the bytes per frame that its own code allocates.
 - `assets` prepares models and textures. `optimize` quantizes glTF meshes and encodes KTX2 textures. `convert` turns FBX, OBJ, STL and PLY files into glTF. The `pack-orm` and `normal-from-bump` commands make material maps, and `env` makes environment maps from HDR images. The `impostor` command bakes the atlases of `@null3d/impostors` cards from a model.
+- `mcp` runs a Model Context Protocol server for your running scene. A coding agent lists and changes its objects, captures a frame, and reads its frame figures, errors and render graph.
 - `upgrade` moves every null3D package in your `package.json` to one version, so that an add-on and the engine never mix two versions.
 
 ```sh
@@ -19,11 +20,12 @@ bunx @null3d/cli create my-game
 bunx @null3d/cli shot --out shot.png --time 1.5 --gpu webgl2
 bunx @null3d/cli test --gpu webgpu,webgl2
 bunx @null3d/cli bench --gpu webgpu,webgl2
-bunx @null3d/cli check-addon addons/splats
+bunx @null3d/cli check-addon packages/my-addon
+bunx @null3d/cli mcp
 bunx @null3d/cli upgrade
 ```
 
-Run `create` where the project should go. Run the other commands in your project's folder. `shot` and `test` start your project's own Vite dev server, `bench` builds your project with its own Vite config, and `check-addon` builds the add-on that it checks. `shot` and `bench` save a JSON file with their figures and the page's errors, and `test` and `check-addon` print one line for each result. `upgrade` writes `package.json` alone, and you run `bun install` after it. `bunx @null3d/cli <command> --help` lists a command's options.
+Run `create` where the project should go. Run the other commands in your project's folder. `shot` and `test` start your project's own Vite dev server, and `bench` builds your project with its own Vite config. The `check-addon` command builds the add-on in the folder that you name, or in the current folder. The `mcp` command starts your project's Vite dev server too, unless you give it a server or a Chrome that already runs. `shot` and `bench` save a JSON file with their figures and the page's errors, and `test` and `check-addon` print one line for each result. `upgrade` writes `package.json` alone, and you run `bun install` after it. `bunx @null3d/cli <command> --help` lists a command's options.
 
 ## License
 

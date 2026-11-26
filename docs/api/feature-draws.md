@@ -8,7 +8,7 @@ summary: "scene.addFeatureDraw turns a draw feature description into a draw of y
 
 # Add-on feature draws
 
-> Roadmap step 0.3, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. A draw records in the main view alone, and at the opaque or the transparent point.
+> Roadmap step 0.3, first released in null3D 0.1.0. The API is experimental, so it can still change between versions. A draw records in the main view alone, and at the opaque, the transparent or the resolve point.
 
 ```mermaid
 flowchart LR
@@ -111,7 +111,7 @@ A draw's vertex data and material draw as one scene object. The engine culls it 
 - `'transparent'` draws with the blended objects, back to front. The description's band and order place it among them, as `mesh.setRenderOrder` does: `draw.setRenderOrder(order)` changes the place later.
 - `'resolve'` blends after the camera's other blended objects. While the scene has more than one sample per pixel (MSAA), the camera draws such surfaces back to front into a layer of one sample per pixel, tested against a one-sample copy of the opaque depth, and blends the layer over the scene. Thousands of overlapping blended cards, such as Gaussian splats, then cost one blend per pixel instead of one per sample. Use it for a draw of soft, heavily overlapping surfaces. A glass or a particle in front of such a draw shows behind it, and a mesh's anti-aliased edge in front of it can show a faint fringe. With one sample, other views and frames before the layer's shaders are ready, the draw blends in the transparent pass, back to front with the other blended objects.
 
-A draw can cast the shadows that a directional light casts with `castShadows`, and receive shadows with `receiveShadows`. `draw.object` gives the scene object for every other object call: `setPosition`, `setRotation`, `setScale`, `setVisible`, `setLayers` and `destroy`.
+The draw's scene object, `draw.object`, takes the other object calls, such as `setPosition`, `setRotation`, `setScale` and `setLayers`. Its `setCastShadows(true)` makes the draw cast the shadows of every light that casts them, and its `setReceiveShadows(true)` makes the draw receive them. The draw's own `setVisible` shows and hides it. The draw's own `destroy()` frees its object, its material and its vertices, where `draw.object.destroy()` frees the object alone.
 
 ## Many copies of one shape
 

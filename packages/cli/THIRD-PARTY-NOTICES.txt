@@ -59,9 +59,8 @@ SOFTWARE.
 Rust crates in the asset module (dist/assets.wasm)
 ==============================================================================
 
-The asset tool's formats are compiled from Rust. The Rust standard library and wasm-bindgen are
-offered under the MIT License or the Apache License 2.0, and null3D takes them under the MIT
-License.
+The asset tool's formats are compiled from Rust. The Rust standard library is offered under the
+MIT License or the Apache License 2.0, and null3D takes it under the MIT License.
 
 The OpenEXR reader uses two crates, each under the BSD 3-Clause license:
 
@@ -96,10 +95,9 @@ WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH 
 The remaining crates are each under the MIT License, or offer it beside another license, and
 null3D takes the MIT License. Copyright their authors.
 
-adler2 2.0.1, bit_field 0.10.3, bitflags 2.13.2, bytemuck 1.25.2, cfg-if 1.0.5, crunchy 0.2.4,
-half 2.7.1, libm 0.2.16, miniz_oxide 0.8.9, num-complex 0.4.6, num-traits 0.2.19, pulp 0.22.3,
-pulp-wasm-simd-flag 0.1.1, raw-cpuid 11.6.0, reborrow 0.5.5, simd-adler32 0.3.10, smallvec
-1.16.2, zerocopy 0.8.59 and zune-inflate 0.2.54.
+adler2 2.0.1, bit_field 0.10.3, bytemuck 1.25.2, cfg-if 1.0.5, half 2.7.1, libm 0.2.16,
+miniz_oxide 0.8.9, num-complex 0.4.6, num-traits 0.2.19, pulp 0.22.3, pulp-wasm-simd-flag 0.1.1,
+reborrow 0.5.5, simd-adler32 0.3.10, smallvec 1.16.2, zerocopy 0.8.59 and zune-inflate 0.2.54.
 
 The MIT License is the one that the ufbx section above gives.
 

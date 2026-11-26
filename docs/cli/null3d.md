@@ -188,7 +188,7 @@ The engine reads the script only in hold mode. A page that you run with Vite nev
 
 ## mcp
 
-`mcp` starts a Model Context Protocol server for the project in the current folder, over stdio. An agent lists and changes the live scene's objects, captures a frame, and reads the frame figures, the errors and the render graph. It can also switch the quality preset or the GPU path. The page needs a development build: a production build leaves the inspection channel out.
+`mcp` starts a Model Context Protocol server for the project in the current folder, over stdio. An agent lists and changes the live scene's objects, captures a frame, and reads the frame figures, the errors and the render graph. It can also switch the quality preset or the GPU path. The page needs a development build: a production build leaves the inspection channel out. The page must also start the engine as it loads. A held page and a replay page publish no inspection bridge, so the command cannot drive them.
 
 ```mermaid
 flowchart LR
@@ -207,20 +207,26 @@ claude mcp add null3d -- bunx @null3d/cli mcp
 claude mcp add null3d-session -- bunx @null3d/cli mcp --connect http://127.0.0.1:9222
 ```
 
-For the second form, start Chrome with `--remote-debugging-port=9222` and open the page with `?inspect`.
+For the second form, start Chrome with `--remote-debugging-port=9222` and open the page from your Vite dev server. Every development build publishes the inspection bridge, so the page needs no switch. `?inspect` only opens the in-page panel. The command drives the first tab whose path is the `--page` path. When no tab has that path, it drives the first tab that publishes the bridge.
 
 | Option | Effect | Without it |
 | --- | --- | --- |
-| `--page <path>` | The page to open, from the server's root | `/` |
-| `--gpu <tier>` | Opens the server's own page on `webgpu`, `compat` or `webgl2` | The engine picks the path |
-| `--size <width>x<height>` | The headless browser's window in CSS pixels | `1280x720` |
+| `--page <path>` | The page to open, from the server's root. With `--connect`, the path of the tab to drive | `/` |
+| `--gpu <tier>` | Opens the server's own page on `webgpu`, `compat` or `webgl2`. `--connect` ignores it | The engine picks the path |
+| `--size <width>x<height>` | The headless browser's window in CSS pixels. `--connect` ignores it | `1280x720` |
 | `--timeout <seconds>` | How long the page may take to publish the inspector | 60 |
 | `--url <address>` | Uses a dev server that already runs, instead of starting one. The server still starts its own browser | The command starts the dev server |
-| `--connect <address>` | Attaches to Chrome's debugging endpoint and drives the tab that shows the page | The command starts its own browser |
+| `--connect <address>` | Attaches to Chrome's debugging endpoint and drives the tab that shows the page. Give `--url` or `--connect`, not both | The command starts its own browser |
+
+### Objects in a call
+
+A call names an object by its name, or by its slot as `#<slot>`, such as `#12`. A whole number names a slot too. `#camera` names the active camera. When several objects share a name, the call takes one of them, so name another by its slot. `list_objects` gives each object's slot.
+
+`list_objects` takes two optional arguments. `filter` keeps the objects whose name or kind holds the text, and `limit` gives the most objects to return. A listing returns at most 50,000 objects. It also gives the count of objects that matched, and whether it left some out.
 
 | Tool | What it does |
 | --- | --- |
-| `list_objects` | Names, slots, handles, kinds, static or dynamic, layers and parents |
+| `list_objects` | Names, slots, handles, kinds, static or dynamic, visibility, layers, parents and children, with a filter and a limit |
 | `get_object` | Reads one object's transform, flags and material |
 | `set_transform` | Changes a transform, visibility, the static or dynamic flag, or layers |
 | `set_material` | Changes a mesh's material values |
@@ -229,7 +235,7 @@ For the second form, start Chrome with `--remote-debugging-port=9222` and open t
 | `errors` | The engine errors, and the console's errors and warnings |
 | `render_graph` | The compiled render graph as DOT text |
 | `set_quality` | Switches the preset, or changes quality settings |
-| `set_gpu` | Switches the GPU path and reloads the page |
+| `set_gpu` | Switches the GPU path and reloads the page, your own tab too with `--connect` |
 
 Live changes are for exploring. Write the final values into the sketch and its tests. [Debugging](../guides/debugging.md#the-mcp-server) shows the calls and the in-page inspector behind them.
 
@@ -310,7 +316,7 @@ A new test has no reference, so its first run fails and saves the image. Open th
 ```text
 PASS  type check (tsc --noEmit)
 SKIP  lint: the project's package.json has no lint script
-The images are drawn in Chrome 154.0.8037.59 on this computer's GPU, and compared with the references in tests/references/chrome-real-gpu.
+The images are drawn in Chrome 156.0.8078.80 on this computer's GPU, and compared with the references in tests/references/chrome-real-gpu.
 PASS  start on webgpu: it matches the reference (image test-results/null3d/chrome-real-gpu/webgpu/start.png)
 FAIL  start on webgl2: 2.280% of pixels differ from the reference, and at most 0.100% may (image test-results/null3d/chrome-real-gpu/webgl2/start.png, reference tests/references/chrome-real-gpu/webgl2/start.png, diff test-results/null3d/chrome-real-gpu/webgl2/start-diff.png)
 FAIL  harbor-at-night on webgpu: there is no reference yet. When the image is right, bunx @null3d/cli test --update-references keeps it as the reference (image test-results/null3d/chrome-real-gpu/webgpu/harbor-at-night.png)
@@ -406,8 +412,11 @@ When a run fails, `bench` says why after the figures of its path, and exits with
 `check-addon` runs the engine's gates on one add-on package. An add-on's author runs it before a release, and a listing runs it before it publishes the add-on. It prints one line for each gate, and exits with 1 when a gate fails. [Building an add-on](../guides/add-ons.md) gives the rules that the gates check.
 
 ```sh
-bunx @null3d/cli check-addon addons/splats
+bunx @null3d/cli check-addon                    # the add-on in the current folder
+bunx @null3d/cli check-addon packages/my-addon
 ```
+
+It checks the add-on in the folder that you name, or in the current folder without one.
 
 | Gate | What it checks |
 | --- | --- |
@@ -416,7 +425,8 @@ bunx @null3d/cli check-addon addons/splats
 | interface | the entry declares the plugin interface range that it works with, or, for a `@null3d/...` package, pins the exact engine version |
 | shaders | a build compiles the add-on's WGSL for WebGPU and WebGL2 |
 | sizes | each file that the add-on loads after the start holds to its budget: its own code to the budget for code, and the compiled WGSL that the build inlined in it to the budget for shader builds. The gate warns, and does not fail, when a file goes over a budget |
-| page | the page starts from another origin under the strict policy, and its cost is measured per quality preset |
+| page | the page starts from another origin under the strict policy |
+| cost | the page's cost per frame, measured on each quality preset |
 | allocation | the bytes per frame that the add-on's own code allocates, on each quality preset |
 
 The shader and size gates build the add-on with the Vite and the null3D plugin that it installs. The page gates take the page of the first test in `null3d.json`, or the page that `--page` names. The page gates are skipped when there is no page.
@@ -568,7 +578,7 @@ Run it after you upgrade the engine alone, or when a page stops with [E1432](../
 
 ## Where the commands draw
 
-`shot`, `test` and `bench` draw with Chrome for Testing on your computer's GPU. When the `CI` variable is set, they draw with Playwright's Chromium on SwiftShader, a GPU in software. Most CI machines have no GPU. Set `CI=1` to draw the software GPU's images on your own computer:
+`shot`, `test`, `bench` and `check-addon` draw with Chrome for Testing on your computer's GPU. So does `mcp`, unless `--connect` drives your own Chrome. When the `CI` variable is set, they draw with Playwright's Chromium on SwiftShader, a GPU in software. Most CI machines have no GPU. Set `CI=1` to draw the software GPU's images on your own computer:
 
 ```sh
 CI=1 bunx @null3d/cli shot --out ci-shot.png
@@ -582,7 +592,7 @@ The two draw the edges of objects a little differently, so keep reference images
 Chrome for Testing is Google's build of Chrome for automated runs. The tool pins one version of it on every platform. So a reference image drawn on one computer matches another's. A release of the tool may move the pin to a newer Chrome, and its notes say so when pages draw differently.
 
 - **First use.** The first command that draws downloads the pinned build for your platform, about 200 MB. It prints what it downloads and how far it has got. Later commands reuse it.
-- **The check.** The tool records the SHA-256 hash of the pinned build's archive on each platform. It checks the download against that hash before it unpacks it. An archive with another hash is deleted, and the command stops with [E1437](../errors/E1437.md). The tool keeps the hash it checked beside the build, and it trusts a cached build only with that record.
+- **The check.** The tool records the SHA-256 hash of the pinned build's archive on each platform. It checks the download against that hash before it unpacks it. An archive with another hash is deleted, and the tool installs nothing ([E1437](../errors/E1437.md)). The command then falls back, as the next items say. The tool keeps the hash it checked beside the build, and it trusts a cached build only with that record.
 - **Where it lives.** `null3d/chrome-for-testing/<version>` under `$XDG_CACHE_HOME` when that is set, or under `~/.cache`. Every project on the computer shares it. Delete the folder to download it again.
 - **Why not Google Chrome.** On macOS, Google Chrome makes keys in the keychain each time it starts. It keeps them when it closes early, as a headless run often does. Many runs fill the keychain and slow its service down. Chrome for Testing has no access to the keychain.
 - **When the download fails.** This includes a download whose hash does not match. The command draws with your installed Google Chrome instead. It warns that this may leave keys in the keychain on macOS. Its pictures can differ a little from the references when its version differs.

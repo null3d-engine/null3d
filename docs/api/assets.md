@@ -10,7 +10,7 @@ summary: "loadGltf, registerGltfExtension, loadTexture, loadImageBitmap, loadLut
 
 > Roadmap step 0.1, first released in null3D 0.1.0. The API is experimental, so it can still change between versions.
 
-The `assets` object of the sketch context downloads files and decodes them. Every call returns a promise, and its download and decode run outside the sketch's frames, so a frame never waits for them. The browser decodes images off the main thread.
+The `assets` object of the sketch context downloads files and decodes them. The calls that load and make data return promises. Their downloads and decodes run outside the sketch's frames, so a frame never waits for them. The browser decodes images off the main thread.
 
 ```ts
 import { defineSketch } from '@null3d/engine';
@@ -54,6 +54,7 @@ export default defineSketch(
 | `loadBinary(url)` | The file's bytes, as an `ArrayBuffer` |
 | `preload(urls)` | Nothing: it downloads the files ahead of their loads |
 | `onProgress(handler)` | A function that removes the handler |
+| `cache(name, version)` | A namespace of the browser's cache for data that the sketch or an add-on makes itself: [The cache of derived data](#the-cache-of-derived-data) |
 
 In [hold mode](../guides/testing.md#hold-mode), and while a recording replays, the calls run one at a time in the order the sketch made them. Each starts once the call before it has answered. A load makes its textures, meshes and materials as its files arrive, and the files arrive in another order on each run. A held frame would otherwise draw the scene's content in another order. Several loads at once therefore take longer there. A glTF extension handler's `load` must not wait for another `assets` call in hold mode, since that call waits for the load that runs the handler.
 
@@ -77,7 +78,7 @@ A model that the tool wrote with `--stages` holds its coarsest level. Each finer
 
 A worker parses the file outside the sketch's frames, and decodes the images that the file holds there. The first `loadGltf` call downloads the loader and its worker, about 15 KB after Brotli, so a page without glTF files downloads neither. The worker starts as soon as the loader has arrived, while the model file still downloads. The files that a `.gltf` file names download through `assets`, so `preload` and `onProgress` cover them too. The engine copies the vertex data into its own memory, and keeps no other copy of it.
 
-The `assets` API itself loads with its first call too, so a page that loads no file downloads none of it. Every call answers once that code has arrived. Two calls answer with a function of their own, `onProgress` and `registerGltfExtension`, so they answer at once and register the handler when it arrives.
+The `assets` API itself loads with its first call too, so a page that loads no file downloads none of it. Every promise answers once that code has arrived. Three calls answer at once. Both `registerGltfExtension` and `onProgress` give a function that removes the handler, and `onProgress` registers its handler when the code arrives. The `cache` call gives its namespace, whose reads and writes wait for the code.
 
 The prefab turns each part of the file into the engine's own:
 

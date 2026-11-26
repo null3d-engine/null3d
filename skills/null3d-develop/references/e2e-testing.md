@@ -32,6 +32,7 @@ Engine docs: `guides/testing`, `guides/deterministic-simulation`, `api/page`, `a
 - Let Playwright's `webServer` start the server, on the port that the test uses.
 - Test both the dev server (`bunx vite`) and the production build (`bunx vite build`, then `bunx vite preview`). Each catches faults that the other misses.
 - Let CI test the production build. It is what players get, and it has no development checks.
+- A production build ignores the engine's URL switches, such as `?gpu=` and `?hold=`, so a link cannot change a shipped game. A build that the suite drives with them sets the Vite plugin's `urlSwitches: true`. Section 8 turns it on only for the build that the suite starts.
 - Keep the null3D Vite plugin in the config. It sends the cross-origin isolation headers on the dev server and on `vite preview`. Without them the engine runs single-threaded.
 - Serve the page from `localhost` or over HTTPS. WebGPU needs a secure page. A network address over plain HTTP falls back to WebGL2 (`getting-started/hosting`).
 - When the engine is a linked checkout outside the project, add its folder to Vite's `server.fs.allow`. Otherwise the dev server refuses the engine's WebAssembly file with 403.
@@ -114,6 +115,18 @@ Object.defineProperty(window, '__app', {
 });
 ```
 
+The spec opens the page with `?gpu=webgl2`. The CI build reads that switch only with the plugin's `urlSwitches` on, so the config turns it on for the suite's build alone. The other builds leave the option out, because an explicit `false` turns the switches off on the dev server too. Then `bunx @null3d/cli test`, `shot` and `bench` cannot set them:
+
+```ts
+// vite.config.ts
+import { defineConfig } from 'vite';
+import null3d from '@null3d/vite-plugin';
+
+export default defineConfig({
+  plugins: [null3d(process.env.NULL3D_E2E === '1' ? { urlSwitches: true } : {})],
+});
+```
+
 `playwright.config.ts` starts the app on its own port: the production build in CI, the dev server elsewhere.
 
 ```ts
@@ -149,6 +162,7 @@ export default defineConfig({
     command: ci
       ? `bunx vite build && bunx vite preview --port ${port} --strictPort`
       : `bunx vite --port ${port} --strictPort`,
+    env: { NULL3D_E2E: '1' },  // the suite's build reads ?gpu= and ?hold=; the build you ship does not
     url: `http://localhost:${port}/`,
     reuseExistingServer: false,
     timeout: 180_000,

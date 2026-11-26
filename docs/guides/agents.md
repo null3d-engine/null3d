@@ -64,7 +64,7 @@ An agent checks its work with the `null3d` command, which prints short lines of 
 
 `bunx @null3d/cli mcp` starts a Model Context Protocol server for the project in the current folder. It runs over stdio, and an agent uses it to look inside the running scene and change it live. The server needs a development build, because a production build leaves the inspection channel out.
 
-By default the server starts the project's own Vite dev server and a headless Chrome, as `shot` does. This works on a cloud agent with no window. With `--connect <endpoint>` it attaches to a Chrome that the developer already runs with a remote debugging port. It then drives the tab that shows the page, so the agent sees exactly what the developer sees. [Debugging](debugging.md#the-mcp-server) lists the options and the tools.
+By default the server starts the project's own Vite dev server and a headless Chrome, as `shot` does. This works on a cloud agent with no window. With `--connect <endpoint>` it attaches to a Chrome that the developer already runs with a remote debugging port. It then drives the tab that shows the page, so the agent sees exactly what the developer sees. [Debugging](debugging.md#the-mcp-server) lists the options and the tools, and [the `mcp` command](../cli/null3d.md#mcp) is the full reference.
 
 Register the server in Claude Code with:
 

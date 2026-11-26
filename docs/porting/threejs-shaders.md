@@ -31,7 +31,7 @@ A custom material takes its WGSL in one `wgsl` option, as a template literal tag
 | --- | --- |
 | Changes the color, roughness, emission or alpha of a lit surface | A surface function |
 | Moves vertices | `vertexOffset`, with a surface function where needed |
-| Ignores the lights, such as a hologram or a fresnel glow | A surface function that writes `emissive` and sets `baseColor` to zero |
+| Ignores the lights, such as a hologram or a fresnel glow | An unlit function, `fn unlit(input: SurfaceInput) -> vec4f`, which returns the color and the opacity with no lighting ([Unlit surfaces](../shaders/surface-functions.md#unlit-surfaces)) |
 | Replaces three.js's lighting | A full shader with the `null3d::lighting` helpers |
 | Is a full-screen pass | `post.addEffect`, or `render.addPass({ kind: 'fullscreen' })` when it writes a target of its own ([Porting post-processing](threejs-postprocessing.md)) |
 | Draws into a texture for another material | A scene pass of `render.addPass` |
@@ -53,6 +53,7 @@ A surface function keeps instancing, skinning, shadows, fog and both GPU paths. 
 | `float(i)`, `int(x)` | `f32(i)`, `i32(x)`. WGSL never converts types by itself. |
 | `texture2D(t, uv)`, `texture(t, uv)` | `textureSample(t, tSampler, uv)` |
 | `texture2DLod`, `textureLod` | `textureSampleLevel(t, tSampler, uv, lod)` |
+| `texture(t, vec3(uv, layer))` on a `sampler2DArray` | `textureSample(t, tSampler, uv, i32(layer))` on a `texture_2d_array<f32>` |
 | `texelFetch(t, ivec2(p), 0)` | `textureLoad(t, vec2i(p), 0)` |
 | `mod(x, y)` | `x - y * floor(x / y)`. WGSL's `%` keeps the sign of `x`. |
 | `atan(y, x)` | `atan2(y, x)` |
@@ -72,7 +73,7 @@ A surface function keeps instancing, skinning, shadows, fog and both GPU paths. 
 | `#ifdef`, `#if` | `if` on a `const`, which the compiler removes, or two materials |
 | `#include <chunk>` | `#import null3d::...` from the [shader library](../shaders/library.md), or delete it |
 
-A custom material samples 2D textures only, declared as `var name: texture_2d<f32>;`. A GLSL `samplerCube` has no equivalent in a material. Sample an equirectangular 2D texture instead, or let the scene's environment light the surface.
+A custom material samples 2D textures, declared as `var name: texture_2d<f32>;`, and texture arrays, declared as `var name: texture_2d_array<f32>;`. A GLSL `samplerCube` has no equivalent in a material. Sample an equirectangular 2D texture instead, or let the scene's environment light the surface.
 
 ## Built-in values
 
@@ -108,10 +109,10 @@ The engine works relative to the camera, so positions stay precise far from the 
 
 ## ShaderMaterial and RawShaderMaterial
 
-1. List the uniforms. Each becomes a field of `struct Uniforms`, with its first value in the `uniforms` option. A `sampler2D` uniform becomes `var name: texture_2d<f32>;` and an entry of the `textures` option. A material takes up to 6 textures, fixed when you create it.
+1. List the uniforms. Each becomes a field of `struct Uniforms`, with its first value in the `uniforms` option. A `sampler2D` uniform becomes `var name: texture_2d<f32>;` and an entry of the `textures` option, and a `sampler2DArray` becomes `var name: texture_2d_array<f32>;`. A material takes up to 6 textures, fixed when you create it.
 2. Replace each update such as `material.uniforms.uSpeed.value = 2` with `material.set({ speed: 2 })`. A name that `struct Uniforms` lacks fails the type check, and throws [E1216](../errors/E1216.md) when the sketch runs.
 3. Read the vertex shader. When it only places the vertices and passes varyings on, delete it. When it moves vertices, port that part as `vertexOffset`.
-4. Read the fragment shader. Map its varyings to the surface input, and its output to the surface's fields. A lit look goes to `baseColor`, `roughness` and `metalness`. An unlit look goes to `emissive`, with `baseColor` at zero. Transparency goes to `alpha`, with the matching `alphaMode`.
+4. Read the fragment shader. Map its varyings to the surface input, and its output to the surface's fields. A lit look goes to `baseColor`, `roughness` and `metalness`. An unlit look goes to the color that `fn unlit` returns, in place of `surface`. Transparency goes to `alpha`, or to the opacity that `fn unlit` returns, with the matching `alphaMode`.
 5. Set the options that were material flags. `transparent` becomes `alphaMode: 'blend'`, `side: DoubleSide` becomes `doubleSided: true`, and `AdditiveBlending` becomes `blending: 'additive'`.
 6. Compare parity images on WebGPU and WebGL2 ([Verifying a port](verification.md)).
 
@@ -154,7 +155,8 @@ Keep the original material's standard values on the new material. `materials.sha
 | `Fn`, `If`, `Loop`, `.toVar()` | `fn`, `if`, `for`, `var` |
 | `colorNode`, `opacityNode`, `roughnessNode`, `metalnessNode`, `normalNode`, `emissiveNode`, `aoNode` | `s.baseColor`, `s.alpha`, `s.roughness`, `s.metalness`, `s.normal`, `s.emissive`, `s.occlusion` |
 | `positionNode` | `vertexOffset`, which returns `newPosition - input.position` |
-| `fragmentNode`, `outputNode` | A full shader, or a post effect for a post-processing `outputNode` |
+| `fragmentNode` | An unlit function, `fn unlit`, which returns the color with no lighting |
+| `outputNode` | A full shader, or a post effect for a post-processing `outputNode` |
 | `mrtNode` | No equivalent |
 
 On an `InstancedMesh`, three.js applies the instance matrix before `positionNode` runs, so `positionLocal` there holds the instanced vertex. In null3D, `input.position` is always the mesh's own vertex, and the engine applies the row's transform after `vertexOffset`. Write such a displacement from `input.position` and the row's own data.
@@ -214,13 +216,9 @@ const glow = materials.shader({
   wgsl: /* wgsl */ `
     struct Uniforms { glowColor: vec3f, power: f32 }
 
-    fn surface(input: SurfaceInput) -> Surface {
-      var s = defaultSurface(input);
+    fn unlit(input: SurfaceInput) -> vec4f {
       let f = pow(1.0 - max(dot(input.normal, input.viewDirection), 0.0), material.power);
-      s.baseColor = vec3f(0.0);
-      s.emissive = material.glowColor * f;
-      s.alpha = f;
-      return s;
+      return vec4f(material.glowColor * f, f);
     }`,
 });
 ```

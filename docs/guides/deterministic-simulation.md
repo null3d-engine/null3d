@@ -33,7 +33,7 @@ The maths entry holds the math helpers that use exact arithmetic alone: `+`, `-`
 | `@null3d/engine/math/quat` | `create`, `set`, `copy`, `identity`, `fromMat4`, `lookAt`, `rotationTo`, `multiply`, `invert`, `normalize` and `dot` |
 | `@null3d/engine/math/mat4` | `create`, `identity`, `copy`, `multiply`, `invert`, `compose` and `decompose` |
 | `@null3d/engine/math/math` | `clamp`, `lerp`, `inverseLerp`, `mapLinear`, `smoothstep`, `degToRad`, `radToDeg` and `euclideanModulo` |
-| `@null3d/engine/math` | `createMath`, and the types `Vec2Like`, `Vec3Like`, `QuatLike`, `Mat4Like`, `EulerOrder`, `MathFunctions` and `MathHelpers` |
+| `@null3d/engine/math` | `createMath`, and the types `Vec2Like`, `Vec3Like`, `QuatLike`, `Mat4Like`, `EulerOrder`, `MathFunctions`, `MathHelpers`, `NumberHelpers`, `QuatHelpers` and `Vec3Helpers` |
 
 Each helper is the same function as the main entry's helper of that name, so the [Math helpers](../api/math.md) page describes it. Import a sub-path as a namespace or by name. A bundler then keeps only the helpers that the simulation calls: six helpers add about 1.2 KB.
 

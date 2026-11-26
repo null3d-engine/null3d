@@ -124,7 +124,8 @@ function unmeasuredRows(): Row[] {
 			limit: 'heavy check memory',
 			owner: 'tests/lib/heavy-checks.ts',
 			state: 'unmeasured',
-			detail: 'bun run test:heavy reports the peak of each suite against its ceiling',
+			detail:
+				'bun run test:heavy runs each check under its own ceiling, and fails a check that passes it',
 		},
 		{
 			limit: 'docs and skills style',

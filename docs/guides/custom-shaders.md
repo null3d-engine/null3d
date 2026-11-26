@@ -136,10 +136,13 @@ The plugin puts the compiled shader where the literal was. Your code therefore r
 
 ## What the plugin compiles
 
-The plugin compiles two kinds of WGSL:
+The plugin compiles these kinds of WGSL:
 
-- WGSL without entry points that declares `fn surface`, `fn vertexOffset` or both is a custom material's WGSL. The plugin builds it into the standard material's shader, once for each of that shader's variants.
+- WGSL without entry points that declares `fn surface`, `fn vertexOffset`, `fn lobe`, `fn coverage` or `fn unlit` is a custom material's WGSL. The plugin builds it into the standard material's shader, once for each of that shader's variants.
+- WGSL without entry points that declares `fn effect` or `fn toneCurve` is a [custom effect or tone curve](custom-passes.md#custom-effects). The plugin builds it into every variant of its template.
+- WGSL without entry points that declares `fn skyLayer` is a [sky layer](../api/scene.md#sky-layers). The plugin builds it into the engine's sky-layer template.
 - WGSL whose `@vertex` entry point takes an `InstanceIn` is a [full shader](#full-shaders) of a custom material. The plugin builds it for WebGPU, and for WebGL2 with and without multi-draw.
+- WGSL whose `@vertex` entry point takes the vertex and instance indices and no mesh attribute is a draw shader. A [vertex draw](../api/vertex-draws.md) draws it from a vertex count.
 - Other WGSL with entry points is a whole shader. It has one `@vertex` entry point and one or more `@fragment` entry points. Each `@fragment` entry point makes one render pipeline, named after it, with the `@vertex` entry point. A shader with only `@compute` entry points builds for WebGPU alone, because WebGL2 has no compute shaders.
 
 WGSL that is neither stops the build with an error that says how to fix it.

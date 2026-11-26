@@ -71,6 +71,21 @@ Copyright (c) 2023, Qualcomm Innovation Center, Inc. All rights reserved.
 BSD 3-Clause License, whose text is below.
 
 ==============================================================================
+SMAA: the anti-aliasing of the moment transparency layer
+==============================================================================
+
+The shader library's moment transparency layer follows the SMAA 1x reference implementation's
+three steps, from https://github.com/iryoku/smaa.
+
+Copyright (C) 2013 Jorge Jimenez (jorge@iryoku.com)
+Copyright (C) 2013 Jose I. Echevarria (joseignacioechevarria@gmail.com)
+Copyright (C) 2013 Belen Masia (bmasia@unizar.es)
+Copyright (C) 2013 Fernando Navarro (fernandn@microsoft.com)
+Copyright (C) 2013 Diego Gutierrez (diegog@unizar.es)
+
+The MIT License, whose text is below.
+
+==============================================================================
 naga, naga-types and naga_oil: WGSL parsing, validation and translation
 ==============================================================================
 
@@ -102,16 +117,16 @@ Each crate below is offered under the MIT License or the Apache License 2.0, and
 under the MIT License, except where the line gives another license or another choice. The version
 is the one in the module, and each crate's own package carries its copyright notice.
 
+- The Rust standard library: Copyright (c) The Rust Project Contributors.
 - arrayvec 0.7.8, bit-set 0.10.0, bit-vec 0.9.1, bitflags 2.13.2, cfg-if 1.0.5, equivalent
   1.0.2, half 2.7.1, hashbrown 0.17.1, indexmap 2.14.2, itoa 1.0.18, log 0.4.34, num-traits
   0.2.19, once_cell 1.21.4, pin-project-lite 0.2.17, regex 1.13.1, regex-automata 0.4.18,
-  regex-syntax 0.8.11, rustc-hash 1.1.0, smallvec 1.16.2, thiserror 2.0.21, unicode-width 0.2.2
-  and zerocopy 0.8.59: Copyright their authors.
+  regex-syntax 0.8.11, rustc-hash 1.1.0, thiserror 2.0.21, unicode-width 0.2.2 and zerocopy
+  0.8.59: Copyright their authors.
 - aho-corasick 1.1.5, memchr 2.8.3 and termcolor 1.4.1, each offered under the Unlicense or the
   MIT License, and null3D takes them under the MIT License: Copyright (c) Andrew Gallant.
 - data-encoding 2.11.1, libm 0.2.16, tracing 0.1.44, tracing-core 0.1.36, winnow 1.0.4 and zmij
   1.0.23, under the MIT License: Copyright their authors.
-- crunchy 0.2.4, under the MIT License: Copyright (c) Eira Fransham.
 - foldhash 0.2.0, under the Zlib License: Copyright (c) Orson Peters. Its license text follows.
 - codespan-reporting 0.12.0 and 0.13.1, under the Apache License 2.0: Copyright (c) Brendan
   Zabarauskas. The license text is in the package's LICENSE-APACHE file.

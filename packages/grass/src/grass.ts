@@ -78,7 +78,10 @@ export interface GrassOptions {
 	readonly segments?: number;
 	/** The shapes of tuft, each one draw. The default is 1. */
 	readonly shapes?: number;
-	/** Says whether grass grows at a point, for ground that holds a road or a wall. Without it, grass grows everywhere. */
+	/**
+	 * Says whether grass grows at a point, as `mask` does, for ground that holds a road or a wall.
+	 * A tuft grows only where both allow it. Without either, the slope alone decides.
+	 */
 	readonly where?: (x: number, z: number) => boolean;
 	/** The blades' color, which meets the ground's own at their roots. The default is a fresh green. */
 	readonly color?: string;

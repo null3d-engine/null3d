@@ -177,10 +177,11 @@ describe('the field that a reader samples', () => {
 		(ctx.time as { now: number }).now = 0;
 		const wind = createWind(ctx, { camera, grid: 8 });
 		// A frame that arrives twenty sketch seconds late runs one frame's worth of air: the most
-		// that a frame runs is 600 cycles.
+		// that a frame runs is ten seconds of air, the cycles that fit in it at Medium's step.
 		(ctx.time as { now: number }).now = 20;
 		wind.update();
-		expect(steps.at(-1)).toBe(600 * MEDIUM_CYCLE);
+		expect(steps.at(-1)).toBe(Math.floor(10 / MEDIUM_STEP + 1e-6) * MEDIUM_CYCLE);
+		expect(Math.floor(10 / MEDIUM_STEP + 1e-6)).toBe(303);
 		// The next frame owes nothing extra, so the stall left no debt behind it.
 		wind.update();
 		expect(steps.at(-1)).toBe(0);

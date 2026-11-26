@@ -190,7 +190,7 @@ drei's `<PerformanceMonitor>`, `<AdaptiveDpr>` and `<AdaptiveEvents>` measure th
 | --- | --- |
 | `<PerformanceMonitor onDecline onIncline>` that sets `dpr` | The governor lowers the render scale when frames run over budget for about a second. It raises it after about 5 seconds with time to spare. |
 | `onChange={({ factor }) => setDpr(...)}` | `quality.set({ minRenderScale, maxRenderScale })` sets the range that the render scale moves in. `quality.renderScale` reads the current scale. |
-| `onDecline` handlers that cut particles or effects | `quality.onChange`, which runs after each step past the render scale. `quality.governor.steps` counts those steps. |
+| `onDecline` handlers that cut particles or effects | `quality.setBudget({ name, ms, min, onScale })`. The governor lowers the budget's scale in steps of 0.25, one before each step of the render scale, and `onScale` sets the count from the scale. `quality.onChange` runs after each step past the render scale. |
 | `onFallback` after `flipflops` | Nothing. A step up that fails doubles the governor's wait before it tries again, so quality settles. |
 | `<AdaptiveDpr pixelated />` with `performance.regress()` | No equivalent. The governor follows frame times, not camera movement. Remove the `regress()` calls. |
 | `<AdaptiveEvents />` | Nothing. null3D casts no pointer rays on the main thread. |
@@ -202,10 +202,18 @@ The governor judges each window by the slower of two rates: the frames presented
 // The cap of 2 moves to createEngine({ maxPixelRatio: 2 }) on the page.
 quality.set({ minRenderScale: 0.5, maxRenderScale: 1 });
 const SPARKS = { low: 500, medium: 1000, high: 2000, ultra: 4000 };
-const sparkCount = () =>
-  quality.governor.steps > 0 ? SPARKS[quality.preset] / 2 : SPARKS[quality.preset];
-sparks.setActiveCount(sparkCount());
-quality.onChange(() => sparks.setActiveCount(sparkCount()));
+let sparkScale = 1;
+const sparkCount = () => Math.round(SPARKS[quality.preset] * sparkScale);
+quality.setBudget({
+  name: 'sparks',
+  ms: 1,
+  min: 0.5,
+  onScale: (scale) => {
+    sparkScale = scale;
+    sparks.setActiveCount(sparkCount());
+  },
+});
+quality.onChange(() => sparks.setActiveCount(sparkCount())); // a new preset
 ```
 
 To measure the scene's own cost while you port it, turn the governor off with `quality.set({ governor: false })`. Turn it on again before you ship.

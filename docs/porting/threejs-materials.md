@@ -44,7 +44,7 @@ This page goes through each three.js material, then the texture settings, then f
 | `blending` | `blending: 'normal'`, `'additive'` or `'multiply'`, with `alphaMode: 'blend'` | Subtractive and custom blending have no equivalent. |
 | `vertexColors`, `flatShading`, `wireframe`, `fog` | The same names | Fixed when you create the material. `wireframeLinewidth` has no effect. |
 | `toneMapped: false` | `toneMapped: false` | The material keeps its color as the display shows it. |
-| `clippingPlanes` | A surface function with `alphaMode: 'mask'` | The recipe below cuts a mesh at a plane. Shadows keep the whole mesh. |
+| `clippingPlanes` | A surface function with `alphaMode: 'mask'` | The recipe below cuts a mesh at a plane. Its shadow is cut at the plane too, as three.js does with `clipShadows: true`. three.js's default is `clipShadows: false`: for it, also declare `fn coverage(input: SurfaceInput) -> f32` and return `1.0`, so the whole shadow stays. |
 | `dithering`, `precision`, `shadowSide` | Nothing | The final pass always dithers. |
 
 The engine blends in linear color, as three.js's `WebGPURenderer` does. `WebGLRenderer` blends after tone mapping, so see-through surfaces look a little lighter in null3D.
@@ -77,13 +77,13 @@ glTF files with the matching `KHR_materials_*` extensions load into these option
 Both become `materials.standard` with `metalness: 0`. The standard material keeps energy as `MeshStandardMaterial` does, so the look changes a little. Check the result with parity images, and tune.
 
 - Lambert: give `roughness: 1`. The emissive values and the maps carry over.
-- Phong: start from `roughness = (2 / (shininess + 2)) ** 0.25`. A shininess of 30 gives about 0.49, and 100 gives about 0.37.
+- Phong: start from `roughness = (2 / (shininess + 2)) ** 0.25`. A shininess of 30 gives 0.5, and 100 gives about 0.37.
 - A Phong `specular` color has no equivalent in the metalness model. Gray specular maps to roughness alone. Strongly colored specular needs a surface function.
 - A Phong `specularMap` can become a roughness map, where bright specular means low roughness. Convert it offline.
 
 ## MeshToonMaterial and MeshMatcapMaterial
 
-Both become surface functions, as the recipes below show. A surface function cannot read the scene's lights, so the toon recipe takes the light's direction as a uniform. The matcap recipe looks up a texture by the normal in view space, and ignores the scene's lights, as three.js's matcap does.
+Both become custom materials, as the recipes below show. A surface function cannot read the scene's lights, so the toon recipe takes the light's direction as a uniform. For a toon look that follows every light and its shadows, step the light in a lobe function instead. The engine calls `fn lobe(input: LobeInput) -> vec3f` for the main directional light and for each point and spot light. It gets the light's direction and its shadowed irradiance, and its color adds to that light's specular ([Surface functions](../shaders/surface-functions.md#a-materials-own-lobe)). The base lighting stays beside it, so set `s.baseColor` to black and `s.roughness` to 1, as the toon recipe does. The engine calls no lobe for the fill directional lights and the area lights, so the bands do not follow them. The matcap recipe looks up a texture by the normal in view space. It is an unlit function, so it ignores the scene's lights, as three.js's matcap does.
 
 ## Other materials
 
@@ -120,7 +120,7 @@ Both become surface functions, as the recipes below show. A surface function can
 | `premultiplyAlpha` | `premultipliedAlpha` |
 | `needsUpdate = true` after a change of pixels | `texture.update(bitmap)` |
 
-`loadTexture` decodes PNG, JPEG, WebP and AVIF files, and KTX2 files in the device's compressed format. Convert large textures to KTX2 with `bunx @null3d/cli assets optimize`. Materials sample 2D textures only. A cube map can be the scene's background, and the scene's environment lights every material.
+`loadTexture` decodes PNG, JPEG, WebP and AVIF files, and KTX2 files in the device's compressed format. Convert large textures to KTX2 with `bunx @null3d/cli assets optimize`. Materials sample 2D textures and texture arrays, not cube maps. A cube map can be the scene's background, and the scene's environment lights every material.
 
 ## Color spaces
 
@@ -158,13 +158,10 @@ const matcap = materials.shader({
   wgsl: /* wgsl */ `
     var matcap: texture_2d<f32>;
 
-    fn surface(input: SurfaceInput) -> Surface {
-      var s = defaultSurface(input);
+    fn unlit(input: SurfaceInput) -> vec4f {
       let n = normalize((camera.view * vec4f(input.normal, 0.0)).xyz);
       let uv = n.xy * vec2f(0.5, -0.5) + 0.5;
-      s.emissive = textureSample(matcap, matcapSampler, uv).rgb;
-      s.baseColor = vec3f(0.0);
-      return s;
+      return vec4f(textureSample(matcap, matcapSampler, uv).rgb, 1.0);
     }`,
 });
 ```

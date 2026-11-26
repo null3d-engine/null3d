@@ -2,7 +2,7 @@
 
 Engine docs: `porting/threejs-materials`, `api/materials`, `api/textures`, `concepts/color-management`, `shaders/surface-functions`.
 
-Every `materials.standard` option in section 1 is built, and the material shades as three.js's `MeshStandardMaterial` does. `materials.unlit` takes `color`, `opacity`, `map` and `uvTransform`. Both take `doubleSided`, `vertexColors`, `fog`, `alphaMode`, `alphaCutoff`, `blending`, `depthWrite`, `depthTest`, `colorWrite` and `depthBias`, and the standard material also takes `flatShading`. Both take `alphaToCoverage`, `forceSinglePass` and the `hash` alpha mode too. Custom materials (`materials.shader`) are built: surface functions, vertex offsets, uniforms and full shaders. They take every standard option but the texture maps. Textures in custom materials are built, so the alpha map recipe works. The matcap recipe also needs `camera.view` (0.2, not built yet).
+Every `materials.standard` option in section 1 is built, and the material shades as three.js's `MeshStandardMaterial` does. `materials.unlit` takes `color`, `opacity`, `map` and `uvTransform`. Both take `doubleSided`, `vertexColors`, `fog`, `alphaMode`, `alphaCutoff`, `blending`, `depthWrite`, `depthTest`, `colorWrite` and `depthBias`, and the standard material also takes `flatShading`. Both take `alphaToCoverage`, `forceSinglePass` and the `hash` alpha mode too. Custom materials (`materials.shader`) are built: surface functions, vertex offsets, uniforms and full shaders. They take every standard option but the texture maps. Textures in custom materials are built, so the alpha map recipe works. The matcap recipe uses `camera.view`, the camera's view matrix.
 
 ## Contents
 
@@ -55,7 +55,7 @@ Every `materials.standard` option in section 1 is built, and the material shades
 | `fog: false` | Same name | |
 | `toneMapped: false` | `toneMapped: false` | Fixed when the material is created. The material keeps its color as the display shows it on both paths. On the HDR path a blended surface keeps the curve |
 | `dithering` | Always on in the final pass | |
-| `clippingPlanes`, `clipShadows` | A surface function with `alphaMode: 'mask'` (section 8) | Shadows keep the whole mesh |
+| `clippingPlanes`, `clipShadows` | A surface function with `alphaMode: 'mask'` (section 8) | The shadow is cut at the plane too, as with `clipShadows: true`: a masked material's shadow caster runs the alpha that its surface function sets. three.js's default is `clipShadows: false`. For it, also declare `fn coverage(input: SurfaceInput) -> f32` returning `1.0`: the caster then tests the coverage in place of the alpha, and the whole shadow stays |
 | `shadowSide`, `precision`, `premultipliedAlpha` | Not needed | To store a texture's colors multiplied by alpha: `loadTexture(url, { premultipliedAlpha: true })` |
 
 ## 2. MeshPhysicalMaterial
@@ -89,13 +89,13 @@ glTF files with `KHR_materials_ior`, `KHR_materials_specular`, `KHR_materials_tr
 Both become `materials.standard` with `metalness: 0`. The standard material adds a faint highlight, and keeps energy as `MeshStandardMaterial` does. So small differences are expected: accept them after a parity check, or tune.
 
 - Lambert: `roughness: 1`. Emissive and maps carry over.
-- Phong: start from `roughness = (2 / (shininess + 2)) ** 0.25`. That converts Blinn-Phong shininess to a GGX roughness through the common Beckmann approximation; treat it as a starting point and tune with parity images. Typical values: shininess 30 becomes about 0.49, shininess 100 about 0.37.
+- Phong: start from `roughness = (2 / (shininess + 2)) ** 0.25`. That converts Blinn-Phong shininess to a GGX roughness through the common Beckmann approximation; treat it as a starting point and tune with parity images. Typical values: shininess 30 becomes 0.5, shininess 100 about 0.37.
 - Phong `specular` color has no direct equivalent in a metalness workflow. Gray specular maps to roughness only; strongly colored specular needs a surface function.
 - `specularMap` (Phong) can become a roughness map: bright specular means low roughness. Convert offline.
 
 ## 5. MeshToonMaterial and MeshMatcapMaterial
 
-Both become surface-function recipes (section 8). Toon shading needs light-band steps. Surface functions do not read the scene's lights, so the recipe takes the light's direction as a uniform. Matcap looks up a texture by view-space normal and ignores scene lights, as three.js's matcap does. It uses a texture in a custom material and the camera's view matrix, `camera.view`.
+Both become custom-material recipes (section 8). Toon shading needs light-band steps. Surface functions do not read the scene's lights, so the recipe takes the light's direction as a uniform. For a toon look that follows every light and its shadows, step the light in `fn lobe(input: LobeInput) -> vec3f` instead. The engine calls it for the main directional light and each point and spot light, with `input.light` and the shadowed `input.irradiance`. Its color adds to that light's specular, beside the base lighting (engine docs `shaders/surface-functions`, a material's own lobe). So set `s.baseColor` to black and `s.roughness` to 1, as the toon recipe does. The engine calls no lobe for fill directional lights and area lights, so the bands do not follow them. Matcap looks up a texture by view-space normal in an `fn unlit` function, so it ignores scene lights, as three.js's matcap does. It uses a texture in a custom material and the camera's view matrix, `camera.view`.
 
 ## 6. Other three.js materials
 
@@ -107,7 +107,7 @@ Both become surface-function recipes (section 8). Toon shading needs light-band 
 | `PointsMaterial` | Options of `scene.createPoints`: `size` (with `sizeAttenuation`, world units: three.js's size times `tan(fov / 2)`; without it, CSS pixels), `sizeAttenuation`, `map`, `color`, `opacity`, `colors` for `vertexColors`, `alphaMode` (`'opaque'` by default; `'blend'` for `transparent`, `'mask'` with `alphaCutoff` for `alphaTest`), `blending`. Points do not vanish at the screen's edge as WebGL points do. Docs `api/points` |
 | `LineBasicMaterial`, `LineDashedMaterial`, `LineMaterial` | Options of `scene.createLines`: `width` (1 for a one-pixel line), `worldUnits`, `dashed` with `dashSize`, `gapSize`, `dashScale` and `dashOffset`, `colors`. Docs `api/lines` |
 | `SpriteMaterial` | Options of `scene.createSprites`: `map`, `atlas`, `color`, `opacity`, `sizeAttenuation` (sizes in CSS pixels when false), `alphaMode` (`'blend'` by default), `blending`; `rotation` is the batch's `rotations` array, one per sprite |
-| `ShaderMaterial`, `RawShaderMaterial` | `materials.shader` in WGSL: a surface function, or a full shader (`references/shaders.md`) |
+| `ShaderMaterial`, `RawShaderMaterial` | `materials.shader` in WGSL: a surface function, an unlit function (`fn unlit`), or a full shader (`references/shaders.md`) |
 | `NodeMaterial` and TSL materials | `materials.shader` with a surface function (`references/shaders.md`) |
 | `DecalGeometry` (add-on), with a material that has `polygonOffset` | A mesh of `geometry.box()` with `materials.decal({ map, normalMap, ... })`: `DecalGeometry`'s position, orientation and size become the box's `position`, `rotation` and `scale`. No geometry is cut, and no target mesh is named: the box marks every opaque surface inside it, lit by every light. Drop `polygonOffset`, `depthWrite: false` and `transparent: true`. `angleFade` and `edgeFade` hide the stretching that `DecalGeometry` shows at steep surfaces (`api/materials`) |
 | `Reflector`, `Water`, `Water2` (add-ons) | A reflection pass, `render.addPass({ kind: 'reflection', writes, plane: { point, normal } })`, and a custom material whose surface function sets `s.reflection` from `reflection_uv` (`api/render`). `Reflector`'s `textureWidth` becomes the pass's `scale`, a share of the render size; its `color` becomes the material's `color` with `metalness: 1, roughness: 0`. `Water`'s `distortionScale` becomes the factor on `s.normal.xz` in `reflection_uv`'s offset, and `waterColor` and `sunColor` the material's color and the scene's sun. `Water`'s `waterNormals` texture becomes ripples from sine waves or `null3d::noise`, or a normal texture of the material. `Refractor` and `Water2`'s refraction become transmission: give the water's custom material `transmission`, `thickness` and `ior: 1.33`, and set `s.transmission` with the rippled normal (`api/materials`) |
@@ -135,8 +135,6 @@ Texture formats: `loadTexture` decodes PNG, JPEG, WebP and AVIF files. It also l
 
 ## 8. Recipes
 
-The toon, clipping and alpha map recipes work now. The matcap recipe works with `camera.view`.
-
 Toon shading with three bands:
 
 ```ts
@@ -150,7 +148,7 @@ const toon = materials.shader({
       let ndl = max(dot(input.normal, -normalize(material.lightDirection)), 0.0);
       let band = floor(ndl * material.bands) / max(material.bands - 1.0, 1.0);
       s.emissive = mix(material.shadowColor, s.baseColor, band);
-      s.baseColor = vec3f(0.0);      // lighting off; emissive carries the look
+      s.baseColor = vec3f(0.0);      // no diffuse light; emissive carries the bands
       s.roughness = 1.0;
       return s;
     }`,
@@ -165,13 +163,10 @@ const matcap = materials.shader({
   wgsl: /* wgsl */ `
     var matcap: texture_2d<f32>;
 
-    fn surface(input: SurfaceInput) -> Surface {
-      var s = defaultSurface(input);
+    fn unlit(input: SurfaceInput) -> vec4f {        // no lights, shadows or reflections
       let n = normalize((camera.view * vec4f(input.normal, 0.0)).xyz);
       let uv = n.xy * vec2f(0.5, -0.5) + 0.5;     // y flipped: WebGPU texture space starts at the top
-      s.emissive = textureSample(matcap, matcapSampler, uv).rgb;
-      s.baseColor = vec3f(0.0);
-      return s;
+      return vec4f(textureSample(matcap, matcapSampler, uv).rgb, 1.0);
     }`,
 });
 ```

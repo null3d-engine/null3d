@@ -60,14 +60,17 @@ const SKIP = new Set([
 	'vendor',
 	'.turbo',
 	'.cache',
-	'public/draco',
 	'libs',
 ]);
+// Folders skipped by their path, at the project's root or in any folder below it.
+const SKIP_PATHS = ['public/draco'];
 
 function walk(dir, files = []) {
 	for (const name of readdirSync(dir)) {
 		if (SKIP.has(name)) continue;
 		const p = join(dir, name);
+		const rel = relative(root, p).replaceAll('\\', '/');
+		if (SKIP_PATHS.some((s) => rel === s || rel.endsWith(`/${s}`))) continue;
 		let st;
 		try {
 			st = statSync(p);
@@ -244,7 +247,7 @@ md.push(
 	'2. Decide what stays on the page and what moves to sketch.ts (references/architecture-and-loop.md).',
 );
 md.push(
-	'3. Port in this order: scene setup, assets, materials, lights, interaction, animation, post-processing, shaders.',
+	'3. Port in this order: renderer and loop, camera and controls, models and textures, materials, lights and shadows, geometry and instancing, interaction, animation, post-processing, shaders, then UI, audio and physics.',
 );
 md.push('4. After each step, compare parity images and tick the rows above.');
 

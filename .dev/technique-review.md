@@ -43,7 +43,6 @@ Terms on this page:
 - The environment lookup at each material's own roughness. The lit shader maps roughness to a level of the environment cube through a table fitted to three.js r186's atlas (`lib/ibl.wgsl`). That atlas blurs each level less than its own GGX lobe. So a rough metal reflects a sharper sky than its own sun highlight. Read the cube at `lod = (n − 1) r (2 − r)`, as Filament and three.js r187 do, and delete the fitted table. Read the lighting table with one filtered read in place of 4 loads. Prototype L2 checks the change.
 - Diffuse environment light from the roughest level times π. Diffuse light comes from nine spherical harmonic coefficients. three.js r187 reads the roughest level, and Filament filters its last level extra smooth for that reason. Take the roughest level, and drop the coefficients, if L2 shows that the read costs under 1% of a GPU-bound frame.
 - The three.js pin. Move it to r187 in one change, and drop its patch of the roughness floor ([D-79](decisions/D-79-lighting-defaults.md), [D-53](decisions/D-53-technique-defaults.md) ruling 5). Release r187 changes three lighting terms: the 0.045 floor, the own-roughness lookup with no base-level offset, and diffuse light from the roughest level. Against release r186, the own-roughness lookup cannot pass the strict pixel tests. Until r187 is released, the lighting-term fits need three.js main as a second package, `three-next`, which the repository does not have.
-- Product templates take the Neutral tone curve ([D-53](decisions/D-53-technique-defaults.md) ruling 4). The command-line tool has no product template yet.
 
 ### Output and post-processing
 
@@ -221,7 +220,7 @@ IDs: L lighting, S shadows and AO, P post, G geometry, A animation and assets, X
 | X2 | MSDF text on the sprite path, 100 to 10,000 labels, against HTML labels and troika | Mac, iPad, cloud S25 and Pixel 9 | Text. Pass: 1,000 labels within 0.5 ms of GPU time on the S25 |
 | X3 | three.js's GLSL-to-WGSL transpiler over its 52 example shaders and the porting corpus | Mac | Whether a shader port command is worth building. Pass: 70% compile with no hand edits |
 
-GPU occlusion culling stays off on desktops ([D-22](decisions/D-22-occlusion-presets.md)). Its stall between passes under another program's GPU load is open for the owner ([D-40](decisions/D-40-gpu-occlusion.md)).
+GPU occlusion culling is on at High and Ultra on desktops, and off on phones and tablets ([D-22](decisions/D-22-occlusion-presets.md)). A check during play turns its extra passes off where they do not pay. Its cost under another program's GPU load still needs a run on a quiet Mac ([D-40](decisions/D-40-gpu-occlusion.md)).
 
 ## Gaps, ranked
 
@@ -239,9 +238,9 @@ Rank is the value to users per unit of effort, among every gap that the comparis
 | 26 | Motion blur | Most engines | M | M3 ([D-132](decisions/D-132-showcase-look-and-features.md)) |
 | 30 | WebXR | Babylon.js, PlayCanvas, three.js | L | After 1.0, as its own milestone ([D-179](decisions/D-179-technique-rulings.md) ruling 28). XR needs the thread mode that draws on the main thread, so that mode stays working |
 
-Global illumination is M3's leak-free probe volume on the light probe grid ([D-179](decisions/D-179-technique-rulings.md) ruling 12, [D-146](decisions/D-146-light-probe-grid.md)). Each probe gains a validity mask and a sky-occlusion term, and the volume runs on phones and WebGL2.
+Global illumination is the leak-free probe volume on the light probe grid ([D-179](decisions/D-179-technique-rulings.md) ruling 12, [D-146](decisions/D-146-light-probe-grid.md)). Each probe holds a validity mask and how much sky it sees, which the shader multiplies by the live environment's light. The volume runs on phones and WebGL2.
 
-The water add-on has river and lake water ([D-257](decisions/D-257-water-addon.md)). Its FFT ocean comes in M3 ([D-179](decisions/D-179-technique-rulings.md) ruling 19).
+The water add-on has river and lake water ([D-257](decisions/D-257-water-addon.md)), and an FFT ocean of three wave bands ([D-179](decisions/D-179-technique-rulings.md) ruling 19).
 
 Navigation meshes, CSG, trails and exporters block no user segment in 1.0.
 
@@ -255,9 +254,9 @@ three.js has basic versions of most screen effects, so a basic version does not 
 
 | three.js feature | Where | What it does and lacks | null3D's answer |
 | --- | --- | --- | --- |
-| `SSGINode` | r187 branch, display nodes | Bounce light from what is on screen, with visibility bitmasks. Needs TRAA or a denoiser, and loses all light whose source is off screen | Screen-space bounce light at half size on High and above, an M3 core task; the probe volume of D-179 ruling 12 gives bounce light from off screen |
+| `SSGINode` | r187 branch, display nodes | Bounce light from what is on screen, with visibility bitmasks. Needs TRAA or a denoiser, and loses all light whose source is off screen | Screen-space bounce light at half size on High and above, and on Medium on WebGL2 ([D-284](decisions/D-284-screen-space-bounce-light.md)); the probe volume of D-179 ruling 12 gives bounce light from off screen |
 | `VXGINode` | Example only, WebGPU only | Voxel cone tracing in one 64³ volume, diffuse only | No equivalent; too heavy for phones |
-| `LightProbeGrid` | Add-on, WebGPU and WebGL | A baked L2 probe grid with several bounces. No validity mask, no sky term, so light leaks through walls | The L1 probe grid ([D-146](decisions/D-146-light-probe-grid.md)), with a validity mask and a sky-occlusion term in M3 |
+| `LightProbeGrid` | Add-on, WebGPU and WebGL | A baked L2 probe grid with several bounces. No validity mask, no sky term, so light leaks through walls | The L1 probe grid ([D-146](decisions/D-146-light-probe-grid.md)), with a validity mask and a sky term per probe |
 | `TAAUNode` | r187 branch, display nodes | A temporal upscaler: Halton jitter, variance clipping, a hand-tuned lock. Needs MSAA off | No equivalent: the temporal resolve does not ship, so the upscaler is dropped ([D-206](decisions/D-206-temporal-resolve.md); D-179 rulings 16 and 24) |
 | `TRAANode`, `FSR1Node` | Display nodes | Temporal anti-aliasing; FSR 1's spatial upscale and RCAS sharpening | MSAA from Medium up; below render scale 1, the two-step output with GSR 1 ([D-167](decisions/D-167-two-step-output.md)) |
 | `SSRNode` | Display nodes | Reflections from what is on screen, with a denoiser example | Screen-space reflections ([D-134](decisions/D-134-screen-space-reflections.md)) |
@@ -282,7 +281,7 @@ three.js lacks:
 - grass made on the GPU;
 - splats with detail levels and streaming.
 
-null3D has these in its core, and three.js does not: GPU and CPU occlusion culling, large-world precision and clustered lights with shadows. It also has compute skinning, built-in raycasts and the worker threads.
+null3D has these in its core, and three.js does not: GPU and CPU occlusion culling, large-world precision and clustered lights with shadows. It also has compute skinning, built-in raycasts and the worker threads. The core also has the leak-free probe volume, moment transparency ([D-261](decisions/D-261-moment-transparency.md)) and screen-space bounce light ([D-284](decisions/D-284-screen-space-bounce-light.md)). Its sky draws volumetric clouds on High and Ultra ([D-297](decisions/D-297-volumetric-clouds.md)). The grass add-on makes grass on the GPU with wind ([D-241](decisions/D-241-vegetation-foundation.md)), and the water add-on has an FFT ocean.
 
 ### Other web engines
 
@@ -314,17 +313,13 @@ A phone cost is a published figure unless it says "estimate".
 
 | Technique | Why | Phone cost | Where |
 | --- | --- | --- | --- |
-| Leak-free probe volume, after Unity 6's adaptive probe volumes: a validity mask, leak-reduced sampling, and a baked sky term times the live sky color | Fixes the main flaw of three.js's grid; time of day keeps working; Unity ships it to phones | 0.1 to 0.3 ms (estimate) | Core, on the probe grid: M3's global illumination (D-179 ruling 12) |
 | A bake on WebGPU compute: a progressive path tracer | No complete version in the three.js world | Seconds to a minute; desktop first | Core, beside the ray-cast bake of [D-146](decisions/D-146-light-probe-grid.md), with the reflection probes' capture |
-| Grass made on the GPU with wind | Not in three.js | 1 to 2 ms for 200,000 blades (estimate) | M3, in the grass add-on ([D-241](decisions/D-241-vegetation-foundation.md)) |
-| An ocean with real waves (FFT, 2 to 3 bands) | Not in three.js; its `webgpu_ocean` is a normal map | About 0.5 ms (estimate) | The water add-on, in M3 (D-179 ruling 19) |
 | Smoke lit from six baked directions; ribbons | Cheap on phones | Very small (estimate) | The particles add-on, with no ruling yet. Collision with the depth buffer is out, because the add-on has no simulation pass ([D-131](decisions/D-131-particles.md)) |
-| Moment transparency; per-pixel linked lists on desktops | Better order where layers overlap | About twice weighted blending's bandwidth (estimate) | An M3 core task, off by default (D-179 ruling 20) |
-| Bounce light from the screen at half size | Matches three.js's `SSGINode` | 1.5 to 3 ms (estimate) | An M3 core task, on High and above (D-179 ruling 20) |
+| Per-pixel linked lists on desktops | Exact order where layers overlap, past what moment transparency gives | Not measured | [D-150](decisions/D-150-weighted-blended-transparency.md) rejected them as the method for every path, because compatibility mode and WebGL2 lack fragment storage and atomics. A desktop tier has no ruling yet |
 
 After 1.0 come OpenPBR, once glTF and MaterialX carry it, and distance-field shadows, behind a hook that lets an add-on own the shadow term. Hair comes as a content pack, and WebXR as its own milestone ([D-179](decisions/D-179-technique-rulings.md) rulings 20 and 28).
 
-Not planned: many lights at a fixed cost, and a temporal upscaler that keeps MSAA. Both need a temporal resolve, which the engine does not ship ([D-206](decisions/D-206-temporal-resolve.md)). Volumetric clouds are left to add-on developers ([D-173](decisions/D-173-addon-hooks.md) ruling 2). Cached shadow pages are not a separate item, because shadow tiles redraw only what moved.
+Not planned: many lights at a fixed cost, and a temporal upscaler that keeps MSAA. Both need a temporal resolve, which the engine does not ship ([D-206](decisions/D-206-temporal-resolve.md)). Cached shadow pages are not a separate item, because shadow tiles redraw only what moved.
 
 Watch list, with no work planned:
 

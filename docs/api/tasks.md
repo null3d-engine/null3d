@@ -91,9 +91,9 @@ A task that fails does not stop the engine, and a later task tries again. A modu
 
 ## The task's module in a build
 
-The address must name JavaScript that the browser imports as a module. In a project built with Vite, write the task in the add-on's package, and let the package's build write it. Give the address of the built file, as in the example above.
+The address must name a module that the browser imports. With the engine's Vite plugin, a production build bundles the module that `new URL('./file.ts', import.meta.url)` names into a chunk of its own, with its imports. A development server compiles a TypeScript file on request.
 
-The file must run on its own. Bundle anything that it imports, or keep it free of imports. A development server compiles a TypeScript file on request, but a production build copies it as it stands.
+The plugin leaves a file under a package's `dist` folder as it is, so a published add-on ships its task already built. That file must run on its own: bundle anything that it imports, or keep it free of imports.
 
 ## Related pages
 

@@ -22,31 +22,6 @@ The engine starts job workers only when its parallel loops take 0.2 ms or more p
 
 Godot found that MSAA crashed Mali-G52, G72 and G76 GPUs on its Vulkan mobile path. Its fix, [godot#114785](https://github.com/godotengine/godot/pull/114785), moved all uniforms to set 0. The engine binds its uniforms in several bind groups. A Mali phone with MSAA on must run the shadow and custom material image tests on WebGPU to rule the fault out ([implementation notes](implementation-notes.md#browser-faults)). The fault is a driver crash, so only a device run can show it.
 
-## A read of a compute pass fetched the mirror on WebGL2 (M3-V13)
-
-`render.readPass` copied a region of a compute pass's target from the other end of the texture on
-WebGL2, and then turned its rows, so a read at the image's row 6 returned the texels at row 118: the
-mirror of the image. The copy now starts at the region's own row on both paths, and the decode takes
-the rows in the order that the copy gives them. [D-271](decisions/D-271-a-fallback-pass-writes-the-image.md)
-gives the measurements and the rule.
-
-The fragment form was not at fault. Its picture matches the WebGPU compute form's: `compute-pass`,
-which samples a compute pass in a material, draws the same quadrants on both paths. A turn of the
-form's row flipped 77.469% of its WebGL2 pixels. `compute-state`'s `rows` case fails on the old read
-and so guards the change. Its `rows-shown` case records the convention that a material samples a
-pass's texture by, on all three paths, and the change leaves that convention as it was.
-
-## A stopped pass keeps its texture on every GPU path (M3-V13)
-
-`compute-state`'s `a stopped pass keeps its image and its alpha` passes on WebGL2. So does `a stopped
-full-screen pass keeps its image and its alpha`. Both also pass on WebGPU and in compatibility mode.
-The pass's texture keeps the image that the pass drew, and the material that shows it draws that
-image and its alpha. An earlier note in this guide had them failing on WebGL2. It said the texture
-read black through a standard map, and white through a custom shader's missing-map guard. It also
-named a skipped-frame case that no test keeps. The runs on the Mac's GPU and on the software GPU show
-the two stopped cases passing on all three paths. No fault lies between the pass's target and the
-texture that shows it.
-
 ## Closed findings
 
 Every other finding of the review is fixed or settled. The table names the code, test or record that closes each one.
@@ -97,6 +72,8 @@ Every other finding of the review is fixed or settled. The table names the code,
 | R8-06 | workers from another origin; shared `blob:` bootstrap, [D-54](decisions/D-54-addon-modules.md) | `packages/engine/src/shared/worker-start.ts`, `worker-start.test.ts` |
 | R8-07 | plain bundlers rule | Settled: `.dev/decisions/D-54-addon-modules.md`, `docs/getting-started/install.md` |
 | R8-08 | (see its fix group) | `packages/engine/src/page/engine.ts`, `.dev/implementation-notes.md` |
+| M3-V13 | `render.readPass` fetched the mirror of a compute pass's region on WebGL2 | [D-271](decisions/D-271-a-fallback-pass-writes-the-image.md): the copy starts at the region's own row on both paths; `compute-state`'s `rows` case fails on the old read |
+| M3-V13 | a stopped pass's texture said to read black or white on WebGL2 | Settled: `compute-state`'s two stopped-pass cases pass on WebGPU, compatibility mode and WebGL2 (`tests/image/compute-state.spec.ts`) |
 | M3-F9 | a compute pass's fragment form stores its image upside down | `tests/image/ocean-waves.spec.ts`: the three paths' fields agree within 0.004 m of a 0.73 m field; [D-271](decisions/D-271-a-fallback-pass-writes-the-image.md) fixed the read |
 | M3-F9 | a reflection that waits draws its clear color on WebGL2 | `crates/null3d-render/src/cpu_culled/mod.rs`: the cull moves each view's turn on before it reads the view, so a turn's pass draws its objects; `crates/null3d-render/tests/scene_passes.rs` holds a cadenced view's turns and fails without the move |
 

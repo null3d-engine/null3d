@@ -50,7 +50,7 @@ Content-Security-Policy: default-src 'self'; script-src 'self' 'wasm-unsafe-eval
 ```
 
 - `script-src 'self' 'wasm-unsafe-eval'`: the engine core, the meshopt and Draco decoders and the KTX2 transcoder are WebAssembly, and a policy blocks WebAssembly unless it holds `'wasm-unsafe-eval'`. This keyword allows WebAssembly and no JavaScript `eval`. Without it, `createEngine` rejects with [E1418](../errors/E1418.md). The engine needs no `'unsafe-eval'`.
-- `worker-src 'self'`: the engine's sketch, render, job and probe workers, and the glTF loader's worker.
+- `worker-src 'self'`: the engine's sketch, render, job and probe workers, and its helper workers. These are the glTF loader's worker, the panorama worker for HDR and EXR files and the task worker.
 - `connect-src`: the engine downloads its `.wasm` files and your sketch module from the page's origin, which `default-src 'self'` allows. Add the origin of each CDN that your sketch loads models or textures from.
 
 The engine needs no inline script and no inline style. It sets styles from code, which a policy does not block. A page's own inline `<style>` element needs `style-src 'self' 'unsafe-inline'`.
@@ -220,7 +220,7 @@ The engine and some add-ons ship code from other projects, under their licenses.
 
 ## Caches between visits
 
-A repeat visit starts sooner when the browser keeps what the first visit downloaded and made. Six caches do that, and each keeps something else:
+A repeat visit starts sooner when the browser keeps what the first visit downloaded and made. Seven caches do that, and each keeps something else:
 
 | Cache | What it keeps | Who sets it up |
 | --- | --- | --- |

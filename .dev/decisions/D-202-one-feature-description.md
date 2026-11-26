@@ -423,7 +423,7 @@ adapter therefore adds 599 bytes before compression and 80 after Brotli against 
 tips differ by other commits, so that figure shows the order of the cost rather than an exact one.
 The adapter is a chunk of its own: `js/page-feature-effects.js` at 3,526 bytes, 1,136 after Brotli,
 and `js/sketch-worker-feature-effects.js` at 3,535 bytes, 1,149 after Brotli. Both stay under the
-first-use budget of 16 KB after Brotli, and a page that places no feature effect downloads neither.
+first-use budget of 18 KB after Brotli, and a page that places no feature effect downloads neither.
 
 ### What stays open
 

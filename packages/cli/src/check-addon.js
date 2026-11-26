@@ -115,8 +115,9 @@ const OPTIONS = /** @type {const} */ ({
 export const HELP = `Usage: bunx @null3d/cli check-addon [folder] [options]
 
 Runs the engine's gates on one add-on package, in \`folder\` (the current folder without one):
-  public API   the shipped code reaches the engine only through @null3d/engine and
-               @null3d/engine/stats; another package that it names loads on its own
+  public API   the shipped code reaches the engine only through @null3d/engine,
+               @null3d/engine/stats and @null3d/engine/math with its sub-paths; another
+               package that it names loads on its own
   interface    the entry declares the plugin interface that it works with, or, for a null3D
                package, pins the engine version
   shaders      a build compiles the add-on's WGSL for WebGPU and WebGL2

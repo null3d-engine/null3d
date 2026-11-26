@@ -1,7 +1,7 @@
 // The grading controls that `post.set({ grading })` sets, and the 32-texel table that a job worker
-// bakes from them: white balance, lift, gamma, gain, saturation and split toning, each applied to
-// the picture's display color after the tone mapping. The final pass reads the table, so changing a
-// value costs the frames nothing but a texture upload that the worker computed.
+// bakes from them: white balance, saturation, lift, gamma, gain and split toning, in that order,
+// applied to the picture's display color after the tone mapping. The final pass reads the table,
+// so changing a value costs the frames nothing but a texture upload that the worker computed.
 //
 // The lookup takes the color's square root first, so the table's texels lie closer together toward
 // black, where a grade's curve is steepest. This module is loaded on first use, and the job worker
@@ -55,8 +55,8 @@ export interface SplitToningSettings {
 }
 
 /**
- * The grading controls that `post.set` takes: white balance, then lift, gamma and gain on each
- * channel, then saturation, then split toning. A job worker bakes them into a table of 32 texels a
+ * The grading controls that `post.set` takes: white balance, then saturation, then lift, gamma
+ * and gain on each channel, then split toning. A job worker bakes them into a table of 32 texels a
  * side, which the final pass reads on every GPU path. A setting that a call leaves out keeps its
  * value; `false` turns the grading off.
  *
