@@ -39,12 +39,22 @@ export const API_PACKAGES: readonly ApiPackage[] = [
 ];
 const API_TSCONFIG = 'packages/engine/tsconfig.json';
 
+/** One `@param` tag of a function or method. */
+export interface ApiParam {
+	name: string;
+	text: string;
+}
+
 /** One member of a class or interface in the reference. */
 export interface ApiMember {
 	name: string;
 	/** The member as the source declares it, such as `setPosition(x: number): void`. */
 	signature: string;
 	summary: string;
+	/** Its parameter docs, from their `@param` tags. */
+	params?: ApiParam[];
+	/** Its `@returns` text. */
+	returns?: string;
 }
 
 /** One public export in the reference. */
@@ -60,6 +70,10 @@ export interface ApiSymbol {
 	extends: string[];
 	/** Its own public members, for classes and interfaces, and its functions, for a namespace. */
 	members: ApiMember[];
+	/** The parameter docs of a function export. */
+	params?: ApiParam[];
+	/** The `@returns` text of a function export. */
+	returns?: string;
 }
 
 const FORMAT =
@@ -72,6 +86,61 @@ const printer = ts.createPrinter({ removeComments: true });
 
 /** Text with its lines joined, so it fits a table cell. */
 const flat = (text: string) => text.replace(/\s*\n\s*/g, ' ').trim();
+
+/**
+ * A comment's text as Markdown: paragraphs stay apart, and lists, headings and fenced code keep
+ * their lines. Lines of one prose paragraph join with a space.
+ */
+function blockText(text: string): string {
+	const out: string[] = [];
+	let fence = false;
+	for (const raw of text.replace(/\r\n/g, '\n').split('\n')) {
+		if (/^\s*```/.test(raw)) {
+			fence = !fence;
+			out.push(raw.trim());
+			continue;
+		}
+		if (fence) {
+			out.push(raw.replace(/\s+$/, ''));
+			continue;
+		}
+		const line = raw.trim();
+		if (!line) {
+			if (out.length > 0 && out[out.length - 1] !== '') out.push('');
+			continue;
+		}
+		const block = /^([-*+]|\d+\.)\s/.test(line) || /^#{1,6}\s/.test(line);
+		const previous = out.at(-1);
+		const previousBlock =
+			previous === undefined ||
+			previous === '' ||
+			/^([-*+]|\d+\.)\s/.test(previous) ||
+			/^#{1,6}\s/.test(previous) ||
+			previous.endsWith('```');
+		if (block || previousBlock) out.push(line);
+		else out[out.length - 1] = `${previous} ${line}`;
+	}
+	return out.join('\n').trim();
+}
+
+/** The `@param` and `@returns` text of a function, a method or a namespace helper. */
+function docTags(
+	symbol: ts.Symbol,
+	checker: ts.TypeChecker,
+): { params: ApiParam[]; returns: string } {
+	const params: ApiParam[] = [];
+	let returns = '';
+	for (const found of symbol.getJsDocTags(checker)) {
+		const text = ts.displayPartsToString(found.text ?? []).trim();
+		if (found.name === 'param') {
+			const match = /^(\S+)\s*([\s\S]*)$/.exec(text);
+			if (match) params.push({ name: match[1] as string, text: match[2] ?? '' });
+		} else if (found.name === 'returns') {
+			returns = text;
+		}
+	}
+	return { params, returns };
+}
 
 /** Marks the tuple and object types under a node to print on one line, as the source has them. */
 function singleLine(node: ts.Node): void {
@@ -116,11 +185,11 @@ function misreadTags(node: ts.Node): string {
 	return /\s/.test(source[start - 1] ?? '') ? ` ${text}` : text;
 }
 
-/** A symbol's summary: its comment up to its first tag, on one line. */
+/** A symbol's summary: its comment up to its first tag, with its blocks kept. */
 function summaryOf(symbol: ts.Symbol, checker: ts.TypeChecker): string {
 	const declaration = symbol.declarations?.[0];
 	const text = ts.displayPartsToString(symbol.getDocumentationComment(checker));
-	return flat(text + (declaration ? misreadTags(declaration) : ''));
+	return blockText(text + (declaration ? misreadTags(declaration) : ''));
 }
 
 /**
@@ -166,6 +235,7 @@ function callableOf(
 	name: string,
 	checker: ts.TypeChecker,
 	used: ts.Node[],
+	optional = false,
 ): string {
 	const typeParameters = declaration.typeParameters ?? [];
 	used.push(...typeParameters, ...declaration.parameters);
@@ -183,7 +253,8 @@ function callableOf(
 				FORMAT,
 			);
 	}
-	return `${name}${generic}(${declaration.parameters.map(line).join(', ')}): ${result}`;
+	const mark = optional ? '?' : '';
+	return `${name}${mark}${generic}(${declaration.parameters.map(line).join(', ')}): ${result}`;
 }
 
 /** A property as the source declares it: whether it is read-only or optional, and its type. */
@@ -232,18 +303,22 @@ function membersOf(
 		// Symbol-keyed members are markers for the engine's own checks, not API.
 		if (member.name.startsWith('__@')) continue;
 		const summary = summaryOf(member, checker);
+		const tags = docTags(member, checker);
+		const optional = Boolean(member.flags & ts.SymbolFlags.Optional);
 		const methods = callables(declarations);
 		if (methods.length === 0)
 			members.push({
 				name: member.name,
 				signature: propertyOf(member, declaration, checker, used),
 				summary,
+				...tags,
 			});
 		for (const method of methods)
 			members.push({
 				name: member.name,
-				signature: callableOf(method, member.name, checker, used),
+				signature: callableOf(method, member.name, checker, used, optional),
 				summary,
+				...tags,
 			});
 	}
 	return members;
@@ -321,7 +396,7 @@ function namespaceDocs(alias: ts.Symbol): { summary: string; page: string | unde
 	const category = doc?.tags?.find((t) => t.tagName.text === 'category');
 	return {
 		summary: statement
-			? flat((ts.getTextOfJSDocComment(doc?.comment) ?? '') + misreadTags(statement))
+			? blockText((ts.getTextOfJSDocComment(doc?.comment) ?? '') + misreadTags(statement))
 			: '',
 		page: category ? ts.getTextOfJSDocComment(category.comment)?.trim() : undefined,
 	};
@@ -466,7 +541,17 @@ export function readApi(root: string): ApiReference {
 			if (!member.summary) problems.push(`${where}: member ${member.name} has no TSDoc summary`);
 		for (const hidden of unexportedTypes(used, checker, sources, exported))
 			problems.push(`${where} names ${hidden}, which its package does not export`);
-		symbols.push({ name, kind, page: page ?? '', signature, summary, extends: bases, members });
+		const docs = docTags(symbol, checker);
+		symbols.push({
+			name,
+			kind,
+			page: page ?? '',
+			signature,
+			summary,
+			extends: bases,
+			members,
+			...docs,
+		});
 	}
 	symbols.sort((a, b) => a.name.localeCompare(b.name));
 	return { symbols, problems };
@@ -482,6 +567,13 @@ const MEMBER_KINDS: Partial<Record<ApiSymbol['kind'], string>> = {
 	namespace: 'Namespace',
 };
 
+/** A member's table cell: its summary, then its parameter and return docs as inline text. */
+function memberDescription(member: ApiMember): string {
+	const extra = (member.params ?? []).map((param) => `\`${param.name}\`: ${flat(param.text)}`);
+	if (member.returns) extra.push(`Returns ${flat(member.returns)}`);
+	return tableCell([flat(member.summary), ...extra].filter(Boolean).join('; '));
+}
+
 /** One export as Markdown under a heading of the given level: its declaration or members, and its summary. */
 export function renderSymbol(symbol: ApiSymbol, heading = '###'): string {
 	const lines = [`${heading} \`${symbol.name}\``, ''];
@@ -492,10 +584,17 @@ export function renderSymbol(symbol: ApiSymbol, heading = '###'): string {
 		lines.push(`${what} \`${symbol.name}\`${base ? `, which extends ${base}` : ''}.`, '');
 	}
 	if (symbol.summary) lines.push(symbol.summary, '');
+	if (symbol.params?.length) {
+		lines.push('| Parameter | Description |', '| --- | --- |');
+		for (const param of symbol.params)
+			lines.push(`| \`${tableCell(param.name)}\` | ${tableCell(flat(param.text))} |`);
+		lines.push('');
+	}
+	if (symbol.returns) lines.push(`Returns: ${flat(symbol.returns)}`, '');
 	if (symbol.members.length > 0) {
 		lines.push('| Member | Description |', '| --- | --- |');
 		for (const member of symbol.members)
-			lines.push(`| \`${tableCell(member.signature)}\` | ${tableCell(member.summary)} |`);
+			lines.push(`| \`${tableCell(member.signature)}\` | ${memberDescription(member)} |`);
 		lines.push('');
 	}
 	return lines.join('\n').trimEnd();
