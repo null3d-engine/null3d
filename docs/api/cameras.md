@@ -140,7 +140,7 @@ A view from `scene.createView` draws its camera into a rectangle of the canvas, 
 
 ## Several cameras
 
-A scene can have several cameras, and `setActiveCamera` switches between them. The canvas shows the scene from one camera at a time. Until you pick one, and after the engine removes the active camera, the canvas shows only the background.
+A scene can have several cameras, and `setActiveCamera` switches between them. The active camera fills the canvas. `scene.createView` draws more cameras into rectangles of it ([Multiple views](../guides/multiple-views.md)). Until you pick an active camera, and after the engine removes it, the canvas shows only the background.
 
 ## Related pages
 
