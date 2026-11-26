@@ -176,7 +176,7 @@ Some parts behave differently:
 
 - Only the closest object and its parents get a pointer event. React Three Fiber also passes the event to the objects behind it.
 - `onPointerMissed` has no equivalent. Set a flag in the click handlers, and treat a release of the button without it as a miss.
-- `materials.shadowCatcher` shows the light's own shadow. drei's `<ContactShadows />` draws a blurred shadow from above, and null3D has no equivalent of that blur.
+- `materials.shadowCatcher` shows the light's own shadow. drei's `<ContactShadows />` draws a blurred shadow from above, and null3D has no equivalent of that blur. null3D's own [contact shadows](../concepts/shadows.md#contact-shadows) are another effect: the short dark line where an object meets the ground, cast toward the main directional light ([demo](https://github.com/null3d-engine/null3d/tree/main/examples/contact-shadows/)).
 
 ## Adaptive quality
 

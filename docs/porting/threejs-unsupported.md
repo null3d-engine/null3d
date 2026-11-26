@@ -31,14 +31,14 @@ Do not draw a three.js canvas over the null3D canvas to keep one effect. Two GPU
 
 | three.js | In null3D | Workaround |
 | --- | --- | --- |
-| `MeshToonMaterial` | Surface functions cannot read the scene's lights | Pass the light's direction as a uniform, step the light into bands, and return it as emissive. Or step each light in a lobe function, which reads the light's direction and its shadowed irradiance. The lobe adds to the base lighting, so set the base color to black and the roughness to 1. The engine calls no lobe for fill directional lights and area lights ([Porting materials and textures](threejs-materials.md)) |
+| `MeshToonMaterial` | Surface functions cannot read the scene's lights | A toon surface function with the light's direction as a uniform, or a lobe function that follows each light ([Porting materials and textures](threejs-materials.md#meshtoonmaterial-and-meshmatcapmaterial)) |
 | Standard maps on a `ShaderMaterial` | A custom material takes no standard maps, such as `map` or `normalMap` | Declare up to 6 textures in the WGSL, and pass them with the `textures` option ([Porting shaders](threejs-shaders.md)) |
 | An `InstancedBufferAttribute` with more than four floats for each instance | A batch row carries four values and a color | Pack the data into the four values. Or keep the rest in a data texture from `textures.fromData`, and read it with `textureLoad` at the row's place, `input.instance` ([Per-row values](../concepts/instances.md#per-row-values)) |
 | A `ShaderMaterial` whose uniforms pass 32 numbers | A custom material's uniforms fit in 32 numbers, less one for each texture | Keep the rest in a data texture, and read it with `textureLoad` ([Porting shaders](threejs-shaders.md)) |
 | `onBeforeCompile` shader chunks | The engine has no shader chunks to patch | A surface function or a vertex offset function |
 | `material.alphaMap` | No separate alpha map | Copy the map's green channel into the base color map's alpha |
 | `PointsMaterial.alphaMap` | No alpha map on points | Put the alpha in the points' `map` |
-| Clipping planes | No clipping planes | A surface function with `alphaMode: 'mask'`. Its shadow is cut at the plane too. For three.js's default, `clipShadows: false`, also declare `fn coverage` and return `1.0`, so the whole shadow stays |
+| Clipping planes | No clipping planes | A surface function with `alphaMode: 'mask'` ([Porting materials and textures](threejs-materials.md)) |
 
 ## Objects and scenes
 
@@ -77,6 +77,8 @@ Do not draw a three.js canvas over the null3D canvas to keep one effect. Two GPU
 | `onPointerMissed` | No miss event | Set a flag in the click handlers, and treat a release without it as a miss |
 | drei `<AdaptiveDpr>` with `performance.regress()` | The governor follows frame times, not camera movement | Remove the `regress()` calls |
 | Pointer events on objects behind the closest one | Only the closest object and its parents get an event | `scene.raycastAll` finds the objects behind, nearest first |
+
+null3D's own [contact shadows](../concepts/shadows.md#contact-shadows) are another effect: the short dark line where an object meets the ground, cast toward the main directional light ([demo](https://github.com/null3d-engine/null3d/tree/main/examples/contact-shadows/)).
 
 [Porting React Three Fiber](react-three-fiber.md) covers the rest of a React Three Fiber port.
 

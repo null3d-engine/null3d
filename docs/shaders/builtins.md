@@ -101,7 +101,7 @@ The custom material's uniforms, which the WGSL declares as `struct Uniforms`. [S
 
 ## What the inputs cost
 
-The values above that a material does not read cost it nothing. A few inputs cost something, so only WGSL that reads them gets them. The plugin finds which fields the WGSL reads when it builds the material. It counts a field only where the WGSL reads it from a value of the input's type, such as the `input: VertexInput` parameter. So a structure of your own may name a field `tangent` or `colors` at no cost. A mesh that lacks the vertex colors, the vertex record or the tangent that a material reads does not draw with it. A mesh without second texture coordinates gives its first set in their place:
+A value that a material does not read costs nothing. The inputs in this table cost something, so only WGSL that reads them gets them:
 
 | Input | Its cost, only where the WGSL reads it |
 | --- | --- |
@@ -113,6 +113,15 @@ The values above that a material does not read cost it nothing. A few inputs cos
 | `VertexInput.tangent` | The mesh's tangent, one more vertex attribute, which a vertex offset reads as data |
 
 The pixel's position, the camera's values and `object.position` cost nothing.
+
+A mesh that lacks the vertex colors, the vertex record or the tangent that a material reads does not draw with that material. A mesh without second texture coordinates gives its first set in their place.
+
+<details>
+<summary>Technical details: how the plugin finds the inputs a material reads</summary>
+
+The plugin finds which fields the WGSL reads when it builds the material. It counts a field only where the WGSL reads it from a value of the input's type, such as the `input: VertexInput` parameter. So a structure of your own may name a field `tangent` or `colors` at no cost.
+
+</details>
 
 ## Positions relative to the camera
 

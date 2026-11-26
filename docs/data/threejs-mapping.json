@@ -50,12 +50,22 @@
     {
       "id": "shadow-map",
       "category": "Renderer and loop",
-      "three": "renderer.shadowMap.enabled / .type (PCFSoftShadowMap, VSMShadowMap)",
+      "three": "renderer.shadowMap.enabled / .type (PCFShadowMap, PCFSoftShadowMap)",
       "status": "changed",
       "target": "castShadows: true on the light; the shadowFilter quality setting sets the filter",
-      "notes": "PCFShadowMap and PCFSoftShadowMap become the shadowFilter setting: 3 x 3 or 5 x 5 texels, by preset. quality.set({ shadowFilter }) changes it during play. BasicShadowMap and VSMShadowMap have no equivalent.",
+      "notes": "PCFShadowMap and PCFSoftShadowMap become the shadowFilter setting: 3 x 3 or 5 x 5 texels, by preset. quality.set({ shadowFilter }) changes it during play.",
       "docs": "concepts/shadows",
-      "detect": "\\.shadowMap\\.(enabled|type)|\\b(PCF|PCFSoft|VSM|Basic)ShadowMap\\b"
+      "detect": "\\.shadowMap\\.(enabled|type)|\\b(PCF|PCFSoft)ShadowMap\\b"
+    },
+    {
+      "id": "shadow-map-types",
+      "category": "Renderer and loop",
+      "three": "BasicShadowMap / VSMShadowMap",
+      "status": "unsupported",
+      "target": "None; the shadowFilter quality setting chooses the filter",
+      "notes": "null3D filters every shadow with PCF, a 3 x 3 or 5 x 5 kernel chosen by the shadowFilter quality setting. It draws no basic or variance shadow map.",
+      "docs": "concepts/shadows",
+      "detect": "\\b(VSM|Basic)ShadowMap\\b"
     },
     {
       "id": "tone-mapping",
@@ -1460,12 +1470,22 @@
     {
       "id": "orbit-controls",
       "category": "Interaction and controls",
-      "three": "OrbitControls / MapControls / TrackballControls / ArcballControls",
+      "three": "OrbitControls / MapControls",
       "status": "changed",
       "target": "createOrbitControls(ctx, camera, { target, enableDamping, dampingFactor, minDistance, maxDistance, maxPolarAngle }) or createMapControls(ctx, camera) from @null3d/controls; controls.update(dt) in onUpdate",
-      "notes": "Option names and defaults match OrbitControls and MapControls, and the same input gives the camera the same pose. mouseButtons and touches take strings such as 'rotate' and 'dolly-pan'. There is no DOM element, so connect, disconnect and dispose have no equivalent, and listenToKeyEvents() takes no element: it turns on the keys, which the sketch's input already reads. There are no change, start or end events: update(dt) returns true when the camera moved. zoomToCursor, keys, keyPanSpeed, keyRotateSpeed, cursor, minTargetRadius, maxTargetRadius, saveState and reset keep three.js's names and behavior. A held key repeats after half a second, then 30 times a second, where three.js follows the system's key repeat. An orthographic camera zooms by its view height, and minZoom and maxZoom count zoom as three.js does from the height when the controls start. getDistance, getPolarAngle and getAzimuthalAngle keep three.js's meaning. rotateLeft, rotateUp, pan, dollyIn and dollyOut take effect at the next update, not at once. dampingFactor is the share at 60 frames per second. The engine scales it to each frame's step, so the motion takes the same time at any frame rate. The controls orbit around +Y, where three.js orbits around the camera's up. Trackball and Arcball controls have no equivalent. three.js takes a frame's events one at a time, so a two-finger pan can differ by a few percent of the move.",
+      "notes": "Option names and defaults match OrbitControls and MapControls, and the same input gives the camera the same pose. mouseButtons and touches take strings such as 'rotate' and 'dolly-pan'. There is no DOM element, so connect, disconnect and dispose have no equivalent, and listenToKeyEvents() takes no element: it turns on the keys, which the sketch's input already reads. There are no change, start or end events: update(dt) returns true when the camera moved. zoomToCursor, keys, keyPanSpeed, keyRotateSpeed, cursor, minTargetRadius, maxTargetRadius, saveState and reset keep three.js's names and behavior. A held key repeats after half a second, then 30 times a second, where three.js follows the system's key repeat. An orthographic camera zooms by its view height, and minZoom and maxZoom count zoom as three.js does from the height when the controls start. getDistance, getPolarAngle and getAzimuthalAngle keep three.js's meaning. rotateLeft, rotateUp, pan, dollyIn and dollyOut take effect at the next update, not at once. dampingFactor is the share at 60 frames per second. The engine scales it to each frame's step, so the motion takes the same time at any frame rate. The controls orbit around +Y, where three.js orbits around the camera's up. three.js takes a frame's events one at a time, so a two-finger pan can differ by a few percent of the move.",
       "docs": "api/controls",
-      "detect": "\\b(Orbit|Map|Trackball|Arcball)Controls\\b"
+      "detect": "\\b(Orbit|Map)Controls\\b"
+    },
+    {
+      "id": "trackball-controls",
+      "category": "Interaction and controls",
+      "three": "TrackballControls / ArcballControls",
+      "status": "unsupported",
+      "target": "None; createOrbitControls, or your own rotation from ctx.input",
+      "notes": "null3D has orbit and map controls. It has no trackball or arcball rotation.",
+      "docs": "porting/threejs-unsupported",
+      "detect": "\\b(Trackball|Arcball)Controls\\b"
     },
     {
       "id": "fly-controls",
@@ -1670,12 +1690,22 @@
     {
       "id": "fx-passes",
       "category": "Post-processing",
-      "three": "FilmPass / GlitchPass / HalftonePass / AfterimagePass / DotScreenPass / RenderPixelatedPass",
+      "three": "FilmPass / GlitchPass / HalftonePass / DotScreenPass / RenderPixelatedPass",
       "status": "manual",
       "target": "A custom effect for each, with post.addEffect",
-      "notes": "Port each shader as a ShaderPass is ported. Grain and noise sized for display color look weaker on HDR color, so tune them by eye. GlitchPass's random texture becomes a texture of the effect, from textures.fromData, or noise from null3d::noise. AfterimagePass blends in the frame before, which an effect cannot read, so it has no port.",
+      "notes": "Port each shader as a ShaderPass is ported. Grain and noise sized for display color look weaker on HDR color, so tune them by eye. GlitchPass's random texture becomes a texture of the effect, from textures.fromData, or noise from null3d::noise.",
       "docs": "porting/threejs-postprocessing",
-      "detect": "\\b(Film|Glitch|Halftone|Afterimage|DotScreen|RenderPixelated|Bleach|Sobel)(Pass|Shader)\\b"
+      "detect": "\\b(Film|Glitch|Halftone|DotScreen|RenderPixelated|Bleach|Sobel)(Pass|Shader)\\b"
+    },
+    {
+      "id": "afterimage-pass",
+      "category": "Post-processing",
+      "three": "AfterimagePass / AfterimageShader",
+      "status": "unsupported",
+      "target": "None",
+      "notes": "AfterimagePass blends in the frame before, which an effect cannot read, so it has no port.",
+      "docs": "porting/threejs-postprocessing",
+      "detect": "\\bAfterimage(Pass|Shader)\\b"
     },
     {
       "id": "lut",

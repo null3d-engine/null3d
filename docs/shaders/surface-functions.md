@@ -276,10 +276,17 @@ const metal = materials.shader({ wgsl: worn, color: '#b0b4b8', textures: { detai
 - A vertex offset samples textures too, with `textureSampleLevel` or `textureLoad`, as WGSL allows in a vertex shader. A height map then moves each vertex.
 - Each texture's sampler takes the `wrap` and `filter` options of the texture. The `colorSpace` option says whether sampling turns sRGB colors into linear ones, as for the maps of a standard material.
 - Until a texture's image is on the GPU, sampling it gives white: `vec4f(1.0)`. So does a texture that the WGSL declares and the `textures` option does not give. Multiply by a texture, and the material draws with its own values until the image arrives.
-- A material samples up to 6 textures. Each texture takes one of the 32 numbers of the uniforms, so a material with 2 textures has 30 numbers for its uniforms. On WebGL2 the engine's lighting takes 7 of a fragment shader's texture units, which are at least 16. A lit material with all 6 textures thus leaves 3 units free on a device with 16. When the maps and a material's textures together would pass the stage's units, the engine refuses the material with E1209, before the device fails to link its shader.
+- A material samples up to 6 textures. Each texture takes one of the 32 numbers of the uniforms, so a material with 2 textures has 30 numbers for its uniforms.
 - The textures are fixed when the material is created. Make a second material for another set of textures.
 - A texture is 2D, with one layer: an image, a KTX2 file or data with a depth of 1. A texture array comes from `textures.fromData` with a `depth`, or from a KTX2 file that holds layers, and its layers all have the texture's size. Data textures of `rgba16float` sample with filtering too.
 - In TypeScript, the `textures` option takes only the names that the WGSL declares. A wrong name fails the type check.
+
+<details>
+<summary>Technical details: texture units on WebGL2</summary>
+
+On WebGL2 the engine's lighting takes 7 of a fragment shader's texture units, which are at least 16. A lit material with all 6 textures thus leaves 3 units free on a device with 16. When the maps and a material's textures together would pass the stage's units, the engine refuses the material with E1209, before the device fails to link its shader.
+
+</details>
 
 A facade material samples one texture array of six window images, and picks the window for each pixel:
 
@@ -350,16 +357,18 @@ A surface function reads the depth of the opaque scene behind its point. The eng
 | `sceneDistance(uv)` | The distance in front of the camera of the surface at `uv`, in world units |
 
 ```wgsl
+#import null3d::depth::{is_orthographic}
+
 struct Uniforms { shallow: vec3f, deep: vec3f, foam: vec3f }
 
 /// The distance in front of the camera of a depth value, as sceneDistance converts the copy's.
 fn distance_of(depth: f32) -> f32 {
-    let near = engine_frame.camera_range.x;
-    let far = engine_frame.camera_range.y;
-    if engine_frame.camera_position.w > 0.5 {
-        return near * far / (near + depth * (far - near));
+    let near = camera.near;
+    let far = camera.far;
+    if is_orthographic(camera.projection) {
+        return far - depth * (far - near);
     }
-    return far - depth * (far - near);
+    return near * far / (near + depth * (far - near));
 }
 
 fn surface(input: SurfaceInput) -> Surface {
@@ -604,11 +613,24 @@ fn surface(input: SurfaceInput) -> Surface {
 
 Your WGSL shares one file with the engine's standard material, so a few rules apply besides the [WGSL rules for portable shaders](wgsl-rules.md):
 
-- Do not declare a name that the engine declares. The build stops at your line when a name clashes. The engine's names are `SurfaceInput`, `Surface`, `VertexInput`, `surface_place`, `surface_input`, `LobeInput`, `defaultSurface`, `shade`, `light_surface`, `frame`, `camera`, `object`, `material`, `FrameValues`, `CameraValues`, `ObjectValues`, `fill_builtins`, `engine_frame`, `material_row`, `load_material_uniforms`, `custom_value`, `custom_texture_layers`, `load_custom_texture_layers`, `VertexIn`, `VertexOut`, `vs`, `fs`, `FLAT_SHADING`, `sceneDepth`, `sceneDistance`, `scene_depth_copy` and `scene_depth_texel`. They also include the library items that the standard material imports, such as `Material`, `Instance`, `InstanceIn`, `find_instance`, `clip_of`, `relative_position`, `world_normal`, `finish_material`, `finish_exposed_material`, `fogged`, `fragment_color`, `material_of`, `PbrMaterial`, `pbr_material`, `with_specular`, `dfg_lut`, `direct_light`, `indirect_diffuse`, `multiscatter_compensation`, `clustered_light` and `sun_shadow`. WGSL that reads `instance` or `object.id` also meets `object_ids`, and WGSL that reads the object's matrices meets `affine_matrix` and `affine_normal_matrix`. A material that declares a lobe also meets `clustered_lobed_light`, `Reflected`, `half_vector`, `cluster_lights`, `cluster_sample`, `light_of`, `grid_word`, `KIND_RECT`, `area_light`, `AreaTerms` and `area_terms`, which its lobe's loop reads. The names `surface`, `vertexOffset`, `lobe`, `unlit` and `coverage` are yours to declare.
+- Do not declare a name that the engine declares. The build stops at your line when a name clashes. The names `surface`, `vertexOffset`, `lobe`, `unlit` and `coverage` are yours to declare.
 - Import library items by name, as in `#import null3d::noise::{fbm3}`. An import of a whole module reserves the module's name. After `#import null3d::color`, no name in the file can be `color`.
 - The WGSL cannot hold directives such as `enable`.
 - Do not declare a name that ends in `Sampler` after a texture's name, such as `detailSampler` beside `detail`. The engine declares it.
 - Call `dpdx`, `dpdy`, `fwidth` and `textureSample` in uniform control flow, outside branches that differ between pixels. Chrome rejects the shader otherwise.
+
+<details>
+<summary>Technical details: the names that the engine declares</summary>
+
+Always declared: `SurfaceInput`, `Surface`, `VertexInput`, `surface_place`, `surface_input`, `LobeInput`, `defaultSurface`, `shade`, `light_surface`, `frame`, `camera`, `object`, `material`, `FrameValues`, `CameraValues`, `ObjectValues`, `fill_builtins`, `engine_frame`, `material_row`, `load_material_uniforms`, `custom_value`, `custom_texture_layers`, `load_custom_texture_layers`, `VertexIn`, `VertexOut`, `vs`, `fs`, `FLAT_SHADING`, `sceneDepth`, `sceneDistance`, `scene_depth_copy`, `scene_depth_texel`.
+
+Library items that the standard material imports: `Material`, `Instance`, `InstanceIn`, `find_instance`, `clip_of`, `relative_position`, `world_normal`, `finish_material`, `finish_exposed_material`, `fogged`, `fragment_color`, `material_of`, `PbrMaterial`, `pbr_material`, `with_specular`, `dfg_lut`, `direct_light`, `indirect_diffuse`, `multiscatter_compensation`, `clustered_light`, `sun_shadow`.
+
+Added when the WGSL reads `instance` or `object.id`: `object_ids`. Added when the WGSL reads the object's matrices: `affine_matrix`, `affine_normal_matrix`.
+
+Added when the material declares a lobe, because the lobe's loop reads them: `clustered_lobed_light`, `Reflected`, `half_vector`, `cluster_lights`, `cluster_sample`, `light_of`, `grid_word`, `KIND_RECT`, `area_light`, `AreaTerms`, `area_terms`.
+
+</details>
 
 When the WGSL breaks a rule, the build stops with the file, line and column of the problem, as for any WGSL in your code.
 

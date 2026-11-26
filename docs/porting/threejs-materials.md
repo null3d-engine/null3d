@@ -79,7 +79,16 @@ Both become `materials.standard` with `metalness: 0`. The standard material keep
 
 ## MeshToonMaterial and MeshMatcapMaterial
 
-Both become custom materials, as the recipes below show. A surface function cannot read the scene's lights, so the toon recipe takes the light's direction as a uniform. For a toon look that follows every light and its shadows, step the light in a lobe function instead. The engine calls `fn lobe(input: LobeInput) -> vec3f` for the main directional light and for each point and spot light. It gets the light's direction and its shadowed irradiance, and its color adds to that light's specular ([Surface functions](../shaders/surface-functions.md#a-materials-own-lobe)). The base lighting stays beside it, so set `s.baseColor` to black and `s.roughness` to 1, as the toon recipe does. The engine calls no lobe for the fill directional lights and the area lights, so the bands do not follow them. The matcap recipe looks up a texture by the normal in view space. It is an unlit function, so it ignores the scene's lights, as three.js's matcap does.
+Both become custom materials, as the recipes below show. The toon recipe takes the light's direction as a uniform, because a surface function cannot read the scene's lights. For bands that follow the main light, the point and spot lights and their shadows, step the light in a lobe function instead ([Surface functions](../shaders/surface-functions.md#a-materials-own-lobe)).
+
+<details>
+<summary>Technical details: toon bands in a lobe function</summary>
+
+The engine calls `fn lobe(input: LobeInput) -> vec3f` for the main directional light and for each point and spot light. It gets the light's direction and its shadowed irradiance, and its color adds to that light's specular. The base lighting stays beside it, so set `s.baseColor` to black and `s.roughness` to 1, as the toon recipe does. The engine calls no lobe for the fill directional lights and the area lights, so the bands do not follow them.
+
+</details>
+
+The matcap recipe looks up a texture by the normal in view space. It is an unlit function, so it ignores the scene's lights, as three.js's matcap does.
 
 ## Other materials
 
