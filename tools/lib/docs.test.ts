@@ -9,6 +9,7 @@ import {
 	frontMatterProblems,
 	generateDocs,
 	inventoryProblems,
+	mappingMarkdown,
 	movesProblems,
 	navigation,
 	PAGES,
@@ -335,6 +336,67 @@ describe('the quality preset tables', () => {
 			"| Target frame rate | The display's refresh rate, at most 60 frames per second unless `targetFps` asks for more |",
 		);
 		expect(page).toContain('| Measurement of each preset | 500 ms |');
+	});
+});
+
+describe('mappingMarkdown', () => {
+	const mapping = {
+		statusLegend: { direct: 'Same.' },
+		entries: [
+			{
+				id: 'widget',
+				category: 'Widgets',
+				three: 'Widget',
+				target: 'widget()',
+				status: 'direct',
+				notes: 'Call it. See (concepts/handles) and (three/webgpu).',
+				details: 'Extra detail, also (concepts/handles).',
+				docs: 'concepts/handles',
+			},
+		],
+	};
+	const titles = new Map([['concepts/handles', 'Handles']]);
+	const text = { title: 'Mapping', summary: 'The map.' };
+
+	it('links the docs column and a page id in a note, and points to the block', () => {
+		const page = mappingMarkdown(mapping, text, false, titles);
+		expect(page).toContain('| [Handles](../concepts/handles.md) |');
+		expect(page).toContain('Call it. See ([Handles](../concepts/handles.md)) and (three/webgpu).');
+		expect(page).toContain('Details below the table.');
+		expect(page).toContain('<summary>Technical details: Widget</summary>');
+		expect(page).toContain('Extra detail, also ([Handles](../concepts/handles.md)).');
+	});
+
+	it('keeps page ids in code font for the skill copy', () => {
+		const copy = mappingMarkdown(mapping, text, true, titles);
+		expect(copy).toContain('| `concepts/handles` |');
+		expect(copy).not.toContain('../concepts/handles.md');
+		expect(copy).toContain('<summary>Technical details: Widget</summary>');
+		expect(copy).toContain('Extra detail, also (concepts/handles).');
+	});
+
+	it('leaves an unknown page id in a note as plain text', () => {
+		const page = mappingMarkdown(
+			{
+				statusLegend: { direct: 'Same.' },
+				entries: [
+					{
+						id: 'other',
+						category: 'Widgets',
+						three: 'Other',
+						target: 'other()',
+						status: 'direct',
+						notes: 'See (three/webgpu).',
+						docs: 'concepts/handles',
+					},
+				],
+			},
+			text,
+			false,
+			titles,
+		);
+		expect(page).toContain('See (three/webgpu).');
+		expect(page).toContain('| [Handles](../concepts/handles.md) |');
 	});
 });
 
