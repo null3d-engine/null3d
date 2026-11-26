@@ -27,6 +27,10 @@ on:
         description: The main commit to release, whose full CI run passed. Empty releases main's newest commit.
         type: string
         default: ""
+      publish-tag:
+        description: Publish this existing release tag to npm and tell the website, making no new release. For a release whose npm job failed.
+        type: string
+        default: ""
 
 permissions:
   contents: write # land the version commit on main, and push the tag
@@ -47,7 +51,7 @@ jobs:
     # than half an hour each in the first release run. A publish cut off halfway is worse than a
     # slow one.
     timeout-minutes: 90
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' && inputs.publish-tag == ''
     # The environment holds the release App's key, and only main's runs may use it.
     environment: release
     env:
@@ -303,20 +307,27 @@ jobs:
   # set on each package at npmjs.com, so no token is stored. A package's first version cannot be
   # published this way, so a maintainer publishes it once by hand. NPM_TOKEN and NODE_AUTH_TOKEN
   # stay unset: npm skips OIDC when either is set, even to an empty string.
+  # A run with publish-tag skips the release job and publishes that tag, so a release whose npm job
+  # failed is finished by the workflow as it stands now, not as it stood when the release ran.
   publish-npm:
     runs-on: ubuntu-latest
     # The WebAssembly build takes several minutes on a machine with no Rust cache.
     timeout-minutes: 30
     needs: release
+    if: >-
+      always() && github.ref == 'refs/heads/main' &&
+      (needs.release.result == 'success' ||
+       (needs.release.result == 'skipped' && inputs.publish-tag != ''))
     permissions:
       contents: read
       id-token: write # the OIDC token that npm trusted publishing and provenance need
     env:
       HUSKY: "0"
+      VERSION: ${{ needs.release.outputs.version || inputs.publish-tag }}
     steps:
       - uses: actions/checkout@v5
         with:
-          ref: ${{ needs.release.outputs.version }}
+          ref: ${{ env.VERSION }}
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: ${{ env.BUN_VERSION }}
@@ -326,15 +337,27 @@ jobs:
       # Git keeps neither the WebAssembly files nor the shader modules. This builds the shader
       # modules, the engine's two WebAssembly files, the Vite plugin's shader compiler, the
       # command-line tool's asset formats and the terrain, splats, sound and wind add-ons' modules.
-      - name: Build the WebAssembly files and the shader modules
-        run: bun tools/build-wasm.ts --pages-only
-      # The release job measured the archive's hash. This job never rebuilds the archive, so the
-      # bytes of the asset and the record in the package cannot disagree.
+      # The package ships the shader modules' declarations, not their JavaScript, and its build
+      # reads the modules. The build reads CI's shader caches, as the release job does, because a
+      # full shader build takes longer than this job may run.
+      - name: Build the WebAssembly files and the shader modules with CI's shader caches
+        uses: ./.github/actions/shaders
+        with:
+          run: bun tools/build-wasm.ts --pages-only
+      # The release job measured the archive's hash. A publish-tag run has no release job, so it
+      # hashes the asset that the tag's GitHub Release serves. This job never rebuilds the archive,
+      # so the bytes of the asset and the record in the package cannot disagree.
       - name: Write the engine's shader artifact record
         env:
-          VERSION: ${{ needs.release.outputs.version }}
           SHA256: ${{ needs.release.outputs.shader-sha256 }}
+          GH_TOKEN: ${{ github.token }}
         run: |
+          set -euo pipefail
+          if [ -z "$SHA256" ]; then
+            gh release download "$VERSION" --repo "$GITHUB_REPOSITORY" \
+              --pattern "${VERSION}-shaders.tar.br" --dir "$RUNNER_TEMP/asset"
+            SHA256="$(sha256sum "$RUNNER_TEMP/asset/${VERSION}-shaders.tar.br" | cut -d' ' -f1)"
+          fi
           bun tools/shader-artifact.ts write \
             --tag "$VERSION" --repo "$GITHUB_REPOSITORY" --sha256 "$SHA256"
       # Bun packs each package: its prepack script builds the JavaScript and declarations, and Bun
@@ -374,6 +397,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     needs: [release, publish-npm]
+    if: always() && needs.publish-npm.result == 'success'
     environment: release
     permissions: {}
     steps:
@@ -389,7 +413,7 @@ jobs:
       - name: Start the website's sync
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
-          VERSION: ${{ needs.release.outputs.version }}
+          VERSION: ${{ needs.release.outputs.version || inputs.publish-tag }}
         run: |
           gh api "repos/${GITHUB_REPOSITORY_OWNER}/website/dispatches" \
             -f event_type=null3d-release-published \
