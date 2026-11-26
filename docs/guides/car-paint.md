@@ -21,7 +21,7 @@ flowchart LR
     coat --> light
 ```
 
-The paint is an example add-on in the repository, in the [examples/addons/car-paint](https://github.com/null3d-engine/null3d/tree/main/examples/addons/car-paint) folder. It is not an npm package. Copy the folder into your project and import its entry point. The null3D Vite plugin compiles the folder's WGSL file, as it does for your own shaders ([Add the Vite plugin](../getting-started/install.md#add-the-vite-plugin)). A page with no build step cannot use it.
+The paint is an example add-on in the repository, in the `examples/addons/car-paint` folder. It is not an npm package. Copy the folder into your project and import its entry point. The null3D Vite plugin compiles the folder's WGSL file, as it does for your own shaders ([Add the Vite plugin](../getting-started/install.md#add-the-vite-plugin)). A page with no build step cannot use it.
 
 ## Use it
 

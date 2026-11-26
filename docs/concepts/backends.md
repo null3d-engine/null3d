@@ -171,9 +171,9 @@ Some laptops have a separate graphics chip next to the one built into the proces
 
 ## Choosing a tier for testing
 
-`createEngine({ gpu: 'webgl2' })` forces a tier, and so do the URL switches `?gpu=webgpu`, `?gpu=compat` and `?gpu=webgl2`. A device can then test every path it supports. Use them for testing only; in production, let the engine choose. The [Testing guide](../guides/testing.md#switches-for-tests) lists every switch.
+`createEngine({ gpu: 'webgl2' })` forces a tier, and so do the URL switches `?gpu=webgpu`, `?gpu=compat` and `?gpu=webgl2`. A device can then test every path it supports. Use them for testing only; in production, let the engine choose. The [Testing guide](../guides/testing.md#switches-for-tests) lists many of the switches.
 
-Other switches make one device test the paths of other devices. They cover copied uploads, shader compiles without the parallel compile extension, the 8-bit color path, each WebGL2 depth mode and each compressed texture family. The switches work only in development builds.
+Other switches make one device test the paths of other devices. They cover copied uploads, shader compiles without the parallel compile extension, the 8-bit color path, each WebGL2 depth mode and each compressed texture family. The engine reads them in development builds, or in a production build with the Vite plugin's `urlSwitches` option on.
 
 On WebGL2, uploads read straight from the engine's shared memory. A browser that refuses to read shared memory gets a copy of each upload instead.
 

@@ -140,11 +140,13 @@ const offset = new Float32Array(3);
 // Runs every frame: no new arrays and no options objects.
 function updateGlow(material, time, boxes, count) {
   material.setUniform('glow', Math.sin(time) * 0.5 + 0.5);
+  offset[0] = 0.01;
+  offset[1] = 0.02;
+  offset[2] = 0.03;
   for (let i = 0; i < count; i += 1) {
-    offset[0] = boxes[i * 3] + 0.01;
-    offset[1] = boxes[i * 3 + 1];
-    offset[2] = boxes[i * 3 + 2];
-    boxes[i * 3] = offset[0];
+    boxes[i * 3] += offset[0];
+    boxes[i * 3 + 1] += offset[1];
+    boxes[i * 3 + 2] += offset[2];
   }
 }
 ```

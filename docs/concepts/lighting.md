@@ -164,7 +164,7 @@ Both lights are diffuse only: they light a surface's color and give no highlight
 
 A light that stands for the sky must follow the hour. An ambient or hemisphere light with a fixed color and intensity is a day light. Under a night sky it lights sand, wall and road as brightly as at noon. The scene then reads as a dark sky over a lit town.
 
-Scale the light with the hour, shifting its colors cool at night. [The island showcase](https://github.com/null3d-engine/null3d/tree/main/examples/showcase/island/) holds its hemisphere light at 0.8 with warm sky and ground colors by day. By night it takes it to a cool 0.06, driven by the share of a town's lamps that are lit. The moon's directional light and the lamps then carry the night, and a faint ambient keeps the dark from going black.
+Scale the light with the hour, shifting its colors cool at night. The island showcase holds its hemisphere light at 0.8 with warm sky and ground colors by day. By night it takes it to a cool 0.06, driven by the share of a town's lamps that are lit. The moon's directional light and the lamps then carry the night, and a faint ambient keeps the dark from going black.
 
 Exposure is one value for the whole scene. An exposure high enough for a bright day lifts a moonlit scene by the same factor, so choose it at the hour the scene shows longest. Drive the light from a value of your own that follows the sun's height, from 0 by day to 1 at night. The showcase uses the share of the town's lamps that are lit as that value.
 

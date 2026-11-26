@@ -219,7 +219,7 @@ For caustics on the bed, find each pixel's point in the world as `eye + line.xyz
 
 - A full-screen pass reads and writes 8 bytes per pixel of the render size, in `rgba16float`. On a phone at full resolution each pass costs tens of megabytes of memory traffic per frame. One pass at full size costs about 0.05 ms of GPU time on a MacBook Pro, 0.1 ms on an iPad Pro with the A12X, and 0.25 to 0.31 ms on a Pixel 10.
 - The engine joins effects at every render scale. An effect that reads only its own pixel joins the pass of the effect before it: the pass runs both, one after the other, for each pixel. So you need not join such effects into one function yourself.
-- The last pass of effects folds into the final pass only in frames at the whole canvas's scale, with bloom and FXAA off. While the scale can drop below the whole canvas, nothing folds, even in a frame at scale 1 ([The post-processing chain](../concepts/post-processing.md#below-the-whole-canvass-render-scale)).
+- The last pass of effects folds into the final pass only in frames at the whole canvas's scale, with bloom, depth of field and FXAA off. While the scale can drop below the whole canvas, nothing folds, even in a frame at scale 1 ([The post-processing chain](../concepts/post-processing.md#below-the-whole-canvass-render-scale)).
 - Adding or removing an effect changes the frame's passes. A new effect's pipeline builds while the last image stays on screen, as a custom material's does. So a new effect shows a few frames after `addEffect`. To show it at a set moment, add it a little before.
 
 <details>

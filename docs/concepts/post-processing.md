@@ -42,7 +42,7 @@ Each frame draws the scene into a linear HDR target, runs the effects that need 
 4. The final pass smooths edges with FXAA, adds the effects' results, darkens the edges with the vignette and applies the tone curve: AgX with a punchy look by default, which keeps the hues of bright colors ([Color management](color-management.md#exposure-and-tone-mapping)). Then it encodes sRGB.
 5. In the same pass, it draws the outline's line, applies the color grading table when the sketch sets one, and dithers last.
 
-Steps 4 and 5 run as one pass only while the render scale cannot drop below the whole canvas. The default presets let it drop, and then the work splits in two ([Below the whole canvas's render scale](#below-the-whole-canvass-render-scale)).
+Steps 4 and 5 run as one pass only while the render scale cannot drop below the whole canvas. Low, Medium and High let it drop, and then the work splits in two ([Below the whole canvas's render scale](#below-the-whole-canvass-render-scale)).
 
 Every full-screen pass reads and writes the whole screen once more. On a phone at its full resolution that is tens of megabytes per frame, so the engine keeps such passes few. Bloom's passes draw small levels of a fixed size. The outline draws only a mask of the outlined meshes. The final pass reads their results without a pass of its own.
 

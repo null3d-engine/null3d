@@ -60,7 +60,7 @@ meshopt compression makes a model's vertex and index data several times smaller 
 
 | Format | Decoder after Brotli | Use it for |
 | --- | --- | --- |
-| meshopt | About 4 KB | Every model, and the only choice for files with animation clips or morph targets |
+| meshopt | About 4 KB | Every model, and the only choice that also compresses animation clips and morph targets |
 | Draco | About 60 KB | Large static meshes, such as scans and product models on a page that loads several hundred KB of them, where it is 14 to 27% smaller |
 
 Each decoder downloads with the first file that needs it, and compiles once per page.

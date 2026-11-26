@@ -95,7 +95,7 @@ A custom material or an add-on feature can read scene resources that the frame m
 | --- | --- | --- | --- |
 | `'sceneColor'` | The scene's color before the tone curve | The camera's opaque and transparent passes | Full-screen effects |
 | `'sceneDepth'` | The scene's depth | The camera's opaque pass | Full-screen effects and custom materials |
-| `'normals'` | The surface normals | No pass makes them | Nothing yet |
+| `'normals'` | The surface normals | No pass makes them | No reader |
 | `'motionVectors'` | How far each pixel's surface moved since the last frame | The motion pass, while the motion debug view shows it | Only the motion debug view |
 
 A feature declares the inputs in its `reads` ([Add-on feature descriptions](../api/features.md#scene-resources)). The render graph then runs it after the passes that write them. No pass makes `'normals'`, so a feature that reads them gets a neutral value. No custom material, full-screen effect or add-on pass gets the motion vectors bound. A custom material declares `sceneInputs: ['sceneDepth']` and reads the depth with `sceneDepth` or `sceneDistance` ([Materials](../api/materials.md#the-scene-behind-a-surface)).

@@ -124,7 +124,7 @@ const engine = await createEngine({ canvas, sketch, targetFps: 'display' });
 
 A whole number, such as `targetFps: 90`, caps the target at that rate. The target never goes above the display's rate. A higher target costs quality: the check picks a lighter preset where the GPU cannot hold it, and the governor lowers the render scale sooner. The `?target-fps=display` or `?target-fps=90` switch sets the target from the page's address, and wins over the option. Until the engine has measured the display's rate, the target is 60, or the option's rate when that is lower. The [stats overlay](../api/debug.md#stats-overlay-and-frame-figures) shows the display's rate beside the target.
 
-The preset check starts its target at the display's rate that the engine measured before the check's first frame. It never lowers its target during the check. A GPU that falls behind slows the frame callbacks, so the rate measured under the check's own load can read as a slower display. On a Galaxy Tab A9 Plus with a 90 Hz display, that rate read 30 to 45 while the [Skyway showcase demo](https://github.com/null3d-engine/null3d/tree/main/examples/showcase/skyway/) drew.
+The preset check starts its target at the display's rate that the engine measured before the check's first frame. It never lowers its target during the check. A GPU that falls behind slows the frame callbacks, so the rate measured under the check's own load can read as a slower display. On a Galaxy Tab A9 Plus with a 90 Hz display, that rate read 30 to 45 while the Skyway showcase demo drew.
 
 The engine checks only a preset that it chose itself, when a lighter preset exists. A preset that the page names, the `?preset=` switch, and hold mode skip the check. So does Low, as on phones. The check takes at least three quarters of a second for each preset that it measures. During play, neither `createEngine` nor the first frame waits for it. Before play, `createEngine` waits for it, so keep the loading screen until `createEngine` has resolved and `engine.firstFrame` has too.
 
@@ -229,7 +229,7 @@ Low smooths edges with FXAA, and the other presets with MSAA. MSAA draws 4 sampl
 
 The `momentTransparency` option of `createEngine`, or the `?moments=on` or `?moments=off` switch, blends the camera's blended surfaces in the moment transparency layer, which needs no sort. [Moment transparency](../api/materials.md#moment-transparency) describes the layer and the materials that it draws. Every preset leaves it off, because it draws those surfaces twice, and the setting stays fixed while the engine runs.
 
-The layer costs memory and GPU time. On the [Island showcase](https://github.com/null3d-engine/null3d/tree/main/examples/showcase/island/) at High at 1920 x 1080, GPU textures grew by 40 MiB on WebGPU and by 52 MiB on WebGL2. In the [S1 benchmark](../guides/performance.md) at High, on a MacBook Pro in Chrome, it added about 0.6 ms of GPU time a frame on WebGPU. On WebGL2 it added about 1.1 ms. It adds almost no processor time. A desktop GPU's fill rate is not a phone's, so measure on the phone.
+The layer costs memory and GPU time. On the Island showcase at High at 1920 x 1080, GPU textures grew by 40 MiB on WebGPU and by 52 MiB on WebGL2. In the [S1 benchmark](../guides/performance.md) at High, on a MacBook Pro in Chrome, it added about 0.6 ms of GPU time a frame on WebGPU. On WebGL2 it added about 1.1 ms. It adds almost no processor time. A desktop GPU's fill rate is not a phone's, so measure on the phone.
 
 <details>
 <summary>Technical details: the moment layer's memory</summary>

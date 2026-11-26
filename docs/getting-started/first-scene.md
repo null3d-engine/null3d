@@ -130,7 +130,7 @@ Open the address that Vite prints. `bunx vite build` writes the production files
 - [Orbit controls](../api/controls.md): let the user turn and zoom the camera.
 - [Lighting and environment](../concepts/lighting.md): light types, environment maps and fog.
 - [Project structure](project-structure.md): start from the `product` template, which has orbit controls and soft studio light.
-- [glTF model example](https://github.com/null3d-engine/null3d/tree/main/examples/gltf-model/): a full sketch that shows a model on a turntable.
+- glTF model example: a full sketch that shows a model on a turntable.
 - [Objects and transforms](../api/objects.md): move, turn, parent and hide objects.
 - [Static and dynamic objects](../concepts/static-dynamic.md): when to pass `dynamic: true`.
 - [Instances and batching](../concepts/instances.md): draw thousands of copies of one mesh.

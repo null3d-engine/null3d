@@ -236,7 +236,7 @@ export default defineSketch(async ({ assets, engine, scene }) => {
 
 Never await `engine.firstFrame` in the setup, because the first frame waits for the setup. A frame number is no such signal. The thread that draws can still be drawing the first frame while the sketch runs the second ([The engine field](../api/sketch.md#the-engine-field)).
 
-`engine.held` is true in hold mode and in a replay, so tests still draw the finished scene. A held start that waits for many files starts them all on the setup's first line with `assets.preload`. It then builds the scene in one fixed order. The [Island demo](https://github.com/null3d-engine/null3d/tree/main/examples/showcase/island/) takes a `?grown` switch that does the same on a live page. A page that measures frame rates then measures the finished scene.
+`engine.held` is true in hold mode and in a replay, so tests still draw the finished scene. A held start that waits for many files starts them all on the setup's first line with `assets.preload`. It then builds the scene in one fixed order. The Island demo takes a `?grown` switch that does the same on a live page. A page that measures frame rates then measures the finished scene.
 
 While the engine holds frames or replays, the sketch's `assets` calls run one at a time, in the order the sketch made them. So the held picture never depends on which file lands first ([Hold mode](testing.md#hold-mode)).
 

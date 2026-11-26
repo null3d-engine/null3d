@@ -44,7 +44,7 @@ A mesh of separate quads plans as any other mesh unless it asks for cards with `
 - `distance`: a distance in meters for an object of scale 1. It holds on every screen height and at every render scale.
 - `coverage`: the share of the render's height that the object's bounds cover, from 0 to 1. It holds on every screen height too.
 
-[The levels of detail demo](https://github.com/null3d-engine/null3d/tree/main/examples/forest/) gives four kinds of tree made in code four levels each, with their errors, over 56,000 trees (8,000 on phones). Press B to turn the hero fir's bias on and off, and L to turn levels off.
+The levels of detail demo gives four kinds of tree made in code four levels each, with their errors, over 56,000 trees (8,000 on phones). Press B to turn the hero fir's bias on and off, and L to turn levels off.
 
 ```ts
 const tree = geometry.fromArrays(treeArrays(64));
@@ -250,7 +250,7 @@ The bake folds the views onto an octahedral grid, in a color atlas and a surface
 
 </details>
 
-`setDrawRange` fades a band's edges with the dither, so the hand-over from a mesh to its cards need not pop. The impostors add-on's `handOverToCards` sets the two bands for a batch of meshes and its cards. It starts the cards early enough that their own dithered edge finishes first. The mesh and the card are different sources, so their dither phases differ. The card must already cover every pixel that the mesh will drop. [Impostors](../api/impostors.md#hand-the-near-meshes-over-to-the-cards) gives the calls, and [the impostors demo](https://github.com/null3d-engine/null3d/tree/main/examples/impostors/) draws a forest three ways by distance.
+`setDrawRange` fades a band's edges with the dither, so the hand-over from a mesh to its cards need not pop. The impostors add-on's `handOverToCards` sets the two bands for a batch of meshes and its cards. It starts the cards early enough that their own dithered edge finishes first. The mesh and the card are different sources, so their dither phases differ. The card must already cover every pixel that the mesh will drop. [Impostors](../api/impostors.md#hand-the-near-meshes-over-to-the-cards) gives the calls. The impostors demo draws a forest three ways by distance.
 
 ## Related pages
 
@@ -259,5 +259,5 @@ The bake folds the views onto an octahedral grid, in a color atlas and a surface
 - [The asset pipeline](../guides/assets-pipeline.md#levels-of-detail): the levels that `assets optimize` writes.
 - [Impostors](../api/impostors.md): cards beyond the last level.
 - [Shadows](shadows.md): the shadow threshold that follows the level threshold.
-- [The forest demo](https://github.com/null3d-engine/null3d/tree/main/examples/forest/): trees made in code with levels given by hand.
-- [The impostors demo](https://github.com/null3d-engine/null3d/tree/main/examples/impostors/): a forest drawn three ways by distance.
+- The forest demo: trees made in code with levels given by hand.
+- The impostors demo: a forest drawn three ways by distance.

@@ -129,7 +129,7 @@ The engine's benchmark scenes need 2 to 4 pipelines each. In the engine's warm-u
 
 On a first visit, the browser compiles every shader. On a repeat visit, it reuses what it compiled before. The S4 benchmark, a town with a shadow-casting sun, was the slowest scene on each device.
 
-A larger scene needs many more pipelines, because each pass, effect and custom material adds its own. A custom material's shader holds the whole lit shading code around its own function, so its pipelines are among the slowest to build. On a phone, a showcase scene's first frame builds 45 to 63 pipelines, which take most of the start. The build takes a few seconds on a fast phone, and up to about 20 seconds on a slow tablet. Safari reused its compiled shaders on a repeat visit. Chrome's own cache of compiled pipelines on Android is too small to keep a scene's worth, so the engine's stored list does the work, as [Repeat visits](#repeat-visits) says. [A fast start](start-time.md#pipelines-on-phones) gives each figure.
+A larger scene needs many more pipelines, because each pass, effect and custom material adds its own. A custom material's shader holds the whole lit shading code around its own function, so its pipelines are among the slowest to build. On a phone, a showcase scene's first frame builds 45 to 63 pipelines, which take most of the start. The build takes a few seconds on a fast phone, and up to about 24 seconds on a slow tablet. Safari reused its compiled shaders on a repeat visit. Chrome's own cache of compiled pipelines on Android is too small to keep a scene's worth, so the engine's stored list does the work, as [Repeat visits](#repeat-visits) says. [A fast start](start-time.md#pipelines-on-phones) gives each figure.
 
 The engine builds pipelines without blocking any thread:
 
@@ -213,12 +213,12 @@ In hold mode, the engine draws one frame, which waits for its pipelines, so `sce
 
 Most shaders come with the engine's start. The shaders of a feature that many games leave out download the first time the sketch uses it. So a page that never uses the feature never downloads them. [Shaders that load on first use](first-use-shaders.md) lists every such feature and the moment its shaders download. For example, `'skinning'` downloads with the first skinned mesh, and `'bloom'` when `post.set` turns bloom on.
 
-Each feature has a file for each GPU path and each device's settings. Shaders that need two such features, such as a skinned mesh with a hashed material, sit in a file of their own. A page downloads it only when it uses both. A model that `assets optimize` wrote carries a list of the features its draws need. The engine asks for those files as it reads the model, so such a model needs no `preload` entry ([The asset pipeline](assets-pipeline.md#the-shader-list)). A new object draws once its pipelines are built, as on any first use. The skinned meshes of a model, and an effect, appear whole in one frame.
+Each feature has a file for each GPU path and each device's settings, and each file takes at most 128 KB after Brotli. Shaders that need two such features, such as a skinned mesh with a hashed material, sit in a file of their own. A page downloads it only when it uses both. A model that `assets optimize` wrote carries a list of the features its draws need. The engine asks for those files as it reads the model, so such a model needs no `preload` entry ([The asset pipeline](assets-pipeline.md#the-shader-list)). A new object draws once its pipelines are built, as on any first use. The skinned meshes of a model, and an effect, appear whole in one frame.
 
 <details>
 <summary>Technical details: how the first-use shader files are split</summary>
 
-Each such file takes at most 128 KB after Brotli. A WebGL2 file is larger than its WebGPU twin, and many WebGL2 files take more than 32 KB. The engine starts the download as soon as it knows the sketch needs it. A glTF file with skins or morph targets starts it while the engine reads the file, so the download runs beside the texture decode.
+A WebGL2 file is larger than its WebGPU twin, and many WebGL2 files take more than 32 KB. The engine starts the download as soon as it knows the sketch needs it. A glTF file with skins or morph targets starts it while the engine reads the file, so the download runs beside the texture decode.
 
 </details>
 
