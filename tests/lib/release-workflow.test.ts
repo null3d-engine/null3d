@@ -111,4 +111,26 @@ describe('the Release workflow', () => {
 		expect(order.every((index) => index !== -1)).toBe(true);
 		expect(order).toEqual([...order].sort((a, b) => a - b));
 	});
+	it('publishes an existing tag without a release, and builds the npm job from the shader caches', () => {
+		const parsed = Bun.YAML.parse(readFileSync(RELEASE, 'utf8')) as {
+			on: { workflow_dispatch: { inputs: Record<string, unknown> } };
+			jobs: Record<
+				string,
+				{
+					if?: string;
+					env?: Record<string, string>;
+					steps?: { uses?: string; run?: string; with?: Record<string, string> }[];
+				}
+			>;
+		};
+		expect(parsed.on.workflow_dispatch.inputs['publish-tag']).toBeDefined();
+		const { release, 'publish-npm': npm, 'notify-website': website } = parsed.jobs;
+		expect(release?.if).toContain("inputs.publish-tag == ''");
+		expect(npm?.if).toContain("needs.release.result == 'skipped' && inputs.publish-tag != ''");
+		expect(npm?.env?.VERSION).toContain('inputs.publish-tag');
+		expect(website?.if).toContain("needs.publish-npm.result == 'success'");
+		const build = npm?.steps?.find((step) => step.uses === './.github/actions/shaders');
+		expect(build?.with?.run).toBe('bun tools/build-wasm.ts --pages-only');
+		expect(npm?.steps?.some((step) => step.run?.includes('gh release download'))).toBe(true);
+	});
 });

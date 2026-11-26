@@ -23,7 +23,8 @@ A release can be made at any time (decided by the owner). Every change that reac
 
 The workflow lands the version on main, then tags, then publishes. Each step is safe to repeat:
 
-- A failing `publish-npm` job leaves main and the tag correct. Re-run that job from the run's page, which publishes only the packages npm does not have yet.
+- A failing `publish-npm` job leaves main and the tag correct. Run the workflow again with `publish-tag` set to the version. That run skips the release job and publishes the tag, then tells the website. It publishes only the packages that npm does not have yet. It hashes the shader archive that the tag's GitHub Release serves. Re-running the failed job from the run's page also works, but it runs the workflow as it stood then.
+- The `publish-npm` job builds the shader modules through CI's shader caches, as the release job does. The package ships their declarations but not their JavaScript, and its build reads the modules. A full shader build without the cache takes longer than the job's 30 minutes (run 45760715280).
 - A failure before the tag exists leaves main holding the version numbers. Run the workflow again with the same commit. It finds main already holding the same files, lands nothing, and carries on to the tag on its own released commit.
 - A tag that exists stops the workflow, because a released version is never released again.
 - A failing `notify-website` job leaves the release whole, and only the website lags. Re-run that job from the run's page, or run "Sync with an engine release" by hand in the website's repository with the tag.
