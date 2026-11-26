@@ -526,7 +526,7 @@ With null3D 0.1.0's shader set, the builds copied these shader files:
 
 ### When the list lacks a word
 
-A listed word that no shader build of the project holds stops the build, and the message names the word. The builds are those of the engine's set and those of the project's own shaders, such as its custom materials and the shaders of its add-ons. Such a word comes from a typing mistake, or from a list that another version of the engine recorded. Record the list again.
+A listed word that no shader build of the project holds stops the build, and the message names the word. The builds are those of the engine's set and of the project's own shaders, such as its custom materials and its add-ons' shaders. Such a word comes from a typing mistake, or from a list that another version of the engine recorded. Record the list again.
 
 A page that asks for a word that the list lacks fails the pipeline that needs it. The message names the word, as the list writes it:
 
