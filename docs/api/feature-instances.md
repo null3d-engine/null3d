@@ -163,7 +163,7 @@ On WebGL2, each row's matrix is split into a position, a rotation and a scale th
 ## Rules
 
 - Run the add-on's compute in `band: 'before'`, as the example does.
-- Create the draw in the sketch's setup, and await `addComputeInstances()` before the first frame, or the frame fails with [E1506](../errors/E1506.md).
+- Create the draw in the sketch's setup, and await `addComputeInstances()` before the first frame. On a device that draws the scene directly, a draw that arrives later fails the frame with [E1506](../errors/E1506.md).
 - Keep the add-on's count at or under `capacity`.
 
 ## Limits

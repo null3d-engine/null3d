@@ -660,7 +660,7 @@ Every row of a batch shares the batch's layers, which the `layers` option and `s
 | --- | --- |
 | [E1101](../errors/E1101.md) | A call on an object, background, environment or probe that was destroyed. |
 | [E1102](../errors/E1102.md) | A scene past its object, change-queue or animation-table limit, or a copy that does not fit. |
-| [E1104](../errors/E1104.md) | `setParent` given an object as its own parent. The engine skips any other parent loop and logs it. |
+| [E1104](../errors/E1104.md) | A parent loop: `setParent` given the object itself or one of its descendants. A self-parent throws; a queued loop is skipped and logged. |
 | [E1108](../errors/E1108.md) | A number out of its range, such as a negative blend or intensity, or a box whose `min` is not below its `max`. Development builds throw it. |
 | [E1109](../errors/E1109.md) | The engine's memory cannot hold a growth. |
 | [E1203](../errors/E1203.md) | A number that is not finite. Development builds throw it. |

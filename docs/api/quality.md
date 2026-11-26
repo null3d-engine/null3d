@@ -62,12 +62,12 @@ Most settings change during play. The preset tables' "Changes" column names the 
 
 ## Changing settings during play
 
-`quality.set(settings)` changes the settings it gets and keeps the others. It takes the settings that change during play, applies them from the next frame on, and returns a promise that resolves at once. Another setting, or a value outside the setting's range, throws [E1213](../errors/E1213.md) and changes nothing. [Quality presets](../concepts/quality-presets.md#moment-transparency) describes the moment transparency layer and the surfaces that it draws.
+`quality.set(settings)` changes the settings it gets and keeps the others. It takes the settings that change during play, applies them from the next frame on, and returns a promise that resolves at once. Another setting, or a value outside the setting's range, throws [E1213](../errors/E1213.md) and changes nothing. E1213 is also thrown for a `minRenderScale` above `maxRenderScale`, for a `createEngine` option with a value that its setting does not take, and for a preset name that `createEngine` does not know. [Quality presets](../concepts/quality-presets.md#moment-transparency) describes the moment transparency layer and the surfaces that it draws.
 
 <details>
 <summary>Technical details: other calls that throw, and the render scale's range</summary>
 
-E1213 is also thrown for a `minRenderScale` above `maxRenderScale`, for a `createEngine` option with a value that its setting does not take, and for a preset name that `createEngine` does not know. To move both ends of the render scale's range past each other, give both in one call. In the [lowest quality tier](../concepts/quality-presets.md#the-lowest-quality-tier), a `minRenderScale` above the tier's cap on the scale raises the cap to it instead. Only a `maxRenderScale` that the sketch set itself throws.
+To move both ends of the render scale's range past each other, give both in one call. In the [lowest quality tier](../concepts/quality-presets.md#the-lowest-quality-tier), a `minRenderScale` above the tier's cap on the scale raises the cap to it instead. Only a `maxRenderScale` that the sketch set itself throws.
 
 </details>
 

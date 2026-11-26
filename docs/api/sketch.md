@@ -40,12 +40,12 @@ The page passes the module's address to `createEngine`, and the engine loads the
 
 Code at the top of the module can run before the engine has started, so it must not call the engine ([E1403](../errors/E1403.md)).
 
+A module whose default export is not `defineSketch(...)` fails the start with [E1401](../errors/E1401.md). A module that does not load fails it with [E1410](../errors/E1410.md): the module did not download, or its code threw an error while it loaded. The engine imports a module that does not load once more, after a short wait, so a short break in the network does not fail the start.
+
 <details>
 <summary>Technical details: how the engine loads the module</summary>
 
-A module whose default export is not `defineSketch(...)` fails the start with [E1401](../errors/E1401.md). A module that does not load fails it with [E1410](../errors/E1410.md): the module did not download, or its code threw an error while it loaded. The engine imports a module that does not load once more, after a short wait, and the console notes the second import. So a short break in the network does not fail the start. Only a second failure gives E1410, with the first failure's reason.
-
-Code at the top of the module runs once, when the module loads, before the engine calls `setup`. The engine loads the module while it downloads its core, in the sketch worker or, in the single-threaded build, on the page. So the module's own imports and its top-level code take no time of their own on a slow network. Code there can also run when the start fails.
+The console notes the second import. Only a second failure gives E1410, with the first failure's reason. Code at the top of the module runs once, when the module loads, before the engine calls `setup`. The engine loads the module while it downloads its core, in the sketch worker or, in the single-threaded build, on the page. So the module's own imports and its top-level code take no time of their own on a slow network. Code there can also run when the start fails.
 
 Work there must not need the engine. Every call that makes scene data goes through the setup's context. Work that needs no engine, such as a large table that the first view reads, can run there and overlap the download.
 

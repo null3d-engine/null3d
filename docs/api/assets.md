@@ -304,13 +304,14 @@ export default defineSketch(async ({ scene, assets }) => {
 - The sky's map follows the sky: after a change that shows, it refreshes in stages, one a frame. A small change waits, and one last refresh captures the sky once it stops changing. The scene draws with the old map until the last stage, and the map leaves out the sun's disc, whose light the scene's directional light gives.
 - `environment.destroy()` frees the cube map's GPU memory. The scene then draws without it.
 - Other KTX2 files, such as `loadTexture`'s, fail with E1412. So do supercompressed files.
+- An HDR map's faces are 256 texels by default, and an image wider than 2,048 texels is averaged down first. The HDR reader reads single-part scanline files with every compression but DWAA and DWAB. Tiled, deep and multi-part files fail with E1412, as do Radiance files stored from the bottom row up.
 
 <details>
 <summary>Technical details: sizes, limits and GPU times</summary>
 
-The first environment file loads the file reader, under 1 KB after Brotli. An HDR map has faces of 256 texels, as the asset tool's default. An image wider than 2,048 texels becomes the averages of squares of its texels first. An unclipped sun, or other light beyond 65,408, keeps its share of the rough levels and the diffuse light. Only the sharpest level stops at 65,408, as in the tool's files.
+The first environment file loads the file reader, under 1 KB after Brotli. An unclipped sun, or other light beyond 65,408, keeps its share of the rough levels and the diffuse light. Only the sharpest level stops at 65,408, as in the tool's files.
 
-The OpenEXR reader reads single-part files of scanlines with R, G and B channels, as half floats, floats or whole numbers. It reads every compression but DWAA and DWAB: none, RLE, ZIPS, ZIP, PIZ, PXR24, B44 and B44A. Tiled, deep and multi-part files fail with E1412, as do Radiance files stored from the bottom row up.
+The OpenEXR reader reads single-part files of scanlines with R, G and B channels, as half floats, floats or whole numbers. It reads every compression but DWAA and DWAB: none, RLE, ZIPS, ZIP, PIZ, PXR24, B44 and B44A.
 
 The room's map takes about 20 ms of GPU time on a MacBook Pro, and 50 to 110 ms on recent phones. The sky's map takes about 10 ms on a MacBook Pro. The sky refreshes in 20 stages, each about 1 ms of GPU time on a MacBook Pro; a sun that turns less than half a degree leaves the map as it is, and so does a color value that drifts by less than 2%.
 

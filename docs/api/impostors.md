@@ -85,11 +85,9 @@ A card's light comes from the scene's lights, as a mesh's does. The surface atla
 
 ### Cast and receive shadows
 
-The cards cast a shadow only if you ask. A caster needs a second batch from the same options and rows, with `castShadows: true` and a layer that the sun draws and no camera does. Add that layer to the sun's mask, or the cards cast nothing with no warning.
+The cards cast a shadow only if you ask. Give the batch `castShadows: true` and a layer that the sun draws. To keep the caster off the camera's layers, make a second batch from the same options and rows on a layer that only the sun draws, and add that layer to the sun's mask. A caster that no camera draws pays nothing on the camera. When you use a second batch, keep the rows of both batches in step: write and mark the other too.
 
-The camera never draws the caster, so it pays nothing for it. In the shadow pass each card turns toward the sun and cuts the crown's shape from its stored coverage. A batch with `receiveShadows: true` takes the shadows of other objects at the surface that the stored depth shows, not at its own plane, so a card does not darken itself.
-
-Keep the rows of both batches in step: when you change one, write and mark the other too.
+In the shadow pass each card turns toward the sun and cuts the crown's shape from its stored coverage. A batch with `receiveShadows: true` takes the shadows of other objects at the surface that the stored depth shows, not at its own plane, so a card does not darken itself.
 
 <details>
 <summary>Technical details: how cards cast and receive shadows</summary>

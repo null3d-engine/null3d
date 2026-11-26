@@ -29,11 +29,11 @@ Read what the original shader does, then pick the smallest null3D form that can 
 | Moves vertices | `vertexOffset`, plus a surface function if needed |
 | Ignores lighting (unlit effects, holograms, fresnel glows) | Unlit function, `fn unlit(input: SurfaceInput) -> vec4f`, in place of `surface`: it returns the linear color and opacity, with no lights, shadows, reflections or ambient occlusion (engine docs `shaders/surface-functions`, unlit surfaces) |
 | Changes how each light lights the surface, such as toon bands or a rim | A lobe function, `fn lobe(input: LobeInput) -> vec3f`, for the main directional light and each point and spot light; the base lighting stays |
-| Lights the surface its own way with fixed lights | Full shader with `null3d::lighting` helpers; it gets no scene lights and no uniforms |
+| Lights the surface its own way with fixed lights | Full shader with `null3d::lighting` helpers; it gets no scene lights, no standard values and no material uniforms |
 | Is a full-screen pass | `post.addEffect`, or `render.addPass({ kind: 'fullscreen' })` when it writes a render target of its own (`references/post-processing.md`, section 6) |
 | Renders to a texture for another material | Custom pass (`render.addPass`) |
 
-Surface functions keep instancing, shadows, fog and both backends working, and skinning. Full shaders keep instancing and both backends, but get no lighting, shadows, fog, uniforms or standard values.
+Surface functions keep instancing, shadows, fog and both backends working, and skinning. Full shaders keep instancing and both backends, but get no lighting, shadows, fog, material uniforms or standard values.
 
 ## 2. GLSL to WGSL
 
@@ -273,4 +273,4 @@ The null3D version is the dissolve example in the null3d-develop skill's `refere
 - Uniforms take `f32`, `i32`, `u32`, `vec2f`, `vec3f` and `vec4f`, 32 numbers in all, less one for each texture. Keep more in a data texture read with `textureLoad`. Pass a matrix as `vec4f` rows, and rename a uniform called `color`, `roughness` or another standard value.
 - Use only the three WGSL language features every browser shares, and `@interpolate(flat, either)` for flat values (null3d-develop `references/shaders.md`, section 8).
 - Test on WebGL2 (`?gpu=webgl2`): the translated GLSL can hit limits the WGSL did not.
-- A full shader loses the engine's lighting, shadows and fog, and takes no uniforms. Port to a surface function where the look allows it.
+- A full shader loses the engine's lighting, shadows and fog, and takes no material uniforms and no standard values. Port to a surface function where the look allows it.

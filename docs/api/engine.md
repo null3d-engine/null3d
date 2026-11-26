@@ -125,7 +125,7 @@ The canvas takes its size from CSS. The engine sizes the canvas's drawing buffer
 | `still` | true | `false` draws every frame of a view that holds still, which otherwise blends its frames into a sharper picture and then stops drawing until something changes: [Still-camera accumulation](../concepts/post-processing.md#still-camera-accumulation). The `?still-camera=off` switch turns it off too. |
 | `stats` | false | `true` shows the stats overlay from the first frame, `{ collapsed: true }` shows it with its card closed, and `{ corner: 'bottom-right' }` puts it over the canvas's bottom-right corner: [Stats overlay and frame figures](debug.md#stats-overlay-and-frame-figures). The `?stats` switch shows it too, and `?stats=off` hides it. A held engine shows no overlay. |
 
-A value outside its range fails the start with [E1213](../errors/E1213.md).
+A value outside its range fails the start with [E1213](../errors/E1213.md), except `memory`, which fails with [E1409](../errors/E1409.md).
 
 ## A transparent canvas
 

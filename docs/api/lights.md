@@ -81,14 +81,13 @@ export default defineSketch(({ scene, materials, geometry }) => {
 - The color and intensity tint the picture: a dark part of it gives less light, and a red part gives red light. `setMap(null)` goes back to one color.
 - The map is sRGB pixels, four bytes each with the top row first, or a texture. The engine copies a texture into the light's picture once, when the texture's texels reach the GPU, so a later change to the texture does not reach the light: give a still texture. A video's texture and a render pass's texture change every frame, and a 3D or cube texture holds more than one image, so each throws E1112.
 - The engine keeps one shared table for the lights' pictures. Up to 32 lights show pictures at once, and rectangle and spot lights share those places. A new picture takes up to a few tens of milliseconds, so set it at setup or now and then.
+- The engine keeps each picture's detail up to 512 texels a side, and reduces a larger texture to that. It keeps room for four pictures once a scene has one.
 - Spot light maps light every GPU path in the same way: WebGPU, WebGPU's compatibility mode and WebGL2. They add no texture to the lit shaders, because the pictures share a table that every lit surface already reads.
 
 <details>
 <summary>Technical details: picture size and memory</summary>
 
-The engine keeps the picture's detail up to 512 texels a side, in every mip level, and reduces a larger texture to that. A small gobo therefore costs less memory than a detailed photograph of the same light. A surface far from the light shows the picture blurred and a surface near the light shows it sharp. A picture of 128 x 128 texels a side takes about 0.2 MB with its mip levels. One of 512 x 512 takes about 2.8 MB.
-
-The engine keeps room for four pictures once a scene has one. A scene with one detailed picture therefore takes about 11 MB.
+A small gobo therefore costs less memory than a detailed photograph of the same light. A surface far from the light shows the picture blurred and a surface near the light shows it sharp. A picture of 128 x 128 texels a side takes about 0.2 MB with its mip levels. One of 512 x 512 takes about 2.8 MB. A scene with one detailed picture therefore takes about 11 MB.
 
 </details>
 

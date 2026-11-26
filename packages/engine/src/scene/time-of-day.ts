@@ -105,8 +105,9 @@ export interface TimeOfDay {
 	};
 	/**
 	 * The fog's linear color and the glow toward the main light, for `scene.setFog`. With the
-	 * analytic model the color is the sky's horizon by day and its average at dusk; with the
-	 * physical model it is the sky's mean light.
+	 * analytic model the color is the sky's horizon by day and its average at dusk. With the
+	 * physical model it is the sky's mean light by day and through dusk, then the moon sky's
+	 * horizon light at night.
 	 */
 	fog: { color: [number, number, number]; sunGlow: number };
 	/**
@@ -202,8 +203,9 @@ const EXPOSURE: readonly (readonly [number, number])[] = [
  * at 6, stands highest at 12 and sets at 18. After sunset the sky dims to a deep blue, and then to
  * a navy night sky lit from the moon's place, and the moon takes over as the main light. Each value
  * comes from the model of the sky that the background draws, so the fog takes that sky's horizon
- * color by day and its average at dusk, or the sky's mean light with the physical model. Throws a
- * `RangeError` for an hour that is not a finite number, or an unknown preset.
+ * color by day and its average at dusk. With the physical model it takes the sky's mean light by
+ * day and through dusk, then the moon sky's horizon light at night. Throws a `RangeError` for an
+ * hour that is not a finite number, or an unknown preset.
  *
  * Give it `out`, an object of a previous call, and it writes the new settings into that object: a
  * day cycle then allocates nothing, so a sketch can move the time in every frame. `bun run
