@@ -67,7 +67,13 @@ export const LENS_CENTER_Y = 4;
 /** The distances along the view to the near and far planes. */
 export const LENS_NEAR = 5;
 export const LENS_FAR = 6;
-export const LENS_FLOATS = 7;
+/**
+ * The lens shift: how far the view sits right of and above the camera's axis, or an orthographic
+ * view's center, as fractions of the view's width and height.
+ */
+export const LENS_SHIFT_X = 7;
+export const LENS_SHIFT_Y = 8;
+export const LENS_FLOATS = 9;
 
 /** The views whose cameras the ring keeps. */
 const RING_VIEWS = 4;
@@ -376,10 +382,10 @@ function sameView(ring: Float64Array, at: number, view: Float64Array): boolean {
  * A camera's projection, made once and used for many points. The first 9 numbers are the inverse
  * of the 3 × 3 part of the camera's world matrix, row by row, then the camera's position. Then come
  * half the view's width and height (one unit in front of a perspective camera, or across an
- * orthographic view), 1 for an orthographic lens or 0, the orthographic view's center, and the
- * distances to the near and far planes.
+ * orthographic view), 1 for an orthographic lens or 0, the orthographic view's center, the
+ * distances to the near and far planes, and the lens shift.
  */
-export const VIEW_FLOATS = 19;
+export const VIEW_FLOATS = 21;
 const VIEW_POSITION = 9;
 /** Half the view's width and height in a view that `viewOf` wrote. */
 const VIEW_SCALE_X = 12;
@@ -392,6 +398,12 @@ export const VIEW_CENTER_Y = 16;
 /** The distances to the near and far planes in a view that `viewOf` wrote. */
 export const VIEW_NEAR = 17;
 export const VIEW_FAR = 18;
+/**
+ * The lens shift in a view that `viewOf` wrote, as fractions of the view's width and height. It moves
+ * the image by twice that fraction in normalized device coordinates.
+ */
+export const VIEW_SHIFT_X = 19;
+export const VIEW_SHIFT_Y = 20;
 
 /** Writes the projection of the camera of the entry at `at` into `view`. */
 function writeView(e: Float64Array, at: number, view: Float64Array): void {
@@ -426,6 +438,8 @@ function writeView(e: Float64Array, at: number, view: Float64Array): void {
 	view[VIEW_CENTER_Y] = e[lens + LENS_CENTER_Y] as number;
 	view[VIEW_NEAR] = e[lens + LENS_NEAR] as number;
 	view[VIEW_FAR] = e[lens + LENS_FAR] as number;
+	view[VIEW_SHIFT_X] = e[lens + LENS_SHIFT_X] as number;
+	view[VIEW_SHIFT_Y] = e[lens + LENS_SHIFT_Y] as number;
 }
 
 /**
@@ -443,12 +457,15 @@ export function projectPoint(view: Float64Array, point: Vec3Like, out: Vec3Like)
 	const lz = (view[6] as number) * px + (view[7] as number) * py + (view[8] as number) * pz;
 	const sx = view[VIEW_SCALE_X] as number;
 	const sy = view[VIEW_SCALE_Y] as number;
+	// A lens shift moves the whole image, after the perspective division.
+	const shiftX = 2 * (view[VIEW_SHIFT_X] as number);
+	const shiftY = 2 * (view[VIEW_SHIFT_Y] as number);
 	if (view[VIEW_ORTHO] !== 0) {
-		out[0] = (lx - (view[VIEW_CENTER_X] as number)) / sx;
-		out[1] = (ly - (view[VIEW_CENTER_Y] as number)) / sy;
+		out[0] = (lx - (view[VIEW_CENTER_X] as number)) / sx - shiftX;
+		out[1] = (ly - (view[VIEW_CENTER_Y] as number)) / sy - shiftY;
 	} else {
-		out[0] = lx / (-lz * sx);
-		out[1] = ly / (-lz * sy);
+		out[0] = lx / (-lz * sx) - shiftX;
+		out[1] = ly / (-lz * sy) - shiftY;
 	}
 	out[2] = -lz;
 }
@@ -536,9 +553,10 @@ function writeRay(e: Float64Array, at: number, point: Float64Array, out: Ray): v
 	const y = point[1] as number;
 	const width = e[at + CSS_WIDTH] as number;
 	const height = e[at + CSS_HEIGHT] as number;
-	const ndcX = width > 0 ? (x / width) * 2 - 1 : 0;
-	const ndcY = height > 0 ? 1 - (y / height) * 2 : 0;
 	const lens = at + LENS;
+	// A lens shift moves the view right and up, so a point of the canvas sees that much further.
+	const ndcX = (width > 0 ? (x / width) * 2 - 1 : 0) + 2 * (e[lens + LENS_SHIFT_X] as number);
+	const ndcY = (height > 0 ? 1 - (y / height) * 2 : 0) + 2 * (e[lens + LENS_SHIFT_Y] as number);
 	writeScaleX(e, at, rayScale, 0);
 	const sx = ndcX * (rayScale[0] as number);
 	const sy = ndcY * (e[lens + LENS_HALF_HEIGHT] as number);

@@ -264,6 +264,7 @@ camera.isOrthographic;            // false for PerspectiveCamera, true for Ortho
 camera.setFov(deg);               camera.fov;                  // PerspectiveCamera
 camera.setFocalLength(85);        camera.focalLength;          // the fov of that lens on a full-frame sensor; depth of field takes it
 camera.setOrthoHeight(h);         camera.height; camera.width; // OrthographicCamera; width undefined while it follows the canvas
+camera.setLensShift(x, y);        camera.lensShift;            // moves the view right and up by fractions of its size; keeps the perspective
 camera.setLayers(mask);           // the layers it draws: objects whose masks share a layer with it
 camera.screenToRay(x, y, ray);    // x, y in CSS pixels; ray = { origin: number[3], direction: number[3] }
 camera.worldToScreen(p, out);     // out = [x, y, depth] in CSS pixels; depth < 0 means behind the camera
@@ -277,6 +278,8 @@ A view's image has its own camera and the shape of its rectangle, so pick in it 
 `screenToRay` at the position of `input.pointer` or a touch uses the camera of the frame on screen at that event. So a click during a fast pan picks what the user saw. Other points, and `worldToScreen`, use the camera of the frame that last ran. Call `worldToScreen` in `onLateUpdate` to line up with the frame being drawn.
 
 An orthographic camera made with `height` follows the canvas's aspect ratio; one made with `left`, `right`, `top` and `bottom` keeps those edges, and `setOrthoHeight` scales them about their center.
+
+To put the subject beside a page's text, shift the lens rather than turn the camera. `camera.setLensShift(-0.25, 0)` puts the camera's target three quarters of the way across. The picture is a crop of a wider view, so upright lines stay upright. Culling, shadows, picking, `screenToRay`, `worldToScreen`, labels and views all follow the shift.
 
 ## 7. Lights (`api/lights`)
 

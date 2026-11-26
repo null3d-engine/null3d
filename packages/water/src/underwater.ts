@@ -96,6 +96,8 @@ export function createUnderwater(
 	const tint: [number, number, number] = [0, 0, 0];
 	const caustics: [number, number, number] = [0, 0, 0];
 	const current: [number, number] = [0, 0];
+	// Where the middle of a shifted view lies, in the view's half sizes.
+	const shift: [number, number] = [0, 0];
 	let effect: Effect | null = null;
 	// The lens from the camera's field of view, worked out again only when that changes.
 	let fov = Number.NaN;
@@ -124,6 +126,10 @@ export function createUnderwater(
 				fov = camera.fov;
 				lens = Math.tan((fov * Math.PI) / 360);
 			}
+			const lensShift = camera.lensShift;
+			const shifted = 2 * lensShift[0] !== shift[0] || 2 * lensShift[1] !== shift[1];
+			shift[0] = 2 * lensShift[0];
+			shift[1] = 2 * lensShift[1];
 			if (!effect) {
 				effect = post.addEffect({
 					wgsl: underwaterShader,
@@ -133,6 +139,7 @@ export function createUnderwater(
 						caustics,
 						level: water.level,
 						waveAmplitude: water.waveAmplitude,
+						shift,
 						eye,
 						current: [current[0], current[1]],
 						lens,
@@ -151,6 +158,7 @@ export function createUnderwater(
 			post.setEffectUniform(effect, 'up', up);
 			post.setEffectUniform(effect, 'back', back);
 			if (zoomed) post.setEffectUniform(effect, 'lens', lens);
+			if (shifted) post.setEffectUniform(effect, 'shift', shift);
 			post.setEffectUniform(effect, 'current', current);
 		},
 		destroy() {

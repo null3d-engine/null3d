@@ -635,6 +635,7 @@ mod tests {
                     fov_degrees: r(20.0, 110.0),
                     near: r(0.05, 5.0),
                     far: r(50.0, 4000.0),
+                    shift: [0.0; 2],
                 })
             } else {
                 Lens::from(Orthographic {
@@ -643,6 +644,7 @@ mod tests {
                     center: [r(-50.0, 50.0), r(-50.0, 50.0)],
                     near: r(-100.0, 5.0),
                     far: r(50.0, 4000.0),
+                    shift: [0.0; 2],
                 })
             };
             let frustum =

@@ -22,6 +22,7 @@ fn ortho(center_x: f32) -> Orthographic {
         center: [center_x, 0.0],
         near: 0.1,
         far: 2000.0,
+        shift: [0.0; 2],
     }
 }
 

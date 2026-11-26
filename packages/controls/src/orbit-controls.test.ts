@@ -951,6 +951,26 @@ describe('orbit controls against three.js: keys, zoom to the pointer, limits and
 		}
 	});
 
+	it('zoom a shifted lens toward the point under the pointer', () => {
+		// A lens shift moves the view off the camera's axis, as three.js's setViewOffset does on a
+		// full view, so the point under the pointer lies along another ray.
+		for (const lens of ['perspective', 'orthographic'] as const) {
+			const twin = new Twin('orbit', [0, 2, 8], { zoomToCursor: true, minDistance: 2 }, lens);
+			twin.camera.lensShift[0] = 0.3;
+			twin.camera.lensShift[1] = -0.2;
+			twin.threeCamera.setViewOffset(WIDTH, HEIGHT, 0.3 * WIDTH, 0.2 * HEIGHT, WIDTH, HEIGHT);
+			for (const [scroll, x, y] of [
+				[-120, 480, 90],
+				[-300, 100, 300],
+				[90, 120, 300],
+			] as const) {
+				twin.wheel(scroll, false, [x, y]);
+				twin.stepAndCompare();
+			}
+			expect(twin.travel().target).toBeGreaterThan(0.01);
+		}
+	});
+
 	it('zoom an orthographic camera toward the point under the pointer, within its zoom limits', () => {
 		const twin = new Twin(
 			'orbit',

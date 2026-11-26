@@ -50,6 +50,7 @@ Product pages, marketing pages and landing pages that show a 3D scene next to te
 - Shape the camera's path as a curve plus named corrections, each a smoothstep over a range of scroll progress. Moving the curve's points to fix one moment moves every other moment too.
 - On a route change in a single-page app, restore the saved position on back and forward. Jump to an anchor when the address has one, and go to the top otherwise. Scroll with `behavior: 'instant'`, and put `scroll-behavior: smooth` only inside `@media (prefers-reduced-motion: no-preference)`. A smooth reset that runs while the new page swaps in stops partway down.
 - The field of view is vertical, so a canvas taller than wide shows less from side to side. Widen it with `camera.setFov` when `ctx.engine.viewport` turns portrait.
+- To put the subject beside the text, shift the lens with `camera.setLensShift(x, y)`, never turn the camera: a turn makes upright lines lean. Drop the shift when the text moves above the canvas, as on a phone held upright (`api/cameras`).
 - Give text panels over an interactive scene `pointer-events: auto`. A panel with `pointer-events: none` passes taps to the scene, so a tap on its text selects an object.
 - Labels that `engine.labels.bind` places need the same content as an HTML list, with its own heading, in the fallback page.
 

@@ -17,6 +17,9 @@ struct Uniforms {
     level: f32,
     // The height of the surface's long waves, as a factor of their base height.
     waveAmplitude: f32,
+    // The camera's lens shift, as twice its fractions of the view's width and height: where the
+    // middle of the view lies, in the view's half sizes.
+    shift: vec2f,
     // The camera's position, and the world directions of its right, up and back axes.
     eye: vec3f,
     // The current at the camera, in meters a second.
@@ -112,7 +115,9 @@ fn surface_height(p: vec2f, t: f32) -> f32 {
 
 /// The direction in the world of the line of sight through a place uv, and its share along the view.
 fn sight(uv: vec2f, aspect: f32) -> vec4f {
-    let ahead = normalize(vec3f((uv.x * 2.0 - 1.0) * uniforms.lens * aspect, (1.0 - uv.y * 2.0) * uniforms.lens, -1.0));
+    let across = (uv.x * 2.0 - 1.0 + uniforms.shift.x) * uniforms.lens * aspect;
+    let upward = (1.0 - uv.y * 2.0 + uniforms.shift.y) * uniforms.lens;
+    let ahead = normalize(vec3f(across, upward, -1.0));
     return vec4f(uniforms.right * ahead.x + uniforms.up * ahead.y + uniforms.back * ahead.z, -ahead.z);
 }
 
