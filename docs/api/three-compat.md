@@ -1,10 +1,10 @@
 ---
 id: api/three-compat
-title: three.js compatibility (@null3d/three-compat)
-summary: "Reinhard and Cineon tone curves for post.set, and an outline with three.js OutlinePass's glow, pulse and blurred edge."
+title: three.js looks (@null3d/three-compat)
+summary: "Reinhard and Cineon tone curves for post.set, and an outline with three.js OutlinePass's glow, pulse and blurred edge. It runs no three.js code."
 ---
 
-# three.js compatibility (@null3d/three-compat)
+# three.js looks (@null3d/three-compat)
 
 ```mermaid
 flowchart LR
@@ -16,6 +16,18 @@ flowchart LR
 ```
 
 The engine's core holds the looks that most scenes use. This add-on holds the few three.js looks that a port asks for. They are Reinhard's and Cineon's tone curves, and the soft outline of three.js's `OutlinePass`, with its glow, its pulse and its blurred edge. It uses only the engine's public API.
+
+## What it is not
+
+The add-on is not a compatibility layer. It holds the two tone curves and the outline, and nothing more. It does not run three.js code, and it takes no three.js scene, object, material, shader or pass.
+
+A port of a three.js scene is a rewrite in null3D's own API, with or without this add-on:
+
+- The scene code moves into a sketch, which runs in a worker. Objects are handles with setters, and many similar objects are rows of a batch that typed arrays fill.
+- GLSL becomes WGSL. A `ShaderMaterial` or an `onBeforeCompile` patch becomes a surface function, an unlit function or a vertex offset ([Porting shaders](../porting/threejs-shaders.md)).
+- An `EffectComposer` chain becomes `post.set` settings, with `post.addEffect` for each custom pass ([Porting post-processing](../porting/threejs-postprocessing.md)).
+
+[Porting from three.js](../porting/threejs-overview.md#a-port-is-a-rewrite) gives the workflow and the limits that a port meets.
 
 Install it beside the engine:
 
