@@ -6,8 +6,6 @@ summary: "createPoints; size attenuation; textures."
 
 # Points
 
-> Points do not cast or receive shadows, and overlap queries do not find them.
-
 ```mermaid
 flowchart LR
     code["positions and colors<br/>of every point"] --> rows[("Point rows<br/>position, color,<br/>one size")]
@@ -16,7 +14,9 @@ flowchart LR
     cull --> draw["One instanced draw<br/>of squares that face<br/>the camera"]
 ```
 
-A point cloud is many small squares that face the camera, all of one size, such as stars, dust, sparks or a scanned object. null3D draws each point as a square of two triangles, so points of any size draw the same on every GPU path. A point has no largest size, and it stays in view until its whole square leaves the screen. Each point is a row in the batch's typed arrays, with its own position and color. Sketch code writes the rows straight into engine memory, with no call per point, as it does for [instance batches](../concepts/instances.md).
+A point cloud is many small squares that face the camera, all of one size, such as stars, dust, sparks or a scanned object. null3D draws each point as a square of two triangles, so points of any size draw the same on every GPU path. A point has no largest size, and it stays in view until its whole square leaves the screen.
+
+Each point is a row in the batch's typed arrays, with its own position and color. Sketch code writes the rows straight into engine memory, with no call per point, as it does for [instance batches](../concepts/instances.md).
 
 A batch is one draw for the GPU, whatever its size. Points are [sprites](sprites.md) of one size, with no rotation and no atlas. So the engine culls them, and sorts blended points back to front, as it does for sprites.
 
@@ -54,7 +54,9 @@ export default defineSketch(async ({ scene, time }) => {
 
 ## Create a batch
 
-`scene.createPoints(options)` returns a promise of the batch. The first call downloads the sprite code, which points share with sprites. A page without points or sprites never downloads it. Await the call in the setup function, as the example does. The [points demo](https://github.com/null3d-engine/null3d/tree/main/examples/galaxy) draws a galaxy of 120,000 stars in one batch, and writes their positions in every frame. If the sprite code does not download, the promise rejects with [E1406](../errors/E1406.md).
+`scene.createPoints(options)` returns a promise of the batch. The first call downloads the sprite code, which points share with sprites. A page without points or sprites never downloads it. If the sprite code does not download, the promise rejects with [E1406](../errors/E1406.md). Await the call in the setup function, as the example does.
+
+The [points demo](https://github.com/null3d-engine/null3d/tree/main/examples/galaxy) draws a galaxy of 120,000 stars in one batch, and writes their positions in every frame.
 
 `scene.createPoints` takes these options:
 
@@ -89,7 +91,9 @@ export default defineSketch(async ({ scene, time }) => {
 | `positions` | 3 | Its position in the world (x, y, z), relative to the batch's `origin` |
 | `colors` | 4 | A linear color (r, g, b, a), white at first |
 
-Point `i` starts at index `i * 3` in `positions` and `i * 4` in `colors`. The `colors` array always holds 4 numbers per point, even when `colors` in the options held 3: the call writes an alpha of 1 then. Both arrays are `Float32Array` views of engine memory. The rules of [instance batches](../concepts/instances.md#the-row-arrays) apply. Read the arrays from the batch each time you use them, such as at the start of `onUpdate`. A view from before the engine's memory grew can be empty.
+Point `i` starts at index `i * 3` in `positions` and `i * 4` in `colors`. The `colors` array always holds 4 numbers per point, even when `colors` in the options held 3: the call writes an alpha of 1 then.
+
+Both arrays are `Float32Array` views of engine memory. The rules of [instance batches](../concepts/instances.md#the-row-arrays) apply. Read the arrays from the batch each time you use them, such as at the start of `onUpdate`. A view from before the engine's memory grew can be empty.
 
 Color components from 0 to 1,024 draw, and alpha from 0 to 1. Brighter colors work with [bloom](post.md). Convert an sRGB color, such as a hex string, with `color.fromHex` from the [math helpers](math.md).
 
@@ -113,9 +117,13 @@ A point without a map is a square. For round points, give a map of a disc, with 
 
 Opaque and masked points need no sorting, and cost the least. Blended points draw after the opaque objects, farthest first, in the same transparent pass as other blended objects. Every frame, the engine sorts the points of a batch among themselves and among the scene's other blended objects. For points that add light, such as sparks, `blending: 'additive'` with `depthWrite: false` needs no exact order to look right.
 
+Points do not cast or receive shadows, and overlap queries do not find them.
+
 ## Clicks and raycasts
 
-Raycasts hit a point where the ray crosses its square. The hit's `object` is the batch, and its `instance` is the point. A point batch takes `points.on('click', handler)` and the other [pointer events on objects](input.md#pointer-events-on-objects), as an instance batch does. The `pointThreshold` option changes the test: a ray then hits a point within that many meters, whatever the point's size. That makes small points easier to click. [Raycasting](raycast.md#sprites-points-and-lines) has the details.
+Raycasts hit a point where the ray crosses its square. The hit's `object` is the batch, and its `instance` is the point. A point batch takes `points.on('click', handler)` and the other [pointer events on objects](input.md#pointer-events-on-objects), as an instance batch does.
+
+The `pointThreshold` option changes the test: a ray then hits a point within that many meters, whatever the point's size. That makes small points easier to click. [Raycasting](raycast.md#sprites-points-and-lines) has the details.
 
 ## Speed
 

@@ -6,8 +6,6 @@ summary: "createLines; strips, loops and pairs; pixel and world widths; dashes; 
 
 # Lines
 
-> Lines do not cast or receive shadows, and overlap queries do not find them.
-
 ```mermaid
 flowchart LR
     code["Sketch code writes points<br/>into typed arrays"] --> points[("Points<br/>position, color")]
@@ -80,9 +78,9 @@ export default defineSketch(async ({ scene, time }) => {
 | `width` | 1 | The width in CSS pixels, or in world units with `worldUnits` |
 | `worldUnits` | `false` | `true` gives the width in world units, so far lines look thinner |
 | `dashed` | `false` | `true` draws dashes and gaps along the lines |
-| `dashSize` | 1 | The length of each dash along the line, in world units |
+| `dashSize` | 1 | The length of each dash along the line. At `dashScale` 1 it is in world units |
 | `gapSize` | 1 | The length of each gap between dashes |
-| `dashScale` | 1 | A factor of the line's length, which the dash and gap sizes measure |
+| `dashScale` | 1 | A factor that divides the dash and gap sizes, so a larger value makes shorter dashes |
 | `dashOffset` | 0 | How far along the line the dashes start |
 | `lit` | `false` | `true` lights the lines as a standard material lights a surface that faces the camera |
 | `color` | White | A color that multiplies every point's color |
@@ -99,9 +97,24 @@ export default defineSketch(async ({ scene, time }) => {
 | `layers` | `1`, layer 0 | The [layers](../concepts/render-layers.md) of every segment, as a 32-bit mask |
 | `origin` | `[0, 0, 0]` | The point that every point's position is relative to, kept at full precision: [Batch origins](../concepts/large-worlds.md#batch-origins) |
 
-A strip or a loop needs at least 2 points, and `segments` an even number of points. Positions whose length is not a multiple of 3, or `colors` of another length than `positions`, throw [E1206](../errors/E1206.md). An unknown mode throws [E1217](../errors/E1217.md). A width that is not above 0, or a negative dash or gap, throws [E1108](../errors/E1108.md), and a number that is not finite throws [E1203](../errors/E1203.md).
+A strip or a loop needs at least 2 points, and `segments` an even number of points.
 
-The call `lines.material.set` changes the look of every segment at any time. It takes `color`, `opacity` and the four dash values. For lit lines, it also takes `metalness`, `roughness`, `emissive` and `emissiveIntensity`. A change of the dashes alone converts nothing, and the line keeps them in the engine's own memory. The call does read the options object that you pass. The browser boxes each number of it where the same call has seen objects of a few shapes, so a change in every frame costs a few bytes a frame. To change the width, call `lines.setWidth(width)`. Every segment then updates once. The other options are fixed when the batch is created.
+| Input | Error |
+| --- | --- |
+| Positions not a multiple of 3, fewer than 2 points, an odd count for `segments`, or `colors` of another length | E1206 |
+| A number in `positions` or `colors` that is not finite | E1206, in development builds |
+| An unknown mode | E1217 |
+| A width not above 0, or a negative dash size, gap size or dash scale | E1108, in development builds |
+| A width or dash value that is not finite | E1203, in development builds |
+
+`lines.material.set` changes the look of every segment at any time. It takes `color`, `opacity` and the four dash values, and for lit lines `metalness`, `roughness`, `emissive` and `emissiveIntensity`. `lines.setWidth(width)` changes the width and updates every segment once. The other options are fixed when the batch is created.
+
+<details>
+<summary>Technical details: the cost of a change in every frame</summary>
+
+A change of the dashes alone converts nothing, and the line keeps them in the engine's own memory. The call reads the options object that you pass. Where the same call has seen objects of a few shapes, the browser boxes each number, so a change in every frame costs a few bytes a frame.
+
+</details>
 
 ## The point arrays
 
@@ -112,13 +125,17 @@ The call `lines.material.set` changes the look of every segment at any time. It 
 
 Point `i` starts at index `i * 3` in both arrays. Both are `Float32Array` views of engine memory, and the rules of [instance batches](../concepts/instances.md#the-row-arrays) apply. Read the arrays from the batch each time you use them, such as at the start of `onUpdate`. A view from before the engine's memory grew can be empty.
 
-A segment blends from the color of its first point to the color of its second. The engine stores each point's color with 8 bits for each channel, in sRGB. So colors from 0 to 1 draw, and colors given as sRGB hex strings come back exactly. A `color` on the material takes components from 0 to 1, as every color does. For a line brighter than 1, for [bloom](post.md), use a lit line with `emissive` and an `emissiveIntensity` above 1. Give it a black `color`, so the scene's lights add nothing. Convert an sRGB color, such as a hex string, with `color.fromHex` from the [math helpers](math.md).
+A segment blends from the color of its first point to the color of its second. The engine stores each point's color with 8 bits for each channel, in sRGB. So colors from 0 to 1 draw, and colors given as sRGB hex strings come back exactly. A `color` on the material takes components from 0 to 1, as every color does. Convert an sRGB color, such as a hex string, with `color.fromHex` from the [math helpers](math.md).
+
+For a line brighter than 1, for [bloom](post.md), use a lit line with `emissive` and an `emissiveIntensity` above 1. Give it a black `color`, so the scene's lights add nothing.
 
 ## Static and dynamic batches
 
 A static batch, the default, updates only the segments of the points that you mark with `markDirty(start, count)`. On a dashed line, the segments after them update too, because their distance along the line changes. A dynamic batch updates every segment in use in every frame, and needs no marks. Use a dynamic batch for trails and lines that move every frame, and a static batch for paths and outlines that rarely change.
 
-`setActiveCount(n)` draws only the segments between the first `n` points. A loop then closes from point `n - 1` back to point 0. Use it for a trail or a graph that grows. `setLayers(mask)` moves every segment to other layers. `destroy()` removes the batch and frees its points. After it, stop using the batch and its arrays.
+- `setActiveCount(n)` draws only the segments between the first `n` points. A loop then closes from point `n - 1` back to point 0. Use it for a trail or a graph that grows.
+- `setLayers(mask)` moves every segment to other layers.
+- `destroy()` removes the batch and frees its points. After it, stop using the batch and its arrays.
 
 ## Widths in pixels and in the world
 
@@ -130,7 +147,7 @@ The engine culls each segment by a sphere around it. With a width in world units
 
 ## Dashes
 
-A dashed line draws `dashSize` along the line, then leaves a gap of `gapSize`, from the start of its first segment. Both count in world units along the line, times `dashScale`. `dashOffset` moves the dashes along the line. Dashed lines have flat ends with no round caps.
+A dashed line draws `dashSize` along the line, then leaves a gap of `gapSize`, from the start of its first segment. The line divides its world distance by `dashScale` before it compares, so a dash is `dashSize / dashScale` world units long. `dashOffset` moves the dashes along the line. Dashed lines have flat ends with no round caps.
 
 The engine keeps each segment's distance along the line. When a point of a static dashed batch moves, the update finds the distances again from that point to the end, one segment after another. A long dashed line that changes every frame costs more than one without dashes.
 
@@ -140,7 +157,7 @@ The engine keeps each segment's distance along the line. When a point of a stati
 
 ## Blending, sorting and depth
 
-Blended lines draw after the opaque objects, farthest first, in the same transparent pass as other blended objects. The engine sorts each segment by the depth of its middle in the camera's view. Where two segments of one blended line meet, their round ends overlap and blend twice. A line that blends with `blending: 'additive'` and `depthWrite: false` needs no exact order to look right.
+Blended lines draw after the opaque objects, farthest first, in the same transparent pass as other blended objects. The engine sorts each segment by the depth of its middle in the camera's view. Where two segments of one blended line meet, their round ends overlap and blend twice. A line that blends with `blending: 'additive'` and `depthWrite: false` needs no exact order to look right. Lines do not cast or receive shadows, and overlap queries do not find them.
 
 ## Debug lines
 
@@ -148,7 +165,9 @@ Blended lines draw after the opaque objects, farthest first, in the same transpa
 
 ## Clicks and raycasts
 
-A raycast hits a segment when the ray passes within half the line's width of it. The width counts in pixels on the screen or in world units, as the line draws. The hit's `object` is the batch, and its `instance` is the segment. A line batch takes `lines.on('click', handler)` and the other [pointer events on objects](input.md#pointer-events-on-objects), as an instance batch does. The `lineThreshold` option changes the test: a ray then hits a segment within that many meters, whatever the line's width. A ray hits a dashed line in its gaps too. [Raycasting](raycast.md#sprites-points-and-lines) has the details.
+A raycast hits a segment when the ray passes within half the line's width of it. The width counts in pixels on the screen or in world units, as the line draws. The `lineThreshold` option changes the test: a ray then hits a segment within that many meters, whatever the line's width. A ray hits a dashed line in its gaps too.
+
+The hit's `object` is the batch, and its `instance` is the segment. A line batch takes `lines.on('click', handler)` and the other [pointer events on objects](input.md#pointer-events-on-objects), as an instance batch does. [Raycasting](raycast.md#sprites-points-and-lines) has the details.
 
 ## Speed
 
