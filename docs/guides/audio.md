@@ -68,7 +68,12 @@ A bed that comes from one side can still have a place. The sea is louder toward 
 
 ## Sources at places
 
-A source at a place falls off with distance by itself. Give it `near`, the distance within which it plays at its full level, and `far`, where it has faded out. A waterfall heard across a valley might take `near: 6` and `far: 200`. With `far`, the sound also loses its highs with distance, as real sounds do.
+A source at a place falls off with distance by itself. Give it `near`, the distance within which it plays at its full level, and `far`, where it has faded out. A waterfall heard across a valley might take `near: 5` and `far: 400`. With `far`, the sound also loses its highs with distance, as real sounds do.
+
+```ts
+const fall = sound.loop({ file: '/sounds/waterfall.mp3', near: 5, far: 400 });
+fall.setPosition(lip[0], lip[1] - drop, lip[2]);
+```
 
 Choose `far` as the distance at which a listener would stop hearing the thing, and `near` as the distance at which it is as loud as it gets. The ranges differ by kind:
 
@@ -84,12 +89,7 @@ Choose `far` as the distance at which a listener would stop hearing the thing, a
 | The open sea heard from shore | 40 | 300 |
 | Thunder, heard across a city | 100 | 4000 |
 
-A source whose `far` reaches a kilometre is heard from the whole map, and a scene's opening view roars when nothing stands near it.
-
-```ts
-const fall = sound.loop({ file: '/sounds/waterfall.mp3', near: 6, far: 200 });
-fall.setPosition(lip[0], lip[1] - drop, lip[2]);
-```
+A source whose `far` reaches a kilometer is heard from the whole map, and a scene's opening view roars when nothing stands near it.
 
 A long source, such as a stream, has a place that moves with the camera: the nearest point of its course. Work that point out in each frame and move the source there.
 
@@ -120,13 +120,13 @@ bounce.play(x, y, z, Math.min(1, impact / 8));
 
 ## A mix that works
 
-- Normalize the files to one loudness, so a level of 1 means the same for each. The sample loops are normalized to -20 LUFS.
+- Normalize the files to one loudness, such as -20 LUFS, so a level of 1 means the same for each. If you cannot change the files, multiply each sound's level by a gain that brings it there.
 - Keep beds below the sources that tell a story. The sea at 0.6 and a passing car at 1 lets the car stand out.
 - Tie a sound to the motion that makes it. Rustling leaves follow the wind's speed and the trees near the camera, and an engine's rate follows its car's speed.
 - Tie a bed's level to the scene. A level that follows the distance to the shore never jumps when the camera cuts.
-- Give every source a reach that matches what makes it. Waves are heard near water, and an engine near its own car. A bed that carries a thousand meters makes an opening view over open water roar. A scene's first frame is the test: where nothing makes a sound, the mix is silent.
+- Give every source a reach that matches what makes it. Waves are heard near water, and an engine near its own car. A source whose `far` reaches a kilometer makes an opening view over open water roar. A scene's first frame is the test: where nothing makes a sound, the mix is silent.
 - Never write a level as a step. Move it along a curve that passes through its neighbors, so a car that stops fades through silence rather than cutting off at a threshold. Let the frame's own time smooth what the scene writes.
-- Count the voices of a group. They add as power, so three points at full level sound about five decibels louder than a loop's one file. Give a group's points a lower level than a loop's.
+- Count the voices of a group. They add as power, so three voices at full level sound about five decibels louder than one loop. Give a group's members a lower level than a loop's.
 - Write massed ambience as one loop scaled by density, such as a wood's leaves from the canopy around the camera. One source for each of fifty trees adds up in a way no listener calls rustling. A density that levels off cannot pile up.
 - Check the mix at fixed camera places, not by ear alone: the opening pose, the shore, a town square and the climb. The opening should be silent, and each place should lead with the sound its view shows. No level should move faster between frames than a listener would expect.
 

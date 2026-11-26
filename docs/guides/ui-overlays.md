@@ -90,9 +90,14 @@ engine.onSketchMessage((type, data) => {
 });
 ```
 
+```css
+/* page.css */
+.hp { width: 60px; height: 6px; background: linear-gradient(to right, #4caf50 var(--hp), #333 0); }
+```
+
 Keep label elements light. The engine writes only their `transform` and `visibility`, which the browser applies without a new layout. Text or size changes inside a label do cost a layout, so change them only when the value changes.
 
-The engine holds 4,096 labels at once by default. For more, set `createEngine`'s `maxLabels` option. With many labels, bind elements only for the ones the player can see, and untrack the rest.
+With many labels, bind elements only for the ones the player can see, and untrack the rest. [Labels that follow objects](../api/ui.md#labels-that-follow-objects) gives the limits.
 
 ## Labels that are planes of the scene
 
@@ -107,7 +112,7 @@ ui.trackLabel(panel, 'card-3', { transform: 'world', offset: [0, 1.4, 0] });
 ui.trackLabel(crown, 'title', { transform: 'billboard', rotation: 0.1 });
 ```
 
-The page binds the element as for any label. The engine moves it into a container of its own inside the element's parent, and turns it with the camera's perspective. So the parent must cover the canvas.
+The page binds the element as for any label. The parent must cover the canvas, because the engine turns the element with the camera's perspective.
 
 ```ts
 // page.ts
@@ -117,11 +122,11 @@ layer.append(card);
 engine.labels.bind('card-3', card);
 ```
 
-An element's CSS pixels are the scene's units for these labels. An element 200 pixels wide is 200 units wide. Size the scene around it to match, and the browser keeps the text sharp at any distance.
+Size the scene around the element's size in CSS pixels, and the browser keeps the text sharp at any distance. [Labels that follow objects](../api/ui.md#labels-that-follow-objects) gives the units.
 
 A plane follows either lens. An orthographic camera turns and scales the element as a perspective camera does. An element can hold any markup, such as an iframe or a form. Give it `pointer-events: auto` if it takes the pointer, because the layer around it passes the pointer through.
 
-The engine holds 256 planes by default, which take 40 KB of the memory that its threads share. Set `createEngine`'s `maxLabels3d` option for more, or to 0 on a page that shows no plane.
+[Labels that follow objects](../api/ui.md#labels-that-follow-objects) gives the plane limit and the memory it takes.
 
 ### A page under the scene
 
@@ -143,6 +148,8 @@ const pagePlane = scene.createMesh({
 });
 ui.trackLabel(pagePlane, 'page', { transform: 'world' });
 ```
+
+Give the page element the plane's size, 800 by 600 CSS pixels, so that the two rectangles match.
 
 The plane writes its depth and nothing else. Objects behind the page then fail the depth test. Objects in front still draw over it, and a glass object in front still shows the page through itself. An opaque plane would hide the page instead. [Invisible surfaces that hide](../api/materials.md#invisible-surfaces-that-hide) covers the material.
 
@@ -166,6 +173,7 @@ gui.add(settings, 'bloom').onChange((on: boolean) => engine.postToSketch('bloom'
 // sketch.ts
 page.onMessage((type, data) => {
   if (type === 'exposure') post.set({ exposure: data as number });
+  if (type === 'bloom') post.set({ bloom: data ? {} : false });
 });
 ```
 

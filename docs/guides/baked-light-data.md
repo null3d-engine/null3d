@@ -131,7 +131,7 @@ export default defineSketch(async ({ scene, assets, materials }) => {
 <details>
 <summary>Technical details: the textures that the loader makes</summary>
 
-The radiance texture is an `rgba8unorm` texture in sRGB, or an `rgba16float` texture in linear light. The file's three colour bytes become three channels and an opaque fourth, because the engine has no three-channel texture format. The direction texture has the radiance's size and format, so a shader reads it through the light map's own binding. The weight costs one texture read and a few arithmetic operations for each pixel of a directional map, and a plain map pays a branch.
+The radiance texture is an `rgba8unorm` texture in sRGB, or an `rgba16float` texture in linear light. The file's three color bytes become three channels and an opaque fourth, because the engine has no three-channel texture format. The direction texture has the radiance's size and format, so a shader reads it through the light map's own binding. The weight costs one texture read and a few arithmetic operations for each pixel of a directional map, and a plain map pays a branch.
 
 </details>
 
@@ -179,7 +179,7 @@ export default defineSketch(async ({ scene, assets }) => {
 <details>
 <summary>Technical details: how the grid's texture is laid out</summary>
 
-The grid's texture is cut into four sub-volumes: three hold the coefficients, the first with the probe's own colour and one direction's red, and the fourth holds the validity and the sky visibility. The z side carries a padding slice at either end of every sub-volume.
+The grid's texture is cut into four sub-volumes: three hold the coefficients, the first with the probe's own color and one direction's red, and the fourth holds the validity and the sky visibility. The z side carries a padding slice at either end of every sub-volume.
 
 </details>
 
@@ -189,7 +189,7 @@ This path reads a glTF model's own light maps. It does not read a baked light fi
 
 A model made for [Needle's viewer](https://engine.needle.tools/) carries its light maps in glTF's `NEEDLE_lightmaps` extension, and each node's `MeshRenderer` in `NEEDLE_components` names the map that it reads and the scale and offset that place the bake on its mesh. The loader gives each such node's material the map:
 
-- The texture keeps the file's bytes, and the material decodes its RGBM texels: each colour is multiplied by the texel's alpha times 8, then the sRGB transfer turns it linear. The texture is read in linear colour for that reason.
+- The texture keeps the file's bytes, and the material decodes its RGBM texels: each color is multiplied by the texel's alpha times 8, then the sRGB transfer turns it linear. The texture is read in linear color for that reason.
 - The map reads the second texture coordinates. A mesh without a second set reads its first, as Needle's viewer does.
 - The renderer's `lightmapScaleOffset` places the bake, and Needle's offset counts rows from the top, so the vertical offset flips in the engine.
 - A skybox or reflection map that the extension registers is left out, and so is a pointer to a file that is not a texture of the model.
