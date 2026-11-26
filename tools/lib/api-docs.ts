@@ -12,6 +12,8 @@ export interface ApiPackage {
 	entry: string;
 	/** Its source folder. A public declaration may name a type from here only when it is exported. */
 	source: string;
+	/** The specifier that a page imports it by. */
+	import: string;
 }
 
 /**
@@ -20,22 +22,66 @@ export interface ApiPackage {
  * settings, so a type that two packages name is one symbol.
  */
 export const API_PACKAGES: readonly ApiPackage[] = [
-	{ entry: 'packages/engine/src/index.ts', source: 'packages/engine/src' },
-	{ entry: 'packages/engine/src/stats.ts', source: 'packages/engine/src' },
-	{ entry: 'packages/engine/src/math/index.ts', source: 'packages/engine/src' },
-	{ entry: 'packages/controls/src/index.ts', source: 'packages/controls/src' },
-	{ entry: 'packages/particles/src/index.ts', source: 'packages/particles/src' },
-	{ entry: 'packages/splats/src/index.ts', source: 'packages/splats/src' },
-	{ entry: 'packages/impostors/src/index.ts', source: 'packages/impostors/src' },
-	{ entry: 'packages/terrain/src/index.ts', source: 'packages/terrain/src' },
-	{ entry: 'packages/geometry/src/index.ts', source: 'packages/geometry/src' },
-	{ entry: 'packages/grass/src/index.ts', source: 'packages/grass/src' },
-	{ entry: 'packages/grass/src/hash.ts', source: 'packages/grass/src' },
-	{ entry: 'packages/three-compat/src/index.ts', source: 'packages/three-compat/src' },
-	{ entry: 'packages/water/src/index.ts', source: 'packages/water/src' },
-	{ entry: 'packages/wind/src/index.ts', source: 'packages/wind/src' },
-	{ entry: 'packages/sound/src/index.ts', source: 'packages/sound/src' },
-	{ entry: 'packages/sound/src/page.ts', source: 'packages/sound/src' },
+	{
+		entry: 'packages/engine/src/index.ts',
+		source: 'packages/engine/src',
+		import: '@null3d/engine',
+	},
+	{
+		entry: 'packages/engine/src/stats.ts',
+		source: 'packages/engine/src',
+		import: '@null3d/engine/stats',
+	},
+	{
+		entry: 'packages/engine/src/math/index.ts',
+		source: 'packages/engine/src',
+		import: '@null3d/engine/math',
+	},
+	{
+		entry: 'packages/controls/src/index.ts',
+		source: 'packages/controls/src',
+		import: '@null3d/controls',
+	},
+	{
+		entry: 'packages/particles/src/index.ts',
+		source: 'packages/particles/src',
+		import: '@null3d/particles',
+	},
+	{
+		entry: 'packages/splats/src/index.ts',
+		source: 'packages/splats/src',
+		import: '@null3d/splats',
+	},
+	{
+		entry: 'packages/impostors/src/index.ts',
+		source: 'packages/impostors/src',
+		import: '@null3d/impostors',
+	},
+	{
+		entry: 'packages/terrain/src/index.ts',
+		source: 'packages/terrain/src',
+		import: '@null3d/terrain',
+	},
+	{
+		entry: 'packages/geometry/src/index.ts',
+		source: 'packages/geometry/src',
+		import: '@null3d/geometry',
+	},
+	{ entry: 'packages/grass/src/index.ts', source: 'packages/grass/src', import: '@null3d/grass' },
+	{ entry: 'packages/grass/src/hash.ts', source: 'packages/grass/src', import: '@null3d/grass' },
+	{
+		entry: 'packages/three-compat/src/index.ts',
+		source: 'packages/three-compat/src',
+		import: '@null3d/three-compat',
+	},
+	{ entry: 'packages/water/src/index.ts', source: 'packages/water/src', import: '@null3d/water' },
+	{ entry: 'packages/wind/src/index.ts', source: 'packages/wind/src', import: '@null3d/wind' },
+	{ entry: 'packages/sound/src/index.ts', source: 'packages/sound/src', import: '@null3d/sound' },
+	{
+		entry: 'packages/sound/src/page.ts',
+		source: 'packages/sound/src',
+		import: '@null3d/sound/page',
+	},
 ];
 const API_TSCONFIG = 'packages/engine/tsconfig.json';
 
@@ -68,6 +114,8 @@ export interface ApiSymbol {
 	summary: string;
 	/** The classes or interfaces it extends, whose members it also has. */
 	extends: string[];
+	/** The specifier that the page imports it by, such as `@null3d/engine`. */
+	import?: string;
 	/** Its own public members, for classes and interfaces, and its functions, for a namespace. */
 	members: ApiMember[];
 	/** The parameter docs of a function export. */
@@ -479,6 +527,7 @@ export function readApi(root: string): ApiReference {
 			name: exported.name,
 			alias: exported,
 			symbol: exported.flags & ts.SymbolFlags.Alias ? checker.getAliasedSymbol(exported) : exported,
+			specifier: pkg.import,
 		}));
 	});
 	const exported = new Set(exports.map((e) => e.symbol));
@@ -487,7 +536,7 @@ export function readApi(root: string): ApiReference {
 	// An export that two entry points share, such as a type of the engine's stats module, goes
 	// into the reference once.
 	const listed = new Map<ts.Symbol, string[]>();
-	for (const { name, alias, symbol } of exports) {
+	for (const { name, alias, symbol, specifier } of exports) {
 		const names = listed.get(symbol) ?? [];
 		if (names.includes(name)) continue;
 		listed.set(symbol, [...names, name]);
@@ -526,7 +575,7 @@ export function readApi(root: string): ApiReference {
 				.filter((clause) => clause.token === ts.SyntaxKind.ExtendsKeyword)
 				.flatMap((clause) => clause.types);
 			used.push(...extended);
-			bases = extended.map((t) => t.expression.getText());
+			bases = extended.map((t) => line(t));
 			members = membersOf(checker.getDeclaredTypeOfSymbol(symbol), checker, declaration, used);
 		} else if (ts.isTypeAliasDeclaration(declaration)) {
 			kind = 'type';
@@ -549,6 +598,7 @@ export function readApi(root: string): ApiReference {
 			signature,
 			summary,
 			extends: bases,
+			import: specifier,
 			members,
 			...docs,
 		});
@@ -583,6 +633,8 @@ export function renderSymbol(symbol: ApiSymbol, heading = '###'): string {
 		const what = MEMBER_KINDS[symbol.kind];
 		lines.push(`${what} \`${symbol.name}\`${base ? `, which extends ${base}` : ''}.`, '');
 	}
+	if (symbol.import && symbol.import !== '@null3d/engine')
+		lines.push(`Import from \`${symbol.import}\`.`, '');
 	if (symbol.summary) lines.push(symbol.summary, '');
 	if (symbol.params?.length) {
 		lines.push('| Parameter | Description |', '| --- | --- |');
