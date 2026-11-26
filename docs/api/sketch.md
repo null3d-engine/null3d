@@ -3,7 +3,7 @@ id: api/sketch
 title: "Sketch API: defineSketch and the context"
 status: experimental
 since: "0.1"
-summary: "The context object: scene, assets, materials, geometry, textures, input, time, engine, quality, post, render, page, ui, debug; the callbacks; the options, with the download list."
+summary: "The context object: the start data, scene, assets, materials, geometry, textures, input, time, engine, quality, post, render, page, ui, debug; the callbacks; the options, with the download list."
 ---
 
 # Sketch API: defineSketch and the context
@@ -51,6 +51,8 @@ Hold mode, a replay and a recording load the module only after the engine has st
 ## The setup function
 
 The engine calls `setup` once, with the context, before the first frame. `setup` returns the callbacks, or nothing when the sketch needs no frame callback. It can also be `async` and return them through a promise, for example to await data first. The first frame waits for the promise, and `createEngine` resolves only after it.
+
+The setup reads the page's start data as `ctx.data`. It holds what the page knows before the scene starts, such as the section that its address names. With `defineSketch<Data>(setup)`, its type is `Data | undefined`. It is `undefined` when the page passes no `sketchData`. [Start data](page.md#start-data) shows both sides.
 
 An error that `setup` throws ends the start: `createEngine` rejects with it. An engine error keeps its code, such as [E1204](../errors/E1204.md) for a color the engine cannot read. In the threaded build, any other error arrives as [E1405](../errors/E1405.md), with its message.
 
@@ -113,6 +115,7 @@ When the second file's address comes from the first file, as a level file names 
 
 | Field | What it holds |
 | --- | --- |
+| `data` | The page's start data, or `undefined` when it passes none: [Start data](page.md#start-data) |
 | `scene` | Objects, cameras, lights, instance batches and the background: [Scene](scene.md) |
 | `geometry` | Mesh generators, such as `geometry.box` and `geometry.sphere` |
 | `materials` | Material factories: [Materials](materials.md) |

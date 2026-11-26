@@ -23,7 +23,7 @@ const STUDIO = '#15171c';
 /** The image tests' address, `?look=one`, starts on the one material that sets the stage. */
 const ONE_MATERIAL = new URL(import.meta.url).searchParams.get('look') === 'one';
 
-export default defineSketch(async (ctx) => {
+export default defineSketch<{ look?: string }>(async (ctx) => {
 	const { scene, assets, geometry, materials, textures, post, time, page } = ctx;
 	scene.setBackground(STUDIO);
 	scene.setFog({ color: STUDIO, curve: 'exp2', density: 0.035 });
@@ -98,7 +98,8 @@ export default defineSketch(async (ctx) => {
 	// One plaster for the Look button: every mesh of the main pass draws with it, so the light and
 	// the shapes carry the picture in place of the six finishes.
 	const oneMaterial = materials.standard({ color: '#e8e2d8', roughness: 0.6, metalness: 0 });
-	if (ONE_MATERIAL) scene.overrideMaterial = oneMaterial;
+	// The page's address can name the look to start with, which the page passes as start data.
+	if (ONE_MATERIAL || ctx.data?.look === 'One material') scene.overrideMaterial = oneMaterial;
 	page.onMessage((name, value) => {
 		if (name === 'look') scene.overrideMaterial = value === 'One material' ? oneMaterial : null;
 	});

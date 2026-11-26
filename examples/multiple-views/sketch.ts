@@ -15,7 +15,7 @@ const INSET = [0.7, 0.03, 0.27, 0.27] as const;
 /** The stones of the courtyard's ring. */
 const STONES = 9;
 
-export default defineSketch(async (ctx) => {
+export default defineSketch<{ layout?: string }>(async (ctx) => {
 	const { scene, assets, geometry, materials, textures, post, time, input, page } = ctx;
 	const day = timeOfDay(17.2, { heading: 0.8 });
 	const sky = { ...day.sky, cloudCoverage: 0.3 };
@@ -107,11 +107,15 @@ export default defineSketch(async (ctx) => {
 			: SPLIT.map((rect) => scene.createView({ camera: rect[0] === 0 ? wide : low, rect }));
 	};
 	input.actions.define({ layout: ['KeyV'] });
-	page.onMessage((name, value) => {
-		if (name !== 'layout') return;
+	const choose = (value: unknown) => {
 		inset = value === 'Inset';
 		layout();
+	};
+	page.onMessage((name, value) => {
+		if (name === 'layout') choose(value);
 	});
+	// The page's address can name the layout to start with, which the page passes as start data.
+	if (ctx.data?.layout !== undefined) choose(ctx.data.layout);
 
 	return {
 		onUpdate(dt) {

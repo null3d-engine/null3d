@@ -150,7 +150,10 @@ export interface DemoChoice {
 	name: string;
 	/** The choice's label, such as "Time of day". */
 	label: string;
-	/** The options, as the buttons show them. The first is the sketch's own at its start. */
+	/**
+	 * The options, as the buttons show them. The first is the sketch's own at its start, unless the
+	 * page's start data names another.
+	 */
 	options: readonly string[];
 }
 

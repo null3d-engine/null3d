@@ -15,7 +15,7 @@ const MODES: Record<string, GizmoMode> = {
 	Scale: 'scale',
 };
 
-export default defineSketch(async (ctx) => {
+export default defineSketch<{ mode?: string }>(async (ctx) => {
 	const { scene, assets, geometry, materials, post, page, textures } = ctx;
 	scene.setBackground('#151a22');
 	scene.setEnvironment(await assets.builtinEnvironment('room'), { intensity: 0.6 });
@@ -118,9 +118,14 @@ export default defineSketch(async (ctx) => {
 		});
 	select(1);
 
-	page.onMessage((type, data) => {
-		if (type === 'mode' && MODES[data as string]) gizmo.setMode(MODES[data as string] as GizmoMode);
+	const choose = (mode: unknown) => {
+		if (MODES[mode as string]) gizmo.setMode(MODES[mode as string] as GizmoMode);
+	};
+	page.onMessage((type, value) => {
+		if (type === 'mode') choose(value);
 	});
+	// The page's address can name the mode to start with, which the page passes as start data.
+	if (ctx.data?.mode !== undefined) choose(ctx.data.mode);
 
 	return {
 		onUpdate(dt) {
