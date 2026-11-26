@@ -47,7 +47,7 @@ BoomBox.glb: 10.1 MB to 2.2 MB (the model 107.0 KB), in 9.6 s
     standard_maps uv0+tangent VERTEX_TANGENT: 1 object
 ```
 
-That is Khronos's BoomBox sample model, whose four PNG textures of 2048 x 2048 made most of its 10.1 MB.
+That is Khronos's BoomBox sample model, whose four PNG textures of 2048 x 2048 made most of its 10.1 MB. The [glTF model demo](https://github.com/null3d-engine/null3d/tree/main/examples/gltf-model) loads the same BoomBox from a file.
 
 Each `.glb` and `.gltf` file in the input folder and its subfolders becomes one `.glb` file in the output folder, at the same place. The textures of every model go into one `textures` folder in the output folder. Each texture file takes its name from its contents. So models that share a texture share its file, and a host can let browsers keep the files for good. Then load a model as any other:
 
@@ -141,7 +141,7 @@ The engine keeps each animation clip at one fixed rate of keys, so it never sear
 
 The command drops no key and no track. A clip blends only where it has tracks, so a dropped track would change how the clip blends. Poses stay as accurate as the source file's: the KayKit Knight's skinning matrices from either file differ from three.js's by at most 7e-5.
 
-For the Knight and its 76 clips, the file's binary part falls from 838 KB to 405 KB after Brotli. On the engine's test page, its clips were ready in 8 ms on two job workers, against 16.5 ms for the source file.
+For the Knight and its 76 clips, the file's binary part falls from 838 KB to 405 KB after Brotli. On the engine's test page, its clips were ready in 8 ms on two job workers, against 16.5 ms for the source file. The [character demo](https://github.com/null3d-engine/null3d/tree/main/examples/character) loads the KayKit Knight and its clips.
 
 ## Blockers and stored trees
 
@@ -256,7 +256,7 @@ A large mesh also gets pieces: `--lod` sorts each of its levels of 32,768 triang
 
 Over the 213 models of four Kenney city kits, `--lod` gives levels to 162. The 45 models of under 64 triangles get none, and so do six flat road pieces that cannot lose a quarter of their triangles.
 
-`assets.loadGltf` gives each mesh its levels. So every copy of the model and every instance batch of it picks its level in each frame, as [Levels of detail](../concepts/lod.md) explains. A skinned mesh draws its levels too, because the tool's levels name the mesh's own vertices and the skin moves them. A glTF reader that ignores `MSFT_lod` draws the full mesh.
+`assets.loadGltf` gives each mesh its levels. So every copy of the model and every instance batch of it picks its level in each frame, as [Levels of detail](../concepts/lod.md) explains. A skinned mesh draws its levels too, because the tool's levels name the mesh's own vertices and the skin moves them. A glTF reader that ignores `MSFT_lod` draws the full mesh. The [forest demo](https://github.com/null3d-engine/null3d/tree/main/examples/forest) draws 56,000 trees whose levels the engine picks in every frame. The [Island showcase](https://github.com/null3d-engine/null3d/tree/main/examples/showcase/island) loads models with levels and far cards.
 
 ### Levels as separate downloads
 
@@ -484,6 +484,8 @@ The output is one KTX2 file:
 
 - A cube map. Level 0 holds the image. Each smaller level holds the light that a rougher surface reflects, filtered with the GGX distribution of the engine's materials. The smallest level has faces of 8 x 8 texels. More levels go to low roughness, where reflections change fastest.
 - Nine spherical harmonics coefficients of the light, for diffuse surfaces, in the file's key-value data.
+
+The [environment light demo](https://github.com/null3d-engine/null3d/tree/main/examples/environment) shows the light of an HDR file, an EXR file and the built-in room.
 
 | Option | Effect | Without it |
 | --- | --- | --- |

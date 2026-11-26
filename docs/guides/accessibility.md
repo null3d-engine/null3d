@@ -33,6 +33,8 @@ engine.onSketchMessage((type, data) => {
 });
 ```
 
+The [deterministic simulation demo](https://github.com/null3d-engine/null3d/tree/main/examples/replay) writes a status line with `aria-live="polite"` as the user plays.
+
 ## Keyboard
 
 The engine reads key presses from the whole window. It leaves them to the page while a text field, text area, drop-down list or editable element has focus.
@@ -40,6 +42,8 @@ The engine reads key presses from the whole window. It leaves them to the page w
 - Give every pointer action a keyboard way to do it, such as arrow keys to turn a model, and tell users which keys work.
 - Never trap focus. The Tab key must always move on to the rest of the page.
 - A canvas the user operates can take focus with `tabindex="0"`. Give it a visible focus outline.
+
+The [input demo](https://github.com/null3d-engine/null3d/tree/main/examples/input) moves its robot with the arrow keys, the WASD keys and a gamepad, and turns the camera with the right stick.
 
 ## Motion
 

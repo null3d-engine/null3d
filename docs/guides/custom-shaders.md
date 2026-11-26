@@ -36,7 +36,7 @@ fn surface(input: SurfaceInput) -> Surface {
 const red = materials.shader({ wgsl: rings, color: '#e04040', roughness: 0.5 });
 ```
 
-The WGSL can declare uniforms as `struct Uniforms` and read each field as `material.name`, and `set()` changes them at any time. It can declare textures as `var name: texture_2d<f32>;`, or texture arrays whose layers the shader picks as `var name: texture_2d_array<f32>;`, which the `textures` option gives. A vertex offset, `fn vertexOffset`, moves the mesh's vertices. A lobe, `fn lobe`, adds specular beside the base lobe for the main directional light and for each point and spot light. [Surface functions](../shaders/surface-functions.md) describes the surface input, the surface record, `defaultSurface`, uniforms, textures, vertex offsets and lobes. [Built-in shader inputs](../shaders/builtins.md) lists the values that every custom material reads, such as `frame.time`.
+The WGSL can declare uniforms as `struct Uniforms` and read each field as `material.name`, and `set()` changes them at any time. It can declare textures as `var name: texture_2d<f32>;`, or texture arrays whose layers the shader picks as `var name: texture_2d_array<f32>;`, which the `textures` option gives. A vertex offset, `fn vertexOffset`, moves the mesh's vertices. A lobe, `fn lobe`, adds specular beside the base lobe for the main directional light and for each point and spot light. [Surface functions](../shaders/surface-functions.md) describes the surface input, the surface record, `defaultSurface`, uniforms, textures, vertex offsets and lobes. [Built-in shader inputs](../shaders/builtins.md) lists the values that every custom material reads, such as `frame.time`. The [custom shader inputs demo](https://github.com/null3d-engine/null3d/tree/main/examples/shader-inputs) makes 900 crystals from one custom material.
 
 ## Full shaders
 
@@ -181,7 +181,7 @@ A function can return an array, and an array can take values that are not consta
 
 A custom material, effect or tone curve builds into small files of its own, not your module. The sketch downloads its device's file on first use. The first frame waits for a material's file, and a pass or an effect draws nothing until its file arrives while the rest of the frame draws. Deploy every file that the build writes, or the engine stops with [E1424](../errors/E1424.md).
 
-For example, the battle comparison's sketch has 5 custom materials, and its module takes 5 KB. A device downloads one file of about 20 KB after Brotli compression, and one more for its skinned meshes.
+For example, the [battle comparison's sketch](https://github.com/null3d-engine/null3d/tree/main/examples/compare/battle) has 5 custom materials, and its module takes 5 KB. A device downloads one file of about 20 KB after Brotli compression, and one more for its skinned meshes.
 
 <details>
 <summary>Technical details: the build files and their sizes</summary>

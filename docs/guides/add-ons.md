@@ -226,3 +226,5 @@ It reads the heaps of the page's sketch worker and render worker, and names each
 - [Feature effects](../api/feature-effects.md): a full-screen pass from a feature.
 - [Feature instances](../api/feature-instances.md): instances whose count the GPU writes.
 - [Tasks on the job workers](../api/tasks.md): work on the job workers.
+- [Terrain blocks with their own level system](https://github.com/null3d-engine/null3d/tree/main/examples/terrain): a 1.2 km valley whose far hills draw as coarser blocks.
+- [Impostor cards as far stand-ins](https://github.com/null3d-engine/null3d/tree/main/examples/impostors): a forest whose far trees are cards from an atlas made in code.

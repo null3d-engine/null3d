@@ -262,6 +262,8 @@ post.set({ toneMapping: 'aces' });
 - A curve needs HDR color, as effects do. On a device with no HDR target, the built-in curve stays.
 - The final pass builds again with the curve, so the first frame with a new curve waits for its pipeline.
 
+The [Creek showcase](https://github.com/null3d-engine/null3d/tree/main/examples/showcase/creek) sets its own WGSL tone curve in the scene's look.
+
 ## Render to a texture
 
 A scene pass draws the scene from a camera of your own into a texture. `textures.fromPass` gives the texture to any material or sprite.
@@ -350,7 +352,7 @@ The texture holds linear color after the exposure, so a material that shows it g
 
 ## Reflections
 
-A reflection pass draws the camera's view mirrored across a plane into a texture. Everything below the plane is clipped. A custom material reads the texture where its surface shows on the screen, so water and polished floors reflect what stands on them. [Render graph API](../api/render.md#reflection-passes) lists the options, and [Surface functions](../shaders/surface-functions.md#reflections) the WGSL side.
+A reflection pass draws the camera's view mirrored across a plane into a texture. Everything below the plane is clipped. A custom material reads the texture where its surface shows on the screen, so water and polished floors reflect what stands on them. [Render graph API](../api/render.md#reflection-passes) lists the options, and [Surface functions](../shaders/surface-functions.md#reflections) the WGSL side. The [water demo](https://github.com/null3d-engine/null3d/tree/main/examples/water) uses the add-on's reflection for a river and a lake.
 
 ```ts
 const pass = render.addPass({ kind: 'reflection', writes: 'water', plane: { point: [0, 0, 0] } });
@@ -538,7 +540,7 @@ post.addEffect({ wgsl: addGlow, textures: { glow: textures.fromPass(glow) } });
 
 ## Compute passes
 
-A compute pass runs a compute shader over a texture of its own, on WebGPU. Use one when the work suits a GPU's parallel threads better than a pixel: a wave simulation that combines each pixel with its neighbors, a table that the shader fills in a loop, or a field that several materials read. [Render graph API](../api/render.md#compute-passes) lists its options and the bindings that its shader declares.
+A compute pass runs a compute shader over a texture of its own, on WebGPU. Use one when the work suits a GPU's parallel threads better than a pixel: a wave simulation that combines each pixel with its neighbors, a table that the shader fills in a loop, or a field that several materials read. [Render graph API](../api/render.md#compute-passes) lists its options and the bindings that its shader declares. The [Ocean demo](https://github.com/null3d-engine/null3d/tree/main/examples/ocean) runs compute passes through the water add-on.
 
 ```ts
 const ripples = /* wgsl */ `
@@ -615,6 +617,8 @@ const water = materials.unlit({ map: textures.fromPass(field) });
 - [Post-processing API](../api/post.md): `post.addEffect`, `post.setEffectUniform`, `post.removeEffect` and `post.set`.
 - [Render graph API](../api/render.md): `render.addPass`, `render.setPassUniform`, `render.setPassEnabled`, `render.removePass` and `render.dumpGraph`.
 - [The security camera demo](https://github.com/null3d-engine/null3d/tree/main/examples/security-camera): a scene pass whose texture a monitor shows.
+- [The post effects demo](https://github.com/null3d-engine/null3d/tree/main/examples/post-effects): its effect code lives in `examples/addons/lens-kit/`, which the demo imports.
+- [The custom shader inputs demo](https://github.com/null3d-engine/null3d/tree/main/examples/shader-inputs): a custom material's shader, uniforms and textures.
 - [The post-processing chain](../concepts/post-processing.md): where effects run, and the built-in effects.
 - [Custom shaders](custom-shaders.md): the WGSL build, uniforms and the shader library.
 - [Porting post-processing](../porting/threejs-postprocessing.md): three.js's `ShaderPass` and effect passes.

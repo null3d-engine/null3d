@@ -141,6 +141,10 @@ The page can still play its own sounds with Web Audio, such as music or the clic
 ## Related pages
 
 - [Sound (@null3d/sound)](../api/sound.md): every call, the distances, the voices and the costs.
+- [Sources at places](https://github.com/null3d-engine/null3d/tree/main/examples/sound): a thunderstorm on the moor, where each strike's thunder plays from where it struck.
+- [Beds whose level the scene sets](https://github.com/null3d-engine/null3d/tree/main/examples/showcase/creek): the creek's loops follow the water and the wind.
+- [Groups of many sources](https://github.com/null3d-engine/null3d/tree/main/examples/showcase/skyway): the hover cars, rain, thunder and city of a rainy night.
+- [Cars and a bus as one group](https://github.com/null3d-engine/null3d/tree/main/examples/showcase/island): the island's traffic sounds from its lanes.
 - [Messages between sketch and page](../api/page.md): messages for events that the page shows.
 - [Using a physics library](physics.md): events from a physics world, such as a bounce.
 - [Hosting and cross-origin isolation](../getting-started/hosting.md): when a page shares its memory.

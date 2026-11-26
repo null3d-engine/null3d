@@ -124,3 +124,4 @@ The paint pays for the clear coat's lobe. The flakes cost the footprint's deriva
   glints use.
 - [The Showroom to street demo](https://github.com/null3d-engine/null3d/tree/main/examples/showroom): a
   car that uses the paint.
+- [How the parts draw](https://github.com/null3d-engine/null3d/tree/main/examples/coat-and-sheen): a clear coat, rain rings and sheen in one rainy showroom.

@@ -126,3 +126,4 @@ On the 8-bit path a view writes display color into the camera's image. The resol
 - [Custom passes and render targets](custom-passes.md#render-to-a-texture): a camera's view in a texture that a material shows.
 - [The render graph](../concepts/render-graph.md): how the engine plans and orders what it draws.
 - [Performance](performance.md): the frame budget and the render scale.
+- [A picture in picture](https://github.com/null3d-engine/null3d/tree/main/examples/multiple-views): one scene from a high, wide camera and a low one, split across the canvas or in an inset.

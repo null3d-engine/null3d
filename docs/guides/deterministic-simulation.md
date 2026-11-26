@@ -110,7 +110,7 @@ The sketch still draws with the main entry's helpers, which use the browser's `M
 
 ## Input that another library records
 
-`createEngine({ input: false })` keeps the engine from listening for input. The engine then adds no listener that takes input: none for pointers, keys, the wheel, focus, the pointer lock or gamepads. [Input off](../api/input.md#input-off) lists them. The library that records the player's input listens alone.
+`createEngine({ input: false })` keeps the engine from listening for input. The engine then adds no listener that takes input: none for pointers, keys, the wheel, focus, the pointer lock or gamepads. [Input off](../api/input.md#input-off) lists them. The library that records the player's input listens alone. The [deterministic simulation demo](https://github.com/null3d-engine/null3d/tree/main/examples/replay) takes its input on the page, and the [input demo](https://github.com/null3d-engine/null3d/tree/main/examples/input) binds an action map to the keyboard and a gamepad.
 
 ```ts
 // page.ts
