@@ -11,6 +11,7 @@ export {
 	PageMemorySampler,
 	pageHeapBytes,
 } from './debug/page-meters';
+export type { StatsCorner } from './debug/stats-options';
 export {
 	type StatsFrameMode,
 	StatsPanel,

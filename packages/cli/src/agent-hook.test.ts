@@ -37,9 +37,16 @@ function project() {
 	return root;
 }
 
+/**
+ * The test runner's flag that turns off its fetch of missing packages. An agent runs the hook with
+ * Node, which never fetches a package. Bun would fetch the published `@null3d/cli` into a project
+ * that has not installed it, and run its rules instead of asking for the install.
+ */
+const NO_FETCH = '--no-install';
+
 /** Runs the hook as an agent does, with one call on stdin. */
 function runHook(mode: string, call: unknown, root?: string) {
-	return spawnSync(process.execPath, [HOOK, mode], {
+	return spawnSync(process.execPath, [NO_FETCH, HOOK, mode], {
 		input: typeof call === 'string' ? call : JSON.stringify(call),
 		encoding: 'utf8',
 		cwd: root,
@@ -309,7 +316,7 @@ describe('the hook itself', () => {
 		const empty = join(root, 'empty');
 		mkdirSync(empty);
 
-		const result = spawnSync(process.execPath, [hook, 'bash'], {
+		const result = spawnSync(process.execPath, [NO_FETCH, hook, 'bash'], {
 			input: JSON.stringify({ tool_name: 'Bash', tool_input: { command: 'sleep 5' } }),
 			encoding: 'utf8',
 			cwd: empty,

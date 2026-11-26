@@ -16,6 +16,10 @@ const OVERLAY = '[data-null3d-stats]';
 const HEADER = `${OVERLAY} button[aria-controls="card"]`;
 /** The overlay's card of figures. */
 const CARD = `${OVERLAY} .card`;
+/** The card's figures under its tabs, which scroll when the card's height stops them. */
+const FIGURES = `${OVERLAY} .panes`;
+/** The header's chevron, which points the way the card opens or closes. */
+const CHEVRON = `${OVERLAY} .chevron`;
 /** The button of the frame mode's symbol, and its tooltip. */
 const MODE_BUTTON = `${OVERLAY} button[aria-describedby=mode-tip]`;
 const TOOLTIP = `${OVERLAY} #mode-tip`;
@@ -37,8 +41,9 @@ const MODES = [
 const show = (on: boolean) =>
 	(globalThis as { showStats?: (show: boolean) => void }).showStats?.(on);
 /** Runs in the page: asks the page to show or hide the overlay, or to change its options. */
-const showFromPage = (request: boolean | { collapsed?: boolean }) =>
-	(globalThis as { showPageStats?: (show: unknown) => void }).showPageStats?.(request);
+const showFromPage = (
+	request: boolean | { collapsed?: boolean; corner?: 'top-right' | 'bottom-right' },
+) => (globalThis as { showPageStats?: (show: unknown) => void }).showPageStats?.(request);
 /**
  * Opens the stats page and waits for its result. The page itself waits up to 20 s for the figures
  * after the engine starts, then reports what it has, so this wait is longer.
@@ -73,6 +78,15 @@ function expectTopRight(at: OverlayBoxes): void {
 	expect(at.host.right).toBeCloseTo(at.canvas.right, 0);
 	expect(at.host.top).toBeCloseTo(at.canvas.top, 0);
 }
+
+/** Checks that the overlay sits on the canvas's bottom-right corner. */
+function expectBottomRight(at: OverlayBoxes): void {
+	expect(at.host.right).toBeCloseTo(at.canvas.right, 0);
+	expect(at.host.bottom).toBeCloseTo(at.canvas.bottom, 0);
+}
+
+/** The computed turn of the header's chevron while it is turned half round, which points it up. */
+const HALF_TURN = /^matrix\(-1, /;
 
 /** Checks that the header button has the same right and top edges in two sets of boxes. */
 function expectButtonKept(before: OverlayBoxes, after: OverlayBoxes): void {
@@ -227,6 +241,78 @@ test('the stats overlay opens and closes by pointer and keyboard, and keeps its 
 	await page.mouse.move(x - 20, y - 5);
 	await page.mouse.up();
 	expect((await call<{ canvasDowns: number }>(page, 'inputSeen')).canvasDowns).toBe(downs + 1);
+});
+
+test('the stats overlay sits at the bottom right from the ?stats switch, opens above its button, and moves between corners', async ({
+	page,
+}) => {
+	await openStats(page, 'gpu=webgl2&stats=bottom-right');
+	const card = page.locator(CARD);
+	const open = await boxes(page);
+	expectBottomRight(open);
+	// The card opens above the button, and the chevron points down, the way it closes.
+	let box = await card.boundingBox();
+	if (!box) throw new Error('the card has no box');
+	expect(box.y + box.height).toBeLessThanOrEqual(open.button.top);
+	await expect(page.locator(CHEVRON)).toHaveCSS('transform', 'none');
+
+	// The card stops at the room on screen above the button, and its figures scroll there. The
+	// stats page's canvas is short, so the card has less room than its figures need.
+	expect(box.y).toBeGreaterThanOrEqual(0);
+	const figures = page.locator(FIGURES);
+	await expect(figures).toHaveAttribute('data-scrolls', '');
+	await figures.hover();
+	await page.mouse.wheel(0, 200);
+	await expect.poll(() => figures.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+
+	// Closed, the chevron points up, the way the card opens, and the button stays put both ways.
+	await page.evaluate(showFromPage, { collapsed: true });
+	await expect(card).toBeHidden();
+	const closed = await boxes(page);
+	expectBottomRight(closed);
+	expectButtonKept(open, closed);
+	await expect(page.locator(CHEVRON)).toHaveCSS('transform', HALF_TURN);
+	await page.locator(HEADER).click();
+	await expect(card).toBeVisible();
+	expectButtonKept(open, await boxes(page));
+
+	// The page moves the overlay to the top right, where the card opens under the button.
+	await page.evaluate(showFromPage, { corner: 'top-right' as const });
+	const top = await boxes(page);
+	expectTopRight(top);
+	box = await card.boundingBox();
+	if (!box) throw new Error('the card has no box');
+	expect(box.y).toBeGreaterThanOrEqual(top.button.bottom);
+	await expect(page.locator(CHEVRON)).toHaveCSS('transform', HALF_TURN);
+});
+
+test('the stats overlay keeps to the part of the canvas on screen, and its card within the screen', async ({
+	page,
+}) => {
+	await openStats(page, 'gpu=webgl2&stats=bottom-right');
+	const panel = page.locator(`${OVERLAY} .panel`);
+	// A screen shorter than the canvas hides the canvas's bottom, so the button sits at the screen's
+	// bottom, clear of a phone's home bar.
+	await page.setViewportSize({ width: 1280, height: 150 });
+	await expect.poll(async () => Math.round((await boxes(page)).host.bottom)).toBe(150);
+	await expect(panel).toHaveAttribute('data-home-bar', '');
+	await page.setViewportSize({ width: 1280, height: 720 });
+	await expect
+		.poll(async () => (await boxes(page)).host.bottom)
+		.toBeCloseTo((await boxes(page)).canvas.bottom, 0);
+	await expect(panel).not.toHaveAttribute('data-home-bar');
+
+	// At the top right, a short screen stops the card at its bottom edge, and the figures scroll.
+	await page.evaluate(showFromPage, { corner: 'top-right' as const });
+	await page.setViewportSize({ width: 1280, height: 300 });
+	const figures = page.locator(FIGURES);
+	await expect(figures).toHaveAttribute('data-scrolls', '');
+	const box = await page.locator(CARD).boundingBox();
+	if (!box) throw new Error('the card has no box');
+	expect(box.y + box.height).toBeLessThanOrEqual(300);
+	// With room for the whole card, the figures do not scroll, and drags over them reach the canvas.
+	await page.setViewportSize({ width: 1280, height: 720 });
+	await expect(figures).not.toHaveAttribute('data-scrolls');
 });
 
 for (const { name, query, latency } of [
