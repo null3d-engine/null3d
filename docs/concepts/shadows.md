@@ -187,9 +187,9 @@ The `shadow` option and `setShadow` of spot and point lights take `bias`, `norma
 The split distances blend two spreads. An even spread gives each cascade the same length. A logarithmic spread makes each cascade a fixed number of times longer than the one before it. The engine leans 65% toward the logarithmic spread. This is a balance between two kinds of view:
 
 - A camera at eye height sees the ground a few meters ahead. Shadows there need the finest texels.
-- A camera high above a town, as in the S4 benchmark scene 42 m up, sees no ground nearer than about 40 m.
+- A camera high above a town, as in the [S4 benchmark](../guides/performance.md#phones-and-tablets), a town whose camera flies 42 m up, sees no ground nearer than about 40 m.
 
-With the default settings, a 60 degree view and a 16:9 canvas, one texel of each cascade covers this much of the ground:
+With `distance: 200`, three cascades, a 2,048 map (the Medium and High presets), a 60 degree view and a 16:9 canvas, one texel of each cascade covers this much of the ground:
 
 | Lean toward logarithmic | First cascade | Second cascade | Third cascade |
 | --- | --- | --- | --- |
@@ -203,7 +203,14 @@ The last cascade always ends at `distance`, so its texels depend only on `distan
 
 ## Stable cascades
 
-Shadow edges stay still while the camera turns and moves. Each cascade's box holds a sphere around its slice of the view, so the box keeps its size as the camera turns. The box also moves only in steps of whole texels of the shadow map, on a grid fixed to the world. So a caster always covers the same texels, and its shadow's edge does not crawl or shimmer. Along the light, the box moves only in whole steps of the map's 16-bit depth. So each caster's stored depth rounds the same way in every frame. A surface near a caster then does not flicker between light and shadow as the camera moves. To see it, draw the `'shadows'` debug view from a still camera while `debug.shadowCamera` places the cascades from a moving one ([Debug drawing and stats](../api/debug.md#watch-the-shadow-cascades-from-elsewhere)).
+Shadow edges stay still while the camera turns and moves. To see it, draw the `'shadows'` debug view from a still camera while `debug.shadowCamera` places the cascades from a moving one ([Debug drawing and stats](../api/debug.md#watch-the-shadow-cascades-from-elsewhere)).
+
+<details>
+<summary>Technical details: how cascades stay stable</summary>
+
+Each cascade's box holds a sphere around its slice of the view, so the box keeps its size as the camera turns. The box also moves only in steps of whole texels of the shadow map, on a grid fixed to the world. So a caster always covers the same texels, and its shadow's edge does not crawl or shimmer. Along the light, the box moves only in whole steps of the map's 16-bit depth. So each caster's stored depth rounds the same way in every frame. A surface near a caster then does not flicker between light and shadow as the camera moves.
+
+</details>
 
 The sphere wastes some of each layer's texels, so these shadows are a little softer than a box fitted tightly to each frame. Shorten `distance` or raise `mapSize` for sharper shadows.
 
@@ -221,7 +228,7 @@ flowchart LR
 
 Each cascade's texels are larger than those of the cascade before it, so its shadows are softer. Where one cascade hands over to the next, a shadow's edge would change its softness at once, and a line could show across the ground. So over a band at the far end of each cascade but the last, a surface blends the shadows of both cascades. At the band's start the surface takes its own cascade's shadow, and at the cascade's end the next cascade's. Between them the blend changes linearly with the distance from the camera.
 
-The `shadowCascadeBlend` quality setting gives the band as a share of each cascade's length: 0.1 on every preset. With the default settings, the first cascade blends into the second from about 21.6 m to 24 m. 0 hands over at once. Only the band's pixels read a second cascade, so a wider band costs a little more. It changes during play:
+The `shadowCascadeBlend` quality setting gives the band as a share of each cascade's length: 0.1 on every preset. With `distance: 200` and three cascades, the first cascade blends into the second from about 21.6 m to 24 m. 0 hands over at once. Only the band's pixels read a second cascade, so a wider band costs a little more. It changes during play:
 
 ```ts
 import { defineSketch } from '@null3d/engine';
@@ -287,7 +294,14 @@ A bias in meters keeps its size in every cascade. So where a shadow meets its ca
 
 The biases of spot and point lights work the same way, in meters. One texel of the light's tile at the surface's distance from the light caps them.
 
-The shadow map stores each depth in 16 bits. So it holds 65,535 steps of depth from each cascade's face toward the light to its far face. A cascade's box reaches far toward the light, to hold every caster that can shadow its slice. A step is then a few millimeters in a near cascade. In the last cascade of the S4 benchmark, which ends 200 m out, it is about 14 mm. A stored depth can sit up to one step from the caster's true depth. So in each cascade, `bias` and the plane margin that [Flat casters](#flat-casters) describes cover at least one and a half steps. Where the setting is smaller, the engine uses that floor. It changes nothing in the near cascades, where a step is shorter than the defaults.
+In far cascades, the engine raises `bias` to a floor set by the map's depth precision, so a smaller setting has no effect there.
+
+<details>
+<summary>Technical details: depth precision and the bias floor</summary>
+
+The shadow map stores each depth in 16 bits. So it holds 65,535 steps of depth from each cascade's face toward the light to its far face. A cascade's box reaches far toward the light, to hold every caster that can shadow its slice. A step is then a few millimeters in a near cascade. In the last cascade of the S4 benchmark, which ends 200 m out, it is about 14 mm. A stored depth can sit up to one step from the caster's true depth. So in each cascade, `bias` and the plane margin that [Flat casters](#flat-casters) describes cover at least one and a half steps. It changes nothing in the near cascades, where a step is shorter than the defaults.
+
+</details>
 
 Values that are too large make shadows start a little away from their casters. A thin lit line then shows at each object's base. Raise the biases in small steps if a surface shows acne. A bias above one texel acts as one texel.
 
@@ -338,7 +352,14 @@ They follow these rules:
 - They come from what the camera sees. An object off the screen, or hidden behind another, casts no contact shadow. They fade out at the screen's edges.
 - A longer `contactDistance` finds larger contacts, with the same steps further apart. Keep it short, under a meter, and use the cascades for long shadows.
 
-The rays run at half the render size each way, in the same full-screen step as [ambient occlusion](post-processing.md#ambient-occlusion). They read its copy of the depth prepass. Each pixel then takes the result of the four nearest texels whose depth is close to its own, so the shadows keep to their surfaces at edges. A masked surface draws no depth in the prepass, so it takes contact shadows only where a texel lies at its own depth. A petal in front of grass does not take the grass's contact shadows. The steps start at a different point at each texel, which turns banding into a fine grain that this blend softens.
+The rays run at half the render size each way, in the same full-screen step as [ambient occlusion](post-processing.md#ambient-occlusion). They read its copy of the depth prepass.
+
+<details>
+<summary>Technical details: how the rays read the depth</summary>
+
+Each pixel takes the result of the four nearest texels whose depth is close to its own, so the shadows keep to their surfaces at edges. A masked surface draws no depth in the prepass, so it takes contact shadows only where a texel lies at its own depth. A petal in front of grass does not take the grass's contact shadows. The steps start at a different point at each texel, which turns banding into a fine grain that this blend softens.
+
+</details>
 
 ### Grass and other thin surfaces
 
@@ -387,7 +408,7 @@ It follows these rules:
 - The object casts shadows (`castShadows: true`) and the light shares its layers. A hero that does not cast draws an empty tile.
 - The box fits the object's bounding sphere. A mesh takes its mesh's bounds; a group has none of its own, so give it a `setBounds` sphere. An object with no bounds draws no hero shadow.
 - The tile is square across the light around the object's bounding sphere. It reaches along the light from the sphere's side toward the light to fifteen radii past its far side, where its shadow lands. A surface of the object, or one within that distance below it, reads the tile. Further out, the cascades shadow it.
-- The tile spreads its texels over the object's bounds. A larger tile gives a larger object finer shadows. `heroTileSize` sets the size. The preset chooses the default: 1,024 on Low, 2,048 on Medium and High, and 4,096 on Ultra. At those defaults the demo's 4.4 m car gets at least four times the texel density of the cascade that holds 10 m, on every preset. A bigger object needs a bigger tile for the same ratio, and a page can name one.
+- The tile spreads its texels over the object's bounds. A larger tile gives a larger object finer shadows. `heroTileSize` sets the size. The preset chooses the default: 1,024 on Low, 2,048 on Medium and High, and 4,096 on Ultra. At those defaults the [hero shadow demo](https://github.com/null3d-engine/null3d/tree/main/examples/hero-shadow/)'s 4.4 m car gets at least four times the texel density of the cascade that holds 10 m, on every preset. A bigger object needs a bigger tile for the same ratio, and a page can name one.
 - The tile comes from `shadowTiles`, the atlas that point and spot lights share. Naming a hero adds a layer to the atlas for it, so the lights keep their tiles; only an atlas already at its limit of 24 layers gives one up, to the light that looks smallest. A hero makes the atlas while no spot or point light casts.
 - Every layer of a texture array takes the same size, so the tile sets the atlas's size. A tile larger than the preset's `shadowTileSize` makes every tile of the atlas that size, which takes more memory and draws each light's tile with more texels. An atlas above 1 GiB fails the frame with [E1501](../errors/E1501.md), which names the megabytes it would take; name a smaller `heroTileSize` or fewer `shadowTiles`.
 - The tile draws when the light, the object or a caster that touches its box moves, and rests otherwise. A tile holds 4 bytes per texel: 4 MiB at 1,024 texels on each side, 16 MiB at 2,048 and 64 MiB at 4,096.
@@ -415,7 +436,7 @@ The box holds the object's bounding sphere and fifteen radii of space below it, 
 
 Each cascade that draws in a frame has a render pass that draws its casters' depth. It culls its casters too:
 
-- On WebGPU, a culling pass on the GPU runs before each cascade's render pass. The CPU does the same small amount of work per cascade whatever the number of casters. On a device that draws directly, the job workers test the casters on the CPU, as on WebGL2.
+- On WebGPU, a culling pass on the GPU runs before each cascade's render pass. The CPU does the same small amount of work per cascade whatever the number of casters. A start-up measurement can pick direct draws on an Apple GPU in Safari, or in any browser on iPhone and iPad ([Culling](culling.md#how-each-path-culls)). There the job workers test the casters on the CPU, as on WebGL2.
 - On WebGL2, the job workers test each caster against each cascade's box, as they test each object against the camera's view. They first skip the still casters of the grid cells out of the box. That CPU work grows with the number of casters.
 
 Each cascade and tile draws its casters at the level of detail that its own texels pick, and a large mesh with a cluster tree draws the patches that they pick ([Levels of detail](lod.md#shadows)). A cascade whose texels are large draws far fewer triangles than the camera's view. The `lodShadowThreshold` quality setting moves that choice: a larger value draws coarser casters, at the cost of the shadow's accuracy.
@@ -434,7 +455,14 @@ To make shadows cheaper, use fewer cascades, a smaller map, a shorter distance, 
 
 ## On each GPU path
 
-WebGPU and WebGL2 draw the same shadows. Both keep the shadow map as a depth texture array of 16-bit depths, `depth16unorm` on WebGPU and `DEPTH_COMPONENT16` on WebGL2. Both keep the shadow atlas as a depth texture array of 32-bit floats. A tile's view is a perspective view, which spends most of its depth's steps near its light. In 16 bits, one step near a tile's far end would be about 1.5% of the distance from the light: 15 cm at 10 m. The atlas is read with the GPU's depth comparison, which blends the tests of the four nearest texels, and the filter blends several comparisons. On WebGL2 the shaders read it as a `sampler2DArrayShadow` through a comparison sampler. The directional light's filter reads the depths of the shadow map's texels and compares them itself. WebGPU reads four texels at once. WebGL2's shading language has no such read, so there it reads each texel on its own, four times as many reads. Each comparison on WebGL2 reads the map at its own level, which Apple's GPUs run faster than a read at a set level. [Depth on each tier](backends.md#depth-on-each-tier) explains how WebGL2 keeps WebGPU's depth values.
+WebGPU and WebGL2 draw the same shadows. On WebGL2, the directional light's filter reads each shadow map texel on its own, so it takes four times as many reads per pixel. [Depth on each tier](backends.md#depth-on-each-tier) explains how WebGL2 keeps WebGPU's depth values.
+
+<details>
+<summary>Technical details: shadow formats and reads on each path</summary>
+
+Both keep the shadow map as a depth texture array of 16-bit depths, `depth16unorm` on WebGPU and `DEPTH_COMPONENT16` on WebGL2. Both keep the shadow atlas as a depth texture array of 32-bit floats. A tile's view is a perspective view, which spends most of its depth's steps near its light. In 16 bits, one step near a tile's far end would be about 1.5% of the distance from the light: 15 cm at 10 m. The atlas is read with the GPU's depth comparison, which blends the tests of the four nearest texels, and the filter blends several comparisons. On WebGL2 the shaders read it as a `sampler2DArrayShadow` through a comparison sampler. The directional light's filter reads the depths of the shadow map's texels and compares them itself. WebGPU reads four texels at once. WebGL2's shading language has no such read, so there it reads each texel on its own. Each comparison on WebGL2 reads the map at its own level, which Apple's GPUs run faster than a read at a set level.
+
+</details>
 
 ## Related pages
 

@@ -69,9 +69,21 @@ The object that you hide keeps updating as before. Only the objects under it sto
 
 Move a mesh, a camera or a group with its setters, such as `setPosition`. Every setter marks its object dirty, and the engine recomputes a static object only in a frame where a setter marked it.
 
-Development builds check this rule in every frame. Before the engine recomputes objects, it compares the position, rotation, scale and bounding sphere of each static object with the values from its last check. In a sketch with `onLateUpdate`, the engine checks again before it recomputes what that callback moved. A change that no setter marked raises [E1110](../errors/E1110.md), which names the object. The rows of static [instance batches](instances.md#static-and-dynamic-batches) get the same check, against their `markDirty` marks. The rows take turns, at most 4,096 a frame over all batches, so a scene of many rows reports a write within a few frames. A live engine logs the error once and carries on. Hold mode stops at it, so a test fails at once. The check reads every static object in each frame. In the S2 benchmark on a MacBook Pro, it cost about 0.06 ms per frame on WebGPU and 0.03 ms on WebGL2. Release builds leave the check out.
+Development builds check this rule in every frame:
 
-Instance batches are where sketch code writes the engine's arrays directly. A loop writes a batch's rows into its typed arrays, with no call per row. Such a write skips every setter, so the engine cannot see it. A dynamic batch needs no mark, because it uploads every row in every frame. A static batch uploads only the rows you mark with `markDirty`. The development check reads the rows of static batches in turns, so a row that you forgot to mark raises E1110 within a few frames.
+- A static object that changes without a setter raises [E1110](../errors/E1110.md), which names the object.
+- A static [instance batch](instances.md#static-and-dynamic-batches) row that changes without a `markDirty` mark raises the same error.
+- A live engine logs the error once and carries on. Hold mode ([Testing your sketch](../guides/testing.md#hold-mode)) stops at it, so a test fails at once.
+- Release builds leave the check out.
+
+<details>
+<summary>Technical details: how the static check runs</summary>
+
+Before the engine recomputes objects, it compares the position, rotation and scale of each static object with its last values. It compares the bounding sphere too. In a sketch with `onLateUpdate`, it checks again before it recomputes what that callback moved. Batch rows take turns, at most 4,096 a frame over all batches, so a scene of many rows reports a write within a few frames. The check reads every static object in each frame. In a benchmark scene of about 5,000 objects on a MacBook Pro, it cost about 0.06 ms per frame on WebGPU. On WebGL2 it cost about 0.03 ms per frame.
+
+</details>
+
+Instance batches are where sketch code writes the engine's arrays directly. A loop writes a batch's rows into its typed arrays, with no call per row. Such a write skips every setter, so the engine cannot see it. A dynamic batch needs no mark, because it uploads every row in every frame. A static batch uploads only the rows you mark with `markDirty`. The development check finds a row that you forgot to mark ([Instances and batching](instances.md#static-and-dynamic-batches) tells how).
 
 ## Dirty ranges in instance batches
 
@@ -95,7 +107,7 @@ trees.positions[42 * 3 + 1] = 3; // move row 42
 trees.markDirty(42, 1); // upload one row, starting at row 42
 ```
 
-Each row has its own bounds, so culling works per instance. On WebGL2 the job workers test a static batch at rest in groups of 64 nearby rows. In a frame where you mark rows, and in the frame after it, they test the batch row by row, with no grid cell skipped. So a batch whose rows you mark in most frames gets neither saving.
+Each row has its own bounds, so culling works per instance. A batch whose rows you mark in most frames loses the WebGL2 savings, because a marked frame tests it row by row ([Culling](culling.md#how-each-path-culls) explains).
 
 On WebGPU, each moving row uploads its 48-byte world matrix in every frame, so 100,000 moving boxes upload 4.8 MB per frame. The same boxes standing still in a static batch upload no matrices after the first frame.
 

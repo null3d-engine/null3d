@@ -104,8 +104,9 @@ export interface TimeOfDay {
 		intensity: number;
 	};
 	/**
-	 * The fog's linear color, the sky's color along the horizon, and the glow toward the main
-	 * light, for `scene.setFog`.
+	 * The fog's linear color and the glow toward the main light, for `scene.setFog`. With the
+	 * analytic model the color is the sky's horizon by day and its average at dusk; with the
+	 * physical model it is the sky's mean light.
 	 */
 	fog: { color: [number, number, number]; sunGlow: number };
 	/**
@@ -200,8 +201,9 @@ const EXPOSURE: readonly (readonly [number, number])[] = [
  * Works out the settings of a time of day: an hour from 0 to 24, or a named preset. The sun rises
  * at 6, stands highest at 12 and sets at 18. After sunset the sky dims to a deep blue, and then to
  * a navy night sky lit from the moon's place, and the moon takes over as the main light. Each value
- * comes from the model of the sky that the background draws, so the fog fades into the sky's
- * horizon. Throws a `RangeError` for an hour that is not a finite number, or an unknown preset.
+ * comes from the model of the sky that the background draws, so the fog takes that sky's horizon
+ * color by day and its average at dusk, or the sky's mean light with the physical model. Throws a
+ * `RangeError` for an hour that is not a finite number, or an unknown preset.
  *
  * Give it `out`, an object of a previous call, and it writes the new settings into that object: a
  * day cycle then allocates nothing, so a sketch can move the time in every frame. `bun run
@@ -616,10 +618,11 @@ function physicalDay(
 	// the twilight's fill does not fall away between the two.
 	const sunShare = sunLight * (1 - handover);
 	const moonSkyShare = MOON_SKY_LIGHT * handover * moonShare;
-	// The fog takes the sky's mean light at every hour, not its light along the horizon. A fog of the
-	// horizon's light carries the brightest band of the sky over the whole scene and washes its shaded
+	// The physical model's fog takes the sky's mean light by day and through dusk, then the moon
+	// sky's horizon light at night, not the sky's light along the horizon. A fog of the horizon's
+	// light carries the brightest band of the sky over the whole scene and washes its shaded
 	// surfaces, while the exposure follows the mean; a low sun makes that band its own glow. The
-	// analytic model's fog takes the mean too.
+	// analytic model's fog takes the horizon color by day and fades to its average at dusk.
 	const fogColor = out.fog.color;
 	scale(fogColor, SET_MEAN, sunShare);
 	add(fogColor, fogColor, scale(MOON_HORIZON, MOON_HORIZON, moonSkyShare));

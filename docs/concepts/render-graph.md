@@ -8,7 +8,7 @@ summary: "Declared reads and writes; automatic order; transient memory; validati
 
 ```mermaid
 flowchart LR
-    objects[("objects")] --> culling["Culling<br/>GPU-driven path only"] --> visible[("visible instances")]
+    objects[("objects")] --> culling["Culling<br/>on WebGPU, except on direct draws"] --> visible[("visible instances")]
     visible --> opaque
     visible -.-> prepass
     subgraph scene["One render pass"]
@@ -30,7 +30,7 @@ null3D draws each frame as a series of passes. A pass is one job for the GPU, su
 
 The engine declares its own passes. A sketch adds scene passes of its own with `render.addPass`, and `render.dumpGraph()` prints the graph ([Render graph API](../api/render.md)).
 
-In the diagram, boxes are passes and cylinders are data. An arrow into a pass shows what it reads, and an arrow out of a pass shows what it writes. The opaque and transparent passes share one render pass on the GPU. The scene color reaches the canvas through the final pass on devices that draw HDR color. So it does in the FXAA and no anti-aliasing modes. On the other devices with MSAA, the resolve pass takes its place, along the dotted arrows. It shares the opaque and transparent passes' render pass.
+In the diagram, boxes are passes and cylinders are data. An arrow into a pass shows what it reads, and an arrow out of a pass shows what it writes. The opaque and transparent passes share one render pass on the GPU. The final pass takes the scene color to the canvas. On the 8-bit path with MSAA, the resolve pass can take its place, along the dotted arrows. It shares the opaque and transparent passes' render pass. The last paragraph of this section says when.
 
 ## The engine's passes
 
@@ -38,7 +38,7 @@ In the diagram, boxes are passes and cylinders are data. An arrow into a pass sh
 | --- | --- | --- | --- |
 | Light clustering | Compute, on WebGPU only | The point and spot lights of the camera's view and of each scene pass that sees one, and the depth range that the light depth pass measured | The list of lights of each cluster of each view, and the fitted slice bounds in its header |
 | Light depth | Compute, on WebGPU only, while the camera sees a local light | The camera view's scene depth | The nearest and farthest depth that the next frame's light clustering fits its slices to |
-| Culling | Compute, one pass per view (the camera's, and each shadow cascade's and tile's), on WebGPU only | The world matrix and bounds of every object and instance | The view's visible instances and draw counts |
+| Culling | Compute, one pass per view (the camera's, and each shadow cascade's and tile's), on WebGPU unless the device draws directly | The world matrix and bounds of every object and instance | The view's visible instances and draw counts |
 | Skinning | Compute, on WebGPU only, while the scene has meshes that the vertex shaders do not skin, such as morphed meshes | The meshes' vertices, joints and morph weights | A buffer of skinned vertices, which the shadow and scene passes draw |
 | Shadow | Scene, one pass per shadow cascade and per tile of the shadow atlas, in the frames in which it draws | The visible casters of its view | Its layer of the shadow map or of the shadow atlas |
 | Depth prepass | Scene, one pass per view, with the `depthPrepass` setting | The view's visible instances | The scene depth |
@@ -59,7 +59,7 @@ In the diagram, boxes are passes and cylinders are data. An arrow into a pass sh
 | A sketch's full-screen pass | Fullscreen, one per `render.addPass({ kind: 'fullscreen' })` | Its input image, the scene depth if its WGSL reads it, and the textures of other passes that it reads | Its texture, which the graph keeps between frames |
 | A sketch's compute pass | Compute, one per `render.addPass({ kind: 'compute' })` | The textures of other passes that it reads | Its texture, a storage texture that the pass writes and that the graph keeps between frames |
 | Resolve | Resolve, on the 8-bit path with MSAA, while the render scale cannot drop below 1 and no effect needs the final pass | The scene color | The canvas |
-| Final pass | Fullscreen, on the HDR path, with FXAA or no anti-aliasing, while the render scale can drop below 1, and while an effect needs it | The scene color | The canvas |
+| Final pass | Fullscreen. Runs when any of these holds: the scene draws HDR color; the anti-aliasing is FXAA or none; the render scale can drop below 1; an effect needs it | The scene color | The canvas |
 
 The table lists the core passes. Each effect adds passes of its own while it is on. These are ambient occlusion, screen-space reflections, the bounce light, decals and the transparency layers. So are subsurface scattering, volumetric fog, custom effects, depth of field, bloom, automatic exposure, outlines and the still accumulation. The pick pass runs when a page asks what is under a pixel. [The post-processing chain](post-processing.md) describes most of them, and `render.dumpGraph()` lists every pass of a frame.
 
@@ -67,26 +67,38 @@ On WebGL2 the job workers cull the objects and list the lights of each cluster b
 
 With the depth prepass on, each view draws the depth of its opaque objects first, in the render pass that then shades them. The opaque pass then shades only the nearest surface at each pixel. [Quality presets](quality-presets.md#the-depth-prepass) says when the prepass saves time.
 
-With GPU occlusion culling on, each camera view's culling pass keeps the large objects that showed in its last frame. The occluders' pass draws their depth into a target of its own, and the depth pyramid pass reads it. The late culling pass tests every object in view against the pyramid, and writes the visible instances again. The occluders' pass must read them before that write. The graph runs a pass that reads a resource "so far" after the writers declared before it, and before the writers declared after it. The depth prepass, where it runs, and the opaque pass then draw what the late culling pass kept. [Culling](culling.md#gpu-occlusion-culling-on-webgpu) describes the method.
+With GPU occlusion culling on, each camera view's culling pass keeps the large objects that showed in its last frame. The occluders' pass draws their depth into a target of its own, and the depth pyramid pass reads it. The late culling pass tests every object in view against the pyramid, and writes the visible instances again. The occluders' pass must read them before that write. The depth prepass, where it runs, and the opaque pass then draw what the late culling pass kept. [Culling](culling.md#gpu-occlusion-culling-on-webgpu) describes the method.
 
-A view is the scene seen from one camera, culled on its own. On WebGPU each view has a culling pass, and on WebGL2 the job workers list the visible objects of each view. On a device that draws directly, the job workers list them on WebGPU too. The camera's view draws the scene color and depth, and the scene color reaches the canvas. Each scene pass that a sketch adds has a view of its own, which draws into its texture. The camera's passes read the texture of every scene pass that a material shows, so those passes run first. A view that a sketch adds with `scene.createView` draws after the camera's passes. It draws into a rectangle of the camera's scene color through the viewport and the scissor, with a depth target of its own, so its image covers the camera's there. WebGPU draws an image's top row first, and materials sample the bottom row at v = 0. So on WebGPU a copy pass turns each pass's image over into its texture. WebGL2 draws the rows in that order already. A reflection view on the HDR WebGPU path is the exception: it draws into its target directly, and `reflection_uv` turns the rows of the lookups that read it.
+## Views and a sketch's passes
 
-A full-screen pass that a sketch adds is a view without a camera. It draws one triangle over its texture, and its shader writes the rows bottom first on both paths, so it needs no copy. A pass that reads only other passes' textures runs before the passes that read its own. A pass that reads the scene color, the outline mask or the scene depth runs after the camera's passes, so the camera's passes do not read its texture in the same frame: a material that shows it shows the frame before. A custom effect that reads it runs after it. A compute pass that a sketch adds is a view without a camera too. Its shader writes its texture as a storage texture. A material, an effect or another pass samples that texture in the same frame, because the graph orders the pass before them. A custom material's vertex offset that reads it also draws it in the material's shadow, motion and pick passes, so the graph orders the pass before those too.
+A view is the scene seen from one camera, culled on its own. On WebGPU each view has a culling pass, and on WebGL2 the job workers list the visible objects of each view. A start-up measurement can pick direct draws on an Apple GPU in Safari, or in any browser on iPhone and iPad ([Culling](culling.md#how-each-path-culls)). There the job workers list them on WebGPU too. The camera's view draws the scene color and depth, and the scene color reaches the canvas. Each scene pass that a sketch adds has a view of its own, which draws into its texture. The camera's passes read the texture of every scene pass that a material shows, so those passes run first. A view that a sketch adds with `scene.createView` draws after the camera's passes. It draws into a rectangle of the camera's scene color through the viewport and the scissor. It has a depth target of its own, so its image covers the camera's there.
 
-Where the scene draws HDR color, the final pass reads it and draws the canvas. It applies the exposure and the tone mapping, and encodes the color for the display. In the FXAA anti-aliasing mode it also smooths the edges. Some devices cannot draw float targets in the anti-aliasing mode. There the scene shaders tone map their own output into an 8-bit target. With MSAA the resolve pass then runs instead of the final pass, while no effect needs the final pass ([Color management](color-management.md#the-8-bit-path) lists them). It draws nothing: the scene's render pass resolves its multisampled color straight into the canvas. The frame then needs no extra pass, copy or texture. With FXAA or none, the final pass reads the 8-bit target and keeps its colors. [Color management](color-management.md) covers both paths.
+WebGPU draws an image's top row first, and materials sample the bottom row at v = 0. So on WebGPU a copy pass turns each pass's image over into its texture. WebGL2 draws the rows in that order already. A reflection view on the HDR WebGPU path is the exception. It draws into its target directly, and `reflection_uv` turns the rows of the lookups that read it.
+
+A full-screen pass that a sketch adds is a view without a camera. It draws one triangle over its texture, and its shader writes the rows bottom first on both paths, so it needs no copy. A pass that reads only other passes' textures runs before the passes that read its own. A pass that reads the scene color, the outline mask or the scene depth runs after the camera's passes. So the camera's passes do not read its texture in the same frame: a material that shows it shows the frame before. A custom effect that reads it runs after it.
+
+A compute pass that a sketch adds is a view without a camera too. Its shader writes its texture as a storage texture. A material, an effect or another pass samples that texture in the same frame, because the graph orders the pass before them. A custom material's vertex offset that reads it also draws it in the material's shadow, motion and pick passes. So the graph orders the pass before those too.
+
+## The final pass and the resolve pass
+
+Where the scene draws HDR color, the final pass reads it and draws the canvas. It applies the exposure and the tone mapping, and encodes the color for the display. In the FXAA anti-aliasing mode it also smooths the edges.
+
+Some devices cannot draw float targets in the anti-aliasing mode. There the scene shaders tone map their own output into an 8-bit target. With MSAA the resolve pass then runs instead of the final pass, while no effect needs the final pass ([Color management](color-management.md#the-8-bit-path) lists them). It draws nothing: the scene's render pass resolves its multisampled color straight into the canvas. The frame then needs no extra pass, copy or texture.
+
+With FXAA or none, the final pass reads the 8-bit target and keeps its colors. [Color management](color-management.md) covers both paths.
 
 ## Scene inputs
 
 A custom material or an add-on feature can read scene resources that the frame makes before it draws:
 
-| Input | What it holds | Made where |
-| --- | --- | --- |
-| `'sceneColor'` | The scene's color before the tone curve | The camera's opaque and transparent passes |
-| `'sceneDepth'` | The scene's depth | The camera's opaque pass |
-| `'normals'` | The surface normals | No pass makes them |
-| `'motionVectors'` | How far each pixel's surface moved since the last frame | The motion pass, while the motion debug view shows it |
+| Input | What it holds | Made where | Who can read it |
+| --- | --- | --- | --- |
+| `'sceneColor'` | The scene's color before the tone curve | The camera's opaque and transparent passes | Full-screen effects |
+| `'sceneDepth'` | The scene's depth | The camera's opaque pass | Full-screen effects and custom materials |
+| `'normals'` | The surface normals | No pass makes them | Nothing yet |
+| `'motionVectors'` | How far each pixel's surface moved since the last frame | The motion pass, while the motion debug view shows it | Only the motion debug view |
 
-A feature declares the inputs in its `reads` ([Add-on feature descriptions](../api/features.md#scene-resources)). The render graph then runs it after the passes that write them. A full-screen effect reads only `'sceneColor'` and `'sceneDepth'`, and a custom material reads only `'sceneDepth'`. No pass makes `'normals'`, and the adapters refuse `'motionVectors'`. A custom material declares `sceneInputs: ['sceneDepth']` and reads the depth with `sceneDepth` or `sceneDistance` ([Materials](../api/materials.md#the-scene-behind-a-surface)).
+A feature declares the inputs in its `reads` ([Add-on feature descriptions](../api/features.md#scene-resources)). The render graph then runs it after the passes that write them. No pass makes `'normals'`, so a feature that reads them gets a neutral value. No custom material, full-screen effect or add-on pass gets the motion vectors bound. A custom material declares `sceneInputs: ['sceneDepth']` and reads the depth with `sceneDepth` or `sceneDistance` ([Materials](../api/materials.md#the-scene-behind-a-surface)).
 
 A blended material that reads the depth binds a copy of it, one texel for each pixel. The frame makes the copy after the opaque pass and before the transparent pass, so the material never samples the depth target that its own pass writes. While the copy does not exist, a draw binds one texel at the far plane and reads 0:
 
@@ -97,7 +109,7 @@ The frame makes the copy while a material that reads it draws, or while a partic
 
 ## Motion vectors
 
-Motion vectors record how far each pixel's surface moved on the screen since the last frame. Temporal anti-aliasing, motion blur and reflections that reuse the last frame need them. Today the motion debug view, `debug.view('motion')`, reads them.
+Motion vectors record how far each pixel's surface moved on the screen since the last frame. Effects such as temporal anti-aliasing and motion blur use them, but null3D ships neither. The motion debug view, `debug.view('motion')`, reads them.
 
 The motion pass runs after the transparent pass. It draws only the opaque objects that moved into a target of two 16-bit floats per pixel, with the scene's depth as its depth test:
 
@@ -129,13 +141,29 @@ Two rules decide the order:
 1. Passes that write one target run in the order they were declared. The first one that draws into it in a frame clears it, and each later one draws over what the earlier ones left.
 2. A pass that reads a target or a buffer runs after every pass that writes it, so it sees what they wrote.
 
+The exception is the occluders' pass. It reads the visible instances before late culling writes them again. So a pass that reads a resource "so far" runs after the writers declared before it, and before the writers declared after it.
+
 Where the rules leave a choice, the graph first runs a pass that can join the open render or compute pass. Next it runs a compute pass: compute passes never share a render pass, so running them early keeps later render passes whole. After that it takes the first pass in the order of declaration.
 
 For example, the resolve pass reads the scene color, so it runs after the opaque pass that draws it. The order holds even when the resolve pass is declared first. On WebGPU the opaque pass reads the visible instances, so the culling pass runs before it.
 
+A sketch's scene pass follows the same rule. The graph runs it before the camera's passes, because a material reads its texture:
+
+```ts
+// A scene pass draws the security camera's view into a texture, and the monitor shows it.
+const size = [512, 288] as const;
+const feed = render.addPass({ kind: 'scene', camera: security, writes: 'security', size });
+const shown = { feed: textures.fromPass(feed) };
+const screen = materials.shader({ wgsl: monitor, roughness: 0.15, textures: shown });
+```
+
+[The security camera demo](https://github.com/null3d-engine/null3d/tree/main/examples/security-camera) shows the whole sketch.
+
 ## Targets and memory
 
-A target is a texture that passes draw into. A temporary target lives for one frame, and the pass that creates it sets its size. That size is the render size, half or a quarter of it, the canvas size, or a fixed size in pixels. The render size is the canvas size at the render scale, which [dynamic resolution](quality-presets.md#dynamic-resolution) moves. The engine makes each target of a relative size at the canvas's size, and passes draw into its top-left corner at a lower scale. So a new scale needs no new texture. The kept targets of [custom passes](../api/render.md) with a `scale`, reflections included, are the exception: each texture takes the render size's share, and a new scale makes it again, so materials read it whole. A kept target holds its contents from one frame to the next, in a texture of its own. The engine's scene color and depth are temporary targets.
+A target is a texture that passes draw into. A temporary target lives for one frame, and the pass that creates it sets its size. That size is the render size, half or a quarter of it, the canvas size, or a fixed size in pixels. The render size is the canvas size at the render scale, which [dynamic resolution](quality-presets.md#dynamic-resolution) moves. The engine makes each target of a relative size at the canvas's size, and passes draw into its top-left corner at a lower scale. So a new scale needs no new texture. The engine's scene color and depth are temporary targets.
+
+A kept target holds its contents from one frame to the next, in a texture of its own. The kept targets of [custom passes](../api/render.md) with a `scale`, reflections included, are the exception: each texture takes the render size's share, and a new scale makes it again, so materials read it whole.
 
 Temporary targets share memory when their lifetimes do not overlap. Such targets must also need the same format, size, sample count and usage. For example, a blur can pass an image through three half-size targets in a row. The first one is done before the third one starts, so the two share one texture. The blur then needs two half-size textures instead of three.
 

@@ -6,14 +6,16 @@ summary: "HDR scene color, ambient occlusion and screen-space reflections at hal
 
 # The post-processing chain
 
-> The chain has HDR scene color, ambient occlusion, screen-space reflections, custom effects, depth of field, bloom, automatic exposure and outlines. The final pass adds color grading, the vignette, sharpening and custom tone curves. A still view blends and then rests the GPU.
+> The chain has HDR scene color, ambient occlusion, screen-space reflections, screen-space bounce light, custom effects, depth of field, bloom, automatic exposure and outlines. The final pass adds color grading, the vignette, sharpening and custom tone curves. A still view blends and then rests the GPU.
 
 ```mermaid
 flowchart LR
     prepass["Depth prepass"] --> ao["Ambient occlusion:<br/>three steps at half size"]
     prepass --> ssr["Screen-space reflections:<br/>a depth pyramid and a trace<br/>at half size"]
+    prepass --> bounce["Bounce light:<br/>a trace and a denoise<br/>at half size"]
     ao --> scene
     ssr --> scene
+    bounce --> scene
     copy["The frame before's<br/>opaque colors"] --> scene
     scene["Scene passes:<br/>linear HDR color"] --> fog["Volumetric fog:<br/>adds the light in the fog"]
     fog --> custom["Custom effects:<br/>joined into few passes"]
@@ -22,7 +24,7 @@ flowchart LR
     down --> up["Bloom's steps up:<br/>each level blends in<br/>the one below"]
     dof --> meter["Exposure meter:<br/>a histogram or a downsample<br/>into one texel"]
     up --> meter
-    meter --> final["Final pass: blends in bloom,<br/>applies the adapted exposure,<br/>then the vignette,<br/>FXAA and tone mapping"]
+    meter --> final["Final pass: applies the adapted exposure,<br/>smooths edges with FXAA,<br/>blends in bloom, then<br/>the vignette and tone mapping"]
     dof --> final
     up --> final
     mask["Outline mask:<br/>outlined objects"] --> line
@@ -32,7 +34,15 @@ flowchart LR
     scaled --> canvas
 ```
 
-Ambient occlusion and screen-space reflections run before the scene's opaque objects shade. They read the depth that the depth prepass draws first, and the opaque pass darkens its ambient light with the occlusion and reflects the frame before's colors where the reflections' rays hit. The scene passes draw linear color with no upper limit into a float target, the scene color. The exposure scales each light and each color as it enters the scene, so the scene color holds exposed color. Effects that need that range, such as the volumetric fog's light, the sketch's custom effects, depth of field and bloom, read it before the final pass, in that order. [Lighting and environment](lighting.md#volumetric-fog) describes the volumetric fog. The final pass then does all of its work for each pixel in one pass, while the render scale cannot drop below the whole canvas. It smooths edges with FXAA, adds the effects' results, darkens the edges with the vignette and applies the tone mapping curve: AgX with a punchy look by default, which keeps the hues of bright colors. [Color management](color-management.md#exposure-and-tone-mapping) lists the curves. Then it encodes sRGB, draws the outline's line, and grades the display color with a color grading table, when the sketch sets one. Last, it dithers. [Below the whole canvas's render scale](#below-the-whole-canvass-render-scale) describes how that work splits in two when the scale can drop.
+Each frame draws the scene into a linear HDR target, runs the effects that need that range, then turns the result into the canvas's colors in a final pass. The steps, in order:
+
+1. Before the opaque objects shade, the depth prepass draws depth. Ambient occlusion and screen-space reflections read it.
+2. The scene passes draw linear color with no upper limit into a float target, the scene color. The exposure scales each light and color as it enters, so the scene color holds exposed color. The opaque pass darkens its ambient light with the occlusion and reflects the frame before's colors where the reflections' rays hit.
+3. The HDR effects read the scene color in this order: the volumetric fog's light ([Lighting and environment](lighting.md#volumetric-fog)), custom effects, depth of field, then bloom.
+4. The final pass smooths edges with FXAA, adds the effects' results, darkens the edges with the vignette and applies the tone curve: AgX with a punchy look by default, which keeps the hues of bright colors ([Color management](color-management.md#exposure-and-tone-mapping)). Then it encodes sRGB.
+5. In the same pass, it draws the outline's line, applies the color grading table when the sketch sets one, and dithers last.
+
+Steps 4 and 5 run as one pass only while the render scale cannot drop below the whole canvas. The default presets let it drop, and then the work splits in two ([Below the whole canvas's render scale](#below-the-whole-canvass-render-scale)).
 
 Every full-screen pass reads and writes the whole screen once more. On a phone at its full resolution that is tens of megabytes per frame, so the engine keeps such passes few. Bloom's passes draw small levels of a fixed size. The outline draws only a mask of the outlined meshes. The final pass reads their results without a pass of its own.
 
@@ -55,10 +65,15 @@ export default defineSketch(({ scene, geometry, materials, post }) => {
 
 ## Below the whole canvas's render scale
 
-The engine can draw the scene at a lower scale than the canvas, then scale the image up, to hold a frame rate on a slow GPU ([Dynamic resolution](quality-presets.md#dynamic-resolution)). Below the whole canvas's scale, the final pass runs in two steps, while the render scale can drop below 1, which the default presets allow. At the whole canvas's scale, and while the scale cannot drop below 1, one pass does that work, exactly as before the split.
+The engine can draw the scene at a lower scale than the canvas, then scale the image up, to hold a frame rate on a slow GPU ([Dynamic resolution](quality-presets.md#dynamic-resolution)). While the render scale can drop below 1, as it can on the Low, Medium and High presets, the final pass runs in two steps. The first step tone maps the image at the render size into an 8-bit target. The second step scales that target up to the canvas with an upscaler that keeps edges sharp, then draws the outline's line, applies the color grading table and dithers. While the scale cannot drop below 1, one pass does all of this work.
+
+<details>
+<summary>Technical details: the two steps and the upscaler</summary>
 
 1. The first step draws at the render size, one pixel for each render pixel. It adds bloom's light, darkens the edges with the vignette, and runs the output transform, which is the tone curve and the sRGB encode. It smooths edges with FXAA too. It writes an 8-bit target the size of the canvas, with the image in its corner at the render scale. The second step reads that target as display color. The first step leaves the dither to the second step: that step draws canvas pixels, so the noise lands at the canvas's size.
-2. The second step is the plain final pass. It reads the 8-bit target and scales it up to the whole canvas with GSR 1, Qualcomm's spatial upscaler, which keeps edges sharper than a bilinear filter. The pass blends the four nearest texels as a bilinear filter does, then votes on their green channel to find an edge. Where an edge passes, it weighs twelve texels around the pixel and adds a bounded correction to the blend; a flat area keeps the blend alone. The work runs only where a pixel reads a smaller corner on the canvas, so an image at the whole canvas's scale pays nothing for it. Then the pass sharpens the display color while the sketch asks for it ([Sharpening](#sharpening)), darkens the edges with the vignette, draws the outline's line, applies the color grading table, when the sketch sets one, and dithers.
+2. The second step is the plain final pass. It reads the 8-bit target and scales it up to the whole canvas with GSR 1, Qualcomm's spatial upscaler, which keeps edges sharper than a bilinear filter. The pass blends the four nearest texels as a bilinear filter does, then votes on their green channel to find an edge. Where an edge passes, it weighs twelve texels around the pixel and adds a bounded correction to the blend; a flat area keeps the blend alone. The work runs only where a pixel reads a smaller corner on the canvas, so an image at the whole canvas's scale pays nothing for it. Then the pass sharpens the display color while the sketch asks for it ([Sharpening](#sharpening)), draws the outline's line, applies the color grading table, when the sketch sets one, and dithers.
+
+</details>
 
 The two steps also draw at the whole canvas's scale while the sketch sets `sharpen`, since the sharpening reads display color. Without it, one pass does the work there, as the sections below describe.
 
@@ -312,6 +327,8 @@ The engine's benchmark scene of 100,000 boxes over a polished floor ran on a Mac
 
 Screen-space bounce light adds one bounce of the indirect light that the camera's view shows. A red wall throws red light onto the floor beside it. A green wall throws green light onto the other side. The environment's light is one color for every direction, so it cannot show that.
 
+Bounce light needs no `post.set` call. The High and Ultra presets draw it, and so does Medium on WebGL2. While it draws, the depth prepass runs too. `quality.set({ bounceRays: 0 })` turns it off.
+
 A mirror's color holds what it shows this view, not light that its surface sends every way, so the gather leaves out what lies on the plane of a mirror view: the first two mirrors of a scene, and water's reflection among them. A glossy surface with no mirror view, such as a floor that screen-space reflections draw, still sends its color. No buffer holds a surface's roughness for the gather to read.
 
 The light draws on ambient occlusion's grid, at half the render size, and it reuses that feature's depth copy and normals:
@@ -324,7 +341,7 @@ The light draws on ambient occlusion's grid, at half the render size, and it reu
 quality.set({ bounceRays: 8 });
 ```
 
-- The quality setting `bounceRays` is the number of rays each texel casts: 0 draws none. High sets 4 and Ultra 8. Low and Medium set 0, and WebGL2, which ends at Medium, sets 4 there. A change takes effect during play and makes no GPU object. At 1920 by 1080 the light costs 2.475 ms at High and 1.326 at Ultra on WebGPU, and 0.825 ms at WebGL2's Medium.
+- The quality setting `bounceRays` is the number of rays each texel casts: 0 draws none. High sets 4 and Ultra 8. Low and Medium set 0, and WebGL2, which ends at Medium, sets 4 there. A change takes effect during play and makes no GPU object.
 - The light is one frame behind the scene, as screen-space reflections are. The first frame after it turns on shows none.
 - The light draws nothing on the 8-bit path, whose copy holds display color. Compatibility mode draws that path, so it draws no bounce light.
 - A scene with a [light probe grid](lighting.md#light-probe-grid) draws no bounce light. The grid already holds one bounce, with the validity and sky-occlusion terms that the screen cannot supply.
@@ -332,7 +349,7 @@ quality.set({ bounceRays: 8 });
 
 ### Cost
 
-The light costs two passes at half the render size and a few texture reads in the opaque pass. At 1920 x 1080 on the Mac it added 2.5 ms at High and 1.3 ms at Ultra on WebGPU. It added 0.8 ms at WebGL2's Medium. At half the render scale it adds about a millisecond.
+The light costs two passes at half the render size and a few texture reads in the opaque pass. At 1920 x 1080 on the Mac it added 2.5 ms at High and 1.3 ms at Ultra on WebGPU. It added 0.8 ms at WebGL2's Medium. At half the render scale it adds about a millisecond. Ultra's eight rays measured a little less than High's four. The gap is within the spread between runs, so expect about the same cost on both.
 
 
 ## Outlines
@@ -387,7 +404,12 @@ An 8-bit canvas holds 256 steps of each color, and a smooth gradient between two
 
 ## Still-camera accumulation
 
-When nothing in the view changes, the engine sharpens the picture and then stops drawing. Each frame draws the scene with the camera moved by a fraction of a pixel, and blends into a kept 16-bit history. After 63 blended frames, about a second at 60 frames per second, the history holds their average. Its edges and fine detail are smoother than any one frame's. The thread that draws then takes frames without drawing them, so the GPU rests, and the canvas keeps the sharp picture. The first frame that changes draws at once, as a moving view does, and the blending starts again.
+A still view goes through these steps:
+
+1. Each frame draws the scene with the camera moved by a fraction of a pixel, and blends it into a kept 16-bit history.
+2. After 63 blended frames, about a second at 60 frames per second, the history holds their average. Its edges and fine detail are smoother than any one frame's.
+3. The thread that draws then takes frames without drawing them, so the GPU rests, and the canvas keeps the sharp picture.
+4. The first frame that changes draws at once, as a moving view does, and the blending starts again.
 
 The engine finds a still view by comparing each frame's draw commands and uploaded values with those of the frame two frames before. It leaves out only the values that change on their own in every frame: the clock, the sub-pixel offset and the blend's weight. Anything else that changes counts as a change, so the picture never freezes while something moves. The sketch keeps running while the view rests, so `onUpdate` sees input and time as before.
 
