@@ -209,6 +209,10 @@ Image tests check pictures. A game or an app also needs a suite that opens its r
 - Give each copy of the project its own port, fail a test on any console error, and record a trace on the first retry.
 - Keep real phones and tablets, and frame-rate timing, out of CI.
 
+### Record the shader words that a test reaches
+
+A suite that drives the game's states can also write the list of shader permutation words that a production build copies. Open the page with `withRecordingSwitch(address)` from `@null3d/cli/shaders`, drive it, then call `saveRecordedWords(page, 'shader-permutations.txt')`. It ends the page's recording and adds the words to the list. [Record from your browser tests](assets-pipeline.md#record-from-your-browser-tests) shows a spec.
+
 ## Switches for tests
 
 The engine reads these switches from the page's address in development builds. These are the dev server, the `null3d` command's runs and the CDN build's development entry, `lib-dev/index.js`. A production build ignores them, so a link cannot change how a shipped game runs. The CDN build's production entry, `lib/index.js`, ignores them too. To use them in a production build of test pages, turn on the Vite plugin's `urlSwitches` option: `null3d({ urlSwitches: true })`. For a benchmark page that loads the CDN build, `bun run build:cdn --url-switches` does the same ([Try null3D from a CDN](../getting-started/cdn.md#production-and-development-entries)).

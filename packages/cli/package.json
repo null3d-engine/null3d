@@ -29,6 +29,10 @@
 	"exports": {
 		"./agent-rules": "./src/agent-rules.js",
 		"./assets": "./src/assets/index.js",
+		"./shaders": {
+			"types": "./src/shader-words-api.d.ts",
+			"default": "./src/shader-words.js"
+		},
 		"./package.json": "./package.json"
 	},
 	"files": [

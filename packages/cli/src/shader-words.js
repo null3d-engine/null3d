@@ -1,8 +1,8 @@
 // The list of the shader permutation words that a project's pages draw with, as a file, and the
 // words that a page reached while it recorded. A page records with the engine's switch
 // `?permutations=record`: the engine collects the word of each pipeline that it builds, and
-// publishes them once the recording stops. `bunx @null3d/cli shaders record` writes the list
-// through this module.
+// publishes them once the recording stops. `bunx @null3d/cli shaders record` and a project's own
+// browser tests both write the list through this module, which `@null3d/cli/shaders` exports.
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 
 /** The command that writes a list, as the header of a list that it writes names it. */
@@ -21,7 +21,8 @@ const MAX_WORD = 0xffff_ffff;
  */
 
 /**
- * The parts of a Playwright page that reading its words takes.
+ * The parts of a Playwright page that reading its words takes, so a project's browser tests pass
+ * their own page.
  *
  * @typedef {object} RecordingPage
  * @property {(fn: () => unknown) => Promise<unknown>} evaluate
@@ -106,6 +107,20 @@ export function writeWordList(file, words, { replace = false, writer = WRITER } 
 }
 
 /**
+ * The address `address` with the engine's recording switch, `?permutations=record`, beside its
+ * own query. A relative address stays relative.
+ *
+ * @param {string} address
+ */
+export function withRecordingSwitch(address) {
+	const url = new URL(address, 'http://relative.invalid');
+	url.searchParams.set('permutations', 'record');
+	return url.origin === 'http://relative.invalid'
+		? `${url.pathname}${url.search}${url.hash}`
+		: url.href;
+}
+
+/**
  * Ends the recording of a page that runs with the recording switch, and gives the words that it
  * reached. A live page stops when this asks it to; a page in hold mode publishes its words once
  * its held frame has drawn.
@@ -125,4 +140,18 @@ export async function recordedWords(page, { timeoutMs = PUBLISH_MS } = {}) {
 		await page.evaluate(() => /** @type {Recorded} */ (globalThis).__null3dPermutations)
 	);
 	return words.map((word) => word >>> 0);
+}
+
+/**
+ * Ends the recording of `page`, as `recordedWords` does, and adds its words to the list at `file`,
+ * as `writeWordList` does. A project's browser test calls it once the page has gone through the
+ * states that the test drives.
+ *
+ * @param {RecordingPage} page
+ * @param {string} file
+ * @param {{ replace?: boolean, timeoutMs?: number }} [options]
+ * @returns {Promise<{ words: number[], added: number }>}
+ */
+export async function saveRecordedWords(page, file, { replace = false, timeoutMs } = {}) {
+	return writeWordList(file, await recordedWords(page, { timeoutMs }), { replace });
 }

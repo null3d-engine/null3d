@@ -580,6 +580,8 @@ The command loads up to four pages at once in a headless browser, each with the 
 0x00000020
 ```
 
+A project's browser tests can write the list too, with `saveRecordedWords` from `@null3d/cli/shaders`, as [Record from your browser tests](../guides/assets-pipeline.md#record-from-your-browser-tests) shows.
+
 A production build ignores the recording switch, so a page that `--base` names must come from a development build: the dev server, or `vite build --mode development`. The plugin's `urlSwitches` option also lets a production build read it. Record again after the project gains a feature that draws with a new word. A build whose list lacks a word stops the pipeline that needs it, with a message that names the word.
 
 ## upgrade

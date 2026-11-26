@@ -492,6 +492,24 @@ bunx @null3d/cli shaders record --page / --extra 0x00000010
 
 Each run adds its words to the list that `--out` names, once each, in order. So each level or mode of a game can be recorded in a run of its own into one list. The `--replace` option writes the run's words alone, for a list that starts afresh.
 
+### Record from your browser tests
+
+A project's own browser tests already drive its states. `@null3d/cli/shaders` adds the words that a test reached to the list. Open the page with the recording switch, drive it, then save:
+
+```ts
+// tests/record-shaders.spec.ts, a Playwright test
+import { saveRecordedWords, withRecordingSwitch } from '@null3d/cli/shaders';
+import { test } from '@playwright/test';
+
+test('plays the first level', async ({ page }) => {
+  await page.goto(withRecordingSwitch('/?gpu=webgl2&preset=low'));
+  // ... the steps that play the level ...
+  await saveRecordedWords(page, 'shader-permutations.txt');
+});
+```
+
+The `saveRecordedWords` call ends the page's recording, waits until the engine publishes its words, and adds them to the list. With `{ replace: true }` it writes them alone. The page must run a development build, such as the dev server. A production build ignores the recording switch, unless the plugin's `urlSwitches` option is on. Run the tests on both GPU paths at the low and high presets, as the switches in the address above do for one of them.
+
 ### Build with the list
 
 Name the list in the plugin's options. The path is relative to Vite's root:
