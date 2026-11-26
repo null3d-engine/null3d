@@ -3,7 +3,7 @@ id: porting/threejs-overview
 title: Porting from three.js
 status: experimental
 since: "0.3"
-summary: "The porting workflow; what gets faster; what needs rewriting."
+summary: "A port is a rewrite; the limits a port meets; the porting workflow; what gets faster; what needs rewriting."
 ---
 
 # Porting from three.js
@@ -22,6 +22,30 @@ flowchart LR
 A good port looks like the original, runs faster, and reads like null3D code. A port that copies three.js line by line can match the look at best. Some three.js habits keep the original's speed problems, and some do not work at all, because sketch code runs in a worker. So port by intent: work out what each part of the original does, then write it the null3D way.
 
 This page gives the workflow and the main differences. The [three.js to null3D mapping](threejs-mapping.md) gives the null3D equivalent of each three.js API.
+
+## A port is a rewrite
+
+No layer runs three.js code on null3D. A port rewrites the scene in null3D's own API:
+
+- The scene code moves into a sketch, which runs in a worker with no DOM. Engine objects are handles, which setters change. Many similar objects become the rows of one batch, and the sketch writes their positions, rotations and colors in typed arrays.
+- null3D shaders are WGSL, and the engine has no shader chunks to patch. A `ShaderMaterial` or an `onBeforeCompile` patch becomes a surface function, an unlit function or a vertex offset function ([Porting shaders](threejs-shaders.md)).
+- An `EffectComposer` chain becomes `post.set` settings, with `post.addEffect` for each custom `ShaderPass` ([Porting post-processing](threejs-postprocessing.md)).
+
+The `@null3d/three-compat` add-on does not change this. It holds three.js's Reinhard and Cineon tone curves and the soft outline of `OutlinePass`, and nothing more. It takes no three.js scene, object, material or shader ([three.js looks](../api/three-compat.md)).
+
+### Limits that a port meets
+
+A three.js scene with custom shaders often passes one of these limits. Find them in the inventory, and plan the workaround before you port.
+
+| three.js | The null3D limit | Workaround |
+| --- | --- | --- |
+| An `InstancedBufferAttribute` with more than four floats for each instance | A batch row carries four values and a color ([Per-row values](../concepts/instances.md#per-row-values)) | Pack the data into the four values. Or keep the rest in a data texture from `textures.fromData`, and read it with `textureLoad` at the row's place, `input.instance` |
+| A `ShaderMaterial` with many uniforms | The uniforms of a custom material fit in 32 numbers, less one for each texture ([Uniforms](../shaders/surface-functions.md#uniforms)) | Keep the rest in a data texture, and read it with `textureLoad` |
+| A shader that samples more than 6 textures | A custom material samples up to 6 textures | Join textures of one size into a texture array, which takes one slot ([Textures](../shaders/surface-functions.md#textures)) |
+| An environment map for each material, or two maps that a shader blends | One environment lights the whole scene | `scene.setEnvironment`, with `envIntensity` on each material. For a day and a night, `timeOfDay` and the sky's environment follow the sun ([Environment maps](../concepts/lighting.md#environment-maps)) |
+| `side: BackSide` | Materials draw front faces, or both sides with `doubleSided: true` | Flip the geometry's winding, or draw both sides |
+
+[Unsupported three.js features](threejs-unsupported.md) lists the rest.
 
 ## What gets faster
 
