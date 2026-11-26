@@ -288,7 +288,7 @@ The engine keeps a list of the pipelines that a sketch's first frame built, in t
 <details>
 <summary>Technical details: how the stored pipeline list works</summary>
 
-The list is kept for each engine version, GPU path, set of the device's shader bits, preset and canvas format. Before the first frame, the engine also builds in the background the pipelines that the frame's list asks for partway through. Identical pipelines share one build.
+The list is kept for each engine version, GPU path, set of the device's shader bits, preset and canvas format. A scene that changed since the last start builds some pipelines that no frame takes, and its first frame stores a new list. Before the first frame, the engine also builds in the background the pipelines that the frame's list asks for partway through. Identical pipelines share one build.
 
 </details>
 
