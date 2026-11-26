@@ -162,7 +162,7 @@ sprites.on('click', (event) => {
 
 A batch costs about the same per sprite as an instance batch costs per row. The engine packs each sprite into the data that it keeps for an instance row. So sprites share the culling, sorting and drawing of instance batches. One batch of 100,000 sprites draws in one draw on WebGPU and WebGL2, where three.js makes one object and one draw for each sprite.
 
-Every sprite counts toward the device's limit of objects and instance rows, as an instance row does ([Instances and batching](../concepts/instances.md#limits)). Each sprite takes about 215 bytes of engine memory. Sprite batches count toward the limit of 256 instance batches.
+Every sprite counts toward the device's limit of objects and instance rows, as an instance row does ([Instances and batching](../concepts/instances.md#limits)). Each sprite takes about 215 bytes of engine memory. Sprite batches count toward the limit of 512 instance batches.
 
 ## API reference
 

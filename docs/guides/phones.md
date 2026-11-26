@@ -108,7 +108,7 @@ Phones often lose their network. A game that must play offline caches the engine
 
 A phone's GPU driver can refuse to build one pipeline, such as a custom material's, though the shader is valid. The engine then builds that pipeline once more, alone. When the driver refuses it again, the engine leaves that pipeline's objects out of the frame and draws on. It reports [E1307](../errors/E1307.md) once, which does not stop the engine. A validation error, and a refused pipeline of a full-screen pass, still stop drawing with [E1404](../errors/E1404.md) ([Debugging](debugging.md)).
 
-On a Galaxy Tab A9 Plus, the driver refused the island demo's far tree cards, and the island then drew on without them. The garden demo reached its first frame at 71 seconds there, but the tablet ran out of GPU memory 4 seconds later ([E1302](../errors/E1302.md)).
+On a Galaxy Tab A9 Plus, the driver refused the island demo's far tree cards, and the island then drew on without them. The creek demo reached its first frame at 71 seconds there, but the tablet ran out of GPU memory 4 seconds later ([E1302](../errors/E1302.md)).
 
 On phones and tablets, the engine also gives back its GPU device while the browser keeps the page in its back-forward cache. It starts a new one when the page comes back ([Page API](../api/engine.md#the-running-engine)).
 

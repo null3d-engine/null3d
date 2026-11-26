@@ -96,7 +96,7 @@ const FIXES: [(&str, &str); 11] = [
     ),
     (
         "subgroup_id",
-        "Subgroups are optional in WebGPU: keep this code behind a capability flag with a fallback.",
+        "Subgroups are optional in WebGPU, and null3D shaders cannot enable them: write the code without subgroups.",
     ),
     (
         "fragment_depth",

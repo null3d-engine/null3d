@@ -56,9 +56,9 @@ export interface WindOptions {
  */
 export interface WindField {
 	/**
-	 * The texture. A reader declares it as `var wind: texture_2d<f32>;` and samples it through the
-	 * sampling function, which gives the air back: the wind across the ground, the wind's rise,
-	 * which is zero while the field is flat, and how fast the air moves. The grid keeps its state
+	 * The texture. A reader declares it as `var wind: texture_2d_array<f32>;` and samples it
+	 * through the sampling function, which gives the air back: the wind across the ground, the
+	 * wind's rise, which is zero while the field is flat, and how fast the air moves. The grid keeps its state
 	 * in the texture's own numbers, so a reader does not decode them itself. A preset change that
 	 * changes the grid makes a new texture, so read this again after one.
 	 */
@@ -72,8 +72,9 @@ export interface WindField {
 	 */
 	readonly size: number;
 	/**
-	 * The steady settings that a reader works out beyond the box. Give them to a material with the
-	 * sampling function's three vectors, and give them again when `setBase` or the air changes.
+	 * The steady settings that a reader works out beyond the box. Give them to a material in the
+	 * first three of the sampling function's four vectors, and give them again when `setBase` or
+	 * the air changes. The fourth holds the gust that the page sent last.
 	 */
 	readonly air: WindReading;
 }
@@ -173,10 +174,11 @@ export const CYCLE_STEPS = PRESSURE_STEPS + 2;
 /** The fixed time that one cycle steps the air by, in seconds, before a preset applies. */
 export const STEP_SECONDS = 1 / 60;
 /**
- * The most cycles that one frame runs, which is ten seconds of air. A longer stall in a page skips
- * the air that it missed rather than spends one frame solving it.
+ * The most air that one frame runs, in seconds. A frame runs at most the cycles that fit in it at
+ * the field's step. A longer stall in a page skips the air that it missed rather than spends one
+ * frame solving it.
  */
-const MAX_CYCLES = 600;
+const MAX_AIR_SECONDS = 10;
 
 /** How strong a gust is when the page names no strength. */
 const GUST = 7;
@@ -223,7 +225,8 @@ export function createWind(ctx: SketchContext, options: WindOptions): Wind {
 	// time owes, so the air keeps the same pace whatever the frame rate.
 	//
 	// The air starts when a page makes the wind. A held page's first drawn frame runs the air from
-	// then to the held time, so a held picture carries the air that the hold built. Each frame reads
+	// then to the held time, up to ten seconds of it, so a held picture carries the air that the
+	// hold built. Each frame reads
 	// the sketch time from the engine's field, because a helper that answered it would box its
 	// fraction on a call that the browser does not inline. The time that the air has run to sits in
 	// a typed array, because a fraction written to a closure's variable makes a number object at each
@@ -244,10 +247,11 @@ export function createWind(ctx: SketchContext, options: WindOptions): Wind {
 		// hair under it.
 		const owed = Math.floor((ctx.time.now - (solved[0] as number)) / step + 1e-6);
 		if (owed <= 0) return 0;
-		const cycles = Math.min(owed, MAX_CYCLES);
+		const most = Math.max(1, Math.floor(MAX_AIR_SECONDS / step + 1e-6));
+		const cycles = Math.min(owed, most);
 		// A stall that owes more than one frame runs skips the air that it missed. Crediting only
 		// the cycles that ran would leave a debt, and every later frame would pay it.
-		solved[0] = owed > MAX_CYCLES ? ctx.time.now : (solved[0] as number) + cycles * step;
+		solved[0] = owed > most ? ctx.time.now : (solved[0] as number) + cycles * step;
 		return cycles * cycleSteps();
 	};
 

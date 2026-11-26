@@ -5,15 +5,13 @@
 //
 // The scene drew into the top-left corner of the scene color at the render scale, and the scene
 // color has the canvas's size. At the whole canvas's scale, each pixel reads the texel it covers.
-// Below it, each pixel blends the four texels of the corner around its place, as a bilinear filter
-// does, and so scales the corner up to the whole canvas, with no FXAA. It blends their display
-// colors, after the tone mapping: a filter over HDR color would let a small share of a very bright
-// texel turn its neighbors almost white.
 //
-// A frame below the whole canvas's scale may instead draw in two steps. The first build, whose
-// settings hold RESOLVE, draws one texel for each render pixel into a target of the render size,
-// with FXAA, and leaves the dither to the second. The second build reads that target as display
-// color and scales it up as the pass above does.
+// A frame below the whole canvas's scale draws in two steps. The first build, whose settings hold
+// RESOLVE, draws one texel for each render pixel into a target of the render size, with FXAA, and
+// leaves the dither to the second. The second build, UPSCALE, reads that target as display color
+// and scales it up to the whole canvas with Snapdragon GSR 1's taps. It filters display colors,
+// after the tone mapping: a filter over HDR color would let a small share of a very bright texel
+// turn its neighbors almost white.
 //
 // The second build sharpens its display color, at the whole canvas's scale as well, while the
 // sketch asks for it: FidelityFX's RCAS over the four texels that cross each pixel, after the
@@ -54,7 +52,7 @@
 // pixel then reads its scene color through the chain before the vignette and the tone mapping. A
 // custom tone curve folds the same way, through `tone_curve_hook`. The engine folds only without
 // FXAA and bloom, and at the whole canvas's scale, where each pixel reads the one texel it covers;
-// below it, the chain would run on each of the four texels that a pixel blends.
+// below it, the chain would run on each texel that a pixel's upscale reads.
 //
 // The vignette multiplies HDR color before the tone mapping, as Filament, URP, Bevy and Babylon.js
 // do, so bright corners darken as dark ones do instead of turning gray. On the 8-bit path the scene

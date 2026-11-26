@@ -13,7 +13,7 @@ The examples and the three.js comparison pages need one overlay that any page ca
 - With the overlay hidden, a frame pays at most a few operations per draw call, and allocates nothing.
 - Each figure means the same in null3D and in a three.js page, so the comparison pages compare like with like.
 - A figure that the browser does not give is left out, never shown as 0.
-- The overlay's code stays within the 16 KB budget of a file that loads on first use ([D-14](D-14-js-budget.md)).
+- The overlay's code stays within the 18 KB budget of a file that loads on first use ([D-14](D-14-js-budget.md)).
 
 ## Data
 
@@ -150,7 +150,7 @@ After 60 seconds, the open card read: `30 fps`, `Target 30 fps · 33.3 ms`, the 
 
 All six pass. Collapsed matches hidden on both paths. On WebGPU, the open card's extra 61 bytes per frame are the GPU timer's and the culled counts' readbacks, within their budgets above.
 
-**Size.** These are the figures of `bun run build:check-size`, after Brotli. The overlay's file loads at its first showing, and takes 6,253 B of the 16 KB budget of a file that loads on first use. The start grows by the switch's two values and the setup that the start hands the overlay. The file `page.js` grows from 31,394 to 31,501 B, and `page-renderer.js` from 32,426 to 32,495 B. The workers' start files do not change.
+**Size.** These are the figures of `bun run build:check-size`, after Brotli. The overlay's file loads at its first showing, and takes 6,253 B of the 18 KB budget of a file that loads on first use. The start grows by the switch's two values and the setup that the start hands the overlay. The file `page.js` grows from 31,394 to 31,501 B, and `page-renderer.js` from 32,426 to 32,495 B. The workers' start files do not change.
 
 **Browser tests.** The stats test passes 26 of 26 in Chrome on the Mac's GPU, with the production build. It passes 26 of 26 with `CI=1` too, on SwiftShader with the production build. It covers every thread mode and the figures that the browser does not give. In each thread mode, it checks that the overlay sits on the canvas's top-right corner. It also checks that the button stays put as the card closes and opens. It also covers the toggle by pointer and keyboard, the focus ring and drags through the card. And it checks both mode symbols and their tooltips, and the closed overlay's GPU calls. The first-use tests pass both ways: 26 pass, and 6 skip by their own conditions.
 

@@ -2,8 +2,9 @@
 // vertices for one shape and a number of copies, and no mesh data. The shader reads
 // `@builtin(vertex_index)` and `@builtin(instance_index)` and makes every vertex, so rain, streaks,
 // card effects and procedural shapes cost one call and upload nothing per frame. The object's
-// culling sphere comes from the sketch, and the shapes move with the material's values, wrapped
-// around the camera where the sketch wants that (see `null3d::wrap` in the shader library).
+// culling sphere comes from the sketch. The shapes move with `frame.time` and the shader's own
+// constants, as a full shader gets no uniforms, and wrap around the camera where the sketch wants
+// that (see `null3d::wrap` in the shader library).
 
 import { EngineError } from '../errors/engine-error';
 import * as C from '../generated/core';
@@ -27,7 +28,7 @@ export interface VertexDrawBounds {
 
 /**
  * Options of `scene.createVertexDraw`: the shader, its two counts, its bounds, and every option
- * of `materials.shader`, such as the uniforms, the blending and `doubleSided`. A draw blends, so
+ * of `materials.shader`, such as the blending and `doubleSided`. A draw blends, so
  * its material draws in the transparent pass, where its sphere culls it and one shape covers the
  * ones behind it.
  *
@@ -58,8 +59,9 @@ export interface VertexDrawOptions<Wgsl extends string | CompiledWgsl = string |
 
 /**
  * A draw that has a material and a vertex count but no mesh data. Its shader makes every vertex of
- * every copy from the indices, so the draw uploads nothing per frame. Change its counts, its
- * sphere and its material's uniforms with the calls here, and free it with `destroy`.
+ * every copy from the indices, so the draw uploads nothing per frame. The engine writes no
+ * uniforms for its WGSL, so `frame.time` moves its shapes. Change its counts and its sphere with the
+ * calls here, and free it with `destroy`.
  *
  * @category api/vertex-draws
  */
@@ -71,7 +73,7 @@ export class VertexDraw<Wgsl extends string | CompiledWgsl = string | CompiledWg
 		private readonly id: number,
 		/** The scene object that gives the draw its place, its layers and its culling sphere. */
 		readonly object: Mesh,
-		/** The draw's custom material, whose uniforms the WGSL reads. */
+		/** The draw's custom material. */
 		readonly material: Material<ShaderValues<Wgsl>>,
 		private readonly call: string,
 		private vertexTotal: number,

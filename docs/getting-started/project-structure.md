@@ -24,7 +24,7 @@ flowchart LR
 
 | Template | What its scene shows |
 | --- | --- |
-| `empty` | A cube that turns, with one light. It is the smallest project, for a scene of your own. |
+| `empty` | A cube that turns, lit by a directional light and an ambient light. It is the smallest project, for a scene of your own. |
 | `product` | A product viewer: shapes from `@null3d/geometry` with glazed, metal, wood and cloth materials on a turntable. A soft room light, shadows on a shadow catcher, the Neutral tone curve, and orbit controls with damping and limits. |
 | `game` | A small game: a player that keys, a gamepad or a dragged finger moves, gems to pick up, rocks in instance batches, a follow camera and a score on the page. |
 
@@ -57,6 +57,7 @@ The folder must not exist, or it must be empty. A folder with files stays as it 
 | `vite.config.ts` | Vite with the null3D plugin, which sends the headers that the workers need. |
 | `tsconfig.json` | The TypeScript settings that `bunx @null3d/cli test` checks the project with. |
 | `package.json` | The project's name, scripts and packages. Every `@null3d/*` package takes one version. |
+| `.gitignore` | The folders that git skips: `node_modules/`, `dist/`, `test-results/` and `.vite/`. |
 | `AGENTS.md` | The rules for an AI agent that works in the project. |
 | `.agent/agent-hook.mjs` | The hook that checks the rules before each command and each edit. |
 | `.claude/settings.json` | The Claude Code settings that run the hook. |

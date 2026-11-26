@@ -71,6 +71,7 @@ The effect can also call these functions:
 | --- | --- |
 | `effectColor(uv: vec2f) -> vec4f` | The image's color at `uv`, read with a linear filter. Places outside the image read its edge. |
 | `effectPixel(pixel: vec2i) -> vec4f` | The color of one pixel, counted from the top left. A pixel outside the image reads the nearest one inside. |
+| `effectBloom(uv: vec2f) -> vec3f` | The glow at `uv` of the bloom chain's level that the effect's `bloomLevel` names, as linear HDR color. A level that the chain does not draw reads black ([Custom effects](../api/post.md#custom-effects)). |
 | `effectDepth(uv: vec2f) -> f32` | The scene's depth at `uv`: 1 at the camera's near plane, 0 at its far plane, and 0 where nothing drew. |
 | `effectViewPosition(uv: vec2f) -> vec3f` | The position of the surface at `uv` in view space. Its z is negative in front of the camera. |
 | `effectDistance(uv: vec2f) -> f32` | How far in front of the camera the surface at `uv` lies, in world units. |
@@ -417,7 +418,7 @@ surface.setRotationEuler(-Math.PI / 2, 0, 0);
 - `ripple` sets how far the waves tilt the normal. The tilt bends the reflection and the sun's highlights.
 - The foam hides the reflection where it lies, through the reflection's share in `a`.
 - The water is opaque, so the bed does not show through it. The shallow tint stands in for the bed's color.
-- Without a height map of the bed, a blended sheet reads the depth of the opaque scene behind it with `sceneInputs: ['sceneDepth']`. The water's depth along the view ray is the gap between the sheet and the geometry behind the pixel. Convert the pixel's own depth to a distance with the camera's range in `engine_frame.camera_range`, then subtract it from `sceneDistance(uv)`. Fade the water's alpha to zero over the last centimeters of the gap. The water then thins and foams against the bank, so its shore ends softly. Such a sheet takes up to seven textures of its own, so this recipe's mirror and a foam map join it. [Materials](../api/materials.md#the-scene-behind-a-surface) shows the options.
+- Without a height map of the bed, a blended sheet reads the depth of the opaque scene behind it with `sceneInputs: ['sceneDepth']`. The water's depth along the view ray is the gap between the sheet and the geometry behind the pixel. Convert the pixel's own depth to a distance with the camera's range in `engine_frame.camera_range`, then subtract it from `sceneDistance(uv)`. Fade the water's alpha to zero over the last centimeters of the gap. The water then thins and foams against the bank, so its shore ends softly. Such a sheet takes up to 6 textures of its own, as every custom material does. So this recipe's mirror and a foam map join it. [Materials](../api/materials.md#the-scene-behind-a-surface) shows the options.
 
 - Waves that move the surface's vertices need `setBounds`, as [Culling](../concepts/culling.md) explains. The reflection's plane stays flat, which suits small waves.
 

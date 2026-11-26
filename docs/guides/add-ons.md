@@ -62,7 +62,7 @@ Opt a mesh out with `levels: false` only where levels are wrong for it, and say 
 
 | The mesh | Why it takes no levels | In the engine's add-ons |
 | --- | --- | --- |
-| A shader gives it its shape or its place | The levels would simplify a shape that never draws | Water surfaces, grass tufts, splat parts, floating leaves |
+| A shader gives it its shape or its place | The levels would simplify a shape that never draws | Water surfaces, grass tufts, splat parts |
 | It has a level system of its own | The two systems would switch apart | Terrain blocks, which are the ground's quadtree and morph toward their parent block |
 | It is the far stand-in of other meshes | It is already the coarsest level | Impostor cards, merged far cells |
 | It keeps one size on the screen | Its levels would never switch | Gizmo handles |
@@ -129,7 +129,8 @@ Without a page, the browser gates are skipped with a reason, and the other gates
 ## Run the check
 
 ```sh
-bunx @null3d/cli check-addon addons/splats
+bunx @null3d/cli check-addon                    # the add-on in the current folder
+bunx @null3d/cli check-addon packages/my-addon
 ```
 
 It prints one line for each gate, and exits with 1 when one fails:

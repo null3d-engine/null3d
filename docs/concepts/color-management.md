@@ -64,7 +64,7 @@ The final pass reads each pixel of the scene color. In the FXAA anti-aliasing mo
 
 ### The 8-bit path
 
-Some devices cannot draw a float target in the anti-aliasing mode. These are WebGPU in compatibility mode with MSAA, and WebGL2 devices whose float targets fail the engine's test. There, each shader applies the tone mapping itself, and writes into an 8-bit target. With MSAA that target resolves straight into the canvas, so the frame has no final pass. With FXAA or no anti-aliasing, the final pass reads the target and keeps its colors.
+Some devices cannot draw a float target in the anti-aliasing mode. These are WebGPU in compatibility mode with MSAA, and WebGL2 devices whose float targets fail the engine's test. There, each shader applies the tone mapping itself, and writes into an 8-bit target. With MSAA that target can resolve straight into the canvas, with no final pass. That holds while the render scale cannot drop below 1 and no effect needs the final pass. Such effects are color grading, sharpening, outlines, transmission, screen-space reflections and the bounce light. So are soft particles, a material that reads the scene's depth, the moment transparency layer, and a full-screen pass that reads the scene color. The scene's shaders apply the vignette themselves there. Low and Medium let the render scale drop below 1, so there the final pass usually runs. With FXAA or no anti-aliasing, the final pass reads the target and keeps its colors.
 
 Effects that need HDR color, such as bloom, move compatibility mode to HDR color with FXAA when a sketch turns them on. On a WebGL2 device with no float target they stay off. [The post-processing chain](post-processing.md#effects-on-devices-without-hdr-color) explains both.
 

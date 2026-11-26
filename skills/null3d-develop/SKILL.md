@@ -1,7 +1,7 @@
 ---
 name: null3d-develop
 description: Build, extend, debug and speed up 3D web experiences made with the null3D engine (also written null3d, Null3D or null 3d), such as games, product viewers, configurators, product and marketing pages, data visualizations and interactive scenes. Use this skill whenever a task touches a null3D project or the @null3d packages, even for short requests like add a spinning cube, load this model, soften the shadows, click to select units, add a water shader, why is it slow on my phone, or make it load faster. Also use it to start a new null3D project, to write WGSL materials, post effects or render passes for null3D, and to test or profile null3D scenes. To convert existing three.js or React Three Fiber code, use the null3d-port-threejs skill instead.
-compatibility: Needs Node.js 20 or newer and a null3D project. The engine docs ship inside the engine package, so their version always matches the installed engine.
+compatibility: Needs Node.js 20.19 or a later 20 release, or Node.js 22.12 or newer, and a null3D project. The engine docs ship inside the engine package, so their version always matches the installed engine.
 metadata:
   skill-version: 0.1.0
   engine-versions: "0.1"
@@ -83,7 +83,7 @@ export default defineSketch(({ scene, geometry, materials }) => {
 1. Pin down the target when the request leaves it open: devices, frame rate and the WebGL2 path. Assume phones matter unless told otherwise.
 2. Read the doc pages for the features involved (section 1).
 3. Make the change in small steps. Scene logic and the scene's sounds go in `sketch.ts`; DOM, HTML UI and the audio's start go in `page.ts`.
-4. Look at the result. `bunx vite` serves the project, and the null3D Vite plugin adds the right headers. `bunx @null3d/cli shot --out shot.png` renders one frame headless. Open the image: code that compiles can still draw nothing. Read `references/testing-and-debugging.md` before trusting a picture.
+4. Look at the result. `bunx vite` serves the project, and the null3D Vite plugin adds the right headers. `bunx @null3d/cli shot --out shot.png` renders one frame headless. Open the image: code that compiles can still draw nothing. Read `references/testing-and-debugging.md` before trusting a picture. Its section 6 covers `?inspect` and `bunx @null3d/cli mcp` for a running scene.
 5. Check the cost of a production build with `bunx @null3d/cli bench`, or `await engine.measure(5)` on it. Compare the frame phases with the preset's budget (`references/performance.md`).
 6. Add or update a test. Anything visual gets a hold-mode image test in `null3d.json` (`references/testing-and-debugging.md`). Run `bunx @null3d/cli test`, and open each failed image. An app or a game also gets a browser suite that drives the real page (`references/e2e-testing.md`).
 7. If the change touches rendering, check the WebGL2 path: add `?gpu=webgl2` to the dev URL, or run `bunx @null3d/cli test --gpu webgl2`.
@@ -173,7 +173,7 @@ Materials:
 | A custom look that still gets lights, shadows and fog | `materials.shader({ wgsl })` with `fn surface` in the WGSL | `shaders/surface-functions` |
 | A fully custom effect, such as a hologram | `materials.shader({ wgsl })` with a `@vertex` entry point that takes an `InstanceIn`, and a `@fragment` one | `guides/custom-shaders` |
 
-Lighting and shadows: surfaces take up to four directional lights (the first casts the shadows), the ambient and hemisphere lights, and clustered point and spot lights. A shadowed directional light covers most outdoor scenes, and its layers choose the casters. Hemisphere light is cheap fill. Point and spot lights cost little unshadowed. Rectangle and tube lights show their shape in highlights, at several times a point light's cost. Contact shadows ground small objects on High and Ultra. An environment gives standard materials reflections and soft diffuse light. Set it up before play: the GPU filters the whole map in one frame. The sky lights outdoor scenes. The physical atmosphere hazes distant land blue. Indoors, give each room its own reflection probe. (`api/lights`, `concepts/lighting`, `concepts/shadows`; every option and default is in `references/api-quickref.md` section 7.)
+Lighting and shadows: surfaces take up to four directional lights (the first casts the shadows), the ambient and hemisphere lights, and clustered point and spot lights. A shadowed directional light covers most outdoor scenes, and its layers choose the casters. Hemisphere light is cheap fill. Point and spot lights cost little unshadowed. Rectangle and tube lights show their shape in highlights, at several times a point light's cost. Contact shadows ground small objects on High and Ultra, and WebGL2's Medium. An environment gives standard materials reflections and soft diffuse light. Set it up before play: the GPU filters the whole map in one frame. The sky lights outdoor scenes. The physical atmosphere hazes distant land blue. Indoors, give each room its own reflection probe. (`api/lights`, `concepts/lighting`, `concepts/shadows`; every option and default is in `references/api-quickref.md` section 7.)
 
 Interaction:
 
@@ -240,7 +240,7 @@ rings.set({ roughness: 0.2 }); // the standard values, which defaultSurface read
 
 ## 8. When something goes wrong
 
-Most faults come from a page that is not cross-origin isolated, an object changed without a setter, the wrong texture color space, allocations in per-frame code, or a pipeline built during play. `references/testing-and-debugging.md` section 7 pairs every symptom with its cause and fix. Section 6 lists the error codes, and section 8 is the release checklist. An `EngineError` names its fix, then the docs page `errors/<code>`. A browser test that passes on one machine and fails on another has a usual cause. It waits with a fixed sleep, compares screenshots, reads an unseeded random number, or meets another checkout's server (`references/e2e-testing.md`, section 7).
+Most faults come from a page that is not cross-origin isolated, an object changed without a setter, the wrong texture color space, allocations in per-frame code, or a pipeline built during play. `references/testing-and-debugging.md` section 8 pairs every symptom with its cause and fix. Section 7 lists the error codes, and section 9 is the release checklist. An `EngineError` names its fix, then the docs page `errors/<code>`. A browser test that passes on one machine and fails on another has a usual cause. It waits with a fixed sleep, compares screenshots, reads an unseeded random number, or meets another checkout's server (`references/e2e-testing.md`, section 7).
 
 ## 9. References in this skill
 
@@ -250,7 +250,7 @@ Read these when needed:
 - `references/recipes.md`: patterns for common tasks. Camera controls, animated models, thousands of moving objects, pooling, picking, labels, loading screens, HTML UI, physics, video, custom effects, large worlds, particle effects and terrain.
 - `references/performance.md`: budgets, measuring, symptom-to-fix tables, phone rules, slow first loads, staged loading, caching across visits and a review order.
 - `references/shaders.md`: the surface-function contract, built-in values, uniforms and textures, portable WGSL rules, custom post effects and custom passes.
-- `references/testing-and-debugging.md`: `bunx @null3d/cli test`, image tests, testing on devices, error codes and a troubleshooting table.
+- `references/testing-and-debugging.md`: `bunx @null3d/cli test`, image tests, device tests, the inspector, error codes and troubleshooting.
 - `references/e2e-testing.md`: a browser suite for a whole app or game. Playwright and its pinned Chromium, the real page, readiness, a test hook, state hashes, determinism and CI.
 - `references/content-pages.md`: product and marketing pages with a 3D scene: scroll-driven cameras, caching and crashes.
 

@@ -108,8 +108,10 @@ export interface Null3dPluginOptions {
 	assets?: AssetOptions;
 	/**
 	 * Let the page's address set the engine's test switches, such as `?gpu=` and `?hold=`, in
-	 * production builds too. Development builds always read them. The default is false, so a link
-	 * cannot change how a shipped game runs. Turn it on for builds of test and benchmark pages.
+	 * production builds too. Without the option, development builds read them and production builds
+	 * do not, so a link cannot change how a shipped game runs. An explicit false turns them off in
+	 * every build, the dev server's and the `null3d` command's included. Turn it on for builds of
+	 * test and benchmark pages.
 	 */
 	urlSwitches?: boolean;
 }

@@ -2,13 +2,14 @@
 
 The plan asks for an evaluation of each skill. Its cases run with and without the skill, and the
 run records the expectation pass rate, the time and the tokens. A set of trigger queries tests
-whether the skill's description finds the requests that it should. This page records the run for
-`skills/null3d-develop`, on the final form of its feature-intake section and its "search before you
-hand-roll" table.
+whether the skill's description finds the requests that it should. This page records one run for
+`skills/null3d-develop`. The run read the skill file below, with its feature-intake section and its
+"search before you hand-roll" table. The skill and its evaluation set have changed since, so the
+figures describe that version, not the current one.
 
 Result: with the skill, 55 of 60 graded expectations passed, 92%. Without it, 44 of 60 passed,
-73%. The trigger queries selected the right skill for 20 of 20. The skill therefore meets the
-90% expectation and trigger gates that section 12.6 proposes for release 0.3.
+73%. The trigger queries selected the right skill for 20 of 20. That version of the skill
+therefore met the 90% expectation and trigger gates that section 12.6 proposes for release 0.3.
 
 The PR audit session graded the same twenty kept answers once more, with the same grader. It gave 54
 of 60 with the skill (90.0%) and 45 of 60 without, a gap of 9. Two grades changed, both in case 4
@@ -21,8 +22,8 @@ point a side, and the bar holds on both readings.
 | Item | Value |
 | --- | --- |
 | Skill | `skills/null3d-develop/SKILL.md`, SHA-256 `f5f7f480bf56026120e9112ffe3ecd51d3b01a41cf0c7e50b468d6f70871a76b`, 260 lines |
-| Cases | 10 cases and 60 expectations, from `evals.json` in the source tree |
-| Trigger queries | 20 queries, from `trigger-queries.json` in the source tree |
+| Cases | 10 cases and 60 expectations, from the run's copy of `evals.json`. The current file holds 12 cases and 75 expectations |
+| Trigger queries | 20 queries, from the run's copy of `trigger-queries.json`. The current file holds 22: 11 that should trigger the skill and 11 that should not |
 | Date | 26 October 2026, on the task branch after it merged `m3-start` |
 | Model | deepseek-flash[1m] through the Claude Code command line |
 | Tools | read, file search and directory listing; no file writes, so every answer is the run's final message |
@@ -116,11 +117,10 @@ tools and engines chose none.
   `{"ok": true}`. Case 1's first answer ended with "The code above is checked": the code sat in an
   earlier message, which the harness does not keep. The run was repeated to get a complete answer,
   and the table uses the second answers.
-- Case 9's sixth point is a known miss. Intake step 5 asks what a later version changes, and step
-  2 asks for the step that adds a missing feature. The physics and text rows in the skill and in the
-  template name no step, and neither does `guides/physics`. The port mapping does:
-  `docs/porting/threejs-mapping.md` gives step 0.3 for MSDF text and for `@null3d/rapier`. The
-  answer with the skill therefore names no later version.
+- Case 9's sixth point was a known miss of the run. Intake step 5 asked what a later version
+  changes, and step 2 asked for the step that adds a missing feature. The physics and text rows in
+  the skill and in the template named no step, so the answer with the skill named no later version.
+  The current case 9 holds five points, and none asks for a later version.
 - The time and token figures come from the command line's own report. The cache figures cover the
   context that the harness re-reads on each turn, so they are not a price.
 - The judge is one model call per case, so a judgement is not cross-checked. Each answer and verdict

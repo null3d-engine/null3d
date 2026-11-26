@@ -350,7 +350,7 @@ export function gateSteps({ commit, quick }: GateOptions): GateStep[] {
 		{
 			id: 'images-swiftshader',
 			item: '1',
-			what: "The image test manifest as the commit's CI browser jobs drew it on Linux SwiftShader: every browser shard job and the city job passed in its CI run from a push or a run started by hand",
+			what: "The image test manifest as the commit's CI browser jobs drew it on Linux SwiftShader: every browser shard job, every heavy-test job and the city job passed in its CI run from a push or a run started by hand",
 			command: ['bun', 'bench/ci-browser-jobs.ts', commit],
 			timed: false,
 			read: (out) =>

@@ -96,7 +96,7 @@ Add `engine.report` to a bug report. It holds the result of every test, and the 
 
 When the page draws although a worker was meant to, `engine.mode.renderFallback` says why. `no-surface` means that the browser cannot draw with the GPU path in a worker. `no-answer` means that the engine's test worker did not answer in time, twice, as on a stalled GPU or a very busy machine. `failed-to-start` means that the test worker's script did not load. A development build also logs a warning with the reason. Drawing on the page works, but the page's own code then shares its thread with the drawing. [Page API: createEngine](../api/engine.md#what-the-engine-reports) describes each value.
 
-Switches in the page's address force a choice, so you can find which path shows a fault. The engine reads them in development builds only:
+Switches in the page's address force a choice, so you can find which path shows a fault. The engine reads them in development builds. A production build reads them only when the Vite plugin's `urlSwitches` option is on:
 
 | Switch | Effect |
 | --- | --- |
@@ -104,9 +104,9 @@ Switches in the page's address force a choice, so you can find which path shows 
 | `?threads=off` | Run the single-threaded build |
 | `?render=main` | Draw on the page's main thread |
 | `?latency=low` | Use the low latency mode |
-| `?inspect` | Open the in-page inspector, which lists the scene and edits it live ([The in-page inspector](#the-in-page-inspector)) |
+| `?inspect` | Open the in-page inspector, which lists the scene and edits it live, in a development build ([The in-page inspector](#the-in-page-inspector)) |
 
-[Testing your sketch](testing.md#switches-for-tests) lists every switch.
+[Testing your sketch](testing.md#switches-for-tests) lists more switches.
 
 ## See the scene with debug drawing
 
@@ -145,7 +145,7 @@ To test a page's handling of a lost GPU, call `engine.simulateGpuLoss()`. The en
 
 `?inspect` opens a panel at the left edge of the page, over the canvas. The panel lists the scene as a tree, with each object's name and kind under its parent. A search box narrows the tree by name or kind. A click selects an object and outlines it in the view. It then shows the object's fields: position, rotation, scale, visibility, the static or dynamic flag and, for a mesh, its base color, roughness, metalness and opacity. The panel also shows the frame figures at its foot, which it reads every second.
 
-The panel runs in a development build only, and its code loads when the page first asks for it. A change lasts until the page reloads. Live edits are for exploring: write the final values into the sketch and its tests.
+The panel runs in a development build only, and its code loads when the page first asks for it. A held page and a replay open no panel and publish no bridge. A change lasts until the page reloads. Live edits are for exploring: write the final values into the sketch and its tests.
 
 The page publishes the panel's bridge as `window.__null3dInspector`, and the engine's `inspect` method runs the same calls from your own code. Both exist in a development build only:
 
@@ -157,11 +157,11 @@ if (engine.inspect) {
 }
 ```
 
-Each call takes a selector and returns a JSON-safe value. A selector is an object's name, its slot as `#<slot>`, `#camera` for the active camera, or a slot number.
+Each call that names an object takes a selector, and each call returns a JSON-safe value. A selector is an object's name, its slot as `#<slot>`, `#camera` for the active camera, or a slot number.
 
 | Call | Arguments | Answer |
 | --- | --- | --- |
-| `objects` | `{ filter?, limit? }` | Every live object, or the objects whose name or kind holds the filter: each one's slot, handle, name, kind, static or dynamic flag, layers, parent and child count |
+| `objects` | `{ filter?, limit? }` | `{ objects, count, truncated }`: the live objects, or those whose name or kind holds the filter, at most 50,000. Each gives its slot, handle, name, kind, static or dynamic flag, visibility, layers, parent, child count and, for a mesh, its material's id. `count` counts every match, and `truncated` is true when the list holds fewer |
 | `object` | `{ selector }` | One object, with its position, rotation, scale, world position, flags and material values |
 | `setObject` | `{ selector, position?, rotation?, rotationEuler?, scale?, visible?, dynamic?, layers? }` | The object after the change. `rotation` is a quaternion; `rotationEuler` is X, Y and Z angles in radians |
 | `setMaterial` | `{ selector, values }` | The mesh after the change. `values` takes the material's values, such as `color`, `opacity`, `metalness` and `roughness` |
@@ -171,16 +171,26 @@ Each call takes a selector and returns a JSON-safe value. A selector is an objec
 | `setQuality` | `{ preset?, settings? }` | The preset and settings after the change |
 | `highlight` | `{ selector? }` | The outlined object, or none |
 | `info` | none | The GPU path, the preset and the render scale |
+| `capture` | none | `{ png, bytes }`: the next frame as a PNG image in base64 text, and its size in bytes. The page answers this call itself |
 
 ## The MCP server
 
 `bunx @null3d/cli mcp` starts a Model Context Protocol server over stdio. A coding agent lists and changes the scene's objects, captures a frame, and reads the frame figures, the errors and the render graph. It can also switch the quality preset or the GPU path. The page needs a development build, because a production build leaves the inspection channel out.
 
-The server reaches the scene in one of two ways:
+The server reaches the scene in one of three ways:
 
 - By default, it starts the project's own Vite dev server and a headless Chrome, as `shot` does. This works on a cloud agent with no window.
-- `--connect <endpoint>` attaches to a Chrome that already runs with a debugging port, and drives the tab that already shows the page. The agent then sees exactly what the developer sees. Start Chrome with `--remote-debugging-port=9222`, open the page with `?inspect`, and run `bunx @null3d/cli mcp --connect http://127.0.0.1:9222`.
+- `--connect <endpoint>` attaches to a Chrome that already runs with a debugging port, and drives the tab that already shows the page. The agent then sees exactly what the developer sees. Start Chrome with `--remote-debugging-port=9222`, and open the page from your Vite dev server. Then run `bunx @null3d/cli mcp --connect http://127.0.0.1:9222`. Every development build publishes the bridge, so the page needs no switch. `?inspect` only opens the panel.
 - `--url <address>` uses a dev server that already runs, and still starts its own headless browser.
+
+The other options:
+
+- `--page <path>` names the page, `/` by default. With `--connect`, the server drives the tab at that path.
+- `--size <width>x<height>` sets the window of the server's own headless browser, 1280x720 by default.
+- `--gpu <tier>` opens the server's own page on `webgpu`, `compat` or `webgl2`.
+- `--timeout <seconds>` sets how long the page may take to publish the inspector, 60 by default.
+
+A held page and a replay publish no bridge, so the server cannot reach them. [The `mcp` command](../cli/null3d.md#mcp) is the full reference of the command.
 
 | Tool | What it does |
 | --- | --- |

@@ -3,7 +3,7 @@ id: api/debug
 title: Debug drawing and stats
 status: experimental
 since: "0.1"
-summary: "debug.line, box, sphere, arrow, axes, grid, frustum, light and skeleton; the stats overlay, debug.frameStats and @null3d/engine/stats; engine.measure and its figures; debug.view, the ?view switch and add-on views; debug.shadowCamera."
+summary: "debug.line, box, sphere, arrow, axes, grid, frustum, light and skeleton; the stats overlay, debug.frameStats and @null3d/engine/stats; engine.measure and its figures; debug.view, the ?view switch and add-on views; debug.shadowCamera; the in-page inspector and engine.inspect."
 ---
 
 # Debug drawing and stats
@@ -127,7 +127,7 @@ export default defineSketch(({ debug, input }) => {
 - The wireframe view keeps an edge list for each mesh once it has shown, which takes twice the GPU memory of the mesh's triangle indices.
 - The levels view reads the level of each draw from the culling that picks it. Each level is a bucket of its own, so the view needs no shader for each material. Its first frame builds the pipelines that carry the level code, so the levels can be missing for a few frames after a change.
 - `debug.cullingSpheres(true)` draws the bounding sphere that culling tests for each of the first 128 objects whose mesh has levels, until `debug.cullingSpheres(false)`. Use it beside the levels view to see why the size rule hid a copy. It reads the mesh's own sphere around the object's origin, so it does not draw the sphere that `setBounds` gave an object. Instance batch rows draw no sphere. `debug.cullingSpheresDrawn()` gives the spheres that the last frame drew, which is zero while the switch is off, so a page can tell that the switch drew them rather than nothing.
-- Debug views work in development builds only. In a release build, `debug.view` does nothing, and the build holds none of the views' shaders or drawing code. A few small parts stay, because the engine shares them: the scene's traversal of objects whose meshes have levels, and the culling's level code. Together they add about 2.4 KB after Brotli to a single-threaded build, and less to a pipelined one. A name that the engine does not know, and that no add-on feature registers, fails with [E1213](../errors/E1213.md).
+- Debug views work in development builds only. In a release build, `debug.view` does nothing, and the build holds none of the views' shaders or drawing code. A few small parts stay, because the engine shares them: the scene's traversal of objects whose meshes have levels, and the culling's level code. Together they add about 2.4 KB after Brotli to a single-threaded build, and less to a pipelined one. In a development build, a name that the engine does not know, and that no add-on feature registers, fails with [E1213](../errors/E1213.md).
 
 ### The view from the address
 
@@ -273,6 +273,7 @@ export default defineSketch(({ debug, page, time }) => {
 | `frames`, `seconds` | The presented frames of the window and its length. Both are 0 before the first window ends |
 | `presentedFps` | Frames per second that the engine presented |
 | `completedFps` | Frames per second that the GPU finished. Below `presentedFps`, the GPU limits the frame rate |
+| `updateErrors` | Frames of the window whose scene update did not run to its end, because the sketch's code or a core call in a frame threw. Those frames still present. The overlay shows a warning line while it is above 0 |
 | `cpuMs` | CPU time per frame of the busiest thread, in milliseconds |
 | `threads` | Each engine thread's name, its CPU time per frame, and the time of each phase, as `engine.measure` names them |
 | `gpuMs` | GPU time per frame in milliseconds, from one frame in eleven, or null without timer queries. It is the latest pass end less the earliest pass begin, because a tile GPU overlaps the passes |
@@ -439,6 +440,10 @@ for (const part of stats.gpuPassMs ?? []) {
 A pass whose role has a place among the passes of that role, such as a shadow cascade, prints it. A role without a place, such as `final`, prints only its name. A pass whose role is the same in each frame keeps its name where the number of passes before it changes.
 
 These figures time the GPU's work only. Work that the browser does outside the passes shows in `gpuLatencyMs` and in the frame rates.
+
+## The in-page inspector
+
+`?inspect` opens a panel over the canvas that lists the scene's objects, outlines the one you select and edits its fields. On the page, `engine.inspect(call, args)` runs the same calls from your own code, and `window.__null3dInspector` holds them for the MCP server. These exist in a development build only. A held page or a replay publishes no bridge and opens no panel. [The in-page inspector](../guides/debugging.md#the-in-page-inspector) lists the calls.
 
 ## API reference
 

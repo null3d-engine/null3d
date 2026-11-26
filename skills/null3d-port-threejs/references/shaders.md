@@ -4,7 +4,7 @@ null3D shaders are WGSL. The build translates them to GLSL for the WebGL2 path, 
 
 A custom material takes its WGSL in one `wgsl` option: a template literal tagged `/* wgsl */`, or a `.wgsl` import. That WGSL holds `fn surface`, `fn vertexOffset`, or both, or a full shader's `@vertex` and `@fragment` entry points. It declares its uniforms once, as `struct Uniforms`, and reads them from `material`.
 
-`materials.shader` is built, with surface functions, `vertexOffset`, uniforms in `struct Uniforms`, and full shaders. So are the built-in values `frame.time`, `frame.deltaTime`, `frame.index`, `frame.resolution`, `camera.position`, `camera.viewProjection`, `object.position` and `material`. So are textures in custom materials: each `var name: texture_2d<f32>;` of the WGSL, given in the `textures` option. So are post effects: `post.addEffect` with `fn effect(input: EffectInput) -> vec4f`. Scene and reflection passes (`render.addPass`) are built too, and so are the inputs and built-in values of three.js's shader materials: `uv1`, `instance`, `fragCoord`, the camera's matrices and planes, and the object's matrices and id. So are full-screen passes of your own WGSL (`render.addPass({ kind: 'fullscreen' })`, 0.2), and textures in post effects. A port that needs a part that is not built yet waits for it, or keeps its values in the standard options.
+`materials.shader` is built, with surface functions, `vertexOffset`, uniforms in `struct Uniforms`, and full shaders. So are the built-in values `frame.time`, `frame.deltaTime`, `frame.index`, `frame.resolution`, `camera.position`, `camera.viewProjection`, `object.position` and `material`. So are textures in custom materials: each `var name: texture_2d<f32>;` or `var name: texture_2d_array<f32>;` of the WGSL, given in the `textures` option. So are post effects: `post.addEffect` with `fn effect(input: EffectInput) -> vec4f`. Scene and reflection passes (`render.addPass`) are built too, and so are the inputs and built-in values of three.js's shader materials: `uv1`, `instance`, `fragCoord`, the camera's matrices and planes, and the object's matrices and id. So are full-screen passes of your own WGSL (`render.addPass({ kind: 'fullscreen' })`, 0.2), and textures in post effects. A port that needs a part that null3D lacks keeps its values in the standard options, and its report names the part.
 
 ## Contents
 
@@ -27,7 +27,7 @@ Read what the original shader does, then pick the smallest null3D form that can 
 | --- | --- |
 | Changes color, roughness, emission or alpha of a lit surface | Surface function |
 | Moves vertices | `vertexOffset`, plus a surface function if needed |
-| Ignores lighting (unlit effects, holograms, fresnel glows) | Surface function that writes `emissive` and sets `baseColor` to zero |
+| Ignores lighting (unlit effects, holograms, fresnel glows) | Unlit function, `fn unlit(input: SurfaceInput) -> vec4f`, in place of `surface`: it returns the linear color and opacity, with no lights, shadows, reflections or ambient occlusion (engine docs `shaders/surface-functions`, unlit surfaces) |
 | Replaces three.js lighting | Full shader with `null3d::lighting` helpers; rare, so confirm it is needed |
 | Is a full-screen pass | `post.addEffect`, or `render.addPass({ kind: 'fullscreen' })` when it writes a render target of its own (`references/post-processing.md`, section 6) |
 | Renders to a texture for another material | Custom pass (`render.addPass`) |
@@ -49,8 +49,9 @@ Surface functions keep instancing, shadows, fog and both backends working, and s
 | `float(i)`, `int(x)` | `f32(i)`, `i32(x)`; WGSL never converts types implicitly between variables |
 | `texture2D(t, uv)`, `texture(t, uv)` | `textureSample(t, tSampler, uv)` |
 | `texture2DLod`, `textureLod` | `textureSampleLevel(t, tSampler, uv, lod)` |
+| `texture(t, vec3(uv, layer))` on a `sampler2DArray` | `textureSample(t, tSampler, uv, i32(layer))` on a `texture_2d_array<f32>` |
 | `texelFetch(t, ivec2(p), 0)` | `textureLoad(t, vec2i(p), 0)` |
-| `textureCube(c, dir)` | No equivalent: a custom material samples 2D textures only. Sample an equirectangular 2D texture |
+| `textureCube(c, dir)` | No equivalent: a custom material samples 2D textures and texture arrays, not cube maps. Sample an equirectangular 2D texture |
 | `mod(x, y)` | `x - y * floor(x / y)`; WGSL `%` keeps the sign of `x` |
 | `atan(y, x)` | `atan2(y, x)` |
 | `inversesqrt(x)` | `inverseSqrt(x)` |
@@ -102,15 +103,15 @@ These exist now: the surface input's `relativePosition`, `worldPosition`, `norma
 
 ## 5. ShaderMaterial and RawShaderMaterial
 
-1. List the uniforms. Each becomes a field of `struct Uniforms` in the WGSL, with its first value in `uniforms` (numbers, `'#rrggbb'` colors, arrays). A `sampler2D` uniform becomes `var name: texture_2d<f32>;` in the WGSL, sampled as `textureSample(name, nameSampler, uv)`, and an entry of the `textures` option. Up to 6 textures, fixed at creation; each takes one of the uniforms' 32 numbers. Updates such as `material.uniforms.uSpeed.value = 2` become `material.set({ speed: 2 })`. three.js's `uniforms` record takes any name, and a name that the GLSL does not use changes nothing. In null3D, a name that `struct Uniforms` lacks fails the type check, and the engine throws E1216 when it runs.
+1. List the uniforms. Each becomes a field of `struct Uniforms` in the WGSL, with its first value in `uniforms` (numbers, `'#rrggbb'` colors, arrays). A `sampler2D` uniform becomes `var name: texture_2d<f32>;` in the WGSL, sampled as `textureSample(name, nameSampler, uv)`, and an entry of the `textures` option. A `sampler2DArray` becomes `var name: texture_2d_array<f32>;`. Sample it as `textureSample(name, nameSampler, uv, i32(layer))`. Up to 6 textures, fixed at creation; each takes one of the uniforms' 32 numbers. Updates such as `material.uniforms.uSpeed.value = 2` become `material.set({ speed: 2 })`. three.js's `uniforms` record takes any name, and a name that the GLSL does not use changes nothing. In null3D, a name that `struct Uniforms` lacks fails the type check, and the engine throws E1216 when it runs.
 2. Read the vertex shader. If it only applies `projectionMatrix * modelViewMatrix * vec4(position, 1.0)` and passes varyings along, drop it: the engine does both. If it moves vertices, port that part as `vertexOffset`.
-3. Read the fragment shader, and map its varyings to `SurfaceInput` fields. Map its output to `Surface` fields: lit look to `baseColor`, `roughness` and `metalness`; unlit look to `emissive` with `baseColor` set to zero; transparency to `alpha` plus the right `alphaMode`.
+3. Read the fragment shader, and map its varyings to `SurfaceInput` fields. Map a lit look to the `Surface` fields `baseColor`, `roughness` and `metalness`, and an unlit look to the color that `fn unlit` returns. Map transparency to `alpha`, or to the opacity that `fn unlit` returns, plus the right `alphaMode`.
 4. Set the material options that were ShaderMaterial flags: `transparent` becomes `alphaMode: 'blend'`, `side: DoubleSide` becomes `doubleSided: true`, `blending: AdditiveBlending` becomes `blending: 'additive'`, `depthWrite: false` stays `depthWrite: false`.
 5. Compare parity images on WebGPU and WebGL2.
 
 A `RawShaderMaterial` adds nothing automatically, so all its matrices and attributes are explicit; the same steps apply.
 
-A shader whose look the engine's lighting cannot give, such as a hologram, becomes a full shader. It has one `@vertex` entry point that takes an `InstanceIn`, and one `@fragment` entry point. It finds its instance with `find_instance` from `null3d::mesh`, places vertices with `clip_position`, and writes its linear color through `finish` (null3d-develop `references/shaders.md`, section 5). Uniforms and standard values do not reach a full shader, so port its uniforms as constants, or keep the look in a surface function.
+A shader that ignores the lights, such as a hologram, becomes an unlit function, `fn unlit` (section 1). It reads the uniforms, the textures and the built-in values such as `frame.time`, as a surface function does. Only a shader that needs a vertex stage of its own, which `vertexOffset` cannot give, becomes a full shader. It has one `@vertex` entry point that takes an `InstanceIn`, and one `@fragment` entry point. It finds its instance with `find_instance` from `null3d::mesh`, places vertices with `clip_position`, and writes its linear color through `finish` (null3d-develop `references/shaders.md`, section 5). Uniforms and standard values do not reach a full shader, so port its uniforms as constants.
 
 ## 6. onBeforeCompile patterns
 
@@ -148,7 +149,8 @@ Keep the original's standard options (color, roughness, metalness, emissive) on 
 | `Fn(() => { ... })`, `If`, `Loop`, `.toVar()` | `fn`, `if`, `for`, `var` |
 | `material.colorNode`, `opacityNode`, `roughnessNode`, `metalnessNode`, `normalNode`, `emissiveNode`, `aoNode` | `s.baseColor`, `s.alpha`, `s.roughness`, `s.metalness`, `s.normal`, `s.emissive`, `s.occlusion` |
 | `material.positionNode` | `vertexOffset` returning `newPosition - input.position` |
-| `material.fragmentNode`, `outputNode`, `mrtNode` | Full shader; a post-processing `outputNode` becomes a post effect (`post.addEffect`); `mrtNode` has no equivalent |
+| `material.fragmentNode` | Unlit function, `fn unlit`, which returns the color with no lighting |
+| `material.outputNode`, `mrtNode` | Full shader; a post-processing `outputNode` becomes a post effect (`post.addEffect`); `mrtNode` has no equivalent |
 
 On an `InstancedMesh`, three.js r186 applies the instance matrix before `positionNode` runs, so `positionLocal` there already holds the instanced vertex. In null3D, `input.position` is always the mesh's own vertex, and the engine applies the instance transform after `vertexOffset`. A displacement that three.js scaled by that `positionLocal` changes size after the port. Write it from `input.position` and the instance's own data, and check the project's three.js version before you port a `positionNode`.
 
@@ -206,13 +208,9 @@ const glow = materials.shader({
   wgsl: /* wgsl */ `
     struct Uniforms { glowColor: vec3f, power: f32 }
 
-    fn surface(input: SurfaceInput) -> Surface {
-      var s = defaultSurface(input);
+    fn unlit(input: SurfaceInput) -> vec4f {
       let f = pow(1.0 - max(dot(input.normal, input.viewDirection), 0.0), material.power);
-      s.baseColor = vec3f(0.0);
-      s.emissive = material.glowColor * f;
-      s.alpha = f;
-      return s;
+      return vec4f(material.glowColor * f, f);
     }`,
 });
 ```

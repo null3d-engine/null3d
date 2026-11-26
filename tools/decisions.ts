@@ -3,9 +3,10 @@
 //   bun tools/decisions.ts           print the list
 //   bun tools/decisions.ts --check   report records without a title, status or summary, and
 //                                    numbers that two records share
-//   bun tools/decisions.ts --next    print the first number that this tree and every local
-//                                    branch leave free, so a branch started hours ago does not
-//                                    claim one that a landing has taken since
+//   bun tools/decisions.ts --next    print the number after the highest that this tree, every
+//                                    local branch and every remote-tracking branch hold, so a
+//                                    branch started hours ago does not claim one that a landing
+//                                    or another branch has taken since. Run `git fetch` first
 import { execFileSync } from 'node:child_process';
 import { readRecords, recordFiles, recordList } from './lib/decisions';
 
@@ -14,7 +15,7 @@ const numberIn = (path: string): number | undefined => {
 	return match ? Number(match[1]) : undefined;
 };
 
-/** Every record number this tree holds, and every one a local branch holds. */
+/** Every record number this tree holds, and every one a local or remote-tracking branch holds. */
 function everyNumber(root: string): number[] {
 	const numbers: number[] = [];
 	for (const path of recordFiles(root).keys()) {
@@ -23,10 +24,11 @@ function everyNumber(root: string): number[] {
 	}
 	let branches: string[] = [];
 	try {
-		branches = execFileSync('git', ['for-each-ref', '--format=%(refname:short)', 'refs/heads'], {
-			cwd: root,
-			encoding: 'utf8',
-		})
+		branches = execFileSync(
+			'git',
+			['for-each-ref', '--format=%(refname)', 'refs/heads', 'refs/remotes'],
+			{ cwd: root, encoding: 'utf8' },
+		)
 			.split('\n')
 			.filter((name) => name.length > 0);
 	} catch {

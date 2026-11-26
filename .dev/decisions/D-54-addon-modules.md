@@ -94,7 +94,7 @@ The owner set these three rules, and the publishing rules below, with [D-173](D-
 
 - The engine reads `KHR_draco_mesh_compression`.
 - The decoder is Draco's glTF-only build, 59 KB after Brotli. It loads on first use, only for files that hold Draco data, in the glTF worker, once per page, through the on-demand loader.
-- It is a recorded exception to the 16 KB limit for first-use files ([D-14](D-14-js-budget.md)).
+- It is a recorded exception to the 18 KB limit for first-use files ([D-14](D-14-js-budget.md)).
 - The worker quantizes decoded normals, tangents and UVs into [D-25](D-25-vertex-types.md)'s types, which halves the GPU memory of most Draco meshes.
 - The docs keep advising meshopt: `assets optimize` converts to meshopt by default. Draco suits large static meshes on pages that load several hundred KB of them. For the round trip to Blender 5.1 and older, keep a Draco or plain copy.
 

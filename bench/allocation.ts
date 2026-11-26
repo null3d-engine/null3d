@@ -50,9 +50,7 @@
 // changes a uniform of each every frame. `--canvas` follows an OffscreenCanvas with a texture and
 // refreshes a rectangle of it every frame, so the sample holds the browser's image data and the
 // upload that the refresh makes. `--environment` lights S1 with the built-in room, and
-// turns it and changes its intensity every frame. `--probes` sets a small light probe grid over
-// S1, so the lit draws take the grid's templates and read it three times a pixel. `--hemisphere`
-// adds two hemisphere lights to S1,
+// turns it and changes its intensity every frame. `--hemisphere` adds two hemisphere lights to S1,
 // one of them tilted, and changes their intensities every frame. `--area-lights` adds eight
 // rectangle lights, two with images, and four tube lights to S1, which circle the swarm and change
 // their intensities every frame. `--setters` calls, every frame, each setter that a sketch may
@@ -87,7 +85,9 @@
 // cards around S1, which pick their views from the camera in every frame. `--splats` puts a cloud
 // of the splats add-on's Gaussians above S1, whose chunks the add-on's Rust task in a job worker
 // selects for the camera's position in every frame, through the engine's public task hook, and the
-// core packs the chosen rows in its own memory. `--inertial` makes the
+// core packs the chosen rows in its own memory. `--wind` adds the wind add-on's field about S1. In
+// every frame it sets the base wind, pushes the air where a body passes and asks a job worker for
+// the air at one place, and a compute pass fills the field's grid. `--inertial` makes the
 // animated characters that play one clip switch clips by inertial transitions, with 64 characters
 // unless `--animated` names a count. `--calls` makes, every frame, the
 // calls whose docs promise no allocation and that no other switch makes: a raycast, a mesh's vertex

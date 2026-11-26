@@ -316,8 +316,8 @@ export interface Driver {
 }
 
 /**
- * Where the Manual camera may go: inside a scene's ring of mountains, below their lowest crest and
- * above the ground, so the view never reaches the plain background. The camera's height stays under
+ * Where the Manual camera may go: inside a scene's edge, below its ceiling and above the ground, so
+ * the view never reaches the plain background. The camera's height stays under
  * the highest that its focus may stand plus its farthest distance, and its reach across the ground
  * under the focus's reach plus that distance.
  */
@@ -663,8 +663,8 @@ export function createCinematic(
 	const { bounds } = options;
 	const controls = createOrbitControls(ctx, camera, {
 		// The Orbit preset: left turns, the middle zooms and the right pans; one finger turns and
-		// two fingers dolly and pan. A scene's bounds keep the camera inside its mountains and above
-		// its ground; without them the limits are wide.
+		// two fingers dolly and pan. A scene's bounds keep the camera inside its edge and above its
+		// ground; without them the limits are wide.
 		enableDamping: true,
 		screenSpacePanning: false,
 		// The wheel and a pinch are not a dolly toward the point the camera turns around: the frame

@@ -162,20 +162,20 @@ A change of preset can change pipelines and render targets, and building them ta
 
 Each value is a starting point, which measurements on phones, tablets and desktops tune from release to release. A setting that changes "during play" takes a new value at any time. One that changes "at the start" is fixed while the engine runs. The preset that the engine starts with, or the page's option, gives its value, and `quality.setPreset` keeps it. The memory maximum is fixed before the engine loads.
 
-The [settings of each preset](quality-preset-tables.md#settings-of-each-preset) give each setting's value on each preset, when it changes, and whether it is built.
+The [settings of each preset](quality-preset-tables.md#settings-of-each-preset) give each setting that the engine applies, with its value on each preset and when it changes.
 
 The pixel ratio cap is the cheapest large saving on phones. The GPU fills each device pixel, and a screen's device pixels grow with the square of its ratio. So a ratio of 3 fills 2.25 times the pixels of a ratio of 2. The `maxPixelRatio` option of `createEngine` replaces the preset's cap, and `quality.set({ maxPixelRatio })` changes it during play.
 
-The shadow settings set the GPU memory that shadows take. The shadow map stores 2 bytes per texel. The atlas stores 4: the tiles of spot and point lights, and the sun's hero tile.
+The shadow settings set the GPU memory that shadows take. The shadow map stores 2 bytes per texel. The atlas stores 4: the tiles of spot and point lights, and the sun's hero tile. The table gives the memory with every tile in use.
 
-| Preset | Shadow map | Shadow atlas | Both |
-| --- | --- | --- | --- |
-| Low | 4 MiB | 5 MiB | 9 MiB |
-| Medium | 24 MiB | 9 MiB | 33 MiB |
-| High | 24 MiB | 68 MiB | 92 MiB |
-| Ultra | 128 MiB | 100 MiB | 228 MiB |
+| Preset | Shadow map | Shadow atlas | Both | Atlas with a hero |
+| --- | --- | --- | --- | --- |
+| Low | 4 MiB | 4 MiB | 8 MiB | 20 MiB |
+| Medium | 24 MiB | 8 MiB | 32 MiB | 144 MiB |
+| High | 24 MiB | 64 MiB | 88 MiB | 272 MiB |
+| Ultra | 128 MiB | 96 MiB | 224 MiB | 1,536 MiB, refused |
 
-The shadow map takes its memory once the directional light casts shadows. The atlas takes its own once a spot or point light casts, and one more layer while the sun names a [hero shadow](shadows.md#a-hero-shadow). The table counts that layer: 1 MiB at Low and Medium, 4 MiB at High and Ultra. [Shadows](shadows.md#what-shadows-cost) gives the cost of each.
+The shadow map takes its memory once the directional light casts shadows. The atlas takes its own once a spot or point light casts. While the sun names a [hero shadow](shadows.md#a-hero-shadow), the atlas has one more layer. Every layer then takes the size of the preset's `heroTileSize`: 1,024 texels on Low, 2,048 on Medium and High, and 4,096 on Ultra. An atlas above 1 GiB fails with [E1501](../errors/E1501.md). So on Ultra, a hero leaves room for 15 light tiles at most. [Shadows](shadows.md#what-shadows-cost) gives the cost of each.
 
 The anisotropic filtering cap limits the `anisotropy` option of every texture, so surfaces seen at a slant cost fewer texture reads on the lighter presets. The upload budget limits the texel bytes that one frame sends to the GPU, so loading many textures does not make one frame slow. A larger texture goes up over several frames. `quality.set({ maxAnisotropy, uploadBytesPerFrame })` changes either during play.
 
@@ -209,7 +209,7 @@ The engine makes its memory while it tests the GPU paths. So the memory maximum 
 
 The `momentTransparency` option of `createEngine`, or the `?moments=on` or `?moments=off` switch, blends the camera's blended surfaces in the moment transparency layer, which needs no sort. [Moment transparency](../api/materials.md#moment-transparency) describes the layer and the materials that it draws. Every preset leaves it off, because it draws those surfaces twice, and the setting stays fixed while the engine runs.
 
-The layer's moment store and color sum take 8 bytes per pixel each at the render size, and its surfaces write both: 16 bytes per pixel a frame, which is 33 MB at 1920 x 1080. The composite reads both and writes the scene color, and SMAA 1x's two 8-bit steps take 8 bytes per pixel more. A multisampled scene also needs a copy of one depth sample, at 4 bytes per pixel, so the targets that the layer adds come to 28 bytes per pixel before the render graph shares any with another pass. The 33 MB counts the writes alone, and the memory is larger: on the Island showcase at High at 1920 x 1080, the stats overlay's `GPU textures` rose by 40 MiB on WebGPU with direct draws and by 52 MiB on WebGL2. The weighted blending writes 10 bytes per pixel into its two sums. SMAA smooths the layer's edges under the share that its moments cover, and the opaque geometry keeps MSAA's samples.
+The layer's moment store and color sum take 8 bytes per pixel each at the render size, and its surfaces write both: 16 bytes per pixel a frame, which is 33 MB at 1920 x 1080. The composite reads both and writes the scene color, and SMAA 1x's two 8-bit steps take 8 bytes per pixel more. Its resolve step writes a copy of the scene color, at 4 or 8 bytes per pixel by the scene color's format. A multisampled scene also needs a copy of one depth sample, at 4 bytes per pixel. So the targets that the layer adds come to 32 to 36 bytes per pixel before the render graph shares any with another pass. The 33 MB counts the writes alone, and the memory is larger: on the Island showcase at High at 1920 x 1080, the stats overlay's `GPU textures` rose by 40 MiB on WebGPU with direct draws and by 52 MiB on WebGL2. The weighted blending writes 10 bytes per pixel into its two sums. SMAA smooths the layer's edges under the share that its moments cover, and the opaque geometry keeps MSAA's samples.
 
 In the S1 benchmark with its smoke switch, at High on this computer's GPU in Chrome 156, the layer added about 0.05 ms of processor time and 0.58 ms of GPU time a frame on WebGPU, about sixteen per cent of that scene's GPU frame, and about 1.12 ms on WebGL2, about twenty per cent. A phone's figure is owed, and a desktop GPU's fill rate is not a phone's.
 
@@ -217,7 +217,7 @@ In the S1 benchmark with its smoke switch, at High on this computer's GPU in Chr
 
 With the depth prepass, the engine first draws the depth of the opaque objects, with no color. The opaque pass then shades each pixel once, for its nearest surface. Without the prepass, a pixel can be shaded for several surfaces before the nearest one covers them. The prepass costs a second pass over the objects' vertices. So it saves GPU time where objects hide many others and their shading costs much, such as in a lit street of buildings. It costs time where a scene has many vertices and little overdraw.
 
-Some objects stay out of the prepass and shade as they would without it. These are blended objects, line batches, and objects whose material has an alpha cutoff or skips depth writes or the depth test. On WebGL2, every preset turns the prepass on. On WebGPU and in its compatibility mode, every preset leaves it off. Ambient occlusion, the directional light's [contact shadows](shadows.md#contact-shadows), screen-space bounce light and screen-space reflections turn it on while they draw. They read the prepass's depth ([post-processing](post-processing.md#ambient-occlusion)). So High and Ultra draw it on WebGPU outside compatibility mode, where the bounce light runs. The [lowest quality tier](#the-lowest-quality-tier) turns it off on WebGL2. Each opaque object then has a depth pipeline beside its own, which the first frame and a warm-up build too. The `depthPrepass` option of `createEngine` replaces the preset's choice. Compare the scene's GPU time with `?prepass=on` and `?prepass=off`. The prepass is fixed while the engine runs, because the scene's pipelines depend on it.
+Some objects stay out of the prepass and shade as they would without it. These are blended objects, line batches, and objects whose material has an alpha cutoff or skips depth writes or the depth test. On WebGL2, every preset turns the prepass on. On WebGPU and in its compatibility mode, every preset leaves it off. Ambient occlusion, the directional light's [contact shadows](shadows.md#contact-shadows), screen-space bounce light and screen-space reflections turn it on while they draw. They read the prepass's depth ([post-processing](post-processing.md#ambient-occlusion)). So High and Ultra draw it on WebGPU outside compatibility mode, where the bounce light runs. The [lowest quality tier](#the-lowest-quality-tier) turns it off on WebGL2. Each opaque object then has a depth pipeline beside its own, which the first frame and a warm-up build too. The `depthPrepass` option of `createEngine` replaces the preset's choice. Compare the scene's GPU time with `?prepass=on` and `?prepass=off`. `quality.set({ depthPrepass })` changes it during play.
 
 WebGL2 draws the prepass because of Apple GPUs. On them, a depth prepass restores early rejection of hidden pixels in WebGL2, so each pixel is shaded about once. In the S4 benchmark on an iPad, WebGL2 went from 38 to 60 frames per second on Low. On Medium it went from 17 to 37 frames per second. The images stay the same. On Android phones that ran S4, WebGL2 kept its frame rate with the prepass, and its CPU time did not change. On WebGPU the GPU removes hidden surfaces itself, so the prepass only adds work. On the same iPad it added about 4 ms per frame to S4 on Medium.
 

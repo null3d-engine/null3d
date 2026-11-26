@@ -120,6 +120,7 @@ When the second file's address comes from the first file, as a level file names 
 | `assets` | Downloads of textures, JSON and binary files, with preloads and progress: [Assets](assets.md) |
 | `input` | Pointer, touch, keyboard and gamepad input, and action maps: [Input](input.md) |
 | `post` | The tone mapping and the exposure: [Post-processing API](post.md) |
+| `render` | The sketch's own render passes, such as a camera that draws into a texture: [Render graph API](render.md) |
 | `quality` | The quality preset that the engine runs, and its settings: [Quality API](quality.md) |
 | `time` | Sketch time in seconds, the frame's step and the frame number: [Time](time.md) |
 | `engine` | The canvas's size, and what the device can do: [The engine field](#the-engine-field) |
@@ -172,6 +173,8 @@ Each frame runs the callbacks in this order, and each callback is optional:
 | `onLateUpdate(dt)` | Once per frame, after the engine updates transforms and before it culls and draws | Cameras that follow objects, and other code that needs the frame's world positions |
 
 `step` is the length of a fixed step in seconds, 1/60 at the default rate. `dt` is the frame's step in seconds, the same value as `time.dt`. It is 0 in the first frame and after a pause, and it is never longer than a quarter second. [Time](time.md) gives the details.
+
+`onDestroy()` runs once when the engine stops, on the sketch's thread, before its workers stop. Remove the timers, event listeners and message handlers that the sketch added outside the engine there. After it, every call to the engine fails with [E1420](../errors/E1420.md).
 
 ## When changes show
 

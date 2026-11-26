@@ -28,8 +28,9 @@ down there, which D-241 calls a failure. The tablet's field row holds at the bud
 canopy drag takes it over, so the governor must step that row too. Built: the wind add-on's field
 and its state-keeping solver
 (M3-V13, M3-V15). Built too: the cost pages that time the field's readers, and the demos' plant
-material, which reads the field (`examples/lib/sway.ts`). Not built: the preset rows and budgets
-(M3-V16) and branch poses (M3-V10, measured on its own branch). M3-V17 built the flag and water
+material, which reads the field (`examples/lib/sway.ts`). The preset rows and budgets (M3-V16) are
+built in `packages/wind/src/wind.ts`. Its High and Ultra rows use flat grids of 128 and 256 in place of
+the layers and the volume. Not built: branch poses (M3-V10, measured on its own branch). M3-V17 built the flag and water
 readers, with the open clauses that its addendum lists. The canopy drag and the falling leaves that
 it built for the vegetation add-on left the repository with that add-on
 ([D-378](D-378-vegetation-add-on-removed.md)). Task: M3-V14.

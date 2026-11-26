@@ -395,12 +395,14 @@ A pass that does not run keeps the state that its last run wrote, as it keeps it
 A pass with history costs more than one state. On the WebGPU paths the target holds both states as
 `layers * 2` layers, and the pass keeps two state textures of `layers` layers each: four times the
 texels of one state. On WebGL2 the fragment form keeps both states in the target's layers and adds
-one scratch texture of one state: three times. At `rgba16float` that is 32 bytes for each texel of
-one state on the WebGPU paths and 24 on WebGL2; at `r32float`, 16 and 12. Size a history pass for
-its grid, not the canvas: 128 by 128 takes 512 KiB on the WebGPU paths and 384 KiB on WebGL2, and
-256 by 256 takes 2 MiB and 1.5 MiB. The 8192 by 8192 side that the device allows would take 2 GiB
-on the WebGPU paths, which no page should choose by accident. `render.dumpGraph()` does not list the
-state textures, so budget them beside its figures.
+one scratch texture of one layer. Before each layer's run, the engine copies the state that the run
+reads into the scratch. That is `layers * 2 + 1` layers in all. For a pass of one layer, that is
+three times the texels of one state. At `rgba16float` such a pass takes 32 bytes for each texel of
+one state on the WebGPU paths and 24 on WebGL2. At `r32float` it takes 16 and 12. Size a history
+pass for its grid, not the canvas. One layer of 128 by 128 takes 512 KiB on the WebGPU paths and 384
+KiB on WebGL2. One layer of 256 by 256 takes 2 MiB and 1.5 MiB. The 8192 by 8192 side that the
+device allows would take 2 GiB on the WebGPU paths, which no page should choose by accident.
+`render.dumpGraph()` does not list the state textures, so budget them beside its figures.
 
 ### Reading a region back
 

@@ -206,6 +206,8 @@ total size and `splats.loadedBytes` gives the part that has arrived.
 | `chunkSplats(data, options)` | The chunks that `createSplats` draws, if you want them yourself |
 | `parseStreamIndex(text, base)` | The chunks that a stream index names |
 | `colorOfSh(dc, encoded?)` | The linear color of a first-band spherical-harmonic coefficient |
+| `checkSplats(data, what)` | The same `data`, once its arrays hold the number of splats that it names. Otherwise it throws E2101, whose message names `what` |
+| `SPLAT_EXTENSION` | The name of the glTF extension that the add-on reads, `'KHR_gaussian_splatting'` |
 
 `Splats` gives `update(eye)`, `setBudget(count)`, `settle()`, `ready`, `total`, `drawn`, `chunks`,
 `loaded`, `failed`, `bytes`, `loadedBytes`, `feature` and `draw`, and `destroy()` frees it.

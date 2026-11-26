@@ -152,7 +152,7 @@ The coordinates stay the mesh's own. A repeated texture reports values past 1, a
 
 A skinned or morphed character draws a different shape than the mesh that the ray tests. So does a custom material that moves its vertices in its shader. Their coordinates can therefore differ from the pose that the frame drew.
 
-The point is tested at the pixel that the camera draws, not at a projected triangle. A surface thinner than a pixel picks where its pixels are. A material with `alphaMode: 'mask'` picks by its mask. So a ray through a cut-out hole finds what lies behind the hole. The frame that records the pick draws it, so the camera of that frame answers. A camera that moves meanwhile can differ from the frame that the click saw.
+The point is tested at the pixel that the camera draws, not at a projected triangle. A surface thinner than a pixel picks where its pixels are. An engine material with `alphaMode: 'mask'` picks by its mask. So a ray through a cut-out hole finds what lies behind the hole. The frame that records the pick draws it, so the camera of that frame answers. A camera that moves meanwhile can differ from the frame that the click saw.
 
 A pick finds these sources:
 
@@ -161,7 +161,7 @@ A pick finds these sources:
 - Each row of an instance batch, named by `object` and `instance`.
 - Skinned and morphed characters, as their last frame's pose places them.
 
-A scene with a source that the pick's id target cannot hold answers the whole pick with a raycast instead. That source is a whole shader of your own, a material with `blending` or `transmission`, or a sprite, point or line. The raycast tests triangles, so it ignores masks, and it uses the camera of the frame that last ran.
+A scene with a source that the pick's id target cannot hold answers the whole pick with a raycast instead. Such a source is a custom material without a vertex offset, a masked custom material, or a material with `alphaMode: 'hash'`, `blending` or `transmission`. A sprite, point or line is one too. The raycast tests triangles, so it ignores masks, and it uses the camera of the frame that last ran.
 
 A pick before the first frame answers `null`. The engine has not drawn the camera yet, so no pixel of a frame shows anything.
 

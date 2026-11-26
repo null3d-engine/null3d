@@ -22,6 +22,15 @@ bands at their own scales, lights their slopes, breaks foam on the crests and mi
 WebGL2 draws the same chain as fragment passes, and each band's heights match the transform on the
 page's thread there as they do on WebGPU.
 
+## Install
+
+```sh
+bun add @null3d/water @null3d/particles @null3d/engine
+```
+
+The package needs `@null3d/engine` and `@null3d/particles` at the same version. The particles
+add-on draws a waterfall's spray, mist and plume.
+
 ## Use
 
 ```ts
@@ -142,9 +151,10 @@ authored directions and each wave's own speed.
   engine's particle code load with the first fall that makes spray.
 - The water costs no memory until a scene creates it. The add-on's code and its shaders load only
   when a sketch imports it.
-- The ocean's transform takes 15 of the 31 passes that a sketch may add. Seven butterfly stages run
-  for each axis, then one pass puts the heights in meters. Each runs on a 128 by 128 grid with a
-  band to a layer. A sketch that draws a sea leaves room for its own passes.
+- The ocean takes 16 of the 31 passes that a sketch may add. Its transform runs seven butterfly
+  stages for each axis, then one pass puts the heights in meters. Each runs on a 128 by 128 grid
+  with a band to a layer. The 16th pass is the ocean's reflection. A sketch that draws a sea leaves
+  room for its own passes.
 
 `@null3d/water` owns all water. A scene makes water with it, not with a hand-written custom
 material. So there is one way to make water, with one set of settings.

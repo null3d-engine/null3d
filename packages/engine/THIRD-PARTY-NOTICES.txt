@@ -578,7 +578,6 @@ The engine core is compiled from Rust with these crates, each offered under the 
 or the Apache License 2.0. null3D takes them under the MIT License.
 
 - The Rust standard library: Copyright (c) The Rust Project Contributors
-- bumpalo 3.20.3: Copyright (c) 2019 Nick Fitzgerald
 - cfg-if 1.0.5: Copyright (c) 2014 Alex Crichton
 - dlmalloc 0.2.14: Copyright (c) 2014 Alex Crichton, the threaded build's heap
 - once_cell 1.21.4: Copyright (c) Aleksey Kladov

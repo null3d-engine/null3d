@@ -134,7 +134,7 @@ the bed at a point, and the current there.
 | `reflectionEvery` | A frame count from 1 to 16 for each preset | 2 on Low and Medium, 1 on High and Ultra | The frames between two draws of the reflection. The frame-budget governor doubles it while frames take too long |
 | `reflectionFollowsBudget` | `true` or `false` | `true` | Whether the frame-budget governor may raise `reflectionEvery`. Between draws the water shows the reflection of an older camera, so on a moving camera a raised count reads as a lag. `false` keeps the count |
 | `layers` | A 32-bit mask | The camera's layers | The layers that the reflection draws. Leave out what lies on or under the water |
-| `reflectionScale` | `1`, `0.5` or `0.25` | 1 | The reflection's size as a share of the render size each way |
+| `reflectionScale` | `1`, `0.5` or `0.25` | The quality preset's `reflectionScale`: 0.25 on Low, 0.5 on Medium and High, 1 on Ultra | The reflection's size as a share of the render size each way |
 | `mesh` | `{ step, across, cell, reach }` | 2, 16, 2 and 1.36 | The meters between two cross sections along a river, the sections across it, a lake's grid cell, and how far past a river's half width its mesh reaches as a factor |
 | `bed` | `'scene'` or `'shape'` | `'scene'` | Where the surface reads the depth of the bed: the copy of the scene's depth behind each pixel, or the depth that each shape describes |
 | `material` | The standard material values | None | The surface's material, such as its volume's tint. The surface works its own thickness and transmission out, so it takes no value for those |
@@ -147,19 +147,20 @@ the bed at a point, and the current there.
 
 `foamMap(ctx, obstacles, options)` makes the map that the surface breaks into flecks. Each obstacle
 is a mark `{ x, z, r }` at the water's surface. The map holds how near every point lies to a mark,
-from 1 at its edge to 0 a little way off. It stretches that reach downstream, so the foam trails.
+from 1 at its edge to 0 a little way off. It stretches that reach toward +x, so the foam trails
+there: the map takes the water to run along +x.
 
 | Option | Takes | Default | What it sets |
 | --- | --- | --- | --- |
 | `origin`, `size` | Two numbers each, in meters | Required | The world area that the map covers |
 | `width`, `height` | Texels | 1024, 224 | The map's texels along x and along z |
 | `reach` | A finite number above 0, in meters | 0.35 | How far the foam reaches around a mark that gives no reach of its own |
-| `trail` | A number, in meters | 1.6 | How far downstream the foam trails behind a mark. 0 or less leaves a ring |
+| `trail` | A number, in meters | 1.6 | How far the foam trails toward +x behind a mark. 0 or less leaves a ring |
 
 A mark takes a `reach` of its own, in meters, in place of the map's. So one water can foam further
-around some of its stones than around others. A mark without one keeps the map's reach. Give
-neither the map's reach nor the mark's and the call stops: a reach must be a finite number above 0.
-The foam reaches `trail × (1 + r / reach)` meters downstream of a mark, so a mark with a shorter
+around some of its stones than around others. A mark without one keeps the map's reach. A reach
+on the map or on a mark that is not a finite number above 0 stops the call.
+The foam reaches `trail × (1 + r / reach)` meters toward +x from a mark, so a mark with a shorter
 reach trails further in proportion to its radius.
 
 ## Wind on the surface
@@ -221,6 +222,7 @@ While it is off, the surface skips the rings' work.
 | Member | What it does |
 | --- | --- |
 | `update()` | Keeps the sketch's frame loop. The reflection pass carries its own cadence now, so the call changes nothing |
+| `level` | The height of the water's surface, in meters |
 | `reflectionEvery` | The frames between two draws of the reflection now |
 | `waveAmplitude` | The height of the long waves and of the wind's lift, as a factor of their base height |
 | `surfaceHeight(x, z, t)` | The height of the surface at a point and a sketch time, in meters, from its long waves |
@@ -347,7 +349,7 @@ surface, and fades in there. So the river and the fall meet without a seam.
 | `layers` | A 32-bit mask | Layer 0 | The layers that the sheet and the spray draw on |
 | `wind` | A wind field, such as `createWind`'s `field` | None | The air that carries the mist |
 | `material` | The standard material values | None | The sheet's material, such as the color of its white water |
-| `mesh` | `{ across, down }` | 16 and 40 | The sections across the sheet, and its rows from the lip to the foot |
+| `mesh` | `{ across, down }` | 24 and 40 | The sections round the column, and its rows from the lip to the foot |
 
 `createWaterfall` returns a promise of a waterfall object, since the particle code downloads on
 first use:
@@ -409,7 +411,7 @@ export default defineSketch(async (ctx) => {
 | `reflectionEvery` | A frame count from 1 to 16 for each preset | 2 on Low and Medium, 1 on High and Ultra | The frames between two draws of the reflection |
 | `reflectionFollowsBudget` | `true` or `false` | `true` | Whether the frame-budget governor may raise `reflectionEvery`. Between draws the sea shows the reflection of an older camera, so on a moving camera a raised count reads as a lag. `false` keeps the count |
 | `layers` | A 32-bit mask | The camera's layers | The layers that the reflection draws |
-| `reflectionScale` | `1`, `0.5` or `0.25` | 1 | The reflection's size as a share of the render size each way |
+| `reflectionScale` | `1`, `0.5` or `0.25` | The quality preset's `reflectionScale`: 0.25 on Low, 0.5 on Medium and High, 1 on Ultra | The reflection's size as a share of the render size each way |
 | `material` | The standard material values | None | The surface's material, such as the water's tint and its thickness |
 
 `OCEAN_BANDS` holds the default bands. Give a band of your own to change the sea: a wider tile
@@ -466,11 +468,11 @@ near the eye and spends its vertices far away.
 - **One water a page.** The add-on registers one water feature, so a page makes its water with one
   `createWater` call. Give that call every body that shares the surface and the reflection. An
   ocean is a feature of its own, so a page may draw a river and a sea.
-- **The ocean's transform.** A sea of three bands adds 14 butterfly passes and one pass that puts
-  the heights in meters. Those 15 passes take 15 of the 31 passes that a sketch may add, so leave
-  room for the sketch's own. Each pass runs on a 128 by 128 grid, with a band to a layer. The stats
-  overlay names the add-on's ocean row and its budget, and the frame's GPU time holds the
-  transform's share.
+- **The ocean's transform.** A sea adds 14 butterfly passes, one pass that puts the heights in
+  meters and one reflection pass. Those 16 passes take 16 of the 31 passes that a sketch may add,
+  so leave room for the sketch's own. Each transform pass runs on a 128 by 128 grid, with a band
+  to a layer, and the reflection draws at the reflection scale. The stats overlay names the
+  add-on's ocean row and its budget, and the frame's GPU time holds the transform's share.
 
 [The API reference](reference/water.md) lists every export of this page with its type and
 description. The engine's doc comments make it.

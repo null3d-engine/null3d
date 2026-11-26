@@ -153,7 +153,7 @@ Never mirror per-frame scene state into React state: it re-renders React every f
 | drei `<Float>` | A sine offset in `onUpdate` |
 | drei `<Center>`, `<Bounds>` | `prefab.bounds` and a camera fit computed at setup |
 | drei `<PerformanceMonitor>`, `<AdaptiveDpr>`, `<AdaptiveEvents>`; `<Canvas performance>` | Remove them: the engine's frame-budget governor does this work (section 5) |
-| drei `<Stats>` | `debug.stats(true)` in the sketch, or `createEngine({ stats: true })` on the page; `engine.measure()` on the page for percentiles |
+| drei `<Stats>` | `debug.stats(true)` in the sketch, or `createEngine({ stats: true })` on the page; `engine.measure(seconds)` on the page for percentiles |
 | Mesh events: `onClick`, `onPointerDown`, `onPointerUp`, `onPointerMove`, `onPointerOver` or `onPointerEnter`, `onPointerOut` or `onPointerLeave` | `obj.on('click' | 'pointerdown' | 'pointerup' | 'pointermove' | 'pointerenter' | 'pointerleave', fn)`, then `page.post` if React needs to know. Only the closest object and its parents get an event, where r3f also passes it to the objects behind |
 | `@react-three/postprocessing` `<EffectComposer>` with `<Bloom>` and others | `post.set`: tone mapping, and `autoExposure`, bloom, `ao`, `dof`, `outline`, `lut` and `vignette`; `references/post-processing.md` maps the other effects. `<Outline selection={...}>` becomes `setOutlined(true)` on each selected mesh, and its props map as `OutlineEffect`'s do |
 | `@react-three/rapier` | Rapier inside the sketch worker (null3d-develop recipe 11) |
@@ -168,21 +168,30 @@ drei's components measure the frame rate on the main thread, and the app reacts 
 | `<PerformanceMonitor onDecline onIncline>` that sets `dpr` | Measures frames per second, and calls back when the rate leaves its bounds | The governor lowers the render scale when frames run over budget for about a second, and raises it after about 5 seconds with time to spare. It aims for the display's rate, up to 60 frames per second |
 | `onChange={({ factor }) => setDpr(...)}` | Maps a factor from 0 to 1 onto a pixel ratio range | `quality.set({ minRenderScale, maxRenderScale })` in the sketch sets the range that the render scale moves in. `quality.renderScale` reads the current scale |
 | `<Canvas dpr={[1, 2]}>` | Caps the pixel ratio | `createEngine({ maxPixelRatio: 2 })`, or the preset's cap. The render scale works below this cap, so the canvas never changes size |
-| `onDecline` handlers that cut particles or effects | App-specific lightening | `quality.onChange`, which runs after each step past the render scale; `quality.governor.steps` counts those steps. Keep counts per preset in one table keyed by `quality.preset` |
+| `onDecline` handlers that cut particles or effects | App-specific lightening | `quality.setBudget({ name, ms, min, onScale })`: the governor lowers the budget's scale in steps of 0.25, one before each step of the render scale, and `onScale` sets the count from the scale. Keep counts per preset in one table keyed by `quality.preset`, and recount in `quality.onChange` |
 | `onFallback` after `flipflops` | Gives up after the rate swings too often | Not needed: a step up that fails doubles the governor's wait before it tries that setting again, so quality settles instead of swinging. A player's choice of a lighter preset goes through `quality.setPreset` |
 | `<AdaptiveDpr pixelated />` with `performance.regress()` | Drops the pixel ratio while the camera moves, then restores it | No equivalent. The governor follows frame times, not camera movement. Remove `regress()` calls from controls |
 | `<AdaptiveEvents />` | Turns off pointer raycasts while regressed | Not needed: null3D casts no pointer rays on the main thread |
 
-The governor judges each window by the slower of two rates: frames presented, and frames that the GPU finished. A main-thread frame counter sees only the first, so it misses a GPU that falls behind while the page still presents frames. After the render scale reaches `minRenderScale`, it draws far shadow cascades less often, then uses cheaper shadow edges.
+The governor judges each window by the slower of two rates: frames presented, and frames that the GPU finished. A main-thread frame counter sees only the first, so it misses a GPU that falls behind while the page still presents frames. After the render scale reaches `minRenderScale`, it lowers your budgets, then its own settings in turn. Those are the level-of-detail threshold, far shadow cascades, the shadow filter, bloom, ambient occlusion and the rest (`concepts/quality-presets`).
 
 ```ts
 // sketch.ts: the R3F app used <PerformanceMonitor onChange={({ factor }) => setDpr(0.5 + 1.5 * factor)} />.
 // The cap (2) moves to createEngine({ maxPixelRatio: 2 }) on the page. The low end becomes a render scale.
 quality.set({ minRenderScale: 0.5, maxRenderScale: 1 });
 const SPARKS = { low: 500, medium: 1000, high: 2000, ultra: 4000 };
-const sparkCount = () => (quality.governor.steps > 0 ? SPARKS[quality.preset] / 2 : SPARKS[quality.preset]);
-sparks.setActiveCount(sparkCount());
-quality.onChange(() => sparks.setActiveCount(sparkCount()));  // after each step past the render scale
+let sparkScale = 1;
+const sparkCount = () => Math.round(SPARKS[quality.preset] * sparkScale);
+quality.setBudget({
+  name: 'sparks',
+  ms: 1,                                       // the sparks' time per frame at full quality
+  min: 0.5,                                    // never fewer than half
+  onScale: (scale) => {                        // called at once, then whenever the governor moves the scale
+    sparkScale = scale;
+    sparks.setActiveCount(sparkCount());
+  },
+});
+quality.onChange(() => sparks.setActiveCount(sparkCount()));  // a new preset
 ```
 
 To measure the scene's own cost while you port it, turn the governor off with `quality.set({ governor: false })`. Turn it back on before you ship.

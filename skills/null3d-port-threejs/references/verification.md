@@ -79,6 +79,7 @@ With `WebGLRenderer`, reading the canvas in the same task as the render works wi
 
 3. Copy each baseline image to `tests/references/<environment>/<tier>/<name>.png`, once for each tier: `webgpu`, `compat` and `webgl2`. The environment is `chrome-real-gpu` on your computer's GPU, and `chromium-swiftshader` with `CI=1`.
 4. Run `bunx @null3d/cli test`. A view passes when at most 0.1% of its pixels differ by more than 10% of the color range, as in three.js's own image tests. Edge pixels of anti-aliased shapes do not count. For a view that fails, open its image and its `-diff.png` in `test-results/null3d/<environment>/<tier>/`.
+5. To find the object that differs, open the port's view with `?inspect` on the dev server. The panel lists the scene, with each object's transform and material values. A coding agent reads the same values, and captures frames, through `bunx @null3d/cli mcp` (engine docs `guides/debugging`).
 
 Never run `--update-references` in this setup: it replaces the three.js baselines with the port's own images.
 
@@ -125,8 +126,8 @@ Measure both apps on the same device, browser, window size and pixel ratio, with
 | Frame time at the 50th, 95th and 99th percentile | Intervals between `requestAnimationFrame` timestamps of frames that drew, checked against the frames that the GPU finished (below) | `intervalMs` from `engine.measure(seconds)` on the page, or `bunx @null3d/cli bench`, with `completedFps` beside it |
 | CPU time per frame on the busiest thread | `performance.now()` around update and render in the loop | `cpuMs`, and each thread's phases in `threads` |
 | Main-thread time per frame | Same as above: everything runs there | Close to zero; this is why pages stay responsive |
-| Memory | Browser task manager or memory panel | `memory` from `engine.measure()`: WebAssembly memory and the JavaScript heap |
-| Load time to the first frame | From navigation to the first rendered frame | `load` from `engine.measure()` |
+| Memory | Browser task manager or memory panel | `memory` from `engine.measure(seconds)`: WebAssembly memory and the JavaScript heap |
+| Load time to the first frame | From navigation to the first rendered frame | `load` from `engine.measure(seconds)` |
 | Download size | Network panel, compressed | Same |
 
 A frame callback keeps firing while the GPU falls behind, and `WebGPURenderer` can return from a render with nothing drawn while its pipelines build. So a three.js frame rate from callbacks alone can look far better than the screen. Count the frames that drew and the frames that the GPU finished, and compare null3D's figures with the lower of the two rates:
