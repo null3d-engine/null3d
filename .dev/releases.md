@@ -24,7 +24,7 @@ A release can be made at any time (decided by the owner). Every change that reac
 The workflow lands the version on main, then tags, then publishes. Each step is safe to repeat:
 
 - A failing `publish-npm` job leaves main and the tag correct. Re-run that job from the run's page, which publishes only the packages npm does not have yet.
-- A failure before the tag exists leaves main holding the version numbers. Run the workflow again with the same commit: it finds nothing to land, and carries on to the tag.
+- A failure before the tag exists leaves main holding the version numbers. Run the workflow again with the same commit. It finds main already holding the same files, lands nothing, and carries on to the tag on its own released commit.
 - A tag that exists stops the workflow, because a released version is never released again.
 - A failing `notify-website` job leaves the release whole, and only the website lags. Re-run that job from the run's page, or run "Sync with an engine release" by hand in the website's repository with the tag.
 
@@ -49,10 +49,10 @@ The note under a page's title opens with its page's step and release, such as "R
 ## One-time setup
 
 - The release GitHub App. Main's rule, "main: CI must pass", refuses a commit that has not passed the `ci-passed` and `squash-title` checks. Only the accounts on its bypass list may skip it. The default token is not on that list, so the first release run failed at the push to main (run 45741994009). GitHub does not let a rule list GitHub Actions itself. So the App lands the version commit instead:
-  - The App, `null3d-release`, belongs to the `null3d-engine` organization. Its only permission is Contents: read and write, and it has no webhook. It is installed on every repository of the organization, so a release can also start a workflow in the website's repository.
+  - The App, `null3d-release`, belongs to the `null3d-engine` organization. Its permissions are Contents and Workflows, both read and write, and it has no webhook. It is installed on every repository of the organization, so a release can also start a workflow in the website's repository.
   - Main's rule lists the App on its bypass list, as "always".
   - The `release` environment holds the App's client ID as the variable `RELEASE_APP_CLIENT_ID` and its private key as the secret `RELEASE_APP_PRIVATE_KEY`. Only main may deploy to that environment, so a workflow on another branch cannot read the key.
-  - An App token lasts an hour, so the job makes it just before the push. The default token's own `permissions: contents: write` still pushes the tag and publishes the GitHub Release, which the rule does not cover.
+  - An App token lasts an hour, so the job makes it just before the pushes. It pushes the tag as well. The tag's commit keeps the released commit's workflow files, which differ from main's whenever a workflow changed since. GitHub then refuses a token without the workflows permission, and the default token cannot have it (run 45756616548). The default token's own `permissions: contents: write` still publishes the GitHub Release.
 - npm trusted publishing for each public package. npm cannot publish a package's first version that way, so the owner publishes it by hand, as [The first version of a new package](#the-first-version-of-a-new-package) shows. A public package also needs `"publishConfig": { "access": "public", "provenance": true }`, and the pack check fails without it.
 - No npm token in the repository. npm skips trusted publishing when `NPM_TOKEN` or `NODE_AUTH_TOKEN` is set, even to an empty string, so the publish job sets neither. It gets an OIDC token through `id-token: write`, and `actions/setup-node` with `registry-url: https://registry.npmjs.org`. Trusted publishing needs npm 11.5.1 or newer and Node 22.14 or newer, so the job uses Node 24 and installs the latest npm.
 - Git keeps neither the WebAssembly files nor the shader modules (`packages/engine/src/generated/shaders*.ts`). The publish job therefore sets up Bun and the pinned Rust toolchain, and runs `bun tools/build-wasm.ts --pages-only` before it packs. That builds the shader modules and both WebAssembly files of the engine, with no size report. It also builds the Vite plugin's shader compiler, the command-line tool's asset formats and the WebAssembly modules of the terrain, splats, sound and wind add-ons.
