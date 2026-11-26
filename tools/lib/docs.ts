@@ -428,11 +428,14 @@ export function referenceProblems(api: ApiReference): string[] {
 }
 
 interface MappingEntry {
+	id: string;
 	category: string;
 	three: string;
 	target: string;
 	status: string;
 	notes?: string;
+	/** Detail that the note leaves out, shown in a block under the section's table. */
+	details?: string;
 	docs: string;
 }
 
@@ -441,8 +444,31 @@ interface Mapping {
 	entries: MappingEntry[];
 }
 
-/** The mapping as a docs page, or as the port skill's copy, which has no front matter. */
-export function mappingMarkdown(mapping: Mapping, text: PageText, forSkill: boolean): string {
+/**
+ * Links a page ID in parentheses to its page, as a note reads it, for a page that a reader opens.
+ * An ID that the inventory does not list stays plain text, so "(three/webgpu)" is left alone.
+ */
+function linkNotePages(notes: string, titles: ReadonlyMap<string, string>): string {
+	return notes.replace(
+		/\(([a-z0-9-]+\/[a-z0-9-]+)((?:,[^)]*)?)\)/g,
+		(whole, id: string, rest: string) => {
+			const title = titles.get(id);
+			if (title === undefined) return whole;
+			return `([${title}](../${id}.md)${rest})`;
+		},
+	);
+}
+
+/**
+ * The mapping as a docs page, or as the port skill's copy, which has no front matter. The docs
+ * page links each page, where the skill reads pages by ID; `titles` gives each page's title.
+ */
+export function mappingMarkdown(
+	mapping: Mapping,
+	text: PageText,
+	forSkill: boolean,
+	titles: ReadonlyMap<string, string> = new Map(),
+): string {
 	const lines: string[] = [];
 	if (!forSkill) lines.push(generatedFrontMatter(MAPPING_PAGE_ID, text.title, text.summary));
 	lines.push(`# ${text.title}\n`);
@@ -456,16 +482,31 @@ export function mappingMarkdown(mapping: Mapping, text: PageText, forSkill: bool
 		for (const c of categories) lines.push(`- ${c}`);
 		lines.push('');
 	}
+	const docsCell = (e: MappingEntry) => {
+		if (forSkill) return `\`${e.docs}\``;
+		const title = titles.get(e.docs);
+		return title === undefined ? `\`${e.docs}\`` : `[${tableCell(title)}](../${e.docs}.md)`;
+	};
+	const notesCell = (e: MappingEntry) => {
+		const notes = forSkill ? (e.notes ?? '') : linkNotePages(e.notes ?? '', titles);
+		return e.details ? `${notes} Details below the table.` : notes;
+	};
 	for (const c of categories) {
+		const rows = mapping.entries.filter((x) => x.category === c);
 		lines.push(`## ${c}\n`);
 		lines.push('| three.js | null3D | Status | Notes | Docs |');
 		lines.push('| --- | --- | --- | --- | --- |');
-		for (const e of mapping.entries.filter((x) => x.category === c)) {
+		for (const e of rows)
 			lines.push(
-				`| ${tableCell(e.three)} | ${tableCell(e.target)} | ${e.status} | ${tableCell(e.notes)} | \`${e.docs}\` |`,
+				`| ${tableCell(e.three)} | ${tableCell(e.target)} | ${e.status} | ${tableCell(notesCell(e))} | ${docsCell(e)} |`,
 			);
-		}
 		lines.push('');
+		for (const e of rows) {
+			if (!e.details) continue;
+			const details = forSkill ? e.details : linkNotePages(e.details, titles);
+			lines.push(detailsBlock(`Technical details: ${tableCell(e.three)}`, details));
+			lines.push('');
+		}
 	}
 	return lines.join('\n');
 }
@@ -671,6 +712,21 @@ function generatedText(id: string): PageText {
 	return { title: page.title, summary: page.summary };
 }
 
+/** The title of each page that the inventory lists, from its generator or its front matter. */
+function collectTitles(root: string): Map<string, string> {
+	const out = new Map<string, string>();
+	for (const page of PAGES) {
+		if (page.generated) {
+			out.set(page.id, page.title);
+			continue;
+		}
+		const text = readIfExists(root, pagePath(page.id));
+		const title = text === null ? undefined : parseFrontMatter(text)?.data.title;
+		if (typeof title === 'string') out.set(page.id, title);
+	}
+	return out;
+}
+
 /** The title and summary of each page, from front matter, preferring content about to be generated. */
 function collectPages(root: string, generated: Map<string, string>): Map<string, PageInfo> {
 	const out = new Map<string, PageInfo>();
@@ -761,8 +817,12 @@ export function generateDocs(root: string, api: ApiReference = readApi(root)): M
 	if (mappingText === null) throw new Error(`${MAPPING_SOURCE} is missing`);
 	const mapping = JSON.parse(mappingText) as Mapping;
 	const mappingPage = generatedText(MAPPING_PAGE_ID);
-	out.set(pagePath(MAPPING_PAGE_ID), mappingMarkdown(mapping, mappingPage, false));
-	out.set(`${SKILL_MAPPING_DIR}/api-mapping.md`, mappingMarkdown(mapping, mappingPage, true));
+	const titles = collectTitles(root);
+	out.set(pagePath(MAPPING_PAGE_ID), mappingMarkdown(mapping, mappingPage, false, titles));
+	out.set(
+		`${SKILL_MAPPING_DIR}/api-mapping.md`,
+		mappingMarkdown(mapping, mappingPage, true, titles),
+	);
 	out.set(`${SKILL_MAPPING_DIR}/threejs-mapping.json`, `${JSON.stringify(mapping, null, 2)}\n`);
 
 	const pages = collectPages(root, out);
