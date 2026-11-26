@@ -81,6 +81,21 @@ describe('the shader archive', () => {
 		expect(files.get(LONG)?.toString()).toBe('export const C = 3;\n');
 	});
 
+	it('reports the module data it has taken in, up to the size of the set', async () => {
+		const big = 'x'.repeat(3 << 20);
+		const root = fixture({ 'shaders.ts': big, 'shaders-wgsl.js': 'export {};\n' });
+		const total = big.length + 'export {};\n'.length;
+		const reports: [number, number][] = [];
+		await createShaderArchive(root, join(root, 'out.tar.br'), (done, of) => {
+			reports.push([done, of]);
+		});
+		expect(reports.length).toBeGreaterThan(2);
+		expect(reports.every(([, of]) => of === total)).toBe(true);
+		const dones = reports.map(([done]) => done);
+		expect(dones).toEqual([...dones].sort((a, b) => a - b));
+		expect(dones.at(-1)).toBe(total);
+	});
+
 	it('records the same name, address and hash that the release serves', () => {
 		const record = shaderArtifactRecord({
 			tag: '0.1.0',
