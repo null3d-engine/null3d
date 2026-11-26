@@ -2,9 +2,9 @@
 // docs"). The humanizer pass is the judgement half; these rules catch what a machine can see.
 //
 // Severity decides what blocks. An `error` is unambiguous and mechanical, and fails the commit. A
-// `warning` is a judgement call (sentence length, vocabulary) and only prints, because a heuristic
-// that blocks an unrelated commit ends up weakened to quiet it. Demote a noisy rule to a warning
-// rather than adding an exemption.
+// `warning` is a judgement call (sentence and paragraph length, vocabulary) and only prints, because
+// a heuristic that blocks an unrelated commit ends up weakened to quiet it. Demote a noisy rule to a
+// warning rather than adding an exemption.
 
 export type StyleSeverity = 'error' | 'warning';
 
@@ -19,6 +19,10 @@ export interface StyleFinding {
 
 /** Simplified Technical English allows 20 words; names and code inflate the count a little. */
 export const MAX_SENTENCE_WORDS = 25;
+
+/** A paragraph stays near four sentences and 90 words (AGENTS.md, "Writing docs"). */
+export const MAX_PARAGRAPH_WORDS = 90;
+export const MAX_PARAGRAPH_SENTENCES = 4;
 
 const CHATBOT_PHRASES = [
 	'i hope this helps',
@@ -181,6 +185,9 @@ export function britishSpelling(text: string): string | undefined {
 /** A sentence ends at . ! or ? before a capital, a digit, a quote, a bracket, or a name spelled in lowercase. */
 const SENTENCE_BREAK =
 	/(?<=[.!?])\s+(?=[A-Z0-9"(]|null3D\b|three\.js\b|npm\b|iOS\b|iPadOS\b|macOS\b)/;
+
+/** A block that is only an HTML marker line, such as a technical details block's tags. */
+const HTML_MARKER_BLOCK = /^\s*<\/?\s*(?:details|summary)\b/i;
 
 interface Block {
 	line: number;
@@ -521,7 +528,22 @@ export function checkDocsStyle(md: string, audience: DocsAudience = 'users'): St
 		}
 		if (block.kind === 'table') continue;
 
-		for (const sentence of text.split(SENTENCE_BREAK)) {
+		const sentences = text.split(SENTENCE_BREAK).filter((s) => s.trim() !== '');
+		const marker = HTML_MARKER_BLOCK.test(raw) || text.trim() === '';
+		if (!marker) {
+			const words = wordsIn(text);
+			if (words > MAX_PARAGRAPH_WORDS || sentences.length > MAX_PARAGRAPH_SENTENCES) {
+				const count = sentences.length === 1 ? 'sentence' : 'sentences';
+				add(
+					'long_paragraph',
+					'warning',
+					block.line,
+					text,
+					`This paragraph has ${words} words and ${sentences.length} ${count}; split it (at most ${MAX_PARAGRAPH_WORDS} words and ${MAX_PARAGRAPH_SENTENCES} sentences).`,
+				);
+			}
+		}
+		for (const sentence of sentences) {
 			const words = wordsIn(sentence);
 			if (words > MAX_SENTENCE_WORDS) {
 				add(

@@ -152,6 +152,50 @@ describe('checkDocsStyle warnings', () => {
 	});
 });
 
+describe('checkDocsStyle long paragraphs', () => {
+	const sentence = (words: number) =>
+		`Word${words > 1 ? ` ${Array.from({ length: words - 1 }, () => 'word').join(' ')}` : ''}.`;
+	// Four sentences of 23 words each: over the word limit, under the sentence limit, and no
+	// sentence is long enough for its own warning.
+	const long = [23, 23, 23, 23].map(sentence).join(' ');
+
+	it('warns on a paragraph over the word limit, and reports both counts', () => {
+		const findings = checkDocsStyle(long);
+		expect(findings.map((f) => `${f.severity}:${f.rule}:${f.line}`)).toEqual([
+			'warning:long_paragraph:1',
+		]);
+		expect(findings[0]?.message).toContain('92 words');
+		expect(findings[0]?.message).toContain('4 sentences');
+	});
+
+	it('leaves a short paragraph alone', () => {
+		expect(rules(sentence(10))).toEqual([]);
+	});
+
+	it('warns on a paragraph over the sentence limit', () => {
+		expect(rules([5, 5, 5, 5, 5].map(sentence).join(' '))).toEqual(['warning:long_paragraph:1']);
+	});
+
+	it('measures each list item as its own paragraph', () => {
+		expect(rules(`- ${sentence(10)}\n- ${sentence(10)}`)).toEqual([]);
+		expect(rules(`- ${sentence(10)}\n- ${long}`)).toEqual(['warning:long_paragraph:2']);
+	});
+
+	it("measures a technical details block's paragraphs", () => {
+		const md = [
+			'Text.',
+			'',
+			'<details>',
+			'<summary>Technical details: how it works</summary>',
+			'',
+			long,
+			'',
+			'</details>',
+		].join('\n');
+		expect(rules(md)).toEqual(['warning:long_paragraph:6']);
+	});
+});
+
 describe('isTitleCase', () => {
 	it('flags title case and leaves sentence case and product names alone', () => {
 		expect(isTitleCase('Getting Started With Null')).toBe(true);
