@@ -2,7 +2,7 @@
 // modules here are small copies of the form that the shader build writes: shared paragraphs as
 // constants, tables of paragraphs that several modules import, and the builds by shader and name.
 import { describe, expect, it } from 'bun:test';
-import { writeFileSync } from 'node:fs';
+import { utimesSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parseAst } from 'vite';
 import { fixture } from '../../../tools/lib/fixture';
@@ -16,6 +16,7 @@ import {
 	narrowShaderModule,
 	parseShaderList,
 	ShaderList,
+	UnlistedWords,
 	wordText,
 } from './shader-list';
 
@@ -128,6 +129,46 @@ describe('ShaderList', () => {
 
 	it('leaves out the draw index, tone mapping and half precision', () => {
 		expect(DEVICE_BITS).toBe(1 | 2 | 8192);
+	});
+});
+
+describe('UnlistedWords', () => {
+	it('warns about a word that the list lacks, in the terminal once', () => {
+		const root = fixture({ 'list.txt': '0x00000000\n0x00000010\n' });
+		const unlisted = new UnlistedWords(join(root, 'list.txt'), 'list.txt');
+		// A word with a bit that a device fixes is the listed word.
+		expect(unlisted.check(0x10, '/')).toBeUndefined();
+		expect(unlisted.check(0x12, '/')).toBeUndefined();
+		const warning = unlisted.check(0x1000, '/level.html');
+		expect(warning?.first).toBe(true);
+		expect(warning?.message).toBe(
+			'/level.html draws with the permutation word 0x00001000, which the shader list list.txt lacks. The dev server draws it, but a production build with this list stops the page with an error that names the word. Record the page again with bunx @null3d/cli shaders record, or add the word by hand with bunx @null3d/cli shaders record --extra 0x00001000.',
+		);
+		// Every page that draws the word hears of it, and the terminal hears once.
+		expect(unlisted.check(0x1000, '/')?.first).toBe(false);
+	});
+
+	it('reads the list again when its file changes', () => {
+		const root = fixture({ 'list.txt': '0x00000000\n' });
+		const path = join(root, 'list.txt');
+		const unlisted = new UnlistedWords(path, 'list.txt');
+		expect(unlisted.check(0x10, '/')?.first).toBe(true);
+		writeFileSync(path, '0x00000000\n0x00000010\n');
+		utimesSync(path, 1, 1);
+		expect(unlisted.check(0x10, '/')).toBeUndefined();
+		writeFileSync(path, '0x00000000\n');
+		utimesSync(path, 2, 2);
+		// A list that changed warns about the word again.
+		expect(unlisted.check(0x10, '/')?.first).toBe(true);
+	});
+
+	it('says once why it cannot read the list', () => {
+		const root = fixture({});
+		const unlisted = new UnlistedWords(join(root, 'list.txt'), 'list.txt');
+		const warning = unlisted.check(0x10, '/');
+		expect(warning?.first).toBe(true);
+		expect(warning?.message).toMatch(/cannot read the shader list list\.txt.*shaders record/);
+		expect(unlisted.check(0x20, '/')?.first).toBe(false);
 	});
 });
 

@@ -1,6 +1,15 @@
 import { describe, expect, it } from 'bun:test';
+import { PERMUTATION_WORD_EVENT as ENGINE_WORD_EVENT } from '../../engine/src/shared/permutation-words';
 import { WGSL_UPDATE_EVENT as ENGINE_EVENT } from '../../engine/src/shared/wgsl-updates';
-import { changedLiterals, contractOf, HOT_CLIENT_CODE, HotState, WGSL_UPDATE_EVENT } from './hot';
+import {
+	changedLiterals,
+	contractOf,
+	HotState,
+	hotClientCode,
+	PERMUTATION_WORD_EVENT,
+	UNLISTED_WORD_EVENT,
+	WGSL_UPDATE_EVENT,
+} from './hot';
 import type {
 	CompiledEffect,
 	CompiledMaterial,
@@ -97,8 +106,29 @@ describe('hot state', () => {
 describe('the hot client', () => {
 	it("fires the engine's event with the updates, and closes Vite's overlay", () => {
 		expect(WGSL_UPDATE_EVENT).toBe(ENGINE_EVENT);
-		expect(HOT_CLIENT_CODE).toContain(`import.meta.hot.on("${WGSL_UPDATE_EVENT}"`);
-		expect(HOT_CLIENT_CODE).toContain(`new CustomEvent("${WGSL_UPDATE_EVENT}"`);
-		expect(HOT_CLIENT_CODE).toContain("querySelectorAll('vite-error-overlay')");
+		const code = hotClientCode(false);
+		expect(code).toContain(`import.meta.hot.on("${WGSL_UPDATE_EVENT}"`);
+		expect(code).toContain(`new CustomEvent("${WGSL_UPDATE_EVENT}"`);
+		expect(code).toContain("querySelectorAll('vite-error-overlay')");
+		expect(code).not.toContain(PERMUTATION_WORD_EVENT);
+	});
+
+	it("sends the engine's words to the dev server in a project with a shader list", () => {
+		expect(PERMUTATION_WORD_EVENT).toBe(ENGINE_WORD_EVENT);
+		const code = hotClientCode(true);
+		expect(code).toContain(`globalThis.addEventListener("${PERMUTATION_WORD_EVENT}"`);
+		expect(code).toContain(`import.meta.hot.send("${PERMUTATION_WORD_EVENT}"`);
+		expect(code).toContain(`import.meta.hot.on("${UNLISTED_WORD_EVENT}"`);
+		expect(code).toContain('console.warn(');
+		// A recording run sends none, because it adds the page's words to the list.
+		expect(code).toContain("get('permutations') !== 'record'");
+	});
+
+	it('parses as JavaScript', () => {
+		// The page's module parses the same code, so a stray quote or brace would stop it there.
+		for (const listed of [false, true])
+			expect(
+				() => new Function(hotClientCode(listed).replaceAll('import.meta', 'meta')),
+			).not.toThrow();
 	});
 });

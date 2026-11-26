@@ -3,9 +3,10 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import type { Plugin, ResolvedConfig, Rollup, UserConfig } from 'vite';
-import { build, createLogger } from 'vite';
+import { build, createLogger, createServer } from 'vite';
 import { DRACO_RELEASE } from '../../../tools/lib/draco-vendor';
 import { fixture } from '../../../tools/lib/fixture';
+import { HOT_CLIENT_ID, PERMUTATION_WORD_EVENT, UNLISTED_WORD_EVENT } from './hot';
 import null3d, {
 	CORE_FILES,
 	earlyCoreTag,
@@ -334,6 +335,88 @@ describe('the test switches in the address', () => {
 			__NULL3D_DEV__: 'false',
 			__NULL3D_URL_SWITCHES__: 'true',
 		});
+	});
+});
+
+describe('the shader list on the dev server', () => {
+	/** A listener of Vite's channel, with the page that sent the event. */
+	type Listener = (data: unknown, client: { send: (event: string, data: unknown) => void }) => void;
+
+	/**
+	 * Starts a dev server for a project with a list that holds only the word without bits, and
+	 * gives the listeners on Vite's channel, the server's warnings and the server itself.
+	 */
+	async function devServer(options: Parameters<typeof null3d>[0]) {
+		const root = fixture({
+			'package.json': '{"name":"demo","private":true}',
+			'list.txt': '0x00000000\n',
+		});
+		const listeners = new Map<string, Listener>();
+		// Runs before the null3D plugin's own step, and keeps each listener that it adds.
+		const capture: Plugin = {
+			name: 'capture',
+			enforce: 'pre',
+			configureServer(server) {
+				const hot = server.environments.client.hot;
+				hot.on = ((event: string, listener: Listener) => {
+					listeners.set(event, listener);
+				}) as typeof hot.on;
+			},
+		};
+		const warnings: string[] = [];
+		const logger = createLogger('silent');
+		logger.warn = (message) => {
+			warnings.push(message);
+		};
+		const server = await createServer({
+			root,
+			configFile: false,
+			customLogger: logger,
+			plugins: [capture, null3d(options)],
+			server: { middlewareMode: true, watch: null },
+		});
+		return { listeners, warnings, server };
+	}
+
+	it("warns about a word that the list lacks, in the terminal once and in each page's console", async () => {
+		const { listeners, warnings, server } = await devServer({ shaders: { list: 'list.txt' } });
+		try {
+			const hear = listeners.get(PERMUTATION_WORD_EVENT);
+			const sent: [string, unknown][] = [];
+			const client = { send: (event: string, data: unknown) => sent.push([event, data]) };
+			hear?.({ word: 0, page: '/' }, client);
+			expect(sent).toEqual([]);
+			hear?.({ word: 0x1000, page: '/' }, client);
+			hear?.({ word: 0x1000, page: '/level.html' }, client);
+			expect(sent.map(([event]) => event)).toEqual([UNLISTED_WORD_EVENT, UNLISTED_WORD_EVENT]);
+			expect(sent[0]?.[1]).toEqual({
+				message: expect.stringContaining('/ draws with the permutation word 0x00001000'),
+			});
+			expect(warnings).toEqual([
+				expect.stringContaining(
+					'null3D: / draws with the permutation word 0x00001000, which the shader list list.txt lacks.',
+				),
+			]);
+			// A message that is not a page's word changes nothing.
+			hear?.({ word: 'x' }, client);
+			expect(sent).toHaveLength(2);
+			// The pages' client module sends the words.
+			const code = await server.environments.client.pluginContainer.load(HOT_CLIENT_ID);
+			expect(String(code)).toContain(PERMUTATION_WORD_EVENT);
+		} finally {
+			await server.close();
+		}
+	});
+
+	it('hears no words in a project without a list', async () => {
+		const { listeners, server } = await devServer({});
+		try {
+			expect(listeners.has(PERMUTATION_WORD_EVENT)).toBe(false);
+			const code = await server.environments.client.pluginContainer.load(HOT_CLIENT_ID);
+			expect(String(code)).not.toContain(PERMUTATION_WORD_EVENT);
+		} finally {
+			await server.close();
+		}
 	});
 });
 

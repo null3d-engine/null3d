@@ -14,6 +14,7 @@ The plugin takes the engine's shader set from the release asset, from the folder
 - It needs no checkout of the engine and compiles no shader. It reads the set that it already has.
 - A listed word that no shader build of the project holds fails the build, and the message names the word. The engine's set holds most builds. The project's custom materials and add-ons hold the rest.
 - A page that asks for a word outside the list fails that pipeline with a message that names the word as the list writes it. It never draws nothing in silence, and it never fails as a lost download.
+- The dev server names a word that a page draws with and the list lacks, while the page runs, before a build ships the page. It keeps drawing with the whole set.
 - A build without a list copies the whole set, and it warns with the size that it copied.
 - The build never holds the whole set in memory (the reason for the hash pool of the streamed copies).
 
@@ -47,7 +48,9 @@ The plugin takes `shaders: { list }`, a file of hexadecimal words, one on each l
 - A file of which the list holds no build gives way to one module with no builds. Its loader in the set's tables then names that module. A page that asks for one of its words loads it and finds no build, and the engine's message names the word.
 - A table of shared paragraphs keeps the paragraphs that the copies import.
 
-A build matches a listed word as the shader build does: a build's word, or that word with the bits that a device fixes cleared. The set's module of listed words, which the engine reads for its message, names the project's list. The build fails when a listed word is in no build: none of the copies, and none of the builds that the bundle holds. Those are the set's main module and the project's custom materials and add-on shaders. The plugin reads their words from the bundle's files. The examples' list holds 13 words that only such builds hold. The dev server ignores the list, so a recording sees every word.
+A build matches a listed word as the shader build does: a build's word, or that word with the bits that a device fixes cleared. The set's module of listed words, which the engine reads for its message, names the project's list. The build fails when a listed word is in no build: none of the copies, and none of the builds that the bundle holds. Those are the set's main module and the project's custom materials and add-on shaders. The plugin reads their words from the bundle's files. The examples' list holds 13 words that only such builds hold.
+
+The dev server serves the whole set, so a recording sees every word. It also compares each word that a page draws with against the list. In a development build, the thread that draws reports each permutation word that a pipeline finds, once. It reads the words through the same lookup as a recording. The page fires an event with it. The plugin's client module on each page sends the word to the dev server, which reads the list again whenever its file changes. A word that the list lacks prints a warning in the terminal, once until the list changes. It also prints one in the browser's console of each page that draws it. The warning names the page, the word, the list and `bunx @null3d/cli shaders record` with `--extra`. A recording run sends no words, because it adds them to the list. A production build drops the reports with the other development checks, and its pages get no client module.
 
 The recorder lives in the command-line tool, `packages/cli/src/shader-record.js`, which `bunx @null3d/cli shaders record` runs for a project. The repository's script runs the same code over the demos. The command starts the project's own dev server unless `--base` names one, and draws with the tool's browser launcher. Its `--scroll` scrolls each live page to its end, a window's height at a time. After each step it waits until the page has asked for nothing for 500 ms, at least 1 s and at most 15 s. A scene stage that a scroll reveals downloads its models and shader files, and its pipelines then ask for their words. The engine publishes its words only when the recording stops, so the page's requests are the signal that the recorder can read.
 
@@ -69,12 +72,15 @@ Options rejected:
 - Compile the listed words in a checkout of the engine, and name the result with `NULL3D_ENGINE_SHADERS`. It needs the engine's checkout, its Rust toolchain and a compile of every listed build. A project outside the repository has neither.
 - Ship a narrowed release asset. A release serves every project, so no one list fits it (D-276).
 - Leave the dropped files' loaders as they are. A page that asks for such a word then fails as a download that the server lacks. That message names neither the word nor the list.
+- Narrow the dev server's set to the list, so a missing word fails on the dev server as in a build. A recording on the dev server would then see only the listed words. A new feature would stop the page that shows it, rather than name its word.
+- Give the engine the list through a constant that the plugin defines, so the page compares on its own. The constant is fixed when the server starts, and a recording made while it runs changes the file. The dev server reads the file again instead.
 - Pick the files to keep from their names. The feature that a file's name gives belongs to its shaders, not to the word, so every listed word would keep each feature's own files.
 
 ## Consequences
 
 - `packages/vite-plugin/src/shader-list.ts` reads the list and narrows a device file and a table. The hash worker, `hash-worker.js`, scans a file's words in the same read as its hash. The plugin's `index.ts` takes the option and replaces the module of listed words. It fails on a missing word, and it reports what it copied.
-- `packages/engine/src/gpu/variants.ts` names the missing word as the list writes it. The two GPU paths pass the word of the build they looked for. The WebGPU passes that the start builds, such as culling, name it through `missingShader`.
+- `packages/engine/src/gpu/variants.ts` names the missing word as the list writes it. The two GPU paths pass the word of the build they looked for. The WebGPU passes that the start builds, such as culling, name it through `missingShader`. In a development build, `reportPermutations` hands the drawing thread's words to the page, which fires the event of `shared/permutation-words.ts`.
+- The plugin's `hot.ts` writes the client module that sends the words, and `UnlistedWords` in `shader-list.ts` compares them with the list on the dev server.
 - `packages/cli/src/shader-record.js` holds the recorder, `shaders.js` the command, and `tools/shader-permutations.ts` keeps the demos' pages.
 - `bun run test:packages` records the fresh project's words, builds with them, checks the copies and starts the page on both GPU paths. It also builds with a list that holds only the word without any bit, and checks that the page names a word of the recording.
 - The guides `guides/assets-pipeline`, `guides/deterministic-simulation`, `getting-started/network-use`, `getting-started/install` and `cli/null3d`, both READMEs and the develop skill describe the option and the command.

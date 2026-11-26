@@ -46,10 +46,12 @@ import {
 	changedLiterals,
 	HOT_CLIENT,
 	HOT_CLIENT_ADDRESS,
-	HOT_CLIENT_CODE,
 	HOT_CLIENT_ID,
 	HotState,
+	hotClientCode,
 	hotKey,
+	PERMUTATION_WORD_EVENT,
+	UNLISTED_WORD_EVENT,
 	WGSL_UPDATE_EVENT,
 	type WgslUpdate,
 } from './hot.ts';
@@ -77,6 +79,7 @@ import {
 	ShaderList,
 	type ShaderOptions,
 	UNLISTED_MODULE,
+	UnlistedWords,
 	wordText,
 } from './shader-list.ts';
 import {
@@ -140,7 +143,8 @@ export interface Null3dPluginOptions {
 	/**
 	 * Options for the engine's shader set. `list` names the file of the permutation words that the
 	 * project's pages draw with, as `bunx @null3d/cli shaders record` writes it, relative to Vite's
-	 * root. A production build then copies only the shader builds of those words.
+	 * root. A production build then copies only the shader builds of those words. The dev server
+	 * warns about each word that a page draws with and the list lacks.
 	 */
 	shaders?: ShaderOptions;
 }
@@ -826,7 +830,7 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin[] {
 				},
 			},
 			async handler(id) {
-				if (id === HOT_CLIENT_ID) return HOT_CLIENT_CODE;
+				if (id === HOT_CLIENT_ID) return hotClientCode(options.shaders?.list !== undefined);
 				if (MATERIAL_BUILDS_ADDRESS.test(id))
 					return (
 						materialBuilds.module(id) ??
@@ -1190,6 +1194,21 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin[] {
 			for (const shaders of [engineShadersRoot(), process.env[ENGINE_SHADERS_ENV]])
 				if (shaders && !allowed.includes(shaders)) allowed.push(shaders);
 			server.middlewares.use(isolationMiddleware);
+			// The dev server draws with the whole shader set. It warns about each word that a page
+			// draws with and the project's list lacks, because a production build stops that page.
+			const list = options.shaders?.list;
+			if (list !== undefined) {
+				const unlisted = new UnlistedWords(resolve(server.config.root, list), list);
+				server.environments.client.hot.on(PERMUTATION_WORD_EVENT, (data, client) => {
+					const { word, page } = (data ?? {}) as { word?: unknown; page?: unknown };
+					if (typeof word !== 'number' || typeof page !== 'string') return;
+					const warning = unlisted.check(word, page);
+					if (warning === undefined) return;
+					if (warning.first)
+						server.config.logger.warn(`null3D: ${warning.message}`, { timestamp: true });
+					client.send(UNLISTED_WORD_EVENT, { message: warning.message });
+				});
+			}
 			server.middlewares.use(`${server.config.base}${ASSET_FOLDER}/`, (req, res, next) => {
 				const path = decodeURIComponent((req.url ?? '').split('?')[0]?.slice(1) ?? '');
 				const bytes = cachedFile(root, path);

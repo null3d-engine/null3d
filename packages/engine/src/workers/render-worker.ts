@@ -4,8 +4,9 @@
 // it is here, so when the engine stops, the worker keeps it: it frees its GPU device and lets go of
 // the engine's memory, and the next engine on the same canvas starts it again with its own.
 
+import { DEV } from '../errors/checks';
 import { messageOf } from '../errors/message';
-import { recordPermutations, stopRecordingPermutations } from '../gpu/variants';
+import { recordPermutations, reportPermutations, stopRecordingPermutations } from '../gpu/variants';
 import { captureFrame, captureImage, startDrawing, startEarly } from '../render/draw';
 import type { EarlyStart } from '../render/renderer';
 import { controlViews } from '../shared/control';
@@ -56,6 +57,7 @@ startWorker(
 				// A recording starts here, before the scene's draws ask for their pipelines, and the
 				// page stops it once the held frame has drawn them.
 				if (message.recordPermutations) recordPermutations();
+				if (DEV) reportPermutations((word) => replyToPage({ type: 'permutation', word }));
 				host = new DrawingHost();
 				imagePort = message.imagePort;
 				controlSlots = controlViews(message.control).slots;

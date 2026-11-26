@@ -5,7 +5,7 @@
 // others, and a file that holds no listed build is replaced by one module without builds. A page
 // that then asks for a word outside the list gets the engine's message that names the word.
 
-import { readFileSync } from 'node:fs';
+import { readFileSync, statSync } from 'node:fs';
 import MagicString from 'magic-string';
 import { parseAst } from 'vite';
 import { DRAW_INDEX, HALF, TONE_MAP } from './material-builds.ts';
@@ -23,7 +23,9 @@ export interface ShaderOptions {
 	 * hexadecimal word on each line, as `bunx @null3d/cli shaders record` writes it. The path is
 	 * relative to Vite's root. A production build then copies only the shader builds of those words,
 	 * for every value of the bits a device fixes, and fails when the engine's shader set lacks a
-	 * listed word. Without it, a build copies the whole set.
+	 * listed word. Without it, a build copies the whole set. The dev server draws with the whole
+	 * set, and warns in the terminal and the browser's console about each word that a page draws
+	 * with and the list lacks.
 	 */
 	list?: string;
 }
@@ -104,6 +106,75 @@ export class ShaderList {
 	/** The listed words that none of `held`, the words that a set's builds answer, holds. */
 	missing(held: ReadonlySet<number>): number[] {
 		return [...this.words].filter((word) => !held.has(word)).sort((a, b) => a - b);
+	}
+}
+
+/** The dev server's warning about a word that a page draws with and the project's list lacks. */
+export interface UnlistedWord {
+	readonly message: string;
+	/** True for the first warning about the word since the list last changed. */
+	readonly first: boolean;
+}
+
+/**
+ * The dev server's check of the words that its pages draw with against the project's list. The
+ * dev server draws with the whole shader set, so a page there draws a word that the list lacks,
+ * while a production build with the list stops that page. The check names such a word when a page
+ * first draws with it. It reads the list again whenever the file changes, so a recording made
+ * while the server runs counts at once.
+ */
+export class UnlistedWords {
+	/** The list file's change time when it was last read, or undefined before the first read. */
+	private stamp: number | undefined;
+	private list: ShaderList | undefined;
+	/** Why the list cannot be read, when it cannot. */
+	private problem: string | undefined;
+	/** The words that the check has warned about since the list last changed. */
+	private readonly warned = new Set<number>();
+	/** True once the check has reported the list's problem since the list last changed. */
+	private problemShown = false;
+
+	constructor(
+		private readonly path: string,
+		/** The list's file, as the warnings name it. */
+		private readonly name: string,
+	) {}
+
+	/**
+	 * The warning about `word`, which the page at `page` draws with, without the bits that a device
+	 * fixes. Undefined when the list holds the word.
+	 */
+	check(word: number, page: string): UnlistedWord | undefined {
+		this.refresh();
+		if (this.list === undefined) {
+			const first = !this.problemShown;
+			this.problemShown = true;
+			return { message: this.problem ?? '', first };
+		}
+		if (this.list.holds(word)) return undefined;
+		const first = !this.warned.has(word >>> 0);
+		this.warned.add(word >>> 0);
+		const text = wordText(word);
+		return {
+			message: `${page} draws with the permutation word ${text}, which the shader list ${this.name} lacks. The dev server draws it, but a production build with this list stops the page with an error that names the word. Record the page again with bunx @null3d/cli shaders record, or add the word by hand with bunx @null3d/cli shaders record --extra ${text}.`,
+			first,
+		};
+	}
+
+	/** Reads the list again when its file changed since the last read. */
+	private refresh(): void {
+		const stamp = statSync(this.path, { throwIfNoEntry: false })?.mtimeMs ?? -1;
+		if (stamp === this.stamp) return;
+		this.stamp = stamp;
+		this.warned.clear();
+		this.problemShown = false;
+		try {
+			this.list = ShaderList.read(this.path, this.name);
+			this.problem = undefined;
+		} catch (error) {
+			this.list = undefined;
+			this.problem = (error as Error).message;
+		}
 	}
 }
 

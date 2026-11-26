@@ -12,7 +12,8 @@
 // must start the threaded engine again with the server stopped, on both GPU paths. The tool then
 // records the permutation words that the page draws with, and a build with that list must copy only
 // those words' shader builds, and start on both GPU paths. A build with a shorter list must stop the
-// page with the engine's message that names a word the list lacks. Once the
+// page with the engine's message that names a word the list lacks, and the dev server with that
+// list must name such a word in the browser's console and its own output. Once the
 // production build has ended, the project also builds a page of its own layout around a copy of
 // this repository's examples folder, as a website that holds the repository as a submodule does.
 // That build runs beside the production build's start checks. Two demos, and a comparison in each
@@ -673,6 +674,65 @@ async function narrowsShaders(project: string, cli: string): Promise<void> {
 			);
 		console.log(`  the engine said: ${said?.slice(0, 300)}`);
 	});
+	await devServerWarns(project, vite, list);
+}
+
+/**
+ * Fails unless the dev server, with the list that holds only the word without any bit, names a word
+ * that the page draws with and the list lacks: in the browser's console and in its own output. The
+ * word must be one that the recording holds.
+ */
+async function devServerWarns(project: string, vite: string, list: ShaderList): Promise<void> {
+	const log = join(project, 'dev-short.log');
+	const server = stepInBackground(
+		'Serve the project with the list that lacks a word',
+		project,
+		vite,
+		['--config', 'vite.short.config.ts', '--port', '0', '--strictPort'],
+		log,
+	);
+	/** The dev server's output so far. */
+	const output = () => (existsSync(log) ? readFileSync(log, 'utf8') : '');
+	try {
+		let url: string | undefined;
+		for (let k = 0; k < 600 && url === undefined; k++) {
+			url = /http:\/\/localhost:\d+\//.exec(output())?.[0];
+			if (url === undefined) await Bun.sleep(100);
+		}
+		if (url === undefined)
+			throw new Error(`the dev server gave no address within a minute: ${output()}`);
+		const browser = await launchRepoBrowser(defaultEnvironment());
+		try {
+			const page = await browser.newPage();
+			const errors = pageErrors(page);
+			const warned = new Promise<string>((resolve) => {
+				page.on('console', (message) => {
+					if (message.text().includes('which the shader list short-permutations.txt lacks'))
+						resolve(message.text());
+				});
+			});
+			await page.goto(url);
+			const said = await within(
+				warned,
+				PAGE_LIMIT_MS,
+				() =>
+					`the dev server's page named no word that the list lacks; page errors ${JSON.stringify(errors)}`,
+			);
+			const word = /permutation word (0x[0-9a-f]{8})/.exec(said)?.[1];
+			const value = word === undefined ? undefined : Number.parseInt(word.slice(2), 16);
+			if (value === undefined || value === 0 || !list.words.has(value))
+				throw new Error(`the dev server named a word that the recording lacks: ${said}`);
+			const line = `null3D: / draws with the permutation word ${word}`;
+			for (let k = 0; k < 100 && !output().includes(line); k++) await Bun.sleep(100);
+			if (!output().includes(line))
+				throw new Error(`the dev server's output does not name ${word}: ${output()}`);
+			console.log(`  the console said: ${said.slice(0, 300)}`);
+		} finally {
+			await within(browser.close(), CLOSE_LIMIT_MS, () => 'closing').catch(() => {});
+		}
+	} finally {
+		server.stop();
+	}
 }
 
 /**

@@ -3,6 +3,7 @@ import {
 	missingShader,
 	missingVariant,
 	recordPermutations,
+	reportPermutations,
 	stopRecordingPermutations,
 	variantFor,
 } from './variants';
@@ -32,6 +33,22 @@ describe('variantFor', () => {
 	it('records nothing when no recording runs', () => {
 		variantFor(variants, 0, 'wgsl');
 		expect(stopRecordingPermutations()).toEqual([]);
+	});
+
+	it('reports each word that a pipeline finds once, as a recording lists it', () => {
+		const reported: number[] = [];
+		reportPermutations((word) => reported.push(word));
+		variantFor(variants, 4, 'wgsl');
+		variantFor(variants, 2, 'wgsl');
+		variantFor(variants, 4, 'wgsl');
+		// A word that no variant holds reaches the caller's error, not the report.
+		variantFor(variants, 8, 'wgsl');
+		expect(reported).toEqual([4, 0]);
+		// A new start reports every word again, for the page that it serves.
+		reportPermutations((word) => reported.push(word));
+		variantFor(variants, 4, 'wgsl');
+		expect(reported).toEqual([4, 0, 4]);
+		reportPermutations(() => {});
 	});
 
 	it('leaves a miss to the caller that waited for every module', () => {

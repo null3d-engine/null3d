@@ -9,7 +9,7 @@ import { EngineError, errorFixesReady, errorOfMessage } from '../errors/engine-e
 import { messageOf } from '../errors/message';
 import { FORMAT_CANVAS, PERMUTATION_HALF } from '../generated/gpu';
 import { SHADER_FEATURES, type ShaderFeature } from '../generated/shader-features';
-import { recordPermutations, stopRecordingPermutations } from '../gpu/variants';
+import { recordPermutations, reportPermutations, stopRecordingPermutations } from '../gpu/variants';
 import type { DrawPathReason } from '../gpu/webgpu/draw-path-probe';
 import {
 	maxTargetFps,
@@ -57,6 +57,7 @@ import { KEY_CODES } from '../shared/key-codes';
 import { memoryBytes } from '../shared/memory-views';
 import { createMetricsBuffer, MetricsReader, threadRoles } from '../shared/metrics';
 import { addMeasurementRelease } from '../shared/page-measurement';
+import { PERMUTATION_WORD_EVENT } from '../shared/permutation-words';
 import type { ReplayProgram, ReplayResult } from '../shared/recording';
 import { sketchDataText } from '../shared/sketch-data';
 import { clearJobTasks, type JobTaskHost, jobAsker, setJobTasks } from '../shared/task-host';
@@ -1168,6 +1169,9 @@ export class EngineWorker {
 						// frame has built the scene's pipelines.
 						this.recording?.answered(reply.role, reply.permutations);
 						return;
+					case 'permutation':
+						if (DEV) announcePermutationWord(reply.word);
+						return;
 					case 'sketch-message':
 						events.sketchMessage(reply.name, reply.data);
 						return;
@@ -1924,6 +1928,11 @@ function placement(options: EngineOptions, switches: Switches): Placement {
 		switches.threads;
 	const main = !threaded || (switches.sketchThread ?? options.sketchThread) === 'main';
 	return { threaded, sketchThread: main ? 'main' : 'worker' };
+}
+
+/** Fires the event that hands a permutation word that the page draws with to the dev server. */
+function announcePermutationWord(word: number): void {
+	globalThis.dispatchEvent?.(new CustomEvent(PERMUTATION_WORD_EVENT, { detail: word }));
 }
 
 /** How a start runs: a live page, a hold at a sketch time, or a replay of a recording. */
@@ -2764,6 +2773,8 @@ async function startEngine(
 		if (recording && hold === undefined)
 			(globalThis as { __null3dStopRecording?: () => void }).__null3dStopRecording = stopRecording;
 		if (recording && renderThread === 'main') recordPermutations();
+		// The dev server compares each word that the page draws with against the project's list.
+		if (DEV && renderThread === 'main') reportPermutations(announcePermutationWord);
 		// What the thread that draws needs besides its canvas, whichever thread that is.
 		const rendererSetup: Omit<RendererSetup, 'canvas'> = {
 			tier,

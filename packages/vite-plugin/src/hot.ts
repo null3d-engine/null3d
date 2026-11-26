@@ -4,6 +4,8 @@
 // null3D engines there, which swap the shader of each custom material with that key. WGSL that
 // does not compile shows in Vite's overlay, and the page keeps the old shader. An edit that
 // changes what the page keeps of a material, such as its uniforms, reloads the page as before.
+// In a project with a shader list, the same client sends the server each permutation word that
+// the page draws with, and shows the server's warning about a word that the list lacks.
 import type { CompiledWgsl } from './shader-types.ts';
 import { findTaggedWgsl, type TaggedWgsl } from './wgsl.ts';
 
@@ -19,15 +21,38 @@ export const HOT_CLIENT_ID = `\0${HOT_CLIENT}`;
 /** The hot client's name or its module id, as Vite's hook filters match them. */
 export const HOT_CLIENT_ADDRESS = /^\0?virtual:null3d\/hot$/;
 
-/** The hot client's code. It also closes Vite's overlay, which may show an earlier WGSL error. */
-export const HOT_CLIENT_CODE = `if (import.meta.hot) {
-	import.meta.hot.on(${JSON.stringify(WGSL_UPDATE_EVENT)}, ({ updates }) => {
+/** The event that carries a permutation word that a page draws with, from the page to the server. */
+export const PERMUTATION_WORD_EVENT = 'null3d:permutation';
+
+/** The event that carries the dev server's warning about a word that the project's list lacks. */
+export const UNLISTED_WORD_EVENT = 'null3d:unlisted';
+
+/**
+ * The hot client's code. It also closes Vite's overlay, which may show an earlier WGSL error. In a
+ * project with a shader list (`listed`), it also sends the dev server each permutation word that
+ * the page's engines draw with, once, and shows the server's warning about a word that the list
+ * lacks in the browser's console. A recording run adds its page's words to the list, so it sends
+ * none.
+ */
+export function hotClientCode(listed: boolean): string {
+	const wgsl = `	import.meta.hot.on(${JSON.stringify(WGSL_UPDATE_EVENT)}, ({ updates }) => {
 		for (const overlay of document.querySelectorAll('vite-error-overlay')) overlay.close();
 		globalThis.dispatchEvent(new CustomEvent(${JSON.stringify(WGSL_UPDATE_EVENT)}, { detail: updates }));
 		console.debug('[null3D] hot updated: ' + updates.map((update) => update.key).join(', '));
 	});
-}
 `;
+	const words = `	if (new URLSearchParams(location.search).get('permutations') !== 'record') {
+		const sent = new Set();
+		globalThis.addEventListener(${JSON.stringify(PERMUTATION_WORD_EVENT)}, ({ detail: word }) => {
+			if (sent.has(word)) return;
+			sent.add(word);
+			import.meta.hot.send(${JSON.stringify(PERMUTATION_WORD_EVENT)}, { word, page: location.pathname });
+		});
+		import.meta.hot.on(${JSON.stringify(UNLISTED_WORD_EVENT)}, ({ message }) => console.warn('[null3D] ' + message));
+	}
+`;
+	return `if (import.meta.hot) {\n${wgsl}${listed ? words : ''}}\n`;
+}
 
 /** One hot update: the new compiled WGSL under its key. */
 export interface WgslUpdate {

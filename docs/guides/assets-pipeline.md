@@ -543,7 +543,7 @@ export default defineConfig({
 });
 ```
 
-A production build then copies only the builds of the listed words. A shader file whose builds the list leaves out gives way to one small module that holds no build. A table of shared paragraphs keeps only the paragraphs that the kept builds read. The build compiles no shader. It takes the engine's set from the same place as before: the release asset, or the folder that `NULL3D_ENGINE_SHADERS` names. The dev server ignores the list and serves the whole set, so a recording sees every word.
+A production build then copies only the builds of the listed words. A shader file whose builds the list leaves out gives way to one small module that holds no build. A table of shared paragraphs keeps only the paragraphs that the kept builds read. The build compiles no shader. It takes the engine's set from the same place as before: the release asset, or the folder that `NULL3D_ENGINE_SHADERS` names. The dev server serves the whole set, so a recording sees every word. It compares each word that a page draws with against the list, as [When the list lacks a word](#when-the-list-lacks-a-word) says.
 
 The build prints what it copied, such as:
 
@@ -572,6 +572,14 @@ A page that asks for a word that the list lacks fails the pipeline that needs it
 ```text
 the shader set holds only the permutation words of the project's shader list, and this pipeline asks for 0x00000010, which the list lacks. Record the pages again with bunx @null3d/cli shaders record so that the word reaches the list, or add 0x00000010 to the list by hand, and build again.
 ```
+
+The dev server names such a word before a build ships the page. It still draws with the whole set. When a page first draws with a word that the list lacks, the terminal and the browser's console show a warning:
+
+```text
+null3D: /level.html draws with the permutation word 0x00000010, which the shader list shader-permutations.txt lacks. The dev server draws it, but a production build with this list stops the page with an error that names the word. Record the page again with bunx @null3d/cli shaders record, or add the word by hand with bunx @null3d/cli shaders record --extra 0x00000010.
+```
+
+The terminal shows each word once, until the list changes. The dev server reads the list again after each change, so a word that a new recording adds stops the warning at once. A recording run shows no warning, because it adds its words to the list.
 
 Record again after a scene gains a feature that turns on a new permutation bit.
 
