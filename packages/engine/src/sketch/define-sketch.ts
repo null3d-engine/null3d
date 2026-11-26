@@ -151,11 +151,19 @@ export interface SketchPreferences {
 }
 
 /**
- * What the engine passes to a sketch's setup function.
+ * What the engine passes to a sketch's setup function. `Data` is the type of the start data that
+ * the page passes, which `defineSketch<Data>` names.
  *
  * @category api/sketch
  */
-export interface SketchContext {
+export interface SketchContext<Data = unknown> {
+	/**
+	 * The start data that the page passed as `createEngine`'s `sketchData`, or undefined when it
+	 * passed none. It is there from the start of the setup, before the first frame, also in hold
+	 * mode. The sketch gets its own copy, so a change to it reaches neither the page nor a replay.
+	 * A replay gives the data that the recording keeps.
+	 */
+	readonly data: Data | undefined;
 	/** Objects, cameras, lights and instance batches. */
 	scene: Scene;
 	/** Material factories. */
@@ -203,8 +211,8 @@ export interface SketchContext {
  *
  * @category api/sketch
  */
-export type SketchSetup = (
-	context: SketchContext,
+export type SketchSetup<Data = unknown> = (
+	context: SketchContext<Data>,
 ) => SketchCallbacks | undefined | Promise<SketchCallbacks | undefined>;
 
 /**
@@ -252,10 +260,10 @@ const SKETCH_MARKER = Symbol.for('null3d.sketch');
  *
  * @category api/sketch
  */
-export interface SketchDefinition {
+export interface SketchDefinition<Data = unknown> {
 	readonly [SKETCH_MARKER]: true;
 	/** The setup function passed to `defineSketch`. */
-	readonly setup: SketchSetup;
+	readonly setup: SketchSetup<Data>;
 	/** The options passed to `defineSketch`. */
 	readonly options: SketchOptions;
 }
@@ -263,11 +271,15 @@ export interface SketchDefinition {
 /**
  * Declares a sketch. In null3D, a 3D scene is called a sketch: a module that builds the scene and
  * updates it every frame, in the sketch worker. The module must export the result as its default
- * export. `options` sets the rate of the fixed steps.
+ * export. `options` sets the rate of the fixed steps. `Data` types the start data that the setup
+ * reads as `ctx.data`, such as `defineSketch<{ stop: string }>(...)`.
  *
  * @category api/sketch
  */
-export function defineSketch(setup: SketchSetup, options: SketchOptions = {}): SketchDefinition {
+export function defineSketch<Data = unknown>(
+	setup: SketchSetup<Data>,
+	options: SketchOptions = {},
+): SketchDefinition<Data> {
 	return { [SKETCH_MARKER]: true, setup, options };
 }
 

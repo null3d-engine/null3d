@@ -35,7 +35,7 @@ HTML, CSS, UI, audio   -->   input, onUpdate, scene changes -->  GPU uploads and
 creates the engine           shared typed arrays                 never runs your code
 ```
 
-- `page.ts` owns the DOM, HTML UI and Web Audio. `sketch.ts` has no `document` and no `window`. `createEngine({ sketchThread: 'main' })` runs the sketch on the main thread, where it can reach the DOM. Use it only for DOM-heavy apps and debugging: its frames share the page thread. The two sides talk with `engine.postToSketch` and `page.onMessage`, and with `page.post` and `engine.onSketchMessage`. (`concepts/architecture`, `api/page`)
+- `page.ts` owns the DOM, HTML UI and Web Audio. `sketch.ts` has no `document` or `window`. `createEngine({ sketchThread: 'main' })` runs the sketch on the main thread, beside the DOM. Use it only for DOM-heavy apps and debugging: its frames share the page thread. They talk by `engine.postToSketch` and `page.onMessage`, and `page.post` and `engine.onSketchMessage`; the setup reads `createEngine`'s `sketchData` as `ctx.data`. (`concepts/architecture`, `api/page`)
 - Scene objects are small wrappers around 30-bit integer handles. Change them with setters such as `setPosition`; never assign properties like `mesh.position.x = 1`. (`concepts/handles`, `api/objects`)
 - For many objects, write typed arrays directly: instance batches and dynamic objects, where null3D gets its speed. (`concepts/instances`)
 - Objects are static by default: they cost nothing per frame until a setter changes them. Objects with `dynamic: true` are recomputed every frame and may be written through arrays. (`concepts/static-dynamic`)

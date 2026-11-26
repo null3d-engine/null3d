@@ -10,4 +10,6 @@ export interface DemoProbe {
 	cameraTurn: number[];
 	/** The places of the demo's dynamic meshes and point lights, in the order the demo made them. */
 	objects: number[][];
+	/** The start data that the demo's setup read. */
+	data: unknown;
 }

@@ -798,9 +798,13 @@ ui.untrackLabel('hp-12');                               //
 engine.onSketchMessage((type, data) => { if (type === 'score') scoreEl.textContent = String(data.value); });
 engine.postToSketch('difficulty', { level: 2 });
 engine.labels.bind('hp-12', document.getElementById('hp-12')!);   //
+
+// start data: the setup reads it before the first frame, also in hold mode
+await createEngine({ canvas, sketch, sketchData: { level: 2, stop: 'city' } });   // plain JSON data, up to 64 KiB
+defineSketch<{ level: number; stop: string }>(({ data }) => { level = data?.level ?? 1; });   // in sketch.ts: data is undefined without sketchData
 ```
 
-Messages are fire-and-forget. Send events, not per-frame state.
+Messages are fire-and-forget. Send events, not per-frame state. A message reaches the sketch only after its setup, so pass what the first frame needs as `sketchData`. A recording keeps the start data.
 
 ## 19. Debug (`api/debug`)
 

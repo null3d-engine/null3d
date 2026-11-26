@@ -494,6 +494,22 @@ test.describe('on a touch screen', () => {
 	});
 });
 
+test('a demo starts at the choice that the address names, in its sketch and on its buttons', async ({
+	page,
+}) => {
+	const errors = await open(page, 'gizmos', 'mode=rotate');
+	await expect(page.locator('.choice button', { hasText: 'Rotate' })).toHaveAttribute(
+		'aria-pressed',
+		'true',
+	);
+	await expect(page.locator('.choice button', { hasText: 'Translate' })).toHaveAttribute(
+		'aria-pressed',
+		'false',
+	);
+	expect((await probe(page)).data).toEqual({ mode: 'Rotate' });
+	expect(errors).toEqual([]);
+});
+
 test('a page part that does not load fails the demo start, says why, and takes the controls away', async ({
 	page,
 }) => {

@@ -44,7 +44,7 @@ Product pages, marketing pages and landing pages that show a 3D scene next to te
 
 ### Scroll and layout
 
-- Scroll-driven cameras: the page sends the scroll progress at most once per animation frame, and only when it changes. The sketch eases with `k = 1 - Math.pow(0.001, dt)` and jumps to the first value it receives. Reveal after the sketch confirms the first value.
+- Scroll-driven cameras: the page passes the first scroll progress as `createEngine`'s `sketchData`, so the first frame and a held frame show it. After the start, it sends the progress at most once per animation frame, and only when it changes. The sketch eases with `k = 1 - Math.pow(0.001, dt)` and jumps to the first message's value, which the browser's scroll restoration can move. Reveal after `engine.firstFrame` (`guides/content-pages`).
 - Read layout, such as heights, offsets and computed styles, in a `ResizeObserver` callback, and keep the numbers. Each scroll then reads only `scrollY`. The observer also sees font loads, translations that reflow text, and breakpoints.
 - Keep each section's scroll position in one place: a CSS custom property on the section. CSS places the section by it, and code reads it back on resize. A copy of the number in code goes stale at the first edit. Check the positions in your longest language.
 - Shape the camera's path as a curve plus named corrections, each a smoothstep over a range of scroll progress. Moving the curve's points to fix one moment moves every other moment too.
