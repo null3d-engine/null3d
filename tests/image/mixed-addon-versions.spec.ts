@@ -3,6 +3,7 @@
 // add-on's own module runs the check as it loads, and that nothing draws past it.
 import { expect, test } from '@playwright/test';
 import { VERSION } from '../../packages/engine/src/shared/version.ts';
+import { otherVersion } from '../lib/other-version.ts';
 
 test('two versions of one add-on stop the page with E1432', async ({ page }) => {
 	const errors: string[] = [];
@@ -14,8 +15,9 @@ test('two versions of one add-on stop the page with E1432', async ({ page }) => 
 	// The fix that the code carries is not here: an error raised as a module loads is the thread's
 	// first, so the engine has not downloaded the file of fixes yet, and the text arrives after the
 	// browser has reported the error. The unit test holds that text, with the table installed.
+	const stale = otherVersion(VERSION);
 	expect(message).toContain(
-		`E1432: @null3d/impostors 0.1.0 was built for null3D 0.1.0, and this page runs null3D ${VERSION}.`,
+		`E1432: @null3d/impostors ${stale} was built for null3D ${stale}, and this page runs null3D ${VERSION}.`,
 	);
 	expect(await page.locator('#status').textContent()).toBe('running');
 });

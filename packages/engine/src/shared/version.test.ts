@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it } from 'bun:test';
+import { otherVersion } from '../../../../tests/lib/other-version.ts';
 import { EngineError, setErrorFixes } from '../errors/engine-error';
 import { ERROR_FIXES } from '../errors/fixes';
 import {
@@ -19,8 +20,7 @@ describe('checkAddonVersion', () => {
 	});
 
 	it('throws E1432, which names the add-on and both versions, and gives the fix', () => {
-		// A version one major release past the engine's, which no release of this engine has.
-		const other = `${Number(VERSION.split('.')[0]) + 1}.0.0`;
+		const other = otherVersion(VERSION);
 		let error: unknown;
 		try {
 			checkAddonVersion('@null3d/controls', other);
