@@ -6,8 +6,6 @@ summary: "Light types, units and exposure; clustered lighting; fog; environment 
 
 # Lighting and environment
 
-> Surfaces show up to four directional lights. The quality presets cap area lights, and they do not cap point and spot lights.
-
 ```mermaid
 flowchart LR
     sketch["Sketch code<br/>createPointLight, setIntensity"] --> object["Light object<br/>position, rotation, parent"]
@@ -28,11 +26,11 @@ Every light is a scene object with a row in the engine's light table. The object
 Setters change the engine's memory at once. They write their numbers into a block of the engine's memory, and they call the core with whole numbers only. So a setter allocates nothing, a color included. Call a per-frame setter from a small function of its own, so the browser inlines it. Each frame, after the engine updates transforms, it reads every light:
 
 1. It skips a light that is hidden by itself or a parent, or whose layer mask shares no bit with the camera's.
-2. Standard materials reflect the directional lights. The first one created that remains casts the shadows, and up to three more light surfaces as fill and rim lights. The materials also reflect the sum of the ambient and hemisphere lights, and the scene's environment.
+2. Standard materials reflect up to four of the remaining directional lights, as [Kinds of light and their units](#kinds-of-light-and-their-units) explains, plus the sum of the ambient and hemisphere lights and the scene's environment.
 3. It tests the sphere of each point, spot and area light's range against the camera's view, and lists the lights whose spheres reach into it.
 4. Each listed light goes into the clusters of the view that its sphere reaches. On WebGPU the GPU does this work, and on WebGL2 the job workers do it, as [Clustered forward shading](#clustered-forward-shading) explains.
 
-A scene pass ([Custom passes](../guides/custom-passes.md)) does steps 3 and 4 again for its own camera and layers, with a light grid of its own. It lists the point, spot and area lights that its camera sees. Its point and spot lights cast shadows where the camera's view gives them shadows.
+A scene pass ([Custom passes](../guides/custom-passes.md)) runs steps 3 and 4 again for its own camera and layers, with its own light grid ([Lights in scene passes](#lights-in-scene-passes)).
 
 ## Kinds of light and their units
 
@@ -71,7 +69,7 @@ export default defineSketch(({ scene }) => {
 });
 ```
 
-Up to four directional lights light a frame. The first one created that remains in the view casts the shadows, when it has `castShadows`. The next three light surfaces as fill and rim lights, and cast none. A fifth directional light gives no light. Each fill light adds one direct light term to every lit pixel, and no shadow reads.
+Up to four directional lights light a frame. The first one created that is not hidden and shares a layer with the camera casts the shadows, when it has `castShadows`. The next three light surfaces as fill and rim lights, and cast none. A fifth directional light gives no light. Each fill light adds one direct light term to every lit pixel, and no shadow reads.
 
 ## Units and exposure
 
@@ -147,6 +145,15 @@ Point and spot lights that move in most frames should be dynamic, with `dynamic:
 
 A glTF file's lights (`KHR_lights_punctual`) become directional, point and spot lights in each copy of the model, in the same units. A light on a node that a clip moves is left out ([Animation](../api/animation.md#models-from-gltf-files)).
 
+The engine keeps each light's position relative to a grid cell, a cube about 1 km wide, so lights far from the origin stay precise ([Large worlds and precision](large-worlds.md)).
+
+<details>
+<summary>Technical details: how lights keep precision far away</summary>
+
+Each frame the engine finds every point and spot light's position relative to the camera, with the offset between their cells in 64-bit floats. A lamp 1,000 km from the origin is then as precise, next to the camera, as a lamp at the origin.
+
+</details>
+
 ## Ambient and hemisphere lights
 
 An ambient light gives every surface the same light. A hemisphere light blends from its ground color to its sky color as a surface's normal turns toward its +Y axis. That blend is half the sum of the two colors, plus a term that grows with the cosine between the normal and the sky's direction. Each frame, the engine sums every ambient and hemisphere light on the CPU. The sum is one color from every direction and one color along each world axis. Each pixel of a standard material adds them up with three multiply-adds, whatever the number of lights.
@@ -157,13 +164,9 @@ Both lights are diffuse only: they light a surface's color and give no highlight
 
 A light that stands for the sky must follow the hour. An ambient or hemisphere light with a fixed color and intensity is a day light. Under a night sky it lights sand, wall and road as brightly as at noon. The scene then reads as a dark sky over a lit town.
 
-Scale the light with the hour, shifting its colors cool at night. The island showcase holds its hemisphere light at 0.8 with warm sky and ground colors by day. By night it takes it to a cool 0.06, driven by the share of a town's lamps that are lit. The moon's directional light and the lamps then carry the night, and a faint ambient keeps the dark from going black.
+Scale the light with the hour, shifting its colors cool at night. [The island showcase](https://github.com/null3d-engine/null3d/tree/main/examples/showcase/island/) holds its hemisphere light at 0.8 with warm sky and ground colors by day. By night it takes it to a cool 0.06, driven by the share of a town's lamps that are lit. The moon's directional light and the lamps then carry the night, and a faint ambient keeps the dark from going black.
 
-Exposure is one value for the whole scene. An exposure high enough for a bright day lifts a moonlit scene by the same factor, so choose it at the hour the scene shows longest. A demo stage offers the share of a town's lamps as `stage.lamps`, from 0 by day to 1 at night, which drives such a light.
-
-## Lights far from the origin
-
-The engine keeps each object's position relative to a grid cell, a cube of space about 1 km wide. Scenes far from the origin then stay precise. Lights take part too. Each frame the engine finds every point and spot light's position relative to the camera, with the offset between their cells in 64-bit floats. A lamp 1,000 km from the origin is then as precise, next to the camera, as a lamp at the origin.
+Exposure is one value for the whole scene. An exposure high enough for a bright day lifts a moonlit scene by the same factor, so choose it at the hour the scene shows longest. Drive the light from a value of your own that follows the sun's height, from 0 by day to 1 at night. The showcase uses the share of the town's lamps that are lit as that value.
 
 ## Fog
 
@@ -261,18 +264,24 @@ A small table picks the level that each roughness reads.
 
 ### Cost
 
-- A page downloads the file reader, under 1 KB after Brotli, with its first environment file.
-- An HDR file loads the HDR reader and its worker, about 6.5 KB after Brotli, and the code and shaders that make the room. They load while the file downloads. The worker reads a 2K file in about 100 ms on a MacBook Pro, outside the sketch's frames. The GPU then filters the map in the next frame, before that frame draws, in about the room's time. So no frame shows the scene without the file's light. Load HDR files while the scene loads, as you would ask for the room.
-- An HDR map keeps its panorama on the thread that draws, up to 8 MB for an image of 2,048 x 1,024 texels or more. A new GPU device makes the map again from it. `environment.destroy()` frees both.
-- The built-in room downloads no file. Its first use loads the code and the shaders that make it, about 12 KB after Brotli. The shaders compile in the background while the scene loads, and `builtinEnvironment` resolves once they are ready. The GPU then makes the whole map in the next frame, before that frame draws. So no frame shows the scene without the room's light. That frame takes longer by the map's GPU time, which the table below gives.
-- Ask for the room while the scene loads. A call during play makes one long frame: on a phone, the time of 3 to 7 frames at 60 frames per second.
-- The sky's environment loads the same code and shaders as the room. The GPU makes its whole map in the next frame, in about 14 ms on a MacBook Pro. After a change of the sky that shows, it makes the map again in 20 stages, one a frame. A sun that turns less than half a degree leaves the map as it is, and so does a color value that drifts by less than 2%. Slowly drifting clouds wait too, and their changes add up. One last refresh captures the sky exactly once it stops changing. Each stage takes about 1 ms of GPU time on a MacBook Pro. The scene draws with the old map until the last stage, so no frame waits for a whole map. A sun that turns in every frame pays a stage only while it crosses those steps.
-- A map of the default size takes 2 MB of GPU memory. The sky's environment keeps about 9 MB more for its steps. A file's map uploads in the frames after the load, within the frame's upload budget. The scene draws without an environment until its map is on the GPU.
-- The environment is a value of each frame, not a build of the shaders. So setting one builds no pipeline, and each pixel of a standard material pays one branch while the scene has none.
-- With an environment, each pixel of a standard material reads the cube map once and adds up the nine coefficients.
-- On WebGL2 a fragment shader may use at least 16 texture units, as many as the device reports. The standard material uses at most 13 of them, the cube map, the area lights' tables and the reflection probes' maps, which share one array, and the copy of the opaque colors that screen-space reflections read included, so three stay free on a device with 16. A material's maps share six units. A material with more maps than that leaves out its specular intensity map first, then its specular color map, then its light map. A custom material's own textures take the units that the lighting leaves, and the engine refuses one that would pass the stage's units with E1209 before the device fails to link its shader. WebGPU has no such limit.
+- Load an HDR file, or ask for the built-in room or the sky's environment, while the scene loads. Each one makes its whole map in one frame, so a call during play makes one long frame. A KTX2 file from the asset tool uploads over several frames and makes no long frame.
+- A map of the default size takes 2 MB of GPU memory. The scene draws without an environment until its map is on the GPU.
+- The environment is a value of each frame, not a build of the shaders. So setting one builds no pipeline.
+- On WebGL2 a custom material can use only the texture units that the lighting leaves; the engine refuses one with too many with [E1209](../errors/E1209.md). WebGPU has no such limit.
 
-The tests of the room's generator measured these times in Chrome. The phones ran in a device cloud, on a page with no shader cache. On WebGPU the map's time is the GPU's own. On WebGL2 it runs from the call until the GPU has finished.
+<details>
+<summary>Technical details: download sizes, memory and timings</summary>
+
+- A page downloads the file reader, under 1 KB after Brotli, with its first environment file.
+- An HDR file loads the HDR reader and its worker, about 6.5 KB after Brotli, and the code and shaders that make the room. They load while the file downloads. The worker reads a 2K file in about 100 ms on a MacBook Pro, outside the sketch's frames. The GPU then filters the map in the next frame, before that frame draws, in about the room's time.
+- An HDR map keeps its panorama on the thread that draws, up to 8 MB for an image of 2,048 x 1,024 texels or more. A new GPU device makes the map again from it. `environment.destroy()` frees both.
+- The built-in room downloads no file. Its first use loads the code and the shaders that make it, about 12 KB after Brotli. The shaders compile in the background while the scene loads, and `builtinEnvironment` resolves once they are ready. The GPU then makes the whole map in the next frame, before that frame draws. That frame takes longer by the map's GPU time, which the table below gives.
+- The sky's environment loads the same code and shaders as the room. The GPU makes its whole map in the next frame, in about 14 ms on a MacBook Pro. After a change of the sky that shows, it makes the map again in 20 stages, one a frame. A sun that turns less than half a degree leaves the map as it is, and so does a color value that drifts by less than 2%. Slowly drifting clouds wait too, and their changes add up. One last refresh captures the sky exactly once it stops changing. Each stage takes about 1 ms of GPU time on a MacBook Pro. The scene draws with the old map until the last stage, so no frame waits for a whole map. A sun that turns in every frame pays a stage only while it crosses those steps.
+- The sky's environment keeps about 9 MB more for its steps. A file's map uploads in the frames after the load, within the frame's upload budget.
+- With an environment, each pixel of a standard material reads the cube map once and adds up the nine coefficients.
+- On WebGL2 the standard material uses at most 13 of the texture units that the device reports. The cube map, the area lights' tables and the reflection probes' maps share one array, and the copy of the opaque colors that screen-space reflections read is included, so three stay free on a device with 16. A material's maps share six units, and a material with more leaves out its specular intensity map first, then its specular color map, then its light map.
+
+These times come from Chrome. The phones loaded a page with no shader cache. On WebGPU the map's time is the GPU's own. On WebGL2 it runs from the call until the GPU has finished.
 
 | Device | Shaders, in the background | The whole map, in one frame |
 | --- | --- | --- |
@@ -280,6 +289,8 @@ The tests of the room's generator measured these times in Chrome. The phones ran
 | MacBook Pro (Apple M5 Max), WebGL2 | 9 to 15 ms | 20 to 27 ms, of which 16 to 17 ms on the GPU |
 | Galaxy S25, Pixel 9, Pixel 10 and Pixel 11, WebGPU | 93 to 129 ms | 48 to 100 ms |
 | The same phones, WebGL2 | 100 to 226 ms | 58 to 107 ms |
+
+</details>
 
 ## Reflection probes
 
@@ -317,20 +328,32 @@ Mirror reflections win over probes: a [reflection pass](../api/render.md#reflect
 ### Cost of probes
 
 - A captured probe costs only its surfaces' shading: each pixel inside a box reads two levels of the probe's map, and one more for the diffuse light. A scene without probes pays one test per pixel.
-- A capture draws the scene six times, at half the map's size, and its filter draws about 50 small passes in the same frame, before the camera's view draws. A probe that refreshes always pays this in turns with the other such probes.
-- Each probe's map takes 0.7 MB of GPU memory at 256 x 256, the size from Medium up, and 0.2 MB at 128 x 128 on Low. The six views and the filter's chain take about 1.5 MB more while the scene has a probe. The quality setting `probeSize` sets the size.
 - Probes need half-float render targets. WebGPU always has them. WebGL2 devices without them keep the environment's light, and development builds warn once.
 - On the 8-bit path, which compatibility mode with antialiasing takes, the captures hold display color, so reflections in probes look a little grayer.
+
+<details>
+<summary>Technical details: what a probe's capture costs</summary>
+
+A capture draws the scene six times, at half the map's size, and its filter draws about 50 small passes in the same frame, before the camera's view draws. A probe that refreshes always pays this in turns with the other such probes. Each probe's map takes 0.7 MB of GPU memory at 256 x 256, the size from Medium up, and 0.2 MB at 128 x 128 on Low. The six views and the filter's chain take about 1.5 MB more while the scene has a probe. The quality setting `probeSize` sets the size.
+
+</details>
 
 ## Light probe grid
 
 An environment map lights every surface the same way. A light probe grid varies the light by place. Its probes hold the light that arrives at each point, so light bounced from a red wall or blocked by a corner reaches the surfaces near it. `scene.setLightProbeGrid` sets one. [Scene](../api/scene.md#the-light-probe-grid) gives its options, and the calls that make a grid.
 
-Each probe holds L1 spherical harmonics of the light that arrives there: four RGB coefficients, 12 numbers. It also holds two masks. The first is its validity: 1 where the probe stands in open space, and 0 where geometry encloses it, so the light of a probe inside a wall never leaks through the wall. The second is its sky visibility: the share of the sky that its rays reached. Standard materials read the grid per pixel, with four filtered reads. The grid's light takes the place of the environment's diffuse light, and the environment keeps its reflections. `environmentWeight` sets the share of the diffuse light that the grid takes over.
+Each probe holds L1 spherical harmonics of the light that arrives there, and two masks. Standard materials read the grid per pixel. The grid's light takes the place of the environment's diffuse light, and the environment keeps its reflections. `environmentWeight` sets the share of the diffuse light that the grid takes over.
+
+<details>
+<summary>Technical details: what a probe holds</summary>
+
+The coefficients are four RGB values. The first mask is the probe's validity: 1 where the probe stands in open space, and 0 where geometry encloses it, so the light of a probe inside a wall never leaks through the wall. The second is its sky visibility: the share of the sky that its rays reached.
+
+</details>
 
 A scene with a grid draws no [screen-space bounce light](post-processing.md#screen-space-bounce-light). The grid already holds one bounce, with the occlusion the screen cannot supply, and the two would count the same light twice.
 
-`bakeProbes` bakes a grid in the browser. Each probe casts directions with `scene.raycastBatch`, which tests both faces of every triangle here. A direction that reaches the sky counts toward the probe's sky visibility. A direction that meets a surface's back means geometry encloses the probe: the bake gives it no validity, and fills it from the probes around it. A direction that hits a surface's front takes that surface's colour once, as a matte bounce. The bake counts no lamps, so the grid holds one coloured bounce, the occlusion of the sky and which probes lie inside geometry. `step` bakes a few probes a frame, so a loading screen can show progress. `finish` bakes the rest at once.
+`bakeProbes` bakes a grid in the browser. Each probe casts directions with `scene.raycastBatch`, which tests both faces of every triangle here. A direction that reaches the sky counts toward the probe's sky visibility. A direction that meets a surface's back means geometry encloses the probe: the bake gives it no validity, and fills it from the probes around it. A direction that hits a surface's front takes that surface's color once, as a matte bounce. The bake counts no lamps, so the grid holds one colored bounce, the occlusion of the sky and which probes lie inside geometry. `step` bakes a few probes a frame, so a loading screen can show progress. `finish` bakes the rest at once.
 
 The sky itself never bakes. The shader weights each probe's sky visibility by how much the surface faces the sky above the horizon, multiplies that by the environment's live light, and adds it to the baked bounce. A time of day that moves the sky, or an environment that turns or changes its intensity, then lights the grid again with no new bake. Only the bounce keeps the environment that the bake read.
 
@@ -349,12 +372,18 @@ Such a mesh keeps the environment's diffuse light, and takes no light from the g
 
 ### Limits and cost
 
+- Each lit pixel of a standard material reads the grid four times.
+- The grid's shaders load on first use, so a page that sets no grid downloads none of it. To load them before the first frame, list `'probe_grid'` in `createEngine`'s `preload` option: [Loading screens](../guides/loading-screens.md#loading-everything-up-front).
+
+<details>
+<summary>Technical details: the grid's memory and texture</summary>
+
 - The grid's texture is a 3D texture of half floats, at most 256 texels along each side on every device. `LightProbeGridData.toTexture()` makes it.
 - A grid holds at most 256 probes along x, 256 along y and 62 along z. The z side is smaller because the texture is cut into four sub-volumes, three of coefficients and one of the masks, and each sub-volume has a padding slice at either end.
 - `counts` takes whole numbers of 2 or more, and `spacing` must be above 0. Development builds throw E1108 for a grid too large for the texture, and the error names the limit. Use a larger spacing, or a smaller box.
-- The grid takes 32 bytes of GPU memory for each probe, the 12 half floats of its coefficients and the 2 half floats of its masks, plus the padding slices along z. A grid of 24 x 8 x 24 probes (4,608 probes, one per metre over a 24 m hall) takes about 157 KiB.
-- Each lit pixel of a standard material reads the grid four times.
-- The grid's shaders load on first use, so a page that sets no grid downloads none of it. To load them before the first frame, list `'probe_grid'` in `createEngine`'s `preload` option: [Loading screens](../guides/loading-screens.md#loading-everything-up-front).
+- The grid takes 32 bytes of GPU memory for each probe, the 12 half floats of its coefficients and the 2 half floats of its masks, plus the padding slices along z. A grid of 24 x 8 x 24 probes (4,608 probes, one per meter over a 24 m hall) takes about 157 KiB.
+
+</details>
 
 ## Sky and backgrounds
 
@@ -513,7 +542,7 @@ The sky's environment shows the physical sky too. When a refresh starts, the eng
 
 ## Time of day
 
-`timeOfDay` works out the settings that change together through a day, from one value: an hour from 0 to 24, or a preset. They are the sky's sun and air, the main light, the fog's color and glow, an ambient light, the sky's intensity and the exposure. Each comes from the same sky model as the sky background. The fog takes the sky's mean light at every hour, the same light that the exposure follows, so it stays as dim as the sky around it. A fog of the sky's horizon instead carries the sky's brightest band over the whole scene and washes out its shaded surfaces, and a low sun makes that band its own glow.
+`timeOfDay` works out the settings that change together through a day, from one value: an hour from 0 to 24, or a preset. They are the sky's sun and air, the main light, the fog's color and glow, an ambient light, the sky's intensity and the exposure. Each comes from the same sky model as the sky background. With the analytic sky, the fog takes the color of the sky's horizon by day and fades to the sky's average color at dusk. With the physical sky, the fog takes the sky's mean light by day and through dusk, the light that the exposure follows, so it stays as dim as the sky around it. A fog of the horizon's color would carry the sky's brightest band over the whole scene.
 
 ```ts
 import { defineSketch, timeOfDay } from '@null3d/engine';
@@ -545,7 +574,7 @@ The result holds plain values. Apply them to your own objects, as above:
 | `sky` | `scene.setBackground({ sky })`. Add the clouds and their `time` of your own: `{ ...day.sky, cloudCoverage: 0.3 }` |
 | `skyIntensity` | The sky background's and the sky environment's `intensity` |
 | `light` | The main directional light: `direction`, a linear `color` and `intensity`. By day it is the sun. After sunset it is the moon, a cool light that rises from the horizon as night falls |
-| `fog` | `scene.setFog`: the `color` of the sky's horizon and the `sunGlow`. Choose the curve and the density for your scene |
+| `fog` | `scene.setFog`: the sky's horizon color by day and its average at dusk, and the `sunGlow`. Choose the curve and the density for your scene |
 | `ambient` | An ambient light's `color` and `intensity`, for a scene without the sky's environment. A scene lit by the sky's environment needs none |
 | `exposure` | `post.set({ exposure })`: 1 by day, up to 3.5 at night |
 
@@ -556,7 +585,7 @@ With `{ model: 'physical' }`, the values match the physical sky instead, from a 
 | `atmosphere` | `scene.setBackground({ atmosphere })`: the real sun, its light above the air, and at night the moon and the stars. Add your scene's clouds and haze: `{ ...day.atmosphere, aerialPerspective: 2 }` |
 | `skyIntensity` | 1: the physical sky dims by itself after sunset |
 | `light` | The sun through the air, which reddens as it sets. Its light goes out as its disc sets, and the glowing sky lights the scene through the ambient light and the sky's environment. The light turns to the moon's place while it gives none, then the moon's light rises as night falls: no light sweeps across the scene. The moon stands opposite the sun, so it is highest at midnight. Its light and its sky are brightest then, and fade as it sinks toward dawn |
-| `fog` | The color of the sky's horizon, with no glow: the aerial perspective already glows toward the sun |
+| `fog` | The sky's mean light, with no glow: the aerial perspective already glows toward the sun. At night it takes the moon sky's horizon light |
 | `exposure` | Follows the sky's mean light, as an eye adapts: about 0.55 by day, up to 4 through dusk, and 1.1 once night has fallen. It holds at 1.1 until dawn, so the night is brightest under the midnight moon |
 
 The helper gives values and leaves them to the sketch. A scene keeps its own light, fog curve and density, and post settings, which a call that applied them would overwrite.
@@ -569,7 +598,7 @@ The helper gives values and leaves them to the sketch. A scene keeps its own lig
 
 ## Lights in scene passes
 
-A [scene pass](../api/render.md) draws the scene from another camera into a texture. It lights its objects with the sun, the ambient and hemisphere lights, the environment and the fog. It draws the sun's shadows where the camera's cascades reach, and the point, spot and area lights that its camera sees. It draws the scene's background behind them, the sky included, unless the pass has a `clearColor`, which its texture then clears to.
+A [scene pass](../api/render.md) draws the scene from another camera into a texture. It lights its objects with the sun, the ambient and hemisphere lights, the environment and the fog. It draws the sun's shadows where the camera's cascades reach, and the point, spot and area lights that its camera sees. Its point and spot lights cast shadows where the camera's view gives them shadows. It draws the scene's background behind them, the sky included, unless the pass has a `clearColor`, which its texture then clears to.
 
 ## Related pages
 
