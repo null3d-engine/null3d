@@ -87,7 +87,9 @@ flowchart LR
 
 Most scenes give small intensities, such as 3 for a bright sun, with an exposure of 1. A scene can also give its lights real values. A real sun gives about 100,000 lux, an 800-lumen bulb lights a room, and a camera's exposure brings that light to the screen. In null3D, `intensityUnit` gives a light its real unit, and `post.set({ ev100 })` sets the camera's exposure value at ISO 100, as in Filament and Bevy. The exposure is 1 / (1.2 × 2^ev100): about 1 / 39,000 at 15, a sunny day.
 
-The engine multiplies the exposure into each light at its source, as Filament does, not into the finished picture. On the CPU it scales each light, the background color and the fog color. In the shaders it scales emissive light, light maps, unlit colors and background textures. Everything before the tone mapping is linear, so the picture is the same as with the exposure at the end. But the scene's colors stay near 1, so a 16-bit float holds them. With the exposure at the end, a sun of 100,000 lux gives a smooth metal a highlight above 65,504. That is the largest 16-bit float, so the highlight loses its color.
+The engine multiplies the exposure into each light at its source, as Filament does, not into the finished picture. On the CPU it scales each light, the background color and the fog color. In the shaders it scales emissive light, light maps, unlit colors and background textures.
+
+Everything before the tone mapping is linear, so the picture is the same as with the exposure at the end. But the scene's colors stay near 1, so a 16-bit float holds them. With the exposure at the end, a sun of 100,000 lux gives a smooth metal a highlight above 65,504. That is the largest 16-bit float, so the highlight loses its color.
 
 ```ts
 import { defineSketch } from '@null3d/engine';
@@ -107,7 +109,9 @@ Colors that you set in the scene's units take the exposure too: a background col
 
 A scene can hold hundreds of point, spot and area lights, but a surface only needs the few whose ranges reach it. The engine therefore cuts the camera's view into clusters. The screen splits into 16 tiles across and 9 up, and the depth splits into 24 slices. Slices grow with distance. Near the camera, where each meter covers more of the screen, slices are thin.
 
-On WebGPU at Medium and above, the slices fit the depth that the surfaces in view span. A small compute pass after the opaque pass samples the depth sparsely and keeps the nearest and farthest surface. The next frame fits its slices to that range, so a slice covers a shorter part of the view and lists fewer lights. The first slice still starts at the near plane. The last still ends where the farthest light ends. A surface outside the measured range therefore keeps every light that reaches it. Low keeps the CPU's slicing, from the near plane to the farthest light's end. WebGL2 keeps that slicing at every preset.
+On WebGPU at Medium and above, the slices fit the depth that the surfaces in view span. A small compute pass after the opaque pass samples the depth sparsely and keeps the nearest and farthest surface. The next frame fits its slices to that range, so a slice covers a shorter part of the view and lists fewer lights.
+
+The first slice still starts at the near plane. The last still ends where the farthest light ends. A surface outside the measured range therefore keeps every light that reaches it. Low keeps the CPU's slicing, from the near plane to the farthest light's end. WebGL2 keeps that slicing at every preset.
 
 Each frame the engine lists, for each cluster, the lights whose range spheres reach it. Each pixel of a standard material then finds its cluster and loops over that cluster's lights alone. The test is conservative: a cluster may list a light that ends just before it, but never misses a light that reaches it. Each light fades smoothly to nothing at its range, so a listed light that does not reach a pixel adds nothing.
 
@@ -156,7 +160,9 @@ Each frame the engine finds every point and spot light's position relative to th
 
 ## Ambient and hemisphere lights
 
-An ambient light gives every surface the same light. A hemisphere light blends from its ground color to its sky color as a surface's normal turns toward its +Y axis. That blend is half the sum of the two colors, plus a term that grows with the cosine between the normal and the sky's direction. Each frame, the engine sums every ambient and hemisphere light on the CPU. The sum is one color from every direction and one color along each world axis. Each pixel of a standard material adds them up with three multiply-adds, whatever the number of lights.
+An ambient light gives every surface the same light. A hemisphere light blends from its ground color to its sky color as a surface's normal turns toward its +Y axis. That blend is half the sum of the two colors, plus a term that grows with the cosine between the normal and the sky's direction.
+
+Each frame, the engine sums every ambient and hemisphere light on the CPU. The sum is one color from every direction and one color along each world axis. Each pixel of a standard material adds them up with three multiply-adds, whatever the number of lights.
 
 Both lights are diffuse only: they light a surface's color and give no highlights. An environment's light adds to theirs. The environment's `intensity` and a material's `envIntensity` scale only the environment's own light. The occlusion map and ambient occlusion darken the light of all of them.
 
@@ -174,9 +180,13 @@ Fog fades objects toward one color with their distance from the camera, as air d
 
 A curve sets how the fog thickens. The default, exponential fog, follows light through an even haze: each unit of distance hides the same share of what is left. Exponential squared fog thickens with the square of the distance. Linear fog is clear up to `near` and hides objects from `far`, with a smooth change between them.
 
-Real mist lies low and thins with height. With a `heightFalloff`, the fog's density falls by a factor of e every 1 / `heightFalloff` units up. The engine sums that density along each line of sight with an exact formula, as Filament does. A view down into the mist then sees thick fog, and a view across its top sees thin fog. With a `sunGlow`, the fog toward the main directional light takes some of that light's color, as haze around a low sun does. The glow follows the light and its intensity. Shadows do not block it.
+Real mist lies low and thins with height. With a `heightFalloff`, the fog's density falls by a factor of e every 1 / `heightFalloff` units up. The engine sums that density along each line of sight with an exact formula, as Filament does. A view down into the mist then sees thick fog, and a view across its top sees thin fog.
 
-The engine mixes the fog into each pixel's color as it shades the pixel, after lighting and before the tone mapping. Fog therefore needs no pass and no texture. It costs about 15 arithmetic operations and one or two exponentials per pixel, and nothing in a scene without fog. The mix happens in linear color. The sky and the background can take the same fog as a surface at the camera's far plane. They do so at the share that the fog's `background` option sets, above 0; the default is 0. The haze over the land can then continue over the sky it meets. A material created with `fog: false` keeps its color at every distance.
+With a `sunGlow`, the fog toward the main directional light takes some of that light's color, as haze around a low sun does. The glow follows the light and its intensity. Shadows do not block it.
+
+The engine mixes the fog into each pixel's color as it shades the pixel, after lighting and before the tone mapping. Fog therefore needs no pass and no texture. It costs about 15 arithmetic operations and one or two exponentials per pixel, and nothing in a scene without fog. The mix happens in linear color.
+
+The sky and the background can take the same fog as a surface at the camera's far plane. They do so at the share that the fog's `background` option sets, above 0; the default is 0. The haze over the land can then continue over the sky it meets. A material created with `fog: false` keeps its color at every distance.
 
 ### Volumetric fog
 
@@ -252,7 +262,9 @@ The standard material takes the environment's light in these ways:
 
 A small table picks the level that each roughness reads.
 
-`scene.setEnvironment(environment, { intensity, rotation })` sets the scene's environment, and `scene.setEnvironment(null)` removes it. `intensity` scales the light. `rotation` turns the environment by Euler angles in radians, in the order X, Y, Z. The call allocates nothing, so a sketch can turn the environment in every frame. A material's `envIntensity` scales the environment's light on that material alone, and multiplies the scene's `intensity`. A scene has one environment. For the light of one place in the scene, use a [reflection probe](#reflection-probes).
+`scene.setEnvironment(environment, { intensity, rotation })` sets the scene's environment, and `scene.setEnvironment(null)` removes it. `intensity` scales the light. `rotation` turns the environment by Euler angles in radians, in the order X, Y, Z. The call allocates nothing, so a sketch can turn the environment in every frame.
+
+A material's `envIntensity` scales the environment's light on that material alone, and multiplies the scene's `intensity`. A scene has one environment. For the light of one place in the scene, use a [reflection probe](#reflection-probes).
 
 | Call | Gives |
 | --- | --- |
@@ -276,7 +288,9 @@ A small table picks the level that each roughness reads.
 - An HDR file loads the HDR reader and its worker, about 6.5 KB after Brotli, and the code and shaders that make the room. They load while the file downloads. The worker reads a 2K file in about 100 ms on a MacBook Pro, outside the sketch's frames. The GPU then filters the map in the next frame, before that frame draws, in about the room's time.
 - An HDR map keeps its panorama on the thread that draws, up to 8 MB for an image of 2,048 x 1,024 texels or more. A new GPU device makes the map again from it. `environment.destroy()` frees both.
 - The built-in room downloads no file. Its first use loads the code and the shaders that make it, about 12 KB after Brotli. The shaders compile in the background while the scene loads, and `builtinEnvironment` resolves once they are ready. The GPU then makes the whole map in the next frame, before that frame draws. That frame takes longer by the map's GPU time, which the table below gives.
-- The sky's environment loads the same code and shaders as the room. The GPU makes its whole map in the next frame, in about 14 ms on a MacBook Pro. After a change of the sky that shows, it makes the map again in 20 stages, one a frame. A sun that turns less than half a degree leaves the map as it is, and so does a color value that drifts by less than 2%. Slowly drifting clouds wait too, and their changes add up. One last refresh captures the sky exactly once it stops changing. Each stage takes about 1 ms of GPU time on a MacBook Pro. The scene draws with the old map until the last stage, so no frame waits for a whole map. A sun that turns in every frame pays a stage only while it crosses those steps.
+- The sky's environment loads the same code and shaders as the room. The GPU makes its whole map in the next frame, in about 14 ms on a MacBook Pro. After a change of the sky that shows, it makes the map again in 20 stages, one a frame. A sun that turns less than half a degree leaves the map as it is, and so does a color value that drifts by less than 2%. Slowly drifting clouds wait too, and their changes add up. One last refresh captures the sky exactly once it stops changing.
+
+  Each stage takes about 1 ms of GPU time on a MacBook Pro. The scene draws with the old map until the last stage, so no frame waits for a whole map. A sun that turns in every frame pays a stage only while it crosses those steps.
 - The sky's environment keeps about 9 MB more for its steps. A file's map uploads in the frames after the load, within the frame's upload budget.
 - With an environment, each pixel of a standard material reads the cube map once and adds up the nine coefficients.
 - On WebGL2 the standard material uses at most 13 of the texture units that the device reports. The cube map, the area lights' tables and the reflection probes' maps share one array, and the copy of the opaque colors that screen-space reflections read is included, so three stay free on a device with 16. A material's maps share six units, and a material with more leaves out its specular intensity map first, then its specular color map, then its light map.
@@ -403,7 +417,9 @@ export default defineSketch(async ({ scene, assets }) => {
 });
 ```
 
-The engine draws a background after the opaque objects, at the far plane, with the depth test. So it shades only the pixels that no object covers, and transparent objects draw over it. While an opaque material has `depthWrite: false` or `depthTest: false`, the background draws before the objects instead, without the depth test. That material then still shows over the background. A texture fills the view as one triangle. An environment, a cube map and the sky draw as a box around the camera. So each pixel takes its color from its own direction. Their light goes into the scene's color like an object's, so exposure and tone mapping change them too.
+The engine draws a background after the opaque objects, at the far plane, with the depth test. So it shades only the pixels that no object covers, and transparent objects draw over it. While an opaque material has `depthWrite: false` or `depthTest: false`, the background draws before the objects instead, without the depth test. That material then still shows over the background.
+
+A texture fills the view as one triangle. An environment, a cube map and the sky draw as a box around the camera. So each pixel takes its color from its own direction. Their light goes into the scene's color like an object's, so exposure and tone mapping change them too.
 
 - An environment's background reads the environment's cube map at the level of the blur's roughness. The levels hold the blur already, so a blurred background costs no more than a sharp one. Only environments blur: for a background that blurs, load an environment with `assets.loadEnvironment`.
 - A cube map shows its six images as seen from inside the cube, mirrored across x.

@@ -6,7 +6,9 @@ summary: "One package with one entry; claim a namespace and the plugin interface
 
 # Building an add-on
 
-An add-on is a package that adds a feature above the engine's public API. It has one install and one import, and it reaches the engine only through the engine's public entry points. The engine's own add-ons work the same way. `bunx @null3d/cli check-addon` runs gates on a folder before a listing publishes it. [The `null3d` command](../cli/null3d.md#check-addon) lists them. The sections on names, entry points, shaders, file sizes and the preset cost each have a gate. The sections on Rust and levels of detail are advice that no gate checks.
+An add-on is a package that adds a feature above the engine's public API. It has one install and one import, and it reaches the engine only through the engine's public entry points. The engine's own add-ons work the same way.
+
+`bunx @null3d/cli check-addon` runs gates on a folder before a listing publishes it. [The `null3d` command](../cli/null3d.md#check-addon) lists them. The sections on names, entry points, shaders, file sizes and the preset cost each have a gate. The sections on Rust and levels of detail are advice that no gate checks.
 
 ## Choose a way to add drawing
 

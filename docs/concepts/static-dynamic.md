@@ -113,7 +113,9 @@ On WebGPU, each moving row uploads its 48-byte world matrix in every frame, so 1
 
 ## Why it matters on phones
 
-On the WebGL2 path, which many phones use, static objects keep their data on the GPU. A frame uploads no matrices for them, only the list of what is visible. The list has a 4-byte entry for each visible object or batch row, where a full matrix takes 48 bytes. A static batch at rest takes one entry for each visible group of 64 nearby rows. So 100,000 visible rows of such a batch need about 1,600 entries, or about 6 KB. A frame whose list matches the previous frame's list uploads no list. Marking objects static when they do not move keeps these savings.
+On the WebGL2 path, which many phones use, static objects keep their data on the GPU. A frame uploads no matrices for them, only the list of what is visible.
+
+The list has a 4-byte entry for each visible object or batch row, where a full matrix takes 48 bytes. A static batch at rest takes one entry for each visible group of 64 nearby rows. So 100,000 visible rows of such a batch need about 1,600 entries, or about 6 KB. A frame whose list matches the previous frame's list uploads no list. Marking objects static when they do not move keeps these savings.
 
 ## Related pages
 

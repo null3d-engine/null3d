@@ -231,7 +231,9 @@ post.addEffect({ wgsl: warm });
 - Effects run after the scene passes and before depth of field and bloom, on linear HDR color after the exposure. Light that an effect adds can glow, and the tone curve maps it with the rest.
 - Each effect reads the color that the effect before it wrote. It can read any pixel, and the scene's depth on every GPU path.
 - Effects run from the lowest `order` to the highest, at most 8 at once.
-- An effect that calls `effectBloom(input.uv)` reads a level of bloom's chain, and `bloomLevel` names which level, from 0 for the narrowest glow. The chain then draws before the effects, from the scene color rather than from their output, and the final pass still blends its glow into the picture after them. A streak, a glare or a halo reads the level that suits its width instead of blurring the picture again. Such an effect draws in a pass of its own, as an effect with textures does, and a level that the chain does not draw reads black.
+- An effect that calls `effectBloom(input.uv)` reads a level of bloom's chain, and `bloomLevel` names which level, from 0 for the narrowest glow. The chain then draws before the effects, from the scene color rather than from their output, and the final pass still blends its glow into the picture after them.
+
+  A streak, a glare or a halo reads the level that suits its width instead of blurring the picture again. Such an effect draws in a pass of its own, as an effect with textures does, and a level that the chain does not draw reads black.
 - Two targets of the render size serve all the effects. The render graph lets them share memory, because each effect's target lives only until the next effect has read it.
 - A full-screen pass reads and writes 8 bytes per pixel. The engine joins an effect that reads only its own pixel into the pass of the effect before it, while the render scale cannot drop below the whole canvas. With bloom and FXAA off, the last of these passes folds into the final pass then too. While the scale can drop, each effect draws a pass of its own, at every scale ([below the whole canvas's render scale](#below-the-whole-canvass-render-scale)). [Custom passes](../guides/custom-passes.md#cost) gives the rules.
 
@@ -321,7 +323,9 @@ Screen-space reflections and ambient occlusion share one grid, at the larger of 
 
 ### Cost
 
-The reflections add the depth prepass, the depth copy, six small steps for the pyramid, the trace and the copy of the opaque colors with its mip levels. Transmission shares that copy. The opaque pass reads four texels of the screen texture at each pixel, the same reads that ambient occlusion and contact shadows use. It adds one filtered read to each pixel of a smooth enough surface. While the reflections are off, the frame has none of these passes or targets, and the shaders download only when a sketch first turns them on.
+The reflections add the depth prepass, the depth copy, six small steps for the pyramid, the trace and the copy of the opaque colors with its mip levels. Transmission shares that copy.
+
+The opaque pass reads four texels of the screen texture at each pixel, the same reads that ambient occlusion and contact shadows use. It adds one filtered read to each pixel of a smooth enough surface. While the reflections are off, the frame has none of these passes or targets, and the shaders download only when a sketch first turns them on.
 
 The engine's benchmark scene of 100,000 boxes over a polished floor ran on a MacBook Pro in Chrome. With WebGPU, the reflections added about 0.7 ms of GPU time per frame on Medium, at a quarter of the render size. On High, at half the size, they added about 1.8 ms. On WebGL2 they added between 0.25 and 1.24 ms. They added no CPU time beyond the noise.
 
@@ -387,7 +391,9 @@ A color grading table, from a `.cube` or a `.3dl` file through `assets.loadLut` 
 - Both draw on every GPU path, with HDR color or without it, as [Post-processing API](../api/post.md#vignette) says.
 - They are settings of the final pass, not passes of their own. Turning one on builds no pipeline, so the picture changes in the next frame with no pause.
 - Each table is a 3D texture, read with one filtered texture read per pixel. The vignette costs a few operations per pixel.
-- The grading controls' table holds 32 texels a side, and the final pass takes the square root of a color before it reads the table, which places the texels closer together toward black where a grade's curve is steepest. A job worker computes the table's texels, so a value that changes stalls no frame. The frame that lands a bake uploads the table, 256 KB. The table keeps the worker's whole range, past white, and the canvas clips it, so a color that crosses white inside a texel's cell still matches the grade.
+- The grading controls' table holds 32 texels a side, and the final pass takes the square root of a color before it reads the table, which places the texels closer together toward black where a grade's curve is steepest.
+
+  A job worker computes the table's texels, so a value that changes stalls no frame. The frame that lands a bake uploads the table, 256 KB. The table keeps the worker's whole range, past white, and the canvas clips it, so a color that crosses white inside a texel's cell still matches the grade.
 
 ## Sharpening
 

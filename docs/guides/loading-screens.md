@@ -16,7 +16,9 @@ flowchart LR
     first --> check["The preset check in the first frames of play:<br/>a lighter preset if the GPU is slow,<br/>skipped on a repeat visit"]
 ```
 
-A loading screen covers the canvas while the engine starts and the sketch loads its files. It stays while the sketch builds its scene and the GPU gets ready to draw it. The page draws the screen in HTML, and the sketch tells it how far loading has come with messages. Then comes warm-up: the GPU builds a pipeline for each kind of object in the scene. When the engine chose the quality preset itself, it then checks that the GPU draws the scene fast enough at that preset. By default it checks in the first moments of play, so the loading screen does not wait for it.
+A loading screen covers the canvas while the engine starts and the sketch loads its files. It stays while the sketch builds its scene and the GPU gets ready to draw it. The page draws the screen in HTML, and the sketch tells it how far loading has come with messages.
+
+Then comes warm-up: the GPU builds a pipeline for each kind of object in the scene. When the engine chose the quality preset itself, it then checks that the GPU draws the scene fast enough at that preset. By default it checks in the first moments of play, so the loading screen does not wait for it.
 
 ## Report progress from the sketch
 
@@ -66,7 +68,9 @@ A file that fails counts as done, so the bar still reaches its end. The failed l
 
 The page passes `onSketchMessage` to `createEngine`, so it hears the messages that the sketch sends during its setup. It removes the loading screen when `engine.firstFrame` resolves: until the GPU has finished the first frame, the canvas is blank. When the promise rejects, the engine stopped before that frame, and the screen shows the error instead.
 
-A percentage must come from work that is counted. `onProgress` gives the engine core's bytes, measured against the length that the server announced. `assets.onProgress` gives a scene's files the same way. Neither knows how much of the whole start is left. So the page measures each phase on its own, and it names the phase beside its number. Within a phase the bar never falls, even when a scene's total grows as it starts more files. When the label changes, a new measure starts from 0, as `show` does below.
+A percentage must come from work that is counted. `onProgress` gives the engine core's bytes, measured against the length that the server announced. `assets.onProgress` gives a scene's files the same way. Neither knows how much of the whole start is left.
+
+So the page measures each phase on its own, and it names the phase beside its number. Within a phase the bar never falls, even when a scene's total grows as it starts more files. When the label changes, a new measure starts from 0, as `show` does below.
 
 ```ts
 // page.ts
@@ -148,13 +152,17 @@ The engine keeps a list of the pipelines that the first frame of each sketch bui
 
 ## The first frame
 
-`engine.firstFrame` resolves once the GPU has finished the first frame after the setup, with every pipeline built. It rejects when the engine stops drawing first, with the failure that ended its frames. So a loading screen that waits for it can say why the scene never came. The promise of `createEngine` resolves once the sketch's setup has run. Either can come first. So remove the loading screen only once both have resolved, as the page above does. Neither waits for the preset check, unless the page asks for the check before play, as the next section says.
+`engine.firstFrame` resolves once the GPU has finished the first frame after the setup, with every pipeline built. It rejects when the engine stops drawing first, with the failure that ended its frames. So a loading screen that waits for it can say why the scene never came.
+
+The promise of `createEngine` resolves once the sketch's setup has run. Either can come first. So remove the loading screen only once both have resolved, as the page above does. Neither waits for the preset check, unless the page asks for the check before play, as the next section says.
 
 A setup function that awaits `scene.warmUp()` after it creates the scene, as the sketch above does, lets the engine build the pipelines while the setup runs. The engine then draws the first frame as soon as they are built.
 
 ## The preset check
 
-When the page leaves the quality preset to the engine, the engine checks its choice in the first frames of play. For about three quarters of a second, it measures the frame rate while the sketch plays. The sketch's `onUpdate`, its input and its animations run as usual. Where the GPU cannot hold the [target frame rate](../concepts/quality-presets.md#the-target-frame-rate), the engine lowers the preset and measures again. By default the target is the display's rate, up to 60 frames per second. Once the check has ended, `engine.presetChecked` resolves, and `engine.mode.preset` holds the preset that it chose.
+When the page leaves the quality preset to the engine, the engine checks its choice in the first frames of play. For about three quarters of a second, it measures the frame rate while the sketch plays. The sketch's `onUpdate`, its input and its animations run as usual.
+
+Where the GPU cannot hold the [target frame rate](../concepts/quality-presets.md#the-target-frame-rate), the engine lowers the preset and measures again. By default the target is the display's rate, up to 60 frames per second. Once the check has ended, `engine.presetChecked` resolves, and `engine.mode.preset` holds the preset that it chose.
 
 So the loading screen goes at the first frame, and a lighter preset applies in front of the viewer. The pixel ratio, the shadows and the anti-aliasing change. The last frame stays on screen while the new preset's pipelines build. A page that would rather hide that change asks for the check before play:
 

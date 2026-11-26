@@ -94,7 +94,9 @@ The render worker, drawing frame N inside its own `requestAnimationFrame` callba
 
 1. Takes the next complete frame. The sketch worker runs at most one frame ahead, so no frame is skipped. If none is ready, it draws nothing, and the browser keeps showing the last frame. It also draws nothing while two frames are unfinished on the GPU. The sketch worker then waits too, so at most two frames wait on a GPU that falls behind.
 2. Applies a canvas resize that arrives with the frame. The frame was built for that size, so the canvas and the frame's render targets always agree. A new pixel ratio, as when the window moves to another screen, resizes the canvas too.
-3. Uploads the changed byte ranges to GPU buffers, and on WebGL2 to data textures. On WebGPU, uploads from 64 KiB up to 4 MiB have two routes: the direct write call, and staging buffers that the browser keeps mapped. The render worker times both on the device and takes the faster one. Chrome favors the staging buffers, and Safari the direct call. On WebGL2, uploads read straight from shared memory, or from a copy in a browser that refuses to read it. Textures upload in bands of rows, within the quality preset's budget of bytes per frame, and the GPU then makes their mip levels.
+3. Uploads the changed byte ranges to GPU buffers, and on WebGL2 to data textures. On WebGPU, uploads from 64 KiB up to 4 MiB have two routes: the direct write call, and staging buffers that the browser keeps mapped. The render worker times both on the device and takes the faster one. Chrome favors the staging buffers, and Safari the direct call. On WebGL2, uploads read straight from shared memory, or from a copy in a browser that refuses to read it.
+
+   Textures upload in bands of rows, within the quality preset's budget of bytes per frame, and the GPU then makes their mip levels.
 4. Replays the draw lists into WebGPU or WebGL2 calls and submits them. The browser shows the frame when the callback returns.
 
 The thread that draws builds GPU pipelines in the background. The shaders of some features, such as skinning and bloom, download the first time a sketch uses them, before their pipelines build.
@@ -169,7 +171,9 @@ The engine puts the sketch, the drawing and the parallel work on threads by the 
 | Pipelined, with `sketchThread: 'main'` | The page's main thread | The render worker | The job workers and the page's main thread |
 | Low latency, with `sketchThread: 'main'` | The page's main thread | The page's main thread | The job workers and the page's main thread |
 
-A worker can draw only where the browser gives it a WebGPU or WebGL2 context for a canvas that the page hands over. The engine tests this at startup. Where a worker cannot draw, the page draws, and the sketch stays on its thread, in pipelined mode. Low latency with the sketch in its worker needs that worker to draw, so there the engine runs in pipelined mode instead. A development build logs a warning, and `engine.mode.latency` is `pipelined`. Read `engine.mode` for the build, the latency mode, the thread that runs the sketch, the thread that draws and the number of job workers.
+A worker can draw only where the browser gives it a WebGPU or WebGL2 context for a canvas that the page hands over. The engine tests this at startup. Where a worker cannot draw, the page draws, and the sketch stays on its thread, in pipelined mode.
+
+Low latency with the sketch in its worker needs that worker to draw, so there the engine runs in pipelined mode instead. A development build logs a warning, and `engine.mode.latency` is `pipelined`. Read `engine.mode` for the build, the latency mode, the thread that runs the sketch, the thread that draws and the number of job workers.
 
 `createEngine({ sketchThread: 'main' })` runs your sketch code and the engine core on the page's main thread, in the threaded build. Your sketch can then reach the DOM. Use it for apps that work mostly with the DOM, for ported code that still uses the DOM, and for debugging. The API stays the same.
 
