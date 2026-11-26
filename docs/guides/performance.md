@@ -196,7 +196,9 @@ These habits keep play free of rebuilds:
 - For a look that changes often, such as a highlight, keep two objects and swap their visibility. Keep `setMaterial` and `setMesh` for rare changes.
 - Give bounds of your own with `setBounds` to few objects, and set them once: each call rebuilds the draw tables. On WebGPU, each object with bounds of its own takes a draw of its own. Objects that share a mesh and a material share one draw.
 - Give a threshold bias with `setLevelBias` to few objects too, such as a hero object. On WebGPU, each object with a bias of its own takes a draw of its own.
-- Every row of a batch counts toward the scene's limit of objects and instance rows, active or not. On WebGPU every device draws 2,097,152. On WebGL2 the limit follows the largest texture the device allows. It is 1,048,576 at 2,048 pixels, the least that WebGL2 allows. For the device the page runs on, `engine.capabilities.maxInstances` gives the limit (E1501). The places in the scene's object tables count toward it too, so batches hold at most the limit less those places. Engine memory holds about 5 million rows (E1109). So size each batch for the rows it uses.
+- Every row of a batch counts toward the scene's limit of objects and instance rows, active or not. On WebGPU every device draws 2,097,152. On WebGL2 the limit follows the largest texture the device allows. It is 1,048,576 at 2,048 pixels, the least that WebGL2 allows. For the device the page runs on, `engine.capabilities.maxInstances` gives the limit (E1501).
+
+  The places in the scene's object tables count toward it too, so batches hold at most the limit less those places. Engine memory holds about 5 million rows (E1109). So size each batch for the rows it uses.
 - Check with `measure`. A `rebuilds` count above zero during play points to one of the calls whose cost is a rebuild in the table. New passes show in `pipelines`, not in `rebuilds`.
 
 ## How the engine batches, builds pipelines and times frames
@@ -396,7 +398,9 @@ A model from `assets optimize` blocks with every mesh that got a blocker, small 
 
 ### Occlusion culling on the GPU
 
-On WebGPU, occlusion culling runs on the GPU, in two phases for each camera, and High and Ultra turn it on for desktops. The GPU picks the large opaque objects that hide others itself. It adds a depth draw of those objects, a depth pyramid and a second culling pass. A check during play keeps these passes only while they hide at least a tenth of the objects in view and the GPU's frame gets no longer. `setOccluder(false)` keeps an object whose depth costs more than it hides out of the occluders. Compare `gpuMs` with `?occlusion=on` and `?occlusion=off` to see what it saves ([Culling](../concepts/culling.md#gpu-occlusion-culling-on-webgpu)).
+On WebGPU, occlusion culling runs on the GPU, in two phases for each camera, and High and Ultra turn it on for desktops. The GPU picks the large opaque objects that hide others itself. It adds a depth draw of those objects, a depth pyramid and a second culling pass.
+
+A check during play keeps these passes only while they hide at least a tenth of the objects in view and the GPU's frame gets no longer. `setOccluder(false)` keeps an object whose depth costs more than it hides out of the occluders. Compare `gpuMs` with `?occlusion=on` and `?occlusion=off` to see what it saves ([Culling](../concepts/culling.md#gpu-occlusion-culling-on-webgpu)).
 
 ## The depth prepass
 
@@ -408,7 +412,9 @@ On WebGPU, every preset leaves it off. In the S2 benchmark in Chrome on a MacBoo
 
 ## Measure
 
-For a quick look while the scene runs, add `?stats` to the page's address, or call `debug.stats(true)` in the sketch. The overlay's header shows the frame rate. Its card shows each thread's CPU time and the GPU's time against the engine's target frame rate, with your code apart from the engine's work. It also shows memory, draw calls, triangles and objects drawn, and what holds the frame rate back ([Debug drawing and stats](../api/debug.md#stats-overlay-and-frame-figures)). While the card is open, the engine times one frame in eleven on the GPU, which costs a little GPU time. For figures that you compare between changes, measure.
+For a quick look while the scene runs, add `?stats` to the page's address, or call `debug.stats(true)` in the sketch. The overlay's header shows the frame rate. Its card shows each thread's CPU time and the GPU's time against the engine's target frame rate, with your code apart from the engine's work. It also shows memory, draw calls, triangles and objects drawn, and what holds the frame rate back ([Debug drawing and stats](../api/debug.md#stats-overlay-and-frame-figures)).
+
+While the card is open, the engine times one frame in eleven on the GPU, which costs a little GPU time. For figures that you compare between changes, measure.
 
 `engine.measure(seconds)` on the page records every frame for that many seconds and returns these figures. The [FrameMetrics type reference](../api/reference/debug.md#framemetrics) gives their types.
 

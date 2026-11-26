@@ -75,7 +75,9 @@ The loader reads both names of the meshopt extension: `KHR_meshopt_compression`,
 
 The engine never downloads that buffer, because it always decodes. A file whose compressed data breaks the extension's rules, or does not decode, fails with [E1416](../errors/E1416.md).
 
-The loader reads Draco compression too, `KHR_draco_mesh_compression`, which many older models use. It decodes each mesh in its worker with Draco's own decoder for glTF files. The loader stores the decoded normals and tangents as 8-bit integers, and texture coordinates between 0 and 1 as 16-bit integers. These are the types that the asset tool writes, and they take half the GPU memory of the floats that other loaders keep, or less. Positions stay floats. In development builds, the loader warns about each Draco file and names the command that converts it.
+The loader reads Draco compression too, `KHR_draco_mesh_compression`, which many older models use. It decodes each mesh in its worker with Draco's own decoder for glTF files.
+
+The loader stores the decoded normals and tangents as 8-bit integers, and texture coordinates between 0 and 1 as 16-bit integers. These are the types that the asset tool writes, and they take half the GPU memory of the floats that other loaders keep, or less. Positions stay floats. In development builds, the loader warns about each Draco file and names the command that converts it.
 
 Convert Draco files to meshopt with `bunx @null3d/cli assets optimize` when you can. Draco does not compress animation clips or morph targets, so an animated or morphed file is 3 to 4 times larger than its meshopt copy. Blender 5.2 reads and writes meshopt. Keep a Draco copy only for older Blender versions, which read Draco and not meshopt.
 
