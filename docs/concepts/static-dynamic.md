@@ -79,7 +79,9 @@ Development builds check this rule in every frame:
 <details>
 <summary>Technical details: how the static check runs</summary>
 
-Before the engine recomputes objects, it compares the position, rotation and scale of each static object with its last values. It compares the bounding sphere too. In a sketch with `onLateUpdate`, it checks again before it recomputes what that callback moved. Batch rows take turns, at most 4,096 a frame over all batches, so a scene of many rows reports a write within a few frames. The check reads every static object in each frame. In a benchmark scene of about 5,000 objects on a MacBook Pro, it cost about 0.06 ms per frame on WebGPU. On WebGL2 it cost about 0.03 ms per frame.
+Before the engine recomputes objects, it compares the position, rotation and scale of each static object with its last values. It compares the bounding sphere too. In a sketch with `onLateUpdate`, it checks again before it recomputes what that callback moved.
+
+Batch rows take turns, at most 4,096 a frame over all batches, so a scene of many rows reports a write within a few frames. The check reads every static object in each frame. In a benchmark scene of about 5,000 objects on a MacBook Pro, it cost about 0.06 ms per frame on WebGPU. On WebGL2 it cost about 0.03 ms per frame.
 
 </details>
 
