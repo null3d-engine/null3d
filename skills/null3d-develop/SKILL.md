@@ -145,7 +145,7 @@ Check this table before you write a generator, control, effect or loader. Each a
 | Trees that sway in the wind | a glTF or code-made mesh, with a material that reads `@null3d/wind`'s field | `api/wind` (recipe 24) |
 | Wind that plants, flags and smoke read, with travelling gusts and pushes | `@null3d/wind` | `api/wind` |
 | Sound placed in the scene, from a sea bed to a street of cars | `@null3d/sound` | `api/sound` |
-| three.js look modes for a port: Reinhard and Cineon tone curves, and a soft outline with a glow and a pulse | `@null3d/three-compat` | `api/three-compat` |
+| three.js's Reinhard and Cineon tone curves and `OutlinePass`'s soft outline, and nothing more. It runs no three.js code: port a scene with null3d-port-threejs | `@null3d/three-compat` | `api/three-compat` |
 
 Drawing:
 

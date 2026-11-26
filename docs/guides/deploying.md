@@ -71,7 +71,7 @@ Send no `Vary: Origin` header with the build's own files. A worker's request car
 
 ## Compress with Brotli
 
-Brotli shrinks the engine's files more than gzip does, because the engine's shader text repeats far apart. The engine core's WebAssembly file takes 2.0 MB as it is, about 0.8 MB with gzip and about 0.6 MB with Brotli.
+Brotli shrinks the engine's files more than gzip does, because the engine's shader text repeats far apart. The engine core's WebAssembly file takes 1.9 MB as it is, about 0.8 MB with gzip and about 0.6 MB with Brotli.
 
 - Netlify, Cloudflare Pages and Vercel send Brotli to browsers that accept it.
 - GitHub Pages sends gzip only.
@@ -85,10 +85,12 @@ A page's start downloads the engine, then the files of the first view. Keep each
 
 | Part | Size after Brotli | How to check it |
 | --- | --- | --- |
-| The engine's JavaScript at the start | About 130 KB | The network panel |
-| The engine core's WebAssembly | About 0.6 MB | The network panel |
+| The engine's JavaScript at the start | About 217 KB on WebGL2 and 203 KB on WebGPU, for a pipelined page | The network panel |
+| The engine core: its WebAssembly file and its JavaScript glue | About 627 KB | The network panel |
 | Your own models and textures | Your choice | `bunx @null3d/cli assets optimize --report report.json` |
 | An add-on's files after the start | The budgets of the `sizes` gate | `bunx @null3d/cli check-addon` |
+
+So the engine's start takes about 844 KB after Brotli, before the page's own code and the scene's files. The JavaScript counts the engine's code for the page and its workers and the GPU path's renderer. It also counts the largest shader file that a start can load. [Send the files with Brotli](../getting-started/hosting.md#send-the-files-with-brotli) gives the figures for gzip and for files as they are.
 
 `assets optimize` makes models and their textures smaller, and its report warns for each quality preset whose texture memory a model passes ([The budget report](assets-pipeline.md#the-budget-report)). Phones and tablets start at the Low and Medium presets, which give textures less memory.
 

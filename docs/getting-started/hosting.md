@@ -192,16 +192,23 @@ To check the app, open its developer tools and read `crossOriginIsolated` in the
 
 ## Send the files with Brotli
 
-The engine's shader text compresses well with Brotli, which finds text that repeats far apart. gzip finds only repeats that are close together. So the host's compression changes what a page downloads at its start. In this version, a pipelined page's start downloads about:
+The engine's shader text compresses well with Brotli, which finds text that repeats far apart. gzip finds only repeats that are close together. So the host's compression changes what a page downloads at its start. In this version, the engine's part of the start downloads about:
 
-| The host sends | The engine's JavaScript at the start |
-| --- | --- |
-| Brotli | 130 KB |
-| gzip at level 9 | 165 KB |
-| gzip at level 6, a common setting for compression on the fly | about 167 KB |
-| Files as they are | 0.6 MB |
+| The host sends | The engine's JavaScript | The engine core | Together |
+| --- | --- | --- | --- |
+| Brotli | 217 KB | 627 KB | 844 KB |
+| gzip at level 9 | 404 KB | 818 KB | 1.2 MB |
+| gzip at level 6, a common setting for compression on the fly | 429 KB | 829 KB | 1.2 MB |
+| Files as they are | 2.0 MB | 2.0 MB | 4.0 MB |
 
-The engine core is the start's largest file. Its WebAssembly file takes 2.0 MB as it is, about 0.8 MB with gzip and about 0.6 MB with Brotli. Many servers compress only text, and send `.wasm` files as they are. To check a host, open the browser's network panel and compare the core's transferred size with its size.
+The figures are for a pipelined page on WebGL2, the largest start:
+
+- The JavaScript counts the engine's code for the page and its workers, the WebGL2 renderer, and the largest shader file that a start can load. A WebGPU start downloads about 14 KB less after Brotli, because its shader file is smaller.
+- The core counts the core's WebAssembly file, 602 KB after Brotli, and its JavaScript glue, 25 KB.
+- Neither counts the page's own code or the scene's files.
+- A kilobyte here is 1,024 bytes. The browser's network panel counts 1,000 bytes to the kB, so it shows figures about 2% larger.
+
+The core's WebAssembly file is the start's largest file. Many servers compress only text, and send `.wasm` files as they are. To check a host, open the browser's network panel and compare the core's transferred size with its size.
 
 Netlify, Cloudflare Pages and Vercel send Brotli to browsers that accept it. GitHub Pages sends gzip only. nginx sends gzip with its own module, and Brotli with the `ngx_brotli` module. With nginx, compress the files once when you deploy them, with `brotli -q 11` on each file in `dist/assets/`, the `.wasm` files included. Then send the compressed files with `brotli_static on;`. nginx's own gzip compresses only the types that `gzip_types` lists, so add `application/wasm` there.
 
