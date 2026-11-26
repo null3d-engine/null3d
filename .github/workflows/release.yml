@@ -7,6 +7,7 @@ name: Release
 # commit that has not passed CI, and the default token cannot skip that rule, so the version commit
 # lands with a token of the release GitHub App, which the rule lets skip it. The default token's own
 # `contents: write` pushes the tag and publishes the release, which the rule does not cover.
+# Once the packages are on npm, it tells the website's repository, which syncs with the release.
 #
 # The release holds the commit it starts from: the tag's commit is that commit plus the version
 # numbers, the changelog section and the generated files. A commit that reaches main after the
@@ -295,3 +296,34 @@ jobs:
             echo "Publishing ${spec}"
             npm publish "$tarball" --access public
           done
+
+  # The website follows releases: its sync workflow copies the release's docs, demos and demo
+  # pictures, and deploys. A release publishes with the default token, and GitHub sends no event
+  # for that, so this job starts the sync itself with a repository_dispatch event that carries the
+  # tag. It waits for npm, because the website tells readers to install the packages. The release
+  # App's token covers the website's repository, where it needs contents: write to send the event.
+  notify-website:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs: [release, publish-npm]
+    environment: release
+    permissions: {}
+    steps:
+      - name: Get the release App's token for the website
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: website
+          permission-contents: write
+      - name: Start the website's sync
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          VERSION: ${{ needs.release.outputs.version }}
+        run: |
+          gh api "repos/${GITHUB_REPOSITORY_OWNER}/website/dispatches" \
+            -f event_type=null3d-release-published \
+            -f "client_payload[tag]=${VERSION}"
+          echo "Started the website's sync with ${VERSION}."
