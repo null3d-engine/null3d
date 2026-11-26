@@ -229,7 +229,9 @@ An array holds at most 256 layers, the most that an iPad allows, and at most 128
 <details>
 <summary>Technical details: how texture arrays grow and shrink</summary>
 
-An array starts with room for a few textures, at most 8 MiB of them, and doubles its layers when it is full. The GPU copies the old array into the new one, so the textures that it holds keep their texels. For one frame the GPU holds both, so the cap of 128 MiB keeps that extra memory small. When under a quarter of an array's layers hold textures, the array shrinks, and its textures move to its lowest layers. A texture from data with several layers has an array of its own, with exactly its layers. So does a texture in a compressed format, because WebGPU's compatibility mode cannot copy compressed texels into a larger array. A texture in `rgb9e5ufloat` has one too, because WebGL2 cannot copy that format.
+An array starts with room for a few textures, at most 8 MiB of them, and doubles its layers when it is full. The GPU copies the old array into the new one, so the textures that it holds keep their texels. For one frame the GPU holds both, so the cap of 128 MiB keeps that extra memory small. When under a quarter of an array's layers hold textures, the array shrinks, and its textures move to its lowest layers.
+
+A texture from data with several layers has an array of its own, with exactly its layers. So does a texture in a compressed format, because WebGPU's compatibility mode cannot copy compressed texels into a larger array. A texture in `rgb9e5ufloat` has one too, because WebGL2 cannot copy that format.
 
 </details>
 
@@ -240,7 +242,9 @@ On WebGL2, one standard material samples its maps through at most six texture un
 <details>
 <summary>Technical details: which maps WebGL2 drops first</summary>
 
-WebGL2 promises each shader stage only 16 textures, so on WebGL2 the maps of one standard material share at most six. A material whose color maps have one size and whose data maps have one size takes two units. Past six, a material draws without the maps that change its look least. It drops its specular intensity map first, then its specular color map, then its light map. A material that lets light through keeps its transmission map in the specular intensity map's place and its thickness map in the specular color map's, so they drop in that same order.
+WebGL2 promises each shader stage only 16 textures, so on WebGL2 the maps of one standard material share at most six. A material whose color maps have one size and whose data maps have one size takes two units. Past six, a material draws without the maps that change its look least.
+
+It drops its specular intensity map first, then its specular color map, then its light map. A material that lets light through keeps its transmission map in the specular intensity map's place and its thickness map in the specular color map's, so they drop in that same order.
 
 </details>
 
@@ -250,7 +254,9 @@ A texture can be at most 4096 texels wide and tall, the most that every WebGPU d
 
 An image decodes off the main thread into an `ImageBitmap`, and then moves to the thread that draws without a copy. In the default pipelined mode, that thread is the render worker. Data goes into the engine's memory, which that thread reads.
 
-The engine spreads uploads over frames, so loading many textures does not make one frame slow. Each frame uploads no more texel bytes than the upload budget, the `uploadBytesPerFrame` setting of the [quality preset](../concepts/quality-presets.md#the-settings-of-each-preset). A large texture goes up in bands of rows, one band per frame. Textures upload in the order that they got their texels. The engine frees its copy of data once the upload is done. Texels from a KTX2 file go into the engine's memory as data does. They go up in bands of rows of blocks, each mip level in turn.
+The engine spreads uploads over frames, so loading many textures does not make one frame slow. Each frame uploads no more texel bytes than the upload budget, the `uploadBytesPerFrame` setting of the [quality preset](../concepts/quality-presets.md#the-settings-of-each-preset). A large texture goes up in bands of rows, one band per frame. Textures upload in the order that they got their texels.
+
+The engine frees its copy of data once the upload is done. Texels from a KTX2 file go into the engine's memory as data does. They go up in bands of rows of blocks, each mip level in turn.
 
 Until its texels are on the GPU, a texture draws as if the material had no map. A material then shows its base color alone.
 
@@ -294,7 +300,9 @@ WebGPU and WebGL2 store, upload and sample textures the same way, and make the s
 
 ## When the browser takes the GPU away
 
-When the browser takes the GPU away, the engine starts a new device and uploads the texels that it still holds. A texture from a file loads its file again. On a phone or a tablet the engine also keeps its copy of an image or of data after their upload, so the texture draws with its map again. The `keepTextureCopies` option of `createEngine` turns that on or off on any device ([Page API](engine.md#options)). Keeping the copies costs about one more copy of each image in memory. Where the engine keeps no copy, a texture whose texels it released draws without its map until the texture gets an update.
+When the browser takes the GPU away, the engine starts a new device and uploads the texels that it still holds. A texture from a file loads its file again. On a phone or a tablet the engine also keeps its copy of an image or of data after their upload, so the texture draws with its map again.
+
+The `keepTextureCopies` option of `createEngine` turns that on or off on any device ([Page API](engine.md#options)). Keeping the copies costs about one more copy of each image in memory. Where the engine keeps no copy, a texture whose texels it released draws without its map until the texture gets an update.
 
 ## API reference
 
