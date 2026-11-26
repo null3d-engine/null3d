@@ -212,9 +212,11 @@ const LEVEL_FRAME_POLL_MS = 2;
  * A lower level of detail of a mesh: a simpler mesh that draws in the base mesh's place. Give its
  * `error`, the `distance` at which it switches in, or the screen `coverage` under which it draws.
  * A level with a measured error, which the asset tool writes, changes the picture by under a pixel
- * at a small threshold and switches at once. When the governor raises the threshold above about
- * one and a half pixels, that switch shows, and such a level then fades too. A level given by a distance, by
- * a coverage or by a hand-set error fades over a short band, so its switch does not pop.
+ * at a small threshold and switches at once.
+ *
+ * When the governor raises the threshold above about one and a half pixels, that switch shows, and
+ * such a level then fades too. A level given by a distance, by a coverage or by a hand-set error
+ * fades over a short band, so its switch does not pop.
  *
  * @category api/geometry
  */

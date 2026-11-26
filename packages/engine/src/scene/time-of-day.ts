@@ -201,8 +201,9 @@ const EXPOSURE: readonly (readonly [number, number])[] = [
 /**
  * Works out the settings of a time of day: an hour from 0 to 24, or a named preset. The sun rises
  * at 6, stands highest at 12 and sets at 18. After sunset the sky dims to a deep blue, and then to
- * a navy night sky lit from the moon's place, and the moon takes over as the main light. Each value
- * comes from the model of the sky that the background draws, so the fog takes that sky's horizon
+ * a navy night sky lit from the moon's place, and the moon takes over as the main light.
+ *
+ * Each value comes from the model of the sky that the background draws, so the fog takes that sky's horizon
  * color by day and its average at dusk. With the physical model it takes the sky's mean light by
  * day and through dusk, then the moon sky's horizon light at night. Throws a `RangeError` for an
  * hour that is not a finite number, or an unknown preset.

@@ -108,9 +108,10 @@ function strideOf(attr: ArrayLike<number>, vertices: number, name: string): numb
  *
  * Every copy must carry the same attributes, and each attribute must hold the same numbers per
  * vertex in every copy. An attribute that any copy lacks is left out of the result. Positions are
- * always carried, and indices are made for a copy that has none. A copy's normals turn by the
- * inverse transpose of its transform's upper left 3 by 3, as normals turn, so a stretched copy
- * keeps its shading. Its tangents turn by the upper left 3 by 3 itself. A mirrored copy, whose
+ * always carried, and indices are made for a copy that has none.
+ *
+ * A copy's normals turn by the inverse transpose of its transform's upper left 3 by 3, as normals
+ * turn, so a stretched copy keeps its shading. Its tangents turn by the upper left 3 by 3 itself. A mirrored copy, whose
  * transform has a negative determinant, gets its triangles' winding reversed and its tangents'
  * fourth number negated, so its front faces stay outward and its normal map keeps its sense.
  * Throws a RangeError for arrays that do not fit together.
