@@ -1260,6 +1260,95 @@ describe('screenToRay and worldToScreen', () => {
 		}
 	});
 
+	test("a lens shift moves rays and screen points as three.js's setViewOffset on a full view does", () => {
+		const { scene, setWorld, lenses } = setup();
+		const matrix = world([3, -2, 7], [0.3, -1.2, 0.1]);
+		const ray = newRay();
+		const out = [0, 0, 0];
+		// setViewOffset(width, height, x, y, width, height) is a shift of (x / width, -y / height):
+		// its y counts down the canvas, and the shift's counts up.
+		const [offsetX, offsetY] = [160, -54];
+		const shift = [offsetX / CSS[0], -offsetY / CSS[1]] as const;
+		const perspective = scene.createPerspectiveCamera({ fov: 60, near: 0.5, far: 300 });
+		const tall = scene.createOrthographicCamera({ height: 10, near: 1, far: 50 });
+		const edges = scene.createOrthographicCamera({ left: -3, right: 5, top: 2, bottom: -4 });
+		const half = (10 * CSS[0]) / CSS[1] / 2;
+		const pairs = [
+			[perspective, new ThreePerspectiveCamera(60, CSS[0] / CSS[1], 0.5, 300), 0],
+			[tall, new ThreeOrthographicCamera(-half, half, 5, -5, 1, 50), 1],
+			[edges, new ThreeOrthographicCamera(-3, 5, 2, -4, 0.1, 2000), 0.1],
+		] as const;
+		for (const [mine, theirs, near] of pairs) {
+			setWorld(mine, matrix);
+			mine.setLensShift(shift[0], shift[1]);
+			expect(mine.lensShift).toEqual(shift);
+			// The core gets the shift after the lens's other values.
+			scene.setActiveCamera(mine);
+			expect(lenses.at(-1)?.slice(-2)).toEqual([...shift]);
+			theirs.setViewOffset(CSS[0], CSS[1], offsetX, offsetY, CSS[0], CSS[1]);
+			for (const [x, y] of POINTS) {
+				mine.screenToRay(x, y, ray);
+				const theirRay = threeRay(theirs, matrix, x, y);
+				// An orthographic ray starts on the near plane, `near` along three.js's.
+				const start = mine.isOrthographic ? near : 0;
+				for (let k = 0; k < 3; k++)
+					theirRay[k] = (theirRay[k] as number) + start * (theirRay[3 + k] as number);
+				expectClose(rayOf(ray), theirRay, 9);
+			}
+			for (const point of [
+				[1, 2, 3],
+				[-2.5, 0.5, -4],
+			]) {
+				mine.worldToScreen(point, out);
+				const ndc = new Vector3(...point).project(theirs);
+				expectClose(out.slice(0, 2), [((ndc.x + 1) / 2) * CSS[0], ((1 - ndc.y) / 2) * CSS[1]], 7);
+			}
+		}
+		// A copy keeps the shift, and a shift of zero gives the plain lens back.
+		const copy = perspective.twin(99) as typeof perspective;
+		expect(copy.lensShift).toEqual(shift);
+		perspective.setLensShift(0, 0);
+		setWorld(perspective, matrix);
+		perspective.screenToRay(17.5, 301.25, ray);
+		const plain = new ThreePerspectiveCamera(60, CSS[0] / CSS[1], 0.5, 300);
+		expectClose(rayOf(ray), threeRay(plain, matrix, 17.5, 301.25), 9);
+	});
+
+	test("a shifted view's ray and screen point match three.js's in the view's rectangle", () => {
+		const { scene, setWorld } = setup();
+		const camera = scene.createPerspectiveCamera({ fov: 50, near: 0.5, far: 300 });
+		const matrix = world([3, -2, 7], [0.3, -1.2, 0.1]);
+		setWorld(camera, matrix);
+		camera.setLensShift(-0.3, 0.2);
+		// The right half of the canvas: 320 x 360 CSS pixels, and the shift's share of that.
+		const view = scene.createView({ camera, rect: [0.5, 0, 0.5, 1] });
+		const theirs = new ThreePerspectiveCamera(50, 320 / 360, 0.5, 300);
+		theirs.setViewOffset(320, 360, -0.3 * 320, -0.2 * 360, 320, 360);
+		theirs.matrixWorld.copy(matrix);
+		theirs.matrixWorldInverse.copy(matrix).invert();
+		theirs.updateProjectionMatrix();
+		const ray = newRay();
+		const out = [0, 0, 0];
+		for (const [x, y] of [
+			[320, 0],
+			[640, 360],
+			[401.5, 77.25],
+		] as const) {
+			view.screenToRay(x, y, ray);
+			const caster = new Raycaster();
+			caster.setFromCamera(new Vector2(((x - 320) / 320) * 2 - 1, 1 - (y / 360) * 2), theirs);
+			expectClose(
+				rayOf(ray),
+				[...caster.ray.origin.toArray(), ...caster.ray.direction.toArray()],
+				9,
+			);
+		}
+		const point = [1, -3, -2];
+		view.worldToScreen(point, out);
+		const ndc = new Vector3(...point).project(theirs);
+		expectClose(out.slice(0, 2), [320 + ((ndc.x + 1) / 2) * 320, ((1 - ndc.y) / 2) * 360], 7);
+	});
+
 	test("a view's ray takes the view's rectangle and shape, and its center looks straight ahead", () => {
 		const { scene, setWorld } = setup();
 		const camera = scene.createPerspectiveCamera({ fov: 50, near: 0.5, far: 300 });
@@ -1585,20 +1674,36 @@ describe('labels', () => {
 		page.bind('near', nearElement);
 		page.bind('far', farElement);
 		let frame = 0;
-		for (const [mine, theirs] of pairs) {
-			theirs.matrixWorld.copy(cameraMatrix);
-			theirs.matrixWorldInverse.copy(cameraMatrix).invert();
-			theirs.updateProjectionMatrix();
-			scene.setActiveCamera(mine);
-			record(++frame);
-			show(frame);
-			expectClose(
-				placeOf(nearElement) as number[],
-				css2d(theirs, nearMatrix, offset) as number[],
-				3,
-			);
-			expect(css2d(theirs, farMatrix, [0, 0, 0])).toBeNull();
-			expect(placeOf(farElement)).toBeNull();
+		// Each lens plain, then shifted, as three.js's setViewOffset on a full view shifts it.
+		for (const shift of [
+			[0, 0],
+			[0.3, -0.2],
+		] as const) {
+			for (const [mine, theirs] of pairs) {
+				mine.setLensShift(shift[0], shift[1]);
+				if (shift[0] !== 0)
+					theirs.setViewOffset(
+						CSS[0],
+						CSS[1],
+						shift[0] * CSS[0],
+						-shift[1] * CSS[1],
+						CSS[0],
+						CSS[1],
+					);
+				theirs.matrixWorld.copy(cameraMatrix);
+				theirs.matrixWorldInverse.copy(cameraMatrix).invert();
+				theirs.updateProjectionMatrix();
+				scene.setActiveCamera(mine);
+				record(++frame);
+				show(frame);
+				expectClose(
+					placeOf(nearElement) as number[],
+					css2d(theirs, nearMatrix, offset) as number[],
+					3,
+				);
+				expect(css2d(theirs, farMatrix, [0, 0, 0])).toBeNull();
+				expect(placeOf(farElement)).toBeNull();
+			}
 		}
 	});
 
@@ -1982,6 +2087,17 @@ describe('labels', () => {
 			if (center) expect(text).toContain(`translate(${center[0]}px,${center[1]}px)`);
 			// The view's center on the canvas comes last.
 			expect(text).toEndWith(`translate(${CSS[0] / 2}px,${CSS[1] / 2}px)`);
+			// A lens shift moves the whole image first, as three.js's CSS3DRenderer moves its view
+			// element by the view offset of a camera whose offset view is the full view.
+			expect(text).not.toStartWith('translate');
+			// The record holds 32-bit floats, so the shift is one that they keep exactly.
+			mine.setLensShift(0.25, -0.125);
+			record(++frame);
+			presentLabels(region, frame);
+			const shifted = cameraTransform(region.presentedCamera, CSS[0], CSS[1]);
+			const [offsetX, offsetY] = [0.25 * CSS[0], 0.125 * CSS[1]];
+			expect(shifted).toBe(`translate(${-offsetX}px,${-offsetY}px) ${text}`);
+			mine.setLensShift(0, 0);
 		}
 	});
 

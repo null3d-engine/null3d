@@ -346,6 +346,7 @@ describe('the view from under the water', () => {
 		const camera = {
 			fov: 50,
 			near: 0.1,
+			lensShift: [0, 0],
 			getPosition(out: { [index: number]: number }) {
 				out[0] = 3;
 				out[1] = height;
@@ -376,7 +377,7 @@ describe('the view from under the water', () => {
 			asked,
 			effects,
 			set,
-			camera: camera as unknown as { fov: number },
+			camera: camera as unknown as { fov: number; lensShift: number[] },
 			moveTo(next: number) {
 				height = next;
 			},
@@ -431,6 +432,12 @@ describe('the view from under the water', () => {
 		camera.fov = 30;
 		view.update(3, [1, 1, 1], [1, 1, 1]);
 		expect(set.lens as number).toBeCloseTo(lensOf(30), 9);
+		// The lens shift goes with the effect as twice its fractions, and again only when it changes.
+		expect(effects[0]?.uniforms.shift).toEqual([0, 0]);
+		expect(set.shift).toBeUndefined();
+		camera.lensShift = [0.25, -0.1];
+		view.update(4, [1, 1, 1], [1, 1, 1]);
+		expect(set.shift).toEqual([0.5, -0.2]);
 		// The axes it turns are made once, not in each frame.
 		expect(read('underwater.ts')).not.toMatch(/transformQuat\([a-z]+, \[/);
 	});

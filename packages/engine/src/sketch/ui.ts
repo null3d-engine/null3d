@@ -26,6 +26,8 @@ import {
 	VIEW_NEAR,
 	VIEW_ORTHO,
 	VIEW_SCALE_Y,
+	VIEW_SHIFT_X,
+	VIEW_SHIFT_Y,
 } from '../scene/frame-cameras';
 import type { CoreMemory } from '../scene/memory';
 import type { Object3D, Scene } from '../scene/scene';
@@ -34,6 +36,8 @@ import {
 	CAMERA_CENTER_Y,
 	CAMERA_HALF_HEIGHT,
 	CAMERA_ORTHO,
+	CAMERA_SHIFT_X,
+	CAMERA_SHIFT_Y,
 	GENERATION_SHIFT,
 	LABEL_DEPTH,
 	LABEL_SHOWN,
@@ -474,6 +478,8 @@ function writeCamera(region: LabelRegion, parity: number, view: Float64Array): v
 	record[CAMERA_ORTHO] = view[VIEW_ORTHO] as number;
 	record[CAMERA_CENTER_X] = view[VIEW_CENTER_X] as number;
 	record[CAMERA_CENTER_Y] = view[VIEW_CENTER_Y] as number;
+	record[CAMERA_SHIFT_X] = view[VIEW_SHIFT_X] as number;
+	record[CAMERA_SHIFT_Y] = view[VIEW_SHIFT_Y] as number;
 }
 
 /** True when `object` and every ancestor it has are visible. */

@@ -532,6 +532,17 @@
       "detect": "\\bOrthographicCamera\\b"
     },
     {
+      "id": "view-offset",
+      "category": "Cameras",
+      "three": "camera.setViewOffset(fullWidth, fullHeight, x, y, width, height) / clearViewOffset()",
+      "status": "changed",
+      "since": "0.1",
+      "target": "camera.setLensShift(x, y) and camera.lensShift, on perspective and orthographic cameras",
+      "notes": "A lens shift moves the view off the camera's axis and keeps the perspective. It counts in fractions of the view's width and height, with y up. A view offset whose width and height are the full sizes is setLensShift(x / fullWidth, -y / fullHeight). clearViewOffset() is setLensShift(0, 0). An offset that draws one tile of a larger picture also narrows the lens, on a canvas of the tile's shape. Set the half angle's tangent to tan(fov / 2) * height / fullHeight, or an orthographic camera's height to height / fullHeight of the full one. Then shift by ((x + width / 2) / fullWidth - 0.5) * fullWidth / width across. Shift by (0.5 - (y + height / 2) / fullHeight) * fullHeight / height up. Culling, shadows, picking, screenToRay, worldToScreen, labels and views all follow the shift. Delete code that turns the camera to move a subject off center, since a turn makes upright lines lean.",
+      "docs": "api/cameras",
+      "detect": "\\.(set|clear)ViewOffset\\s*\\("
+    },
+    {
       "id": "screen-projection",
       "category": "Cameras",
       "three": "Vector3.project(camera) / Vector3.unproject(camera)",

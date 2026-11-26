@@ -50,7 +50,8 @@ export const LABEL3D_STATE = 12;
  * The frame's camera, as the page needs it to build the perspective that turns a 3D label's matrix
  * into a place on the canvas: the inverse of its world matrix's 3 × 3 part, row by row; the camera's
  * position; half the view's height at one unit in front of a perspective camera, or across an
- * orthographic view; 1 for an orthographic lens; and that view's center.
+ * orthographic view; 1 for an orthographic lens; that view's center; and the lens shift, as fractions
+ * of the view's width and height.
  */
 export const CAMERA_ROTATION = 0;
 export const CAMERA_POSITION = 9;
@@ -58,7 +59,9 @@ export const CAMERA_HALF_HEIGHT = 12;
 export const CAMERA_ORTHO = 13;
 export const CAMERA_CENTER_X = 14;
 export const CAMERA_CENTER_Y = 15;
-export const CAMERA_FLOATS = 16;
+export const CAMERA_SHIFT_X = 16;
+export const CAMERA_SHIFT_Y = 17;
+export const CAMERA_FLOATS = 18;
 
 /** The header's words, before the tables. */
 const SEQUENCE = 0;

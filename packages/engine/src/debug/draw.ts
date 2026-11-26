@@ -597,8 +597,8 @@ export class DebugDraw extends SketchDebug implements ViewHolder {
 
 	/**
 	 * The frustum of the camera whose world matrix the flush just read: its near and far planes,
-	 * in the canvas's shape unless an orthographic view has its own, and the edges between them. A
-	 * camera looks down its -z axis.
+	 * in the canvas's shape unless an orthographic view has its own, moved by the lens shift, and
+	 * the edges between them. A camera looks down its -z axis.
 	 */
 	private drawFrustum(
 		camera: PerspectiveCamera | OrthographicCamera,
@@ -627,12 +627,16 @@ export class DebugDraw extends SketchDebug implements ViewHolder {
 			heightSlope = Math.tan((camera.fov * Math.PI) / 360);
 			widthSlope = heightSlope * aspect;
 		}
+		// A lens shift moves each plane by twice its share of the plane's half sizes.
+		const shift = camera.lensShift;
+		const shiftX = 2 * shift[0];
+		const shiftY = 2 * shift[1];
 		for (let k = 0; k < 8; k++) {
 			const depth = k < 4 ? camera.near : camera.far;
 			const w = halfWidth + depth * widthSlope;
 			const h = halfHeight + depth * heightSlope;
-			const cx = centerX + ((k & 3) === 0 || (k & 3) === 3 ? -w : w);
-			const cy = centerY + ((k & 3) < 2 ? -h : h);
+			const cx = centerX + shiftX * w + ((k & 3) === 0 || (k & 3) === 3 ? -w : w);
+			const cy = centerY + shiftY * h + ((k & 3) < 2 ? -h : h);
 			const cz = -depth;
 			for (let row = 0; row < 3; row++) {
 				const r = row * 4;

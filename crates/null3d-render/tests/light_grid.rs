@@ -54,6 +54,7 @@ const PERSPECTIVE: Lens = Lens::Perspective(Perspective {
     fov_degrees: 60.0,
     near: 0.25,
     far: 400.0,
+    shift: [0.0; 2],
 });
 
 const ORTHOGRAPHIC: Lens = Lens::Orthographic(Orthographic {
@@ -62,6 +63,7 @@ const ORTHOGRAPHIC: Lens = Lens::Orthographic(Orthographic {
     center: [0.0, 0.0],
     near: -10.0,
     far: 300.0,
+    shift: [0.0; 2],
 });
 
 /// A camera at the origin that looks down -Z.

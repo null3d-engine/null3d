@@ -79,7 +79,8 @@ fn tuft_texel(index: u32, columns: u32) -> vec2i {
 
 /// True when the tile about `place` is in the camera's frustum: its near and far planes, and its
 /// four sides through the camera's basis and its lens. `lens` holds the half angle's tangent, the
-/// view's aspect, the near distance and the far distance.
+/// view's aspect, the near distance and the far distance. `view_middle` is where the middle of a
+/// shifted view lies across and up, per unit along the view.
 fn tile_in_view(
     place: vec3f,
     eye: vec3f,
@@ -87,6 +88,7 @@ fn tile_in_view(
     up: vec3f,
     forward: vec3f,
     lens: vec4f,
+    view_middle: vec2f,
 ) -> bool {
     let middle = vec3f(
         floor(place.x / TILE) * TILE + TILE * 0.5,
@@ -98,8 +100,8 @@ fn tile_in_view(
     if (depth + TILE_RADIUS < lens.z || depth - TILE_RADIUS > lens.w) {
         return false;
     }
-    let across = abs(dot(relative, right)) - depth * lens.x * lens.y;
-    let above = abs(dot(relative, up)) - depth * lens.x;
+    let across = abs(dot(relative, right) - depth * view_middle.x) - depth * lens.x * lens.y;
+    let above = abs(dot(relative, up) - depth * view_middle.y) - depth * lens.x;
     return across <= TILE_RADIUS && above <= TILE_RADIUS;
 }
 
@@ -107,14 +109,16 @@ fn tile_in_view(
 fn main(@builtin(local_invocation_index) lane: u32) {
     // The pass's values: the camera's place and the flag that turns the cull on, the camera's
     // right, up and forward with its lens, then the tufts that the preset draws, the draw
-    // material's id and the data texture's width in texels.
+    // material's id and the data texture's width in texels, then the middle of a shifted view.
     let eye = block.u0.xyz;
     let culling = block.u0.w > 0.5;
     let right = block.u1.xyz;
     let up = block.u2.xyz;
     let forward = block.u3.xyz;
-    // The camera's half angle's tangent, the view's aspect, and its near and far distances.
+    // The camera's half angle's tangent, the view's aspect, and its near and far distances, then
+    // the middle of a shifted view.
     let lens = vec4f(block.u1.w, block.u2.w, block.u3.w, block.u4.w);
+    let view_middle = block.u5.xy;
     let capacity = u32(block.u4.x);
     let material = u32(block.u4.y);
     let columns = u32(block.u4.z);
@@ -133,7 +137,7 @@ fn main(@builtin(local_invocation_index) lane: u32) {
         let root = vec3f(x, y, z);
         if (culling) {
             // A far tuft draws only its share, and a tile outside the camera's view draws nothing.
-            if (!tuft_kept(root, eye) || !tile_in_view(root, eye, right, up, forward, lens)) {
+            if (!tuft_kept(root, eye) || !tile_in_view(root, eye, right, up, forward, lens, view_middle)) {
                 continue;
             }
         }

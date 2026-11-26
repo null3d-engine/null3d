@@ -15,8 +15,11 @@ import { type ControlViews, controlLabels, Slot } from '../shared/control';
 import {
 	CAMERA_CENTER_X,
 	CAMERA_CENTER_Y,
+	CAMERA_FLOATS,
 	CAMERA_HALF_HEIGHT,
 	CAMERA_ORTHO,
+	CAMERA_SHIFT_X,
+	CAMERA_SHIFT_Y,
 	GENERATION_SHIFT,
 	LABEL_SHOWN,
 	LABEL_STATE,
@@ -47,7 +50,7 @@ const STATE_Y = 1;
 const STATE_SHOWN = 2;
 const STATE_MATRIX = 3;
 /** The camera record that the containers show, then the canvas size they were made for. */
-const CAMERA_STATE = 18;
+const CAMERA_STATE = CAMERA_FLOATS + 2;
 /** The smallest number of a matrix that counts as zero, so a turn of the camera writes no noise. */
 const EPSILON = 1e-10;
 
@@ -425,13 +428,19 @@ export function cameraTransform(camera: ArrayLike<number>, width: number, height
 		`${number(camera[1] as number)},${number(-(camera[4] as number))},${number(camera[7] as number)},0,` +
 		`${number(camera[2] as number)},${number(-(camera[5] as number))},${number(camera[8] as number)},0,` +
 		`${number(tx)},${number(-ty)},${number(tz)},1)`;
-	const head =
+	const lens =
 		camera[CAMERA_ORTHO] !== 0
 			? `scale(${number(focal)}) translate(${number(-(camera[CAMERA_CENTER_X] as number))}px,${number(
 					camera[CAMERA_CENTER_Y] as number,
 				)}px) `
 			: `perspective(${number(focal)}px) translateZ(${number(focal)}px) `;
-	return `${head}${matrix} translate(${number(width / 2)}px,${number(height / 2)}px)`;
+	// A lens shift moves the whole image after the projection, left and down for a view shifted
+	// right and up.
+	const shiftX = (camera[CAMERA_SHIFT_X] as number) * width;
+	const shiftY = (camera[CAMERA_SHIFT_Y] as number) * height;
+	const shift =
+		shiftX === 0 && shiftY === 0 ? '' : `translate(${number(-shiftX)}px,${number(shiftY)}px) `;
+	return `${shift}${lens}${matrix} translate(${number(width / 2)}px,${number(height / 2)}px)`;
 }
 
 /** A number as CSS takes it, with the noise of a turn that did not move it set to zero. */

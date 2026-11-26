@@ -34,7 +34,7 @@ use null3d_gpu::drawlist::{
 };
 
 use crate::bloom::bytes_of;
-use crate::camera::{Mat4, invert, multiply};
+use crate::camera::{Mat4, invert, multiply, shift_clip};
 use crate::frame::{RecordError, UploadArena};
 use crate::graph::{RenderScale, Size};
 use crate::pipelines::{DepthBias, PipelineCache, PipelineKey};
@@ -133,16 +133,14 @@ pub fn jitter(frame: u32) -> [f32; 2] {
 /// two pixels' share of the target per pixel, times w, so every point moves by the same part of a
 /// pixel.
 pub fn jittered(view_proj: &Mat4, pixels: [f32; 2], size: (u32, u32)) -> Mat4 {
-    let shift = [
-        2.0 * pixels[0] / size.0.max(1) as f32,
-        2.0 * pixels[1] / size.1.max(1) as f32,
-    ];
     let mut m = *view_proj;
-    for column in 0..4 {
-        let w = m[column * 4 + 3];
-        m[column * 4] += shift[0] * w;
-        m[column * 4 + 1] += shift[1] * w;
-    }
+    shift_clip(
+        &mut m,
+        [
+            2.0 * pixels[0] / size.0.max(1) as f32,
+            2.0 * pixels[1] / size.1.max(1) as f32,
+        ],
+    );
     m
 }
 

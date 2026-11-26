@@ -20,6 +20,7 @@ enable draw_index;
 #import null3d::mesh::{InstanceIn, clip_of, exposed, find_instance, finish_exposed_material, fogged}
 #import null3d::mesh::{fragment_color}
 #import null3d::mesh::{frame as engine_frame, material_of}
+#import null3d::globals::{screen_axis}
 #import null3d::vertex::{mesh_position, mesh_uv}
 #ifdef MAP
 #import null3d::mesh::{map_layer, map_ready, straight_texel}
@@ -111,12 +112,9 @@ fn vs(v: VertexIn, i: InstanceIn) -> VertexOut {
         clip = vec4f(clip.xy + turned * engine_frame.camera_range.zw * clip.w, clip.zw);
     } else {
         // The view-projection's first two rows are the camera's right and up axes times the
-        // projection's scale along x and y.
+        // projection's scale along x and y, once a lens shift's share of the view's axis is out.
         let m = engine_frame.view_proj;
-        let scale = vec2f(
-            length(vec3f(m[0].x, m[1].x, m[2].x)),
-            length(vec3f(m[0].y, m[1].y, m[2].y)),
-        );
+        let scale = vec2f(length(screen_axis(m, 0u)), length(screen_axis(m, 1u)));
         clip = vec4f(clip.xy + turned * scale, clip.zw);
     }
     out.clip = clip;

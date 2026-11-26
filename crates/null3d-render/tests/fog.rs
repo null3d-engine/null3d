@@ -65,6 +65,7 @@ fn fog_reaches_every_view<B: FrameBuilder + Views>(mut world: World<B>) {
             center: [0.0, 0.0],
             near: 0.1,
             far: 100.0,
+            shift: [0.0; 2],
         },
     );
     set(

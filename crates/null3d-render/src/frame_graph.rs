@@ -11532,6 +11532,7 @@ mod tests {
             fov_degrees: 50.0,
             near: 0.1,
             far: 100.0,
+            shift: [0.0; 2],
         });
         let projection = lens.projection(16.0 / 9.0);
         SubsurfaceFrame {

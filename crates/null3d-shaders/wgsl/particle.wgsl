@@ -21,7 +21,7 @@
 // The field's local air then replaces the system's fixed wind: the drag flight runs with still air,
 // and the air where the particle passes adds its own displacement over the particle's age, so dust,
 // motes, smoke and rain move with the same gusts as the plants around them.
-#import null3d::globals::Frame
+#import null3d::globals::{Frame, screen_axis}
 #import null3d::tonemap
 #import null3d::fog::{fog_color, fog_factor}
 #import null3d::noise::{pcg, simplex3, to_unit, value3}
@@ -518,10 +518,11 @@ fn vs(
     let n = sin(angle);
     let turned = vec2f(c * corner.x - n * corner.y, n * corner.x + c * corner.y) * half_extent;
 
-    // The camera's right and up axes from the view-projection's first two rows.
+    // The camera's right and up axes from the view-projection's first two rows, without a lens
+    // shift's share of the view's axis.
     let m = frame.view_proj;
-    let right = normalize(vec3f(m[0].x, m[1].x, m[2].x));
-    let up = normalize(vec3f(m[0].y, m[1].y, m[2].y));
+    let right = normalize(screen_axis(m, 0u));
+    let up = normalize(screen_axis(m, 1u));
     let toward = normalize(frame.camera_position.xyz - center * frame.camera_position.w);
     var at = center;
     let facing = u32(params.look.x);

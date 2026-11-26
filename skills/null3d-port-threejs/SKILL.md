@@ -119,6 +119,7 @@ Write `PORTING-REPORT.md` with the template in `references/verification.md`. It 
 | `matrixAutoUpdate = false` on still objects | Nothing | Objects are static by default and cost nothing until a setter changes them |
 | `renderer.compile` or `compileAsync` after loading | `await scene.warmUp()` in the sketch, and wait for `engine.firstFrame` on the page | The first frame waits for its pipelines; warm up a later loading stage before you show it |
 | Resize handlers and `setSize` | Nothing | The engine follows the canvas size |
+| `camera.setViewOffset` to put the subject beside the page's text, or a camera turned to move it off center | `camera.setLensShift(x, y)`, in fractions of the view's width and height, with y up (`api/cameras`) | A shift keeps the perspective, and culling, shadows, picking and labels follow it. A turned camera makes upright lines lean |
 | `EffectComposer` pass chains | `post.set` settings, and `post.addEffect` for each custom `ShaderPass` | The chain is built in and merged into few passes. Each custom effect is a full-screen pass of its own |
 | `localStorage` in scene code | Keep it on the page, or use IndexedDB, which workers have | Workers have no `localStorage` |
 | `object.static = true` on still meshes (`WebGPURenderer`) | Nothing | Objects are static by default. In three.js r186 the flag never applies to a node material: its refresh check returns before it reads the flag |
