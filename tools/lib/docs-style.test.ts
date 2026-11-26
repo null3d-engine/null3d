@@ -237,3 +237,25 @@ describe('detailsBlockProblems', () => {
 		).toBe(true);
 	});
 });
+
+describe('detailsBlockProblems edge cases', () => {
+	const wrap = (body: string) =>
+		`<details>\n<summary>Technical details: the cases</summary>\n\n${body}\n\n</details>\n`;
+
+	it('reads fences of any length, as CommonMark does', () => {
+		expect(detailsBlockProblems(wrap('````md\n```ts\nconst a = 1;\n```\n````'))).toEqual([]);
+		expect(detailsBlockProblems(wrap('````mermaid\nflowchart LR\n````'))[0]?.[1]).toContain(
+			'Mermaid',
+		);
+	});
+
+	it('refuses an empty block, an HTML heading and an underlined heading', () => {
+		expect(
+			detailsBlockProblems(
+				'<details>\n<summary>Technical details: x y</summary>\n\n\n</details>\n',
+			)[0]?.[1],
+		).toContain('empty');
+		expect(detailsBlockProblems(wrap('<h3>Inside</h3>'))[0]?.[1]).toContain('heading');
+		expect(detailsBlockProblems(wrap('Inside\n======'))[0]?.[1]).toContain('heading');
+	});
+});

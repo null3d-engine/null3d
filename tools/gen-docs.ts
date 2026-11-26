@@ -19,6 +19,10 @@ if (process.argv.includes('--check')) {
 		cwd: root,
 		encoding: 'utf8',
 	});
+	if (onMain.status !== 0)
+		console.log(
+			`note: no ${MOVES_FILE} on origin/main, so the check that keeps its entries is skipped`,
+		);
 	const problems = [
 		...checkDocs(root, onMain.status === 0 ? onMain.stdout : null),
 		...(isWorkTree(root) ? gitProblems(root, [...generated.files.keys()]) : []),

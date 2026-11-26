@@ -118,7 +118,7 @@ The page writes a screen label's element only when the label moved by half a CSS
 
 ## Related pages
 
-- [UI, HTML overlays and labels](../guides/ui-overlays.md): HTML UI around the canvas, and labels in a full app.
+- [HTML UI around the scene](../guides/ui-overlays.md): HTML UI around the canvas, and labels in a full app.
 - [Cameras](cameras.md): `worldToScreen` places a single point on the canvas.
 - [Engine](engine.md): `createEngine` and its label options.
 - [Sketch](sketch.md): the sketch's context, which holds `ui`.

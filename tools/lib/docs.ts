@@ -538,24 +538,35 @@ export function navigation(): NavArea[] {
 	});
 }
 
-/** Problems with the areas and the inventory: a page outside every area, or in no group or a wrong one. */
-export function inventoryProblems(): string[] {
+/**
+ * Problems with the areas and the inventory: a page outside every area, in no group or a wrong
+ * one, a group with no pages, and a written page's entry that carries a title or summary, which
+ * its front matter holds.
+ */
+export function inventoryProblems(
+	pages: readonly PageEntry[] = PAGES,
+	areas: readonly AreaEntry[] = AREAS,
+): string[] {
 	const problems: string[] = [];
 	const seen = new Set<string>();
-	for (const page of PAGES) {
+	for (const page of pages) {
 		if (seen.has(page.id)) problems.push(`${page.id} is in the inventory twice`);
 		seen.add(page.id);
+		if (!page.generated && ('title' in page || 'summary' in page))
+			problems.push(
+				`${page.id} is a written page; its title and summary belong in its front matter`,
+			);
 		if (page.id === 'index') continue;
-		const area = AREAS.find((a) => a.id === page.id.split('/')[0]);
+		const area = areas.find((a) => a.id === page.id.split('/')[0]);
 		if (!area) problems.push(`${page.id} is in no area of AREAS`);
 		else if (area.groups && !area.groups.includes(page.group ?? ''))
 			problems.push(`${page.id} needs a group of ${area.id}: ${area.groups.join(', ')}`);
 		else if (!area.groups && page.group)
 			problems.push(`${page.id} has a group, but ${area.id} has no groups`);
 	}
-	for (const area of AREAS)
+	for (const area of areas)
 		for (const group of area.groups ?? [])
-			if (!PAGES.some((p) => p.group === group && p.id.startsWith(`${area.id}/`)))
+			if (!pages.some((p) => p.group === group && p.id.startsWith(`${area.id}/`)))
 				problems.push(`the group ${group} of ${area.id} has no pages`);
 	return problems;
 }
@@ -613,7 +624,7 @@ export function pageListPage(
 	nav: readonly NavArea[],
 	pages: ReadonlyMap<string, PageInfo>,
 ): string {
-	return `${generatedFrontMatter(PAGE_LIST_ID, 'All pages', 'Every docs page by area and group.')}
+	return `${generatedFrontMatter(PAGE_LIST_ID, 'All pages', 'The docs pages of each area and group.')}
 # All pages
 
 > The docs generator writes this list from the docs inventory and each page's front matter. [Error codes](errors/index.md) lists every error code.
@@ -764,10 +775,17 @@ export function movesProblems(
 		if (!isPage(target))
 			problems.push(`${MOVES_FILE}: ${from} leads to ${target}, which is not a page`);
 	}
-	if (previous !== null)
-		for (const from of Object.keys(JSON.parse(previous) as Record<string, string>))
+	if (previous !== null) {
+		let before: Record<string, unknown> = {};
+		try {
+			before = JSON.parse(previous);
+		} catch (e) {
+			problems.push(`${MOVES_FILE} on main is not valid JSON (${(e as Error).message})`);
+		}
+		for (const from of Object.keys(before))
 			if (!(from in moves))
 				problems.push(`${MOVES_FILE}: the entry for ${from} was removed; keep it`);
+	}
 	return problems;
 }
 

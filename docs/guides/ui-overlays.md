@@ -43,7 +43,7 @@ document.querySelector('#pause')!.addEventListener('click', () => engine.postToS
 
 ## Labels that follow objects
 
-A label is an element that sits over a scene object. The sketch tracks it with `ui.trackLabel`, and the page binds its element with `engine.labels.bind`. [UI overlays and labels](../api/ui.md) describes both calls.
+A label is an element that sits over a scene object. The sketch tracks it with `ui.trackLabel`, and the page binds its element with `engine.labels.bind`. [Labels that follow objects](../api/ui.md) describes both calls.
 
 This example gives each unit a health bar. The bar follows its unit in every frame, and only the health value travels as a message, when it changes.
 
@@ -171,7 +171,7 @@ page.onMessage((type, data) => {
 
 ## Related pages
 
-- [UI overlays and labels](../api/ui.md): `ui.trackLabel` and `engine.labels.bind`.
+- [Labels that follow objects](../api/ui.md): `ui.trackLabel` and `engine.labels.bind`.
 - [The 3D labels demo](https://github.com/null3d-engine/null3d/tree/main/examples/css3d-labels): cards that turn with a ring.
 - [Messages between sketch and page](../api/page.md): `page.post`, `page.onMessage` and `engine.postToSketch`.
 - [Cameras](../api/cameras.md): `worldToScreen` places a single point on the canvas.

@@ -12,6 +12,7 @@ import {
 	movesProblems,
 	navigation,
 	PAGES,
+	type PageEntry,
 	pageList,
 	placementProblems,
 	referenceLinkProblems,
@@ -152,8 +153,30 @@ describe('navigation', () => {
 		]);
 	});
 
-	it('finds no problem with the inventory, and reports a page with no group', () => {
+	it('finds no problem with the inventory', () => {
 		expect(inventoryProblems()).toEqual([]);
+	});
+
+	it('reports a missing group, a wrong group, an empty group and a title on a written page', () => {
+		const areas = [
+			{ id: 'concepts', title: 'Concepts', groups: ['One', 'Two'] },
+			{ id: 'cookbook', title: 'Cookbook' },
+		];
+		const pages = [
+			{ id: 'concepts/a' },
+			{ id: 'concepts/b', group: 'Three' },
+			{ id: 'cookbook/index', group: 'One' },
+			{ id: 'concepts/c', group: 'One', title: 'C', summary: 'S' } as PageEntry,
+			{ id: 'other/d' },
+		];
+		expect(inventoryProblems(pages, areas)).toEqual([
+			'concepts/a needs a group of concepts: One, Two',
+			'concepts/b needs a group of concepts: One, Two',
+			'cookbook/index has a group, but cookbook has no groups',
+			'concepts/c is a written page; its title and summary belong in its front matter',
+			'other/d is in no area of AREAS',
+			'the group Two of concepts has no pages',
+		]);
 	});
 });
 

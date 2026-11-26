@@ -656,5 +656,5 @@ Occlusion culling saves GPU time only where occluders hide many objects, such as
 - [Loading screens](../guides/loading-screens.md): progress, warm-up and the preset check.
 - [The asset pipeline](../guides/assets-pipeline.md): smaller, faster models and textures for your files.
 - [Performance guide](../guides/performance.md): what each feature costs, and how to measure it.
-- [UI, HTML overlays and labels](../guides/ui-overlays.md): name tags and health bars that follow objects.
+- [HTML UI around the scene](../guides/ui-overlays.md): name tags and health bars that follow objects.
 - [Examples](https://github.com/null3d-engine/null3d/tree/main/examples): longer demos, each with its own sketch.

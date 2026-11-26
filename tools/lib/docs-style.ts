@@ -275,22 +275,34 @@ const DETAILS_SUMMARY = /^<summary>Technical details: (\S.*[^.\s])<\/summary>$/;
 export function detailsBlockProblems(md: string): [line: number, message: string][] {
 	const lines = md.split('\n');
 	const problems: [number, string][] = [];
-	let fence: string | null = null;
+	// The open fence's character and length: a fence closes on a run of the same character that
+	// is at least as long, as CommonMark reads it.
+	let fence: { char: string; length: number } | null = null;
 	let open: number | null = null;
+	let bodyHasText = false;
 	for (let i = 0; i < lines.length; i++) {
 		const line = lines[i] ?? '';
-		const marker = line.trim().match(/^(```|~~~)\s*(\S*)/);
+		const marker = line.trim().match(/^(`{3,}|~{3,})\s*(\S*)/);
 		if (fence !== null) {
-			if (marker && marker[1] === fence) fence = null;
+			if (
+				marker &&
+				marker[1]?.[0] === fence.char &&
+				(marker[1]?.length ?? 0) >= fence.length &&
+				!marker[2]
+			)
+				fence = null;
 			continue;
 		}
 		if (marker) {
-			fence = marker[1] ?? null;
-			if (open !== null && marker[2] === 'mermaid')
-				problems.push([
-					i + 1,
-					'A Mermaid diagram belongs in the main text, not in a technical details block.',
-				]);
+			fence = { char: marker[1]?.[0] ?? '`', length: marker[1]?.length ?? 3 };
+			if (open !== null) {
+				bodyHasText = true;
+				if (marker[2] === 'mermaid')
+					problems.push([
+						i + 1,
+						'A Mermaid diagram belongs in the main text, not in a technical details block.',
+					]);
+			}
 			continue;
 		}
 		if (line === '<details>') {
@@ -299,6 +311,7 @@ export function detailsBlockProblems(md: string): [line: number, message: string
 				continue;
 			}
 			open = i + 1;
+			bodyHasText = false;
 			if (!DETAILS_SUMMARY.test(lines[i + 1] ?? ''))
 				problems.push([
 					i + 2,
@@ -314,17 +327,26 @@ export function detailsBlockProblems(md: string): [line: number, message: string
 		}
 		if (line === '</details>') {
 			if (open === null) problems.push([i + 1, '</details> closes no block.']);
-			else if ((lines[i - 1] ?? '') !== '')
-				problems.push([i + 1, 'Leave a blank line before </details>.']);
+			else {
+				if ((lines[i - 1] ?? '') !== '')
+					problems.push([i + 1, 'Leave a blank line before </details>.']);
+				if (!bodyHasText) problems.push([open, 'This technical details block is empty.']);
+			}
 			open = null;
 			continue;
 		}
-		if (/<\/?(details|summary)\b/.test(line.replace(/`[^`]*`/g, '')))
+		const visible = line.replace(/`[^`]*`/g, '');
+		if (/<\/?(details|summary)\b/.test(visible))
 			problems.push([
 				i + 1,
 				'Put <details>, its summary line and </details> each on a line of its own, at the start of the line.',
 			]);
-		if (open !== null && /^#{1,6}\s/.test(line))
+		if (open === null) continue;
+		if (line.trim() !== '') bodyHasText = true;
+		const previous = lines[i - 1] ?? '';
+		const underline =
+			/^(=+|-+)\s*$/.test(line) && previous.trim() !== '' && !/^\s*([-*+]|\d+\.|\|)/.test(previous);
+		if (/^#{1,6}\s/.test(line) || /<h[1-6]\b/i.test(visible) || underline)
 			problems.push([
 				i + 1,
 				'A heading cannot sit inside a technical details block; put it above the block.',

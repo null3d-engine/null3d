@@ -122,7 +122,7 @@ When the second file's address comes from the first file, as a level file names 
 | `engine` | The canvas's size, and what the device can do: [The engine field](#the-engine-field) |
 | `preferences` | What the user's system asks of every page, such as less motion: [Accessibility](../guides/accessibility.md) |
 | `page` | Messages to and from the page: [Messages between sketch and page](page.md) |
-| `ui` | HTML labels that follow scene objects: [UI overlays and labels](ui.md) |
+| `ui` | HTML labels that follow scene objects: [Labels that follow objects](ui.md) |
 | `debug` | Lines, boxes, spheres, axes, grids, frustums and lights, drawn for one frame in development builds: [Debug drawing and stats](debug.md) |
 
 ## The engine field

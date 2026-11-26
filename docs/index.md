@@ -34,4 +34,4 @@ Coding agents can look pages up by ID. A page's ID is its path under `docs/` wit
 
 ## All pages
 
-[All pages](pages.md) lists every page by area.
+[All pages](pages.md) lists the pages of each area and group. [Error codes](errors/index.md) lists every error code.

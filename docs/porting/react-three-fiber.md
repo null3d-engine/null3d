@@ -229,6 +229,6 @@ To measure the scene's own cost while you port it, turn the governor off with `q
 - [Porting from three.js](threejs-overview.md)
 - [The render loop, threads and the DOM](threejs-loop-and-threads.md)
 - [Messages between sketch and page](../api/page.md)
-- [UI, HTML overlays and labels](../guides/ui-overlays.md)
+- [HTML UI around the scene](../guides/ui-overlays.md)
 - [Quality presets](../concepts/quality-presets.md)
 - [three.js to null3D mapping](threejs-mapping.md)
