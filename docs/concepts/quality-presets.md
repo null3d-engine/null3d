@@ -89,7 +89,9 @@ A phone closes a tab that uses too much memory, and the page gets no event for i
 - After one crashed start, the engine starts one preset lower than it would.
 - After two in a row, it starts at Low, in the [lowest quality tier](#the-lowest-quality-tier). If the start that crashed drew with WebGPU, it draws with WebGL2, unless the page names a GPU path.
 
-This also applies to a preset that the page names, so a device that crashed at the player's choice can start again. The `?preset=` switch fixes the preset and starts outside the tier, as it ignores the crashes. The page can read the count in `engine.mode.crashedStarts` and tell the player. When the browser refuses the storage, as in a sandboxed frame, each start counts as a normal one. Hold mode ([Testing your sketch](../guides/testing.md#hold-mode)) and the `?preset=` switch leave the note alone. The note belongs to one sketch module and one origin.
+This also applies to a preset that the page names, so a device that crashed at the player's choice can start again. A crashed start still lowers a named preset by one, and two in a row still start it at Low. The `?preset=` switch skips the preset check and the lowest-tier entry, not the crash lowering. The page can read the count in `engine.mode.crashedStarts` and tell the player.
+
+When the browser refuses the storage, as in a sandboxed frame, each start counts as a normal one. Hold mode ([Testing your sketch](../guides/testing.md#hold-mode)) and the `?preset=` switch leave the note alone. The note belongs to one sketch module and one origin.
 
 ## The preset check
 
