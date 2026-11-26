@@ -40,8 +40,11 @@ export function engineShadersRoot(): string {
  */
 export const ENGINE_SHADERS_ENV = 'NULL3D_ENGINE_SHADERS';
 
-/** The record of a set that a project may use: its hash and the files it holds. */
-const MARKER = '.complete';
+/**
+ * The record of a set that a project may use. Its name carries the version of the archive reader,
+ * so a set that another version of the reader unpacked is downloaded and unpacked again.
+ */
+const MARKER = '.complete-2';
 
 /** How the folder of an engine's modules is found: fetched from the release, or built here. */
 export interface ShaderSources {
@@ -191,11 +194,15 @@ function text(header: Buffer, offset: number, length: number): string {
 }
 
 /**
- * The entries of a tar archive, in its order. The reader takes the ustar form, with the long name
- * in the prefix field, and skips the entry kinds that the release does not use.
+ * The entries of a tar archive, in its order. The reader takes the ustar form, with a long path in
+ * the prefix field. A name over 100 bytes comes in an entry of its own before its file's header:
+ * GNU's long-name entry, which the release's archive writes, or a pax header's `path`. Without
+ * them, every file whose name passes 100 bytes would take its name cut short.
  */
 export function* tarEntries(tar: Buffer): Generator<TarEntry> {
 	let at = 0;
+	/** The name that a long-name entry gives the entry after it. */
+	let longName: string | undefined;
 	while (at + BLOCK <= tar.length) {
 		const header = tar.subarray(at, at + BLOCK);
 		// Two zero blocks end an archive; a block that cannot hold a name ends it too.
@@ -209,9 +216,28 @@ export function* tarEntries(tar: Buffer): Generator<TarEntry> {
 		const start = at + BLOCK;
 		const end = start + size;
 		if (end > tar.length) throw new Error(`the archive ends inside ${full}`);
-		const directory = type === '5' || full.endsWith('/');
+		const next = end + ((BLOCK - (size % BLOCK)) % BLOCK);
+		if (type === 'L' || type === 'x') {
+			const data = tar.subarray(start, end).toString('utf8');
+			const path = type === 'L' ? data.replace(/\0.*$/s, '') : paxPath(data);
+			if (path !== undefined) longName = path;
+			at = next;
+			continue;
+		}
+		const named = longName ?? full;
+		longName = undefined;
+		const directory = type === '5' || named.endsWith('/');
 		const bytes = directory ? Buffer.alloc(0) : tar.subarray(start, end);
-		yield { name: full.replace(/^\.\//, '').replace(/\/$/, ''), bytes, directory };
-		at = end + ((BLOCK - (size % BLOCK)) % BLOCK);
+		yield { name: named.replace(/^\.\//, '').replace(/\/$/, ''), bytes, directory };
+		at = next;
 	}
+}
+
+/** The `path` record of a pax header's data, whose records each read `<length> <key>=<value>\n`. */
+function paxPath(data: string): string | undefined {
+	for (const record of data.split('\n')) {
+		const match = /^\d+ path=(.*)$/s.exec(record);
+		if (match) return match[1];
+	}
+	return undefined;
 }
