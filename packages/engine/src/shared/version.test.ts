@@ -19,9 +19,11 @@ describe('checkAddonVersion', () => {
 	});
 
 	it('throws E1432, which names the add-on and both versions, and gives the fix', () => {
+		// A version one major release past the engine's, which no release of this engine has.
+		const other = `${Number(VERSION.split('.')[0]) + 1}.0.0`;
 		let error: unknown;
 		try {
-			checkAddonVersion('@null3d/controls', '0.1.0');
+			checkAddonVersion('@null3d/controls', other);
 		} catch (caught) {
 			error = caught;
 		}
@@ -29,7 +31,7 @@ describe('checkAddonVersion', () => {
 		const { code, message } = error as EngineError;
 		expect(code).toBe('E1432');
 		expect(message).toStartWith(
-			`E1432: @null3d/controls 0.1.0 was built for null3D 0.1.0, and this page runs null3D ${VERSION}. `,
+			`E1432: @null3d/controls ${other} was built for null3D ${other}, and this page runs null3D ${VERSION}. `,
 		);
 		expect(message).toContain(ERROR_FIXES.E1432);
 		expect(message).toContain('/docs/errors/E1432.md');

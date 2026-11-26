@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { Document, type Node, NodeIO, type Primitive } from '@gltf-transform/core';
 import { ALL_EXTENSIONS } from '@gltf-transform/extensions';
 import { MeshoptDecoder } from 'meshoptimizer';
+import { sameModel } from '../../../../tests/lib/glb-bytes.ts';
 import { scaledBudget } from '../../../../tests/lib/run-budget.ts';
 import { MODELS_DIR, terrainDocument } from './cluster-fixture.js';
 import {
@@ -565,7 +566,7 @@ describe('the staged test model', () => {
 		async () => {
 			const model = await buildStagedModel();
 			const committed = readFileSync(join(MODELS_DIR, STAGED_FILE));
-			expect(Buffer.from(model.glb).equals(committed)).toBe(true);
+			expect(sameModel(model.glb, committed)).toBe(true);
 			for (const [name, bytes] of model.stages) {
 				const file = readFileSync(join(MODELS_DIR, name));
 				expect(Buffer.from(bytes).equals(file), name).toBe(true);

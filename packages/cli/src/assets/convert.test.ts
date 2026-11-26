@@ -8,6 +8,7 @@ import { type Node, NodeIO } from '@gltf-transform/core';
 import { ALL_EXTENSIONS, KHRDracoMeshCompression } from '@gltf-transform/extensions';
 import { ASSET_SCENE } from '../../../../tests/lib/asset-scene.ts';
 import { CONVERT_FILES, cubePly, pyramidStl } from '../../../../tests/lib/convert-files.ts';
+import { sameModel } from '../../../../tests/lib/glb-bytes.ts';
 import { shippedDecoder } from '../../../../tests/lib/meshopt-checks.ts';
 import { scaledBudget } from '../../../../tests/lib/run-budget.ts';
 import { type GltfData, parseGltf, readContainer } from '../../../engine/src/scene/gltf-parse.ts';
@@ -122,7 +123,7 @@ describe('assets convert', () => {
 			const { glb } = output(name);
 			const path = at(join(CONVERT_FILES.converted, name));
 			if (WRITE) writeFileSync(path, glb);
-			expect(Buffer.from(glb).equals(readFileSync(path))).toBe(true);
+			expect(sameModel(glb, readFileSync(path))).toBe(true);
 			const again = await convertModel(source(input));
 			expect(Buffer.from(again.glb).equals(Buffer.from(glb))).toBe(true);
 		}
