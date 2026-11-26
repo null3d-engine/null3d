@@ -468,6 +468,15 @@ The engine's shader set holds every build of every permutation word, which is th
 
 The list is a text file with one hexadecimal word on each line. A word leaves out the bits that a device fixes when it starts: the draw index, tone mapping in the shader and half precision. So one list serves every device. The build keeps each listed word's builds for every value of those bits.
 
+### When to ship the full set
+
+A list holds only the words that a recording saw. An app whose content arrives while it runs cannot record its words, because nobody knows that content at build time. Examples are models that users upload, a catalogue from a CMS, and glTF files from another server. A new model can need a word that no recording saw, and the page that draws it then stops. Build such an app without a list. The build copies the whole set, and each page still downloads only the files that its device needs.
+
+An app whose content is all in the build can ship a list. Keep the list complete:
+
+- Run your browser tests against the production build with the list. A page that asks for a word that the list lacks stops with an error that names the word, so the suite fails. [Record from your browser tests](#record-from-your-browser-tests) shows how the same tests can write the list.
+- Record again after you add a feature, a material or a level. The dev server also warns about a word that the list lacks, as [When the list lacks a word](#when-the-list-lacks-a-word) says.
+
 ### Record the list
 
 `shaders record` loads your pages in a headless browser and writes the words that their pipelines ask for. Run it in the project's folder. It starts the project's own Vite dev server:
