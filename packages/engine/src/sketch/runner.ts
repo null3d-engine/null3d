@@ -208,6 +208,8 @@ export interface SketchCore {
 	pageUrl: string;
 	/** The sketch module's address, which a recording keeps and a replay compares. */
 	sketchUrl: string;
+	/** The start data that the page passed, as JSON text, which the sketch reads as `ctx.data`. */
+	data?: string;
 	/**
 	 * The highest frame rate that the preset check and the governor aim for: the page's `targetFps`
 	 * setting under the ?fps= cap, and infinity for the display's full rate.
@@ -699,6 +701,8 @@ export class SketchRunner {
 	private replaying = false;
 	/** True when the page records this session's frames and input. */
 	private readonly records: boolean;
+	/** The start data as JSON text: a replay's own, or the page's. A recording keeps it. */
+	private readonly dataText: string | undefined;
 	/**
 	 * True when the session runs fixed frames rather than the page's: hold mode, which steps to a
 	 * time, or a replay, which steps through a recording.
@@ -735,6 +739,7 @@ export class SketchRunner {
 	) {
 		this.replayProgram = replay;
 		this.records = record;
+		this.dataText = replay === undefined ? sketch.data : replay.data;
 		this.holdsFrames = holdSeconds !== undefined || replay !== undefined;
 		this.record = new FrameRecorder(metrics, Role.Sketch);
 		this.jobRecords = Array.from(
@@ -997,6 +1002,7 @@ export class SketchRunner {
 		}
 		const holdsFrames = this.holdsFrames;
 		this.context = {
+			data: this.dataText === undefined ? undefined : JSON.parse(this.dataText),
 			time: this.time,
 			engine: {
 				viewport: this.viewport,
@@ -2057,6 +2063,7 @@ export class SketchRunner {
 		return this.recorder.encode({
 			fixedRate: Math.round(1 / this.fixed.step),
 			sketch: this.sketch.sketchUrl,
+			data: this.dataText,
 		});
 	}
 

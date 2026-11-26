@@ -120,49 +120,55 @@ When the page also has a pause button, or pauses for reduced motion, combine the
 
 ## Drive the camera from the scroll position
 
-The page reads the scroll position, and the sketch moves the camera. Send the position only when it changes, at most once per animation frame:
+The page reads the scroll position, and the sketch moves the camera. Pass the first position as [start data](../api/page.md#start-data), so the first frame already shows it. A held frame of a page that opens partway down then shows it too. After the start, send the position only when it changes, at most once per animation frame:
 
 ```ts
 // page.ts
+const progress = () => {
+  const range = Math.max(1, document.documentElement.scrollHeight - window.innerHeight);
+  return Math.min(1, Math.max(0, window.scrollY / range));
+};
+const engine = await createEngine({
+  canvas,
+  sketch: new URL('./sketch.ts', import.meta.url),
+  sketchData: { scroll: progress() }, // the first frame's position
+});
 let queued = false;
 const sendScroll = () => {
   queued = false;
-  const range = Math.max(1, document.documentElement.scrollHeight - window.innerHeight);
-  const progress = window.scrollY / range;
-  engine.postToSketch('scroll', Math.min(1, Math.max(0, progress)));
+  engine.postToSketch('scroll', progress());
 };
 window.addEventListener('scroll', () => {
   if (!queued) requestAnimationFrame(sendScroll);
   queued = true;
 }, { passive: true });
-sendScroll(); // the position the browser restored
+sendScroll(); // a position that the browser restored during the start
 ```
 
-The sketch eases toward the position. Its easing factor depends on the frame's time step, so the motion looks the same at 60 and at 144 frames per second. It jumps to the first position it receives, so a page that opens scrolled down never shows a camera flight. It then posts `placed`, and the page reveals the canvas only after both `placed` and `engine.firstFrame`:
+The sketch starts at the start data's position, and eases toward each later one. Its easing factor depends on the frame's time step, so the motion looks the same at 60 and at 144 frames per second. The browser can restore the scroll position after the start, so the sketch jumps to the first position it receives. A page that opens scrolled down then never shows a camera flight. The page reveals the canvas once `engine.firstFrame` resolves:
 
 ```ts
 // sketch.ts
-let target = 0;
-let current = 0;
-let placed = false;
-page.onMessage((type, value) => {
-  if (type !== 'scroll') return;
-  target = value as number;
-  if (!placed) {
-    current = target;
+export default defineSketch<{ scroll: number }>(({ data, page, preferences }) => {
+  let target = data?.scroll ?? 0;
+  let current = target;
+  let placed = false;
+  page.onMessage((type, value) => {
+    if (type !== 'scroll') return;
+    target = value as number;
+    if (!placed) current = target;
     placed = true;
-    page.post('placed');
-  }
+  });
+  return {
+    onUpdate(dt) {
+      // Closes 99.9% of the gap in one second, at any frame rate.
+      const k = preferences.reducedMotion ? 1 : 1 - Math.pow(0.001, dt);
+      current += (target - current) * k;
+      if (Math.abs(target - current) < 0.0001) current = target;
+      placeCamera(current);
+    },
+  };
 });
-return {
-  onUpdate(dt) {
-    // Closes 99.9% of the gap in one second, at any frame rate.
-    const k = preferences.reducedMotion ? 1 : 1 - Math.pow(0.001, dt);
-    current += (target - current) * k;
-    if (Math.abs(target - current) < 0.0001) current = target;
-    placeCamera(current);
-  },
-};
 ```
 
 ## Second visits and navigation

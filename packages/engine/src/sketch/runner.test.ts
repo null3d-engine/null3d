@@ -266,6 +266,7 @@ async function start(
 		answers,
 		hearAddons = onAddonChecked,
 		listed,
+		data,
 	}: {
 		quality?: QualityStart;
 		drawing?: FakeDrawing;
@@ -292,6 +293,8 @@ async function start(
 		hearAddons?: (heard: (name: string) => void) => () => void;
 		/** The downloads of the sketch's list that the thread began before the runner. */
 		listed?: ListedFiles;
+		/** The page's start data for the sketch, as JSON text. */
+		data?: string;
 	} = {},
 ) {
 	const log: string[] = [];
@@ -369,6 +372,7 @@ async function start(
 			sendLabelSlot: () => {},
 			hearAddons,
 			listed,
+			data,
 		},
 		holdSeconds,
 		holdScript,
@@ -1082,6 +1086,24 @@ describe('SketchRunner', () => {
 		);
 		await expect(failed).rejects.toThrow('E1214: defineSketch() got 0 for fixedRate.');
 		expect(ran).toBe(false);
+	});
+});
+
+describe("SketchRunner and the page's start data", () => {
+	it('gives the setup its own copy of the data, live and in hold mode, and undefined without data', async () => {
+		const seen: unknown[] = [];
+		const reading = (context: SketchContext) => {
+			seen.push(context.data);
+			return {};
+		};
+		const text = '{"stop":"city","level":3,"path":[1,2]}';
+		const live = await start(reading, undefined, { data: text });
+		await start(reading, undefined, { data: text, holdSeconds: 0.05 });
+		await start(reading);
+		const parsed = { stop: 'city', level: 3, path: [1, 2] };
+		expect(seen).toEqual([parsed, parsed, undefined]);
+		expect(seen[0]).not.toBe(seen[1]);
+		expect(live.context.data).toEqual(parsed);
 	});
 });
 
@@ -2014,6 +2036,21 @@ describe('recording a session and replaying it', () => {
 		expect(settled.runner.replayOutcome?.frames).toBe(5);
 		expect(Atomics.load(settled.control.slots, Slot.HeldFrame)).toBe(5);
 		expect(Atomics.load(settled.control.slots, Slot.FramesPublished)).toBe(6);
+	});
+
+	it("keeps the page's start data, and a replay gives the setup the recorded data, not the page's", async () => {
+		const seen: unknown[] = [];
+		const reading = (context: SketchContext) => {
+			seen.push(context.data);
+			return {};
+		};
+		const session = await start(reading, undefined, { record: true, data: '{"stop":"city"}' });
+		session.runner.step(0);
+		const program = decodeRecording((await session.runner.saveRecording()) as Uint8Array);
+		expect(program.data).toBe('{"stop":"city"}');
+		await start(reading, undefined, { replay: program, data: '{"stop":"park"}' });
+		await start(reading, undefined, { replay: { ...program, data: undefined }, data: '"park"' });
+		expect(seen).toEqual([{ stop: 'city' }, { stop: 'city' }, undefined]);
 	});
 
 	it('runs no recording when the page does not record, and no replay when it gives none', async () => {

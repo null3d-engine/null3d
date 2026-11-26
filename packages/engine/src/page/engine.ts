@@ -58,6 +58,7 @@ import { memoryBytes } from '../shared/memory-views';
 import { createMetricsBuffer, MetricsReader, threadRoles } from '../shared/metrics';
 import { addMeasurementRelease } from '../shared/page-measurement';
 import type { ReplayProgram, ReplayResult } from '../shared/recording';
+import { sketchDataText } from '../shared/sketch-data';
 import { clearJobTasks, type JobTaskHost, jobAsker, setJobTasks } from '../shared/task-host';
 import { hearAddonsEarly, onAddonChecked } from '../shared/version';
 import { VIDEO_FOLLOW, type VideoFollowMessage } from '../shared/videos';
@@ -166,6 +167,15 @@ export interface EngineOptions {
 	canvas: HTMLCanvasElement;
 	/** The sketch module, which runs in the sketch worker; `new URL('./sketch.ts', import.meta.url)`. */
 	sketch: URL | string;
+	/**
+	 * Start data for the sketch, which its setup reads as `ctx.data`: the state that the page knows
+	 * before the scene starts, such as the section that the address names, a saved color mode or a
+	 * level number. It reaches the setup before the first frame, also in hold mode, where no message
+	 * can. It takes plain JSON data: objects, arrays, strings, finite numbers, booleans and null, up
+	 * to 64 KiB as JSON. Another value fails with E1213. A recording keeps it, and a replay gives
+	 * the sketch the recorded data.
+	 */
+	sketchData?: unknown;
 	/**
 	 * The quality preset: `auto`, the default, lets the engine choose one for the device, and
 	 * `low`, `medium`, `high` or `ultra` names one. The GPU path caps it: WebGL2 and WebGPU's
@@ -1831,6 +1841,7 @@ export async function createEngine(options: EngineOptions): Promise<Engine> {
 	};
 	try {
 		checkPreload(options.preload);
+		const sketchData = sketchDataText(options.sketchData);
 		const hold = holdSeconds(options.hold, switches.hold);
 		// A test tool may set a timed script before the page loads. Only hold mode performs it, so a
 		// live engine ignores one left on the page.
@@ -1867,7 +1878,7 @@ export async function createEngine(options: EngineOptions): Promise<Engine> {
 		return await startEngine(
 			options,
 			switches,
-			{ hold, holdScript, replay: switches.replay, record: switches.record },
+			{ hold, holdScript, replay: switches.replay, record: switches.record, sketchData },
 			place,
 			canvas,
 			holder,
@@ -1925,6 +1936,8 @@ interface StartModes {
 	replay?: string;
 	/** True when the page records the session's frames and input. */
 	record: boolean;
+	/** The page's start data for the sketch, as JSON text. */
+	sketchData?: string;
 }
 
 /**
@@ -3072,6 +3085,7 @@ async function startEngine(
 					...senders,
 					pageUrl: pageUrl ?? sketchUrl,
 					sketchUrl,
+					data: modes.sketchData,
 					maxTargetFps: maxTarget,
 					threads: engineThreads,
 					twoStepProbe: DEV && switches.twoStep,
@@ -3134,6 +3148,7 @@ async function startEngine(
 				...handoff,
 				sketchUrl,
 				pageUrl: pageUrl ?? sketchUrl,
+				data: modes.sketchData,
 				keyCodes: KEY_CODES,
 				jobWorkers,
 				capabilities,

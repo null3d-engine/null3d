@@ -5,8 +5,8 @@ session's frames and the input that the sketch read, saves them as a small file,
 file on any machine. Task: M3-R15.
 
 Summary: A page that opens with `?record` records what its sketch read at each frame: the frame's
-step and the input records. The recording holds the session's random seed, so the sketch's setup
-draws the same scene on replay. `?replay=<file>` runs the frames from the file's first one, with
+step and the input records. The recording holds the session's random seed and the sketch's start
+data, so the sketch's setup draws the same scene on replay. `?replay=<file>` runs the frames from the file's first one, with
 each frame's recorded step and the input that it had, so a session on a phone draws the same frames
 on a computer.
 
@@ -59,9 +59,18 @@ step from one frame to the next and changes the sketch's state. The values of `x
 keeps, before the sketch module loads. The sketch's setup therefore draws the same random numbers on
 replay. A page without `?record` keeps the browser's own random numbers.
 
-**The file.** A short binary format, version 1:
+**The start data.** The page's `sketchData` reaches the setup as `ctx.data`, so a setup that
+reads it builds another scene from other data. The file keeps the data's JSON text, and a replay
+gives the setup that text, not the data of the page that plays the file. A replay on another
+machine then starts from the session's scene, whatever its own address or storage holds
+([D-398](D-398-sketch-start-data.md)).
+
+**The file.** A short binary format, version 2:
 - A header: the marker `N3DR`, the version, flags, the fixed-step rate, the seed, the sketch's
-  address, a dictionary of the key names that the input used, and the frame count.
+  address, the start data's JSON text when the flags say the session had some, a dictionary of the
+  key names that the input used, and the frame count. A reader takes version 1 too, the same
+  layout without start data, so the device recording in `tests/fixtures/recordings/` still
+  replays.
 - Each frame: its step as an `f64`, the count of its input records as a varint, then each record:
   the type, the key's dictionary index or the record's code, the flags, the id, the buttons, and
   `x` and `y` as `f32`.

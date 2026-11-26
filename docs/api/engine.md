@@ -55,7 +55,7 @@ An `AbortSignal` in `signal` cancels a start in progress. Then `createEngine` st
 | --- | --- |
 | [E1407](../errors/E1407.md) | The `hold` option or the `?hold=` switch gives a time that is not a number of seconds from 0 to 600. |
 | [E1415](../errors/E1415.md) | The sketch would run on the page's main thread, where another engine still runs its sketch. |
-| [E1213](../errors/E1213.md) | An option is out of its range: `preset`, `presetCheck`, `targetFps`, `maxPixelRatio`, `antialias` or a shadow option. It can also be `depthPrepass`, `momentTransparency`, `gpuOcclusion`, `softwareOcclusion`, `morphTargets`, `cloudSteps` or `textureMemoryMiB`. It can also be `expectedObjects`, `maxLabels` or `maxLabels3d`. The options table gives each range. |
+| [E1213](../errors/E1213.md) | An option is out of its range: `preset`, `presetCheck`, `targetFps`, `maxPixelRatio`, `antialias` or a shadow option. It can also be `depthPrepass`, `momentTransparency`, `gpuOcclusion`, `softwareOcclusion`, `morphTargets`, `cloudSteps` or `textureMemoryMiB`. It can also be `expectedObjects`, `maxLabels` or `maxLabels3d`. The options table gives each range. `sketchData` that is not plain JSON data, or that takes more than 64 KiB as JSON, also fails with it. |
 | [E1409](../errors/E1409.md) | The `memory` option asks for a maximum that is not a whole number of MiB from 256 to 4096. |
 | [E1303](../errors/E1303.md) | The browser runs WebAssembly without SIMD. |
 | [E1306](../errors/E1306.md) | The browser runs the WebKit engine of a Safari before 18: Safari 17 or older, or any browser on iOS or iPadOS 17 or older. |
@@ -77,6 +77,8 @@ An error that the sketch's setup throws also rejects the start ([Sketch API](ske
 ## Options
 
 `canvas` and `sketch` are required. `sketch` is the address of the sketch module, usually `new URL('./sketch.ts', import.meta.url)`.
+
+`sketchData` gives the setup a start state, such as the section that the address names ([Start data](page.md#start-data)).
 
 The canvas takes its size from CSS. The engine sizes the canvas's drawing buffer to that size times the screen's pixel ratio, up to the cap that `maxPixelRatio` or the preset sets.
 
@@ -108,6 +110,7 @@ The canvas takes its size from CSS. The engine sizes the canvas's drawing buffer
 | `maxLabels` | `4096` | The most labels that the sketch tracks at once, from 1 to 65,536: [UI overlays and labels](ui.md). Another value fails with [E1213](../errors/E1213.md). |
 | `maxLabels3d` | `256` | The most labels whose `transform` is `'world'` or `'billboard'`, which are planes of the scene, from 0 to 65,536: [Labels as planes of the scene](ui.md#labels-as-planes-of-the-scene). Another value fails with [E1213](../errors/E1213.md). |
 | `onProgress` | None | Reports each stage of the start, and a download stage's bytes |
+| `sketchData` | None | Start data that the sketch's setup reads as `ctx.data`, before the first frame and in hold mode. It takes plain JSON data, up to 64 KiB as JSON, and another value fails with [E1213](../errors/E1213.md). A recording keeps it: [Start data](page.md#start-data) |
 | `onSketchMessage` | None | Receives the sketch's messages from the start of its setup: [Messages](page.md) |
 | `onSketchError` | None | Receives each distinct error that the sketch's frame code throws while the engine runs: [The running engine](#the-running-engine) |
 | `onWorkerRetry` | None | Called when the engine starts a second copy of a worker whose script did not load: [The start](#the-start) |

@@ -142,6 +142,7 @@ startWorker('sketch', step, async (event: MessageEvent<SketchWorkerMessage>) => 
 					...senders,
 					pageUrl: message.pageUrl,
 					sketchUrl: message.sketchUrl,
+					data: message.data,
 					maxTargetFps: message.maxTargetFps,
 					threads: message.threads,
 					twoStepProbe: message.twoStepProbe,

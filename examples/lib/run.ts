@@ -90,6 +90,13 @@ export interface StartOptions {
 	 */
 	choices?: HTMLElement;
 	/**
+	 * The option that each choice starts at, by the choice's name, such as the page's address names
+	 * them: `{ layout: 'inset' }`. The case of an option does not matter, and a name or an option
+	 * that the demo lacks is left out. The sketch reads the picks as its start data, so a held
+	 * frame shows them too, and each pick's button starts pressed.
+	 */
+	picks?: Readonly<Record<string, string>>;
+	/**
 	 * The element that holds the demo's on-screen help, which a showcase scene posts: its keys and
 	 * the camera mode. Without it, the demo shows no help. A held frame has none.
 	 */
@@ -140,9 +147,11 @@ export async function startDemo({
 	antialias,
 	settings,
 	choices,
+	picks,
 	hud,
 	signal,
 }: StartOptions): Promise<Engine> {
+	const started = startingPicks(demo, picks);
 	// The demos zoom with the wheel and a trackpad pinch, which would otherwise scroll or zoom the page.
 	canvas.addEventListener('wheel', (event) => event.preventDefault(), { passive: false, signal });
 	// The loading overlay covers the canvas from before the engine starts until the first frame draws.
@@ -285,6 +294,7 @@ export async function startDemo({
 			...settings,
 			// Collapsed, the overlay stays small until clicked.
 			stats: stats && { collapsed: true },
+			sketchData: started,
 			onProgress: (stage: StartupStage, progress?: StartupProgress) => {
 				// The loader hears of the first frame through `hideWhenQuiet`, with any last message.
 				if (stage === 'first-frame') {
@@ -301,7 +311,7 @@ export async function startDemo({
 		if (hud) hud.hidden = true;
 		throw error;
 	}
-	if (choices) showChoices(engine, demo, choices);
+	if (choices) showChoices(engine, demo, choices, started);
 	// One message handler for the page: the engine gives the messages that a sketch sent before the
 	// page listened to the first handler alone, so two handlers would drop the help that a showcase
 	// scene posts at its start. The same handler carries the loading progress that a scene posts.
@@ -708,24 +718,47 @@ export function createLoader(canvas: HTMLCanvasElement): Loader {
 }
 
 /**
+ * The options of `picks` that name one of the demo's choices and one of its options, each spelled
+ * as the choice spells it, or undefined when none does.
+ */
+function startingPicks(
+	demo: Demo,
+	picks: Readonly<Record<string, string>> | undefined,
+): Record<string, string> | undefined {
+	const started: Record<string, string> = {};
+	for (const { name, options } of demo.choices ?? []) {
+		const wanted = picks?.[name]?.toLowerCase();
+		const option = options.find((option) => option.toLowerCase() === wanted);
+		if (option !== undefined) started[name] = option;
+	}
+	return Object.keys(started).length > 0 ? started : undefined;
+}
+
+/**
  * Shows each of the demo's choices as a group of buttons, and sends each pick to the sketch as a
  * message named by the choice. Each group is a `div` with the class `choice`, which holds a label
- * and a button for each option. The picked button has `aria-pressed="true"`, and the first option
- * starts picked, as the sketch starts with it.
+ * and a button for each option. The picked button has `aria-pressed="true"`. The option that
+ * `started` names starts picked, or else the first, as the sketch starts with it.
  */
-function showChoices(engine: Engine, demo: Demo, element: HTMLElement): void {
+function showChoices(
+	engine: Engine,
+	demo: Demo,
+	element: HTMLElement,
+	started: Readonly<Record<string, string>> | undefined,
+): void {
 	for (const choice of demo.choices ?? []) {
+		const first = started?.[choice.name] ?? choice.options[0];
 		const group = document.createElement('div');
 		group.className = 'choice';
 		group.setAttribute('role', 'group');
 		const label = document.createElement('span');
 		label.textContent = choice.label;
 		group.append(label);
-		const buttons = choice.options.map((option, index) => {
+		const buttons = choice.options.map((option) => {
 			const button = document.createElement('button');
 			button.type = 'button';
 			button.textContent = option;
-			button.setAttribute('aria-pressed', String(index === 0));
+			button.setAttribute('aria-pressed', String(option === first));
 			button.addEventListener('click', () => {
 				for (const other of buttons) other.setAttribute('aria-pressed', String(other === button));
 				engine.postToSketch(choice.name, option);

@@ -53,6 +53,8 @@ flowchart LR
 bunx @null3d/cli shot --out shot.png --time 1.5 --size 1280x720 --gpu webgl2
 ```
 
+`--page` keeps the page's own query, and the engine adds its switches beside it. A page that reads its address and passes the state as [start data](../api/page.md#start-data) draws that state in the held frame: `bunx @null3d/cli shot --page "/?stop=city"`. A [`test`](#test) entry's `page` takes a query in the same way.
+
 | Option | Effect | Without it |
 | --- | --- | --- |
 | `--out <file.png>` | The image to write. The JSON file beside it takes its name, such as `shot.json` | `shot.png` |
@@ -115,7 +117,7 @@ A page that opens with `?record` records each frame's step and the input that th
 bunx @null3d/cli shot --replay bug.n3dr --out bug.png
 ```
 
-The command serves the file to the page, runs the recording's frames in order with their recorded steps and input, and draws the last one. It reads no live input, and `--time` and `--script` cannot be given with it: the recording sets every frame's time. The summary names the frames, the final sketch time and the sketch that recorded them.
+The command serves the file to the page, runs the recording's frames in order with their recorded steps and input, and draws the last one. The sketch's setup reads the [start data](../api/page.md#start-data) that the recording keeps, not the data of the page that plays it. It reads no live input, and `--time` and `--script` cannot be given with it: the recording sets every frame's time. The summary names the frames, the final sketch time and the sketch that recorded them.
 
 A recording stops at 600 seconds of sketch time, and its file says so. A sketch that reads the quality preset or the device's capabilities can draw differently on a replay, because the replay picks this computer's own preset. [Testing your sketch](../guides/testing.md#record-a-session-that-went-wrong) gives the whole workflow.
 
@@ -289,7 +291,7 @@ bunx @null3d/cli test --update-references
 | --- | --- | --- |
 | `name` | The test's name in lowercase words joined by dashes. It names the test's image files | Required |
 | `sketch` | A sketch module to draw, from your project's folder. A query after the path reaches the sketch ([Testing your sketch](../guides/testing.md#frames-that-stay-the-same-on-every-run)) | Give `sketch` or `page` |
-| `page` | A page of your project to open instead, from the dev server's root | Give `sketch` or `page` |
+| `page` | A page of your project to open instead, from the dev server's root, with any query of its own, such as `/?stop=city` | Give `sketch` or `page` |
 | `hold` | The sketch time to hold at, in seconds, from 0 to 600 | Give `hold` or `script` |
 | `script` | A [timed script](#timed-scripts), from your project's folder. Each of its shot steps draws an image, under the name `<name>-<shot>` | Give `hold` or `script` |
 | `size` | The image's width and height in pixels, such as `640x360` | `320x180` |

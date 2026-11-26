@@ -143,7 +143,7 @@ export const PAGES: readonly PageEntry[] = [
 	{ id: 'api/water', title: 'Water (@null3d/water)', summary: 'createWater: a river and a lake from one shape, with waves, ripples, caustics, foam, soft shores that read the scene depth, a reflection whose cadence follows the preset, and createUnderwater for the view from below the surface.' },
 	{ id: 'api/wind', title: 'Wind (@null3d/wind)', summary: 'createWind: one field of air that plants, flags, smoke and water read, from an analytic wind of place and time with traveling gusts and pushes, held in a grid that follows the camera.' },
 	{ id: 'api/ui', title: 'UI overlays and labels', summary: 'ui.trackLabel in the sketch; engine.labels.bind on the page.' },
-	{ id: 'api/page', title: 'Messages between sketch and page', summary: 'page.post and page.onMessage in the sketch; engine.postToSketch and engine.onSketchMessage on the page.' },
+	{ id: 'api/page', title: 'Messages between sketch and page', summary: 'page.post and page.onMessage in the sketch; engine.postToSketch and engine.onSketchMessage on the page; start data that the setup reads as ctx.data.' },
 	{ id: 'api/tasks', title: 'Tasks on the job workers', summary: 'runTask: an add-on declares a task module and its WebAssembly, which run in the job workers; shared memory; ordering with the frames; failures.' },
 
 	{ id: 'guides/performance', title: 'Performance guide', summary: 'Measuring; the frame budget; common causes of slow frames and their fixes.' },

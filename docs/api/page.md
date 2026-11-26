@@ -1,7 +1,7 @@
 ---
 id: api/page
 title: Messages between sketch and page
-summary: "page.post and page.onMessage in the sketch; engine.postToSketch and engine.onSketchMessage on the page."
+summary: "page.post and page.onMessage in the sketch; engine.postToSketch and engine.onSketchMessage on the page; start data that the setup reads as ctx.data."
 ---
 
 # Messages between sketch and page
@@ -14,6 +14,8 @@ By default the sketch runs in a worker, and the page runs on the browser's main 
 | Page | `engine.postToSketch(name, data, transfer)` | `engine.onSketchMessage(handler)`, or the `onSketchMessage` option of `createEngine` |
 
 A message has a name, such as `'color'`, and data, which is optional. A handler gets both. The third argument, `transfer`, is also optional. `page.onMessage` and `engine.onSketchMessage` return a function that removes the handler.
+
+A message can reach the sketch only after its setup has run. To give the setup a state that the page knows at the start, pass it as [start data](#start-data).
 
 ## Example: a color picker on the page
 
@@ -65,11 +67,56 @@ The optional `transfer` list names objects to move instead of copy, such as the 
 - Messages from one side arrive in the order that side sent them.
 - When the sketch runs in a worker, its handlers run as soon as the worker receives the message, between two frames. The sketch's next frame includes any change that a handler makes to the scene.
 - Messages also arrive while the engine is paused. Changes to the scene then show when the engine resumes.
-- The page can send messages only after `createEngine` resolves, and by then the sketch's setup function has run. Register the sketch's handlers in the setup function. A message that arrives while the sketch has no handler is lost.
+- The page can send messages only after `createEngine` resolves, and by then the sketch's setup function has run. Register the sketch's handlers in the setup function. A message that arrives while the sketch has no handler is lost. Pass what the setup needs as [start data](#start-data).
 
 The sketch can send messages from the start of its setup. Until the page registers its first handler, the engine keeps the newest 256 of the sketch's messages. The first handler that `engine.onSketchMessage` registers gets them at once, in order. Later handlers get only the messages that arrive after them.
 
 The `onSketchMessage` option of `createEngine` gets every message as it arrives, from the start of the sketch's setup. With the option, the engine keeps no messages for later handlers. Use the option for progress that the sketch reports while it loads.
+
+## Start data
+
+The `sketchData` option of `createEngine` gives the sketch a state that the page knows before the scene starts. Examples are the section that the page's address names, a saved color mode or a level number. The setup reads it as `ctx.data`, before the first frame. `defineSketch<Data>` gives it a type, and it is `undefined` when the page passes none.
+
+```ts
+// page.ts
+import { createEngine } from '@null3d/engine';
+import type { StartData } from './sketch';
+
+const params = new URLSearchParams(location.search);
+const sketchData: StartData = {
+  stop: params.get('stop') ?? 'hero', // the section that the address names
+  dark: localStorage.getItem('dark') === '1', // a saved color mode
+};
+const engine = await createEngine({
+  canvas: document.querySelector('canvas')!,
+  sketch: new URL('./sketch.ts', import.meta.url),
+  sketchData,
+});
+```
+
+```ts
+// sketch.ts
+import { defineSketch } from '@null3d/engine';
+
+export interface StartData {
+  stop: string;
+  dark: boolean;
+}
+
+export default defineSketch<StartData>(({ data, scene }) => {
+  // data is undefined when the page passes no sketchData, as a sketch test's page does.
+  scene.setBackground(data?.dark ? '#05070a' : '#dfe8f0');
+  const camera = scene.createPerspectiveCamera({
+    position: data?.stop === 'city' ? [12, 30, 40] : [0, 2, 8],
+    target: [0, 0, 0],
+  });
+  scene.setActiveCamera(camera);
+});
+```
+
+The data must be plain JSON data: objects, arrays, strings, finite numbers, booleans and `null`. Its JSON text may take up to 64 KiB. Any other value, such as a `Date`, a `Map` or a typed array, fails the start with [E1213](../errors/E1213.md), which names where the value sits. A property whose value is `undefined` is left out, as JSON leaves it out. Load larger data in the sketch as a file, with [`ctx.assets`](assets.md).
+
+The sketch gets its own copy of the data on every thread, also when it runs on the page's thread. A change to the copy reaches neither the page nor a recording. A [recording](../guides/testing.md#record-a-session-that-went-wrong) keeps the data, and its replay gives the sketch the recorded data, not the data of the page that plays it.
 
 ## A sketch on the page's thread
 
@@ -83,7 +130,13 @@ Write message code that works on both threads:
 
 ## Hold mode
 
-In hold mode, `createEngine` resolves only after the engine has drawn the held frame. So the page cannot send the sketch a message before that frame. The sketch's messages from its setup and its held frames reach the page as usual. After the held frame, the sketch's handlers still receive messages, but the sketch runs no more frames. See [Testing your sketch](../guides/testing.md).
+In hold mode, `createEngine` resolves only after the engine has drawn the held frame. So the page cannot send the sketch a message before that frame. [Start data](#start-data) reaches the setup in hold mode as in a live start, so a held frame shows the state that it names. The sketch's messages from its setup and its held frames reach the page as usual. After the held frame, the sketch's handlers still receive messages, but the sketch runs no more frames. See [Testing your sketch](../guides/testing.md).
+
+A page that reads its start data from its own address draws that state from the command line too. The command opens the page with its query, and the engine adds its switches beside it:
+
+```sh
+bunx @null3d/cli shot --page "/?stop=city"
+```
 
 ## Related pages
 

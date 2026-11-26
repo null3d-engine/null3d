@@ -2,19 +2,24 @@
 // a small binary file that replays on another machine to the same frames. The file holds the time
 // of every frame as a step, delta-coded, and a dictionary of the keys that the input used. Replay
 // runs the frames from the first one, with the sketch's setup as it started, so a session on a
-// phone reproduces on a computer.
+// phone reproduces on a computer. The file keeps the start data that the page gave the sketch, so
+// the replay's setup reads the same data.
 //
 // The recorder lives on the sketch's thread, so it records what the sketch read, not what the page
 // sent. A frame with no input costs sixteen bytes in its frame arrays and nine in the file: the
 // step's eight-byte number and a one-byte count.
 
 import { EVENT_KEY_DOWN, EVENT_KEY_UP } from './control';
+import { MAX_SKETCH_DATA_BYTES } from './sketch-data';
 
 /** The file's first four bytes, which name the format. */
 export const RECORDING_MAGIC = 0x4e334452;
 
-/** The format's version, which a reader refuses when it does not know. */
-export const RECORDING_VERSION = 1;
+/**
+ * The format's version, which a reader refuses when it is newer than its own. Version 2 adds the
+ * sketch's start data; a reader takes version 1 as a recording without it.
+ */
+export const RECORDING_VERSION = 2;
 
 /** The most sketch time that a recording keeps, in seconds. */
 export const MAX_RECORDING_SECONDS = 600;
@@ -25,6 +30,8 @@ const MAX_EVENTS = 1_000_000;
 
 /** The flag that marks a recording that stopped at its limit before the session ended. */
 const FLAG_STOPPED = 1;
+/** The flag that marks a recording whose header holds the sketch's start data. */
+const FLAG_DATA = 2;
 
 /** The numbers of one event, as the recording stores them side by side: type, code, flags, id,
  * buttons, x and y. */
@@ -57,6 +64,8 @@ export interface ReplayProgram {
 	fixedRate: number;
 	/** The sketch's address when it was recorded, for a message about a different scene. */
 	sketch: string;
+	/** The start data that the sketch had, as JSON text, or undefined when it had none. */
+	data?: string;
 	/** True when the recording stopped at its limit before the session ended. */
 	stopped: boolean;
 	/** Each frame's step in seconds, which sums to the frame's sketch time. */
@@ -342,19 +351,22 @@ export class Recorder {
 	}
 
 	/**
-	 * The file's bytes: the session's seed, the statistics that a replay needs, the dictionary of
-	 * the keys that the input used, and each frame's step with the input that the sketch read.
+	 * The file's bytes: the session's seed, the statistics that a replay needs, the sketch's start
+	 * data, the dictionary of the keys that the input used, and each frame's step with the input
+	 * that the sketch read.
 	 *
-	 * @param header The fixed rate of the sketch's fixed updates, and the sketch's address.
+	 * @param header The fixed rate of the sketch's fixed updates, the sketch's address, and its
+	 * start data as JSON text.
 	 */
-	encode(header: { fixedRate: number; sketch: string }): Uint8Array {
-		const out = new ByteWriter(64 + this.frameCount * 8);
+	encode(header: { fixedRate: number; sketch: string; data?: string }): Uint8Array {
+		const out = new ByteWriter(64 + (header.data?.length ?? 0) + this.frameCount * 8);
 		out.u32(RECORDING_MAGIC);
 		out.u8(RECORDING_VERSION);
-		out.u8(this.stopped ? FLAG_STOPPED : 0);
+		out.u8((this.stopped ? FLAG_STOPPED : 0) | (header.data === undefined ? 0 : FLAG_DATA));
 		out.u16(header.fixedRate);
 		out.u32(this.seed);
 		out.text(header.sketch);
+		if (header.data !== undefined) out.text(header.data);
 		out.varint(this.keyNames.length);
 		for (const name of this.keyNames) out.text(name);
 		out.varint(this.frameCount);
@@ -398,14 +410,24 @@ export function decodeRecording(bytes: Uint8Array): ReplayProgram {
 			'the file is not a null3D recording: it does not start with the format marker. Save the recording again, or ask for a new one.',
 		);
 	const version = reader.u8();
-	if (version !== RECORDING_VERSION)
+	if (version < 1 || version > RECORDING_VERSION)
 		throw new RecordingError(
-			`the file holds recording version ${version}, and this engine reads version ${RECORDING_VERSION}. Update the engine that made the recording, or replay it with the engine that recorded it.`,
+			`the file holds recording version ${version}, and this engine reads versions 1 to ${RECORDING_VERSION}. Replay it with the engine that recorded it, or with a newer one.`,
 		);
 	const flags = reader.u8();
 	const fixedRate = whole(reader.u16(), 'the fixed step rate', 1, 1000);
 	const seed = reader.u32();
 	const sketch = reader.text(4096);
+	const data = (flags & FLAG_DATA) === 0 ? undefined : reader.text(MAX_SKETCH_DATA_BYTES);
+	if (data !== undefined) {
+		try {
+			JSON.parse(data);
+		} catch {
+			throw new RecordingError(
+				"the file's start data for the sketch is not JSON text. Download it again, or record a new session.",
+			);
+		}
+	}
 	const keyCount = whole(reader.varint(), 'the dictionary of keys', 0, 512);
 	const keyNames: string[] = [];
 	for (let k = 0; k < keyCount; k++) keyNames.push(reader.text(64));
@@ -459,6 +481,7 @@ export function decodeRecording(bytes: Uint8Array): ReplayProgram {
 		seed,
 		fixedRate,
 		sketch,
+		data,
 		stopped: (flags & FLAG_STOPPED) !== 0,
 		steps,
 		starts,

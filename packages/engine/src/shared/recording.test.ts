@@ -137,6 +137,34 @@ describe('a recording of frames and their input', () => {
 	});
 });
 
+describe('the start data in a recording', () => {
+	it('keeps the start data that the sketch had, and none when it had none', () => {
+		const made = recorder();
+		made.beginFrame(0);
+		const data = '{"stop":"city","level":3,"name":"café"}';
+		const kept = decodeRecording(made.encode({ fixedRate: 60, sketch: '/sketch.ts', data }));
+		expect(kept.data).toBe(data);
+		expect(kept.sketch).toBe('/sketch.ts');
+		expect(kept.steps.length).toBe(1);
+		expect(decodeRecording(sample()).data).toBeUndefined();
+	});
+
+	it('reads a version 1 file as a recording without start data', () => {
+		const bytes = sample();
+		bytes[4] = 1;
+		const program = decodeRecording(bytes);
+		expect(program.data).toBeUndefined();
+		expect(program.keyNames).toEqual(['KeyW']);
+	});
+
+	it('refuses start data that is not JSON text', () => {
+		const made = recorder();
+		made.beginFrame(0);
+		const bytes = made.encode({ fixedRate: 60, sketch: '/sketch.ts', data: '{"stop"' });
+		expect(mistake(bytes)).toContain('start data for the sketch is not JSON text');
+	});
+});
+
 describe('a recording that cannot be read', () => {
 	it('refuses a file without the format marker', () => {
 		const bytes = sample();
@@ -147,7 +175,9 @@ describe('a recording that cannot be read', () => {
 	it('refuses a version that this engine does not read', () => {
 		const bytes = sample();
 		bytes[4] = RECORDING_VERSION + 1;
-		expect(mistake(bytes)).toContain('recording version 2');
+		expect(mistake(bytes)).toContain(`recording version ${RECORDING_VERSION + 1}`);
+		bytes[4] = 0;
+		expect(mistake(bytes)).toContain('recording version 0');
 	});
 
 	it('refuses a file that ends early, and names where', () => {
@@ -175,7 +205,7 @@ describe('a recording that cannot be read', () => {
 
 	it('names the format marker and the version in the constants', () => {
 		expect(RECORDING_MAGIC).toBe(0x4e334452);
-		expect(RECORDING_VERSION).toBe(1);
+		expect(RECORDING_VERSION).toBe(2);
 		expect(EVENT_STRIDE).toBe(7);
 	});
 });

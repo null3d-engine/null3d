@@ -97,6 +97,8 @@ export type SketchWorkerInit = CoreHandoff & {
 	sketchUrl: string;
 	/** The page's address, which the sketch's relative asset addresses resolve against. */
 	pageUrl: string;
+	/** The start data that the page passed, as JSON text, which the sketch reads as `ctx.data`. */
+	data?: string;
 	/**
 	 * The key names, in the order of the numbers that the page gives keys in the input ring. The
 	 * page hands them over, so the sketch worker's file needs no copy.

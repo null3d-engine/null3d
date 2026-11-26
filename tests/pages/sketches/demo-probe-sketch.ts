@@ -3,7 +3,7 @@
 // the demo's sketch module from the server's root. The sketch answers the page's 'probe' message
 // with a 'probe' message: the active camera's place in the world, and the world places of the
 // demo's dynamic meshes and lights, in the order the demo made them. It gives the camera's rotation
-// too. A 'fault' message makes the engine's next frame step throw, so the engine fails with E1404.
+// and the start data too. A 'fault' message makes the engine's next frame step throw, so the engine fails with E1404.
 import {
 	type Camera,
 	defineSketch,
@@ -63,6 +63,7 @@ export default defineSketch(async (context) => {
 			camera: camera ? place(camera) : [],
 			cameraTurn: camera ? turn(camera) : [],
 			objects: moving.map(place),
+			data: context.data,
 		};
 		page.post('probe', probe);
 	});
