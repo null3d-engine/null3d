@@ -17,9 +17,14 @@ flowchart LR
 
 ## Make the CDN build
 
-The build holds the engine's JavaScript, its shaders, both WebAssembly builds and its vendor files, with each foundation add-on under `addons/<name>/`. The npm package leaves the built shaders out, because they are large and a Vite build supplies them. A page with no build step therefore needs this folder.
+The CDN build comes from the engine's source, not from npm. It holds the engine's JavaScript, its shaders, both WebAssembly builds and its vendor files, with each foundation add-on under `addons/<name>/`. The npm package leaves the built shaders out, because they are large and a Vite build supplies them. A page with no build step therefore needs this folder.
+
+Install Bun and the Rust toolchain through [rustup](https://rustup.rs), then run these commands in a clone of the [repository](https://github.com/null3d-engine/null3d#development):
 
 ```sh
+git clone https://github.com/null3d-engine/null3d.git
+cd null3d
+bun install
 bun run build
 bun run build:cdn
 ```
@@ -55,9 +60,14 @@ The production entry behaves like a production build from Vite and the plugin. T
 
 Use one entry for the whole page: the page's import, the sketch's import, the import map and each add-on. An add-on's development entry is `addons/<name>/lib-dev/index.js`. A page that mixes the two loads two copies of the engine's code.
 
+<details>
+<summary>Technical details: telling the entries apart, and a benchmark build</summary>
+
 To see which entry a page runs, read the address that it imports. On a page with the [isolation headers](#both-thread-modes), the `?threads=off` switch also tells them apart. With it, `engine.mode.build` is `'single'` from the development entry and `'threaded'` from the production entry.
 
 A benchmark page may time a production build and still set switches, such as `?gpu=webgl2`. It needs a third form. `bun run build:cdn --url-switches` makes the production entry read the address switches. Use that build for benchmark pages only, and never ship it, because a link can then change how the page runs.
+
+</details>
 
 ## One HTML file
 
@@ -165,9 +175,9 @@ Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline' b
 ```
 
 - `blob:` in `script-src`: the page makes the sketch module at a `blob:` address.
-- `blob:` in `worker-src`: the engine starts each worker from a `blob:` address when its files come from another origin, and the sketch is one there.
-- The CDN in `worker-src`: Firefox checks the modules that a worker imports against it.
-- The CDN in `script-src` and `connect-src`: the scripts and the WebAssembly files come from there.
+- `'unsafe-inline'` in `script-src` and `style-src`: the example page holds its script and style inline.
+
+The `blob:` in `worker-src`, and the CDN in `script-src`, `worker-src` and `connect-src`, are there for the reasons that [Hosting](hosting.md#the-engines-files-on-a-cdn) gives, with the error that each missing item causes.
 
 Missing items give [E1422](../errors/E1422.md), [E1423](../errors/E1423.md) or [E1418](../errors/E1418.md), as [Hosting](hosting.md#the-engines-files-on-a-cdn) lists them.
 
@@ -221,7 +231,7 @@ export default defineSketch((ctx) => {
 
 An import map can name an add-on for the page's own modules, but a worker reads no import map. Name the add-on by its full address in the sketch, as the example does.
 
-The build also writes `null3d-third-party-notices.txt`, with the license notices of the engine and of each add-on that ships other projects' code. Keep that file with the folder when you publish it, or show its text in your credits.
+The build also writes `null3d-third-party-notices.txt`, with the license notices of the engine and of each add-on that ships other projects' code. Keep that file with the folder when you publish it, or show its text in your credits ([Third-party notices](third-party-notices.md)).
 
 ## Related pages
 

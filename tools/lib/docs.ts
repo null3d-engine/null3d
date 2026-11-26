@@ -137,8 +137,8 @@ export const PAGES: readonly PageEntry[] = [
 	{ id: 'getting-started/install', group: 'First steps' },
 	{ id: 'getting-started/first-scene', group: 'First steps' },
 	{ id: 'getting-started/project-structure', group: 'First steps' },
-	{ id: 'getting-started/cdn', group: 'First steps' },
 	{ id: 'getting-started/hosting', group: 'Hosting and licenses' },
+	{ id: 'getting-started/cdn', group: 'Hosting and licenses' },
 	{ id: 'getting-started/network-use', group: 'Hosting and licenses' },
 	{ id: 'getting-started/third-party-notices', group: 'Hosting and licenses' },
 

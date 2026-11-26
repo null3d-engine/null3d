@@ -20,6 +20,19 @@ bunx @null3d/cli --version
 
 The command needs Node 20.19 or later, or Node 22.12 or later, as Vite 8 does.
 
+| Command | What it does |
+| --- | --- |
+| [`create`](#create) | Write a new project from a template. |
+| [`shot`](#shot) | Draw a frame of your scene in a headless browser, and save it. |
+| [`test`](#test) | Run image tests on your sketch. |
+| [Timed scripts](#timed-scripts) | The script format that `shot` and `test` read. |
+| [`bench`](#bench) | Run the benchmark protocol on a page. |
+| [`mcp`](#mcp) | Connect a coding agent to the live scene. |
+| [`check-addon`](#check-addon) | Run the engine's checks for add-ons on a package. |
+| [`assets`](#assets) | Optimize and convert models and textures. |
+| [`upgrade`](#upgrade) | Update a project's packages to one version. |
+| [Where the commands draw](#where-the-commands-draw) | Which GPU and browser each command uses. |
+
 ## create
 
 `create` writes a new project from a template. The project runs with Vite, and it holds the rules and the hook that an AI agent uses.
@@ -34,7 +47,7 @@ bunx @null3d/cli create my-game --template game
 | --- | --- | --- |
 | `--template <name>` | The template to copy: `empty`, a turning cube; `product`, a product viewer; or `game`, a small game | `empty` |
 
-The folder must not exist, or it must be empty. The command never overwrites an existing `.claude/settings.json` or `.codex/hooks.json`, because those files can hold your own hooks. The command writes its own version into the project's package pins, and it installs nothing. Run `bun install` in the new folder, then `bunx vite`. [Project structure](../getting-started/project-structure.md) lists the files and explains the agent hook.
+The folder must not exist, or it must be empty. A folder that holds `.claude/settings.json` or `.codex/hooks.json` gets its own message, because those files can hold your own hooks. The command writes its own version into the project's package pins, and it installs nothing. Run `bun install` in the new folder, then `bunx vite`. [Project structure](../getting-started/project-structure.md) lists the files and explains the agent hook.
 
 ## shot
 
@@ -213,7 +226,7 @@ For the second form, start Chrome with `--remote-debugging-port=9222` and open t
 | `--gpu <tier>` | Opens the server's own page on `webgpu`, `compat` or `webgl2`. `--connect` ignores it | The engine picks the path |
 | `--size <width>x<height>` | The headless browser's window in CSS pixels. `--connect` ignores it | `1280x720` |
 | `--timeout <seconds>` | How long the page may take to publish the inspector | 60 |
-| `--url <address>` | Uses a dev server that already runs, instead of starting one. The server still starts its own browser | The command starts the dev server |
+| `--url <address>` | Uses a dev server that already runs, instead of starting one. The command still starts its own headless browser | The command starts the dev server |
 | `--connect <address>` | Attaches to Chrome's debugging endpoint and drives the tab that shows the page. Give `--url` or `--connect`, not both | The command starts its own browser |
 
 ### Objects in a call
@@ -407,7 +420,7 @@ When a run fails, `bench` says why after the figures of its path, and exits with
 
 ## check-addon
 
-`check-addon` runs the engine's gates on one add-on package. An add-on's author runs it before a release, and a listing runs it before it publishes the add-on. It prints one line for each gate, and exits with 1 when a gate fails. [Building an add-on](../guides/add-ons.md) gives the rules that the gates check.
+`check-addon` runs the engine's checks for add-ons, called gates, on one add-on package. Run it before you release or publish an add-on. It prints one line for each gate, and exits with 1 when a gate fails. [Building an add-on](../guides/add-ons.md) gives the rules that the gates check.
 
 ```sh
 bunx @null3d/cli check-addon                    # the add-on in the current folder

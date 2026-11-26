@@ -26,7 +26,7 @@ Claude Code runs the hook through `.claude/settings.json`, and Codex runs it thr
 `@null3d/cli/agent-rules` in the installed packages. The hook needs `bun install` to find the rules.
 Codex asks you to trust a project's hooks before it runs them. Other agents read this file and
 follow the same rules. The hook is optional: delete its entries in `.claude/settings.json` and
-`.codex/hooks.json`, or the hook file, to stop the checks.
+`.codex/hooks.json` to stop the checks.
 
 ## Before you build a feature
 

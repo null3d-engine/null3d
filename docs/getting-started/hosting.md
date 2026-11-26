@@ -28,6 +28,45 @@ Chrome and Firefox also accept `Cross-Origin-Embedder-Policy: credentialless`, w
 
 To check a page, open the browser console and read `crossOriginIsolated`. It is `true` on an isolated page. The engine also reports the mode in `engine.capabilities.threaded`.
 
+## Headers on common hosts
+
+Netlify and Cloudflare Pages read a `_headers` file at the root of the site:
+
+```text
+/*
+  Cross-Origin-Opener-Policy: same-origin
+  Cross-Origin-Embedder-Policy: require-corp
+```
+
+Vercel reads `vercel.json`:
+
+```json
+{
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        { "key": "Cross-Origin-Opener-Policy", "value": "same-origin" },
+        { "key": "Cross-Origin-Embedder-Policy", "value": "require-corp" }
+      ]
+    }
+  ]
+}
+```
+
+nginx:
+
+```nginx
+add_header Cross-Origin-Opener-Policy same-origin always;
+add_header Cross-Origin-Embedder-Policy require-corp always;
+```
+
+GitHub Pages cannot send custom headers, so a null3D page there runs single-threaded.
+
+## What isolation changes
+
+`Cross-Origin-Opener-Policy: same-origin` cuts the link between your page and any cross-origin window it opens. A sign-in flow that opens a popup on another site and waits for a message through `window.opener` stops working. Check such flows before you turn isolation on. Under `require-corp`, files from other origins also need to opt in, as [Files from other sites](#files-from-other-sites) explains.
+
 ## Files from other sites
 
 With `require-corp`, the browser loads a file from another origin only when that file allows it. This covers models, textures, fonts and scripts from a CDN or a separate asset domain. Each such file needs one of these:
@@ -42,7 +81,7 @@ Files from the page's own origin need nothing.
 The engine starts under a strict policy. Send this one, or add its parts to your own:
 
 ```http
-Content-Security-Policy: default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self'
+Content-Security-Policy: default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self'; connect-src 'self'
 ```
 
 - `script-src 'self' 'wasm-unsafe-eval'`: the engine core, the meshopt and Draco decoders and the KTX2 transcoder are WebAssembly, and a policy blocks WebAssembly unless it holds `'wasm-unsafe-eval'`. This keyword allows WebAssembly and no JavaScript `eval`. Without it, `createEngine` rejects with [E1418](../errors/E1418.md). The engine needs no `'unsafe-eval'`.
@@ -51,7 +90,7 @@ Content-Security-Policy: default-src 'self'; script-src 'self' 'wasm-unsafe-eval
 
 The engine needs no inline script and no inline style. It sets styles from code, which a policy does not block. A page's own inline `<style>` element needs `style-src 'self' 'unsafe-inline'`.
 
-A worker follows the policy of its own script's response, not the page's. A host that sends the header on every file, as the examples below do for the isolation headers, applies the same policy to the workers.
+A worker follows the policy of its own script's response, not the page's. A host that sends the header on every file, as the examples above do for the isolation headers, applies the same policy to the workers.
 
 ## The engine's files on a CDN
 
@@ -110,41 +149,6 @@ The single-threaded build is fully supported. Use it where you cannot set header
 
 A game starts in either build. Do not gate its Play button on `crossOriginIsolated`, and do not offer a single-threaded mode of its own: the engine falls back by itself. Read `engine.capabilities.threaded` to record which build a run used.
 
-## Headers on common hosts
-
-Netlify and Cloudflare Pages read a `_headers` file at the root of the site:
-
-```text
-/*
-  Cross-Origin-Opener-Policy: same-origin
-  Cross-Origin-Embedder-Policy: require-corp
-```
-
-Vercel reads `vercel.json`:
-
-```json
-{
-  "headers": [
-    {
-      "source": "/(.*)",
-      "headers": [
-        { "key": "Cross-Origin-Opener-Policy", "value": "same-origin" },
-        { "key": "Cross-Origin-Embedder-Policy", "value": "require-corp" }
-      ]
-    }
-  ]
-}
-```
-
-nginx:
-
-```nginx
-add_header Cross-Origin-Opener-Policy same-origin always;
-add_header Cross-Origin-Embedder-Policy require-corp always;
-```
-
-GitHub Pages cannot send custom headers, so a null3D page there runs single-threaded.
-
 ## Desktop apps with Electron
 
 Electron ships Chromium, so a null3D game runs in it as it runs in Chrome. The threaded build needs the same cross-origin isolation as on a website. Two common setups do not give it:
@@ -192,7 +196,7 @@ To check the app, open its developer tools and read `crossOriginIsolated` in the
 
 ## Send the files with Brotli
 
-The engine's shader text compresses well with Brotli, which finds text that repeats far apart. gzip finds only repeats that are close together. So the host's compression changes what a page downloads at its start. In this version, the engine's part of the start downloads about:
+The engine's shader text compresses well with Brotli, which finds text that repeats far apart. gzip finds only repeats that are close together. So the host's compression changes what a page downloads at its start. On a threaded page, in the default latency mode ([Architecture](../concepts/architecture.md#latency-modes)), the engine's part of the start downloads about:
 
 | The host sends | The engine's JavaScript | The engine core | Together |
 | --- | --- | --- | --- |
@@ -210,7 +214,9 @@ The figures are for a pipelined page on WebGL2, the largest start:
 
 The core's WebAssembly file is the start's largest file. Many servers compress only text, and send `.wasm` files as they are. To check a host, open the browser's network panel and compare the core's transferred size with its size.
 
-Netlify, Cloudflare Pages and Vercel send Brotli to browsers that accept it. GitHub Pages sends gzip only. nginx sends gzip with its own module, and Brotli with the `ngx_brotli` module. With nginx, compress the files once when you deploy them, with `brotli -q 11` on each file in `dist/assets/`, the `.wasm` files included. Then send the compressed files with `brotli_static on;`. nginx's own gzip compresses only the types that `gzip_types` lists, so add `application/wasm` there.
+Netlify, Cloudflare Pages and Vercel send Brotli to browsers that accept it. GitHub Pages sends gzip only. nginx sends gzip with its own module, and Brotli with the `ngx_brotli` module.
+
+With nginx, compress the files once when you deploy them, with `brotli -q 11` on each file in `dist/assets/`, the `.wasm` files included. Then send the compressed files with `brotli_static on;`. nginx's own gzip compresses only the types that `gzip_types` lists, so add `application/wasm` there.
 
 The null3D Vite plugin's own servers compress with Brotli too, as [During development](#during-development) says. [A fast start](../guides/start-time.md) gives the other steps that shorten a start.
 
@@ -219,7 +225,7 @@ The null3D Vite plugin's own servers compress with Brotli too, as [During develo
 
 The engine and some add-ons ship code from other projects, under their licenses. A production build with the null3D Vite plugin collects every package's notices into `null3d-third-party-notices.txt` beside the page. Keep that file with the build when you publish it, or show its text in your game's credits.
 
-[Third-party notices](third-party-notices.md) lists every part and its license. The same text is in `node_modules/@null3d/engine/THIRD-PARTY-NOTICES.txt`. The command-line tool's notices stay out of the file, because a page ships none of the tool's code.
+[Third-party notices](third-party-notices.md) lists every part and its license.
 
 ## Caches between visits
 
@@ -243,7 +249,14 @@ Every engine thread loads its own copy of its script and of the core's loader. W
 
 With worker threads, the sketch worker imports the sketch module while the engine core downloads. The page also downloads the job worker's script then, and the job workers that start later take it from the cache. That saves a round trip only when the host lets the browser keep the file.
 
-A sketch that names its files in the `downloads` option of `defineSketch` starts them as soon as its module has loaded ([The download list](../api/sketch.md#the-download-list)). Over HTTP/1.1 a browser opens at most six connections to one server, and each large file holds one until it has arrived. So two listed files download at a time, and four at most while the setup's loads wait for them. The engine's own files, such as the first frame's shaders, then still find a free connection. Over HTTP/2 every request shares one connection. The listed files ask for low priority there, so a server that follows priorities sends the engine's own files first.
+A sketch that names its files in the `downloads` option of `defineSketch` starts them as soon as its module has loaded ([The download list](../api/sketch.md#the-download-list)). The engine's own files, such as the first frame's shaders, then still find a free connection.
+
+<details>
+<summary>Technical details: listed downloads over HTTP/1.1 and HTTP/2</summary>
+
+Over HTTP/1.1 a browser opens at most six connections to one server, and each large file holds one until it has arrived. So two listed files download at a time, and four at most while the setup's loads wait for them. Over HTTP/2 every request shares one connection. The listed files ask for low priority there, so a server that follows priorities sends the engine's own files first.
+
+</details>
 
 Vite names the files in `assets/` with a hash of their content, so a file under a given name never changes. Serve them with a long cache lifetime, and serve the HTML page so that browsers check it each time:
 
@@ -267,7 +280,14 @@ The engine core is about 2 MB of WebAssembly, and the browser compiles it as it 
 
 With another type the engine still starts: it compiles the file as it downloads, but Chrome compiles it again on each visit.
 
-Chrome writes the code while the page runs, not when the download ends. It first compiles each function quickly, and optimizes the functions that run most. Once it has new optimized code, it waits until no further function has been optimized for two seconds, and then writes it. With 1 MB of new optimized code, it writes at once. The engine keeps optimizing for its first seconds, so a repeat visit gains only after an earlier visit ran the engine for a while. On the engine's test page in Chrome 158, the write came about 6 seconds after the first frame. A repeat visit that read it compiled none of the core again, and its optimizing work fell from about 110 ms to 30 ms. In the engine's startup benchmark at full speed, a repeat visit that read the compiled core finished its first frame at 160 ms. Without it, the first frame took 176 to 180 ms. It compiled 3 of the core's functions again, against 273. Chrome 156 and earlier have a fault in this wait, which can put the write off for up to about half an hour. So they rarely keep the code. Chrome 157 fixed it.
+Chrome writes the code while the page runs, not when the download ends. It first compiles each function quickly, and optimizes the functions that run most. The engine keeps optimizing for its first seconds, so a repeat visit gains only after an earlier visit ran the engine for a while. Chrome 157 and later keep it; Chrome 156 and earlier rarely do.
+
+<details>
+<summary>Technical details: when Chrome writes the compiled core</summary>
+
+Once Chrome has new optimized code, it waits until no further function has been optimized for two seconds, and then writes it. With 1 MB of new optimized code, it writes at once. On the engine's test page in Chrome 158, the write came about 6 seconds after the first frame. A repeat visit that read it compiled none of the core again, and its optimizing work fell from about 110 ms to 30 ms. In the engine's startup benchmark at full speed, a repeat visit that read the compiled core finished its first frame at 160 ms. Without it, the first frame took 176 to 180 ms. It compiled 3 of the core's functions again, against 273. Chrome 156 and earlier have a fault in this wait, which can put the write off for up to about half an hour.
+
+</details>
 
 ## Offline play
 
@@ -291,13 +311,22 @@ A game can play with no network after its first visit. Its own service worker ca
 
 | Feature | Files | The game uses it when it calls |
 | --- | --- | --- |
-| `ao`, `background`, `bloom`, `lines`, `morph`, `occlusion`, `skinning`, `sky`, `sprites` | The feature's shaders, and the code of sprites and lines | The calls that `createEngine`'s `preload` lists for the same name ([Engine](../api/engine.md)) |
+| Every shader feature in [Shaders that load on first use](../guides/first-use-shaders.md), such as `skinning`, `bloom` or `color_copy` | The feature's shaders, and the code of sprites and lines | The call that the same page names for it |
 | `gltf` | The glTF loader, its worker, and the meshopt and Draco decoders | `assets.loadGltf` |
 | `ktx2` | The KTX2 loader and the Basis Universal transcoder | `assets.loadTexture` or `assets.loadGltf` with a KTX2 texture |
 | `environment` | The readers of environment maps, the built-in environments and the code that prefilters them | `assets.loadEnvironment` or `assets.builtinEnvironment` |
 | `lut` | The readers and makers of color grading tables | `assets.loadLut` or `assets.lutFromData` |
 
-Each feature's shaders come in a file for each GPU path and each device's settings. A device can need another of them during play, for example when bloom turns on HDR color, so a feature's list holds them all. Shaders that need two features, such as a skinned mesh with a hashed material, have files of their own. The list puts such a file under each of its features, so a game that caches either feature has it. The start's files and the skinning shaders are the largest groups, several MB each as the cache keeps them, uncompressed. Your build's output lists each file with its size. With compression, the downloads are about a fifth of that.
+Read `features` in your build's own `null3d-files.json` to see every name that it holds.
+
+Each feature's shaders come in a file for each GPU path and each device's settings. The start's files and the skinning shaders are the largest groups, several MB each as the cache keeps them, uncompressed. Your build's output lists each file with its size. With compression, the downloads are about a fifth of that.
+
+<details>
+<summary>Technical details: shader files for each device</summary>
+
+A device can need another of them during play, for example when bloom turns on HDR color, so a feature's list holds them all. Shaders that need two features, such as a skinned mesh with a hashed material, have files of their own. The list puts such a file under each of its features, so a game that caches either feature has it.
+
+</details>
 
 This service worker caches the page, the start's files and the features that the game names:
 
@@ -350,7 +379,9 @@ Put the game's own files that the build does not hold, such as its models in `pu
 
 ### Keep the page isolated
 
-The cache keeps each response with its headers, so the cached page keeps the two isolation headers and the engine starts threaded offline. A service worker that makes a new response for the page, instead of one from `fetch` or the cache, must copy those headers. Without them the page loses its isolation, and the engine starts its single-threaded build with no error. A development build of the engine warns in the console when a service worker controls a page that is not isolated. To check a production build, reload the page offline and read `crossOriginIsolated` in the console.
+The cache keeps each response with its headers, so the cached page keeps the two isolation headers and the engine starts threaded offline. A service worker that makes a new response for the page, instead of one from `fetch` or the cache, must copy those headers. Without them the page loses its isolation, and the engine starts its single-threaded build with no error.
+
+A development build of the engine warns in the console when a service worker controls a page that is not isolated. To check a production build, reload the page offline and read `crossOriginIsolated` in the console.
 
 ### The preload list and the cache
 
@@ -366,7 +397,14 @@ The engine keeps its [cache of derived data](../api/assets.md#the-cache-of-deriv
 
 The null3D Vite plugin sends both isolation headers on every response from `vite` and `vite preview`. That includes the `.wasm` files and the worker scripts. `vite preview` also lets the browser keep the hashed files in `assets/`, as a well-set host does.
 
-Both servers compress what a phone or tablet on the network downloads, with Brotli, or with gzip for a browser that lacks Brotli. The dev server compresses its answers to every request from another device, and leaves requests over `localhost` as they are. The preview compresses the build's scripts, WebAssembly, glTF models and other text for every request. After its first answers, it compresses each file again at Brotli's best level while no request waits. Later visits then download the same sizes as from a host that compresses its files ahead of time.
+Both servers compress what a phone or tablet on the network downloads, with Brotli, or with gzip for a browser that lacks Brotli.
+
+<details>
+<summary>Technical details: what the dev server and the preview compress</summary>
+
+The dev server compresses its answers to every request from another device, and leaves requests over `localhost` as they are. The preview compresses the build's scripts, WebAssembly, glTF models and other text for every request. After its first answers, it compresses each file again at Brotli's best level while no request waits. Later visits then download the same sizes as from a host that compresses its files ahead of time.
+
+</details>
 
 Shared memory and WebGPU also need a secure context: HTTPS, or `localhost`. WebGPU, and so the High and Ultra presets, only exist there. A page served over plain HTTP on a network address silently falls back to WebGL2 at Medium. An Android phone connected by USB can reach your computer's `localhost` through `adb reverse tcp:5173 tcp:5173`.
 
@@ -384,17 +422,20 @@ Keep the `certs` folder out of version control, because it holds a private key. 
 export default defineConfig({ plugins: [null3d({ https: true, certDir: 'certs' })] });
 ```
 
-The plugin serves this HTTPS over HTTP/1.1. Over HTTP/2, Safari on an iPad sometimes stops while a worker loads its modules. The dev server sends each module as its own file, and every engine thread loads its own copy of each. So a page asks for hundreds of files, and HTTP/1.1 sends six at a time. For other browsers, the plugin's `http2: true` option serves HTTP/2, which sends every request at once.
+The plugin serves this HTTPS over HTTP/1.1, because Safari on an iPad sometimes stops over HTTP/2. For other browsers, the `http2: true` option serves HTTP/2, which sends every request at once.
+
+<details>
+<summary>Technical details: why HTTP/1.1 is the default</summary>
+
+The dev server sends each module as its own file, and every engine thread loads its own copy of each. So a page asks for hundreds of files, and HTTP/1.1 sends six at a time.
+
+</details>
 
 The device must trust mkcert's root certificate. `mkcert -CAROOT` prints its folder. Copy `rootCA.pem` to the device and install it. On an iPhone or iPad, also turn on full trust in Settings > General > About > Certificate Trust Settings.
 
-A browser that has not been given the root certificate shows a warning. You can accept it and continue, but then Chrome keeps no file from the site in its cache. Every load downloads every file again, so each reload is as slow as a first visit, and every timing of a start is wrong. Over a simulated phone connection, a reload of the dev server took 30 seconds instead of 15. Install the root certificate on every device that tests a page.
+Install the root certificate on every device that tests a page. A browser without it shows a warning; accepting the warning stops Chrome caching any file from the site. Every reload is then as slow as a first visit, and every timing of a start is wrong.
 
 The dev server also asks the browser to check every module on each load. So time a start only on a production build that a host serves, as [A fast start](../guides/start-time.md#test-a-production-build) explains.
-
-## What isolation changes
-
-`Cross-Origin-Opener-Policy: same-origin` cuts the link between your page and any cross-origin window it opens. A sign-in flow that opens a popup on another site and waits for a message through `window.opener` stops working. Check such flows before you turn isolation on.
 
 ## Related pages
 
