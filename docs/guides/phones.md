@@ -159,7 +159,7 @@ Phones often lose their network. A game that must play offline caches the engine
 
 A phone's GPU driver can refuse to build one pipeline, such as a custom material's, though the shader is valid. The engine then builds that pipeline once more, alone. When the driver refuses it again, the engine leaves that pipeline's objects out of the frame and draws on. It reports [E1307](../errors/E1307.md) once, which does not stop the engine. A validation error, and a refused pipeline of a full-screen pass, still stop drawing with [E1404](../errors/E1404.md) ([Debugging](debugging.md)).
 
-On a Galaxy Tab A9 Plus, the driver refused the island demo's far tree cards, and the island drew on without them ([A fast start](start-time.md#on-real-phones)).
+On a Galaxy Tab A9 Plus, the driver refused the island demo's far tree cards, and the island drew on without them ([A fast start](start-time.md#where-the-time-goes)).
 ## Browsers on iPhone and iPad
 
 Every browser on iPhone and iPad runs Safari's WebKit engine. null3D needs Safari 18 or later there, and `createEngine` fails with [E1306](../errors/E1306.md) on an older version. [GPU tiers and backends](../concepts/backends.md#minimum-browsers) says why.
