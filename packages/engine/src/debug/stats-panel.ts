@@ -1,15 +1,36 @@
-// The stats overlay's panel: the header button with the frame rate and the tabbed card of figures
-// under it, over the top-right corner of a canvas. The engine's overlay (overlay.ts) fills it from the
-// engine's metrics, and a page that draws with another engine, such as three.js, fills it with
-// figures of its own. So both pages show the same figures in the same look. overlay-look.ts holds
-// the look; this file holds the place on the page, the shadow root and the button's toggle.
+// The stats overlay's panel: the header button with the frame rate and the tabbed card of figures,
+// over the top-right or bottom-right corner of a canvas. At the top the card opens under the button,
+// and at the bottom above it, so the button never moves. The engine's overlay (overlay.ts) fills it
+// from the engine's metrics, and a page that draws with another engine, such as three.js, fills it
+// with figures of its own. So both pages show the same figures in the same look. overlay-look.ts
+// holds the look; this file holds the place on the page, the shadow root and the button's toggle.
+//
+// The card's height stops at the room on screen beside the button, and the figures under its tabs
+// scroll when they need more. A button at the bottom sits at the bottom of the part of the canvas
+// that is on screen, so a canvas taller than the screen, or one under a phone browser's toolbar,
+// still shows it. There it keeps clear of a phone's home bar.
 
 import { CHECK_MAX_FPS, checkTargetFps } from '../quality/check';
-import { addStyles, buildPanel, keepKeys, StatsCard, StatsHeader } from './overlay-look';
+import {
+	addStyles,
+	buildPanel,
+	keepKeys,
+	PANEL_EDGE,
+	PANEL_GAP,
+	StatsCard,
+	StatsHeader,
+} from './overlay-look';
+import type { StatsCorner } from './stats-options';
 import type { StatsFigures } from './stats-text';
 
 /** The attribute that marks the overlay's element. */
 export const OVERLAY_ATTRIBUTE = 'data-null3d-stats';
+
+/**
+ * The least height of the card, in CSS pixels: its header, its tabs and a row of figures. A card
+ * with less room than this runs past the screen's edge.
+ */
+const MIN_CARD_HEIGHT = 96;
 
 /** The host element's own style: its place on the page, over everything, apart from the pointer. */
 const HOST_STYLE: Partial<CSSStyleDeclaration> = {
@@ -27,6 +48,12 @@ const HOST_STYLE: Partial<CSSStyleDeclaration> = {
 export interface StatsPanelOptions {
 	/** True starts the panel with only its header, a button with the frame rate. The default is false. */
 	collapsed?: boolean;
+	/**
+	 * The corner of the canvas that the header button sits in. The default is `'top-right'`. At
+	 * `'bottom-right'` the button sits at the bottom of the part of the canvas on screen, clear of
+	 * a phone's home bar, and the card opens above it.
+	 */
+	corner?: StatsCorner;
 	/**
 	 * Called when the panel opens or closes, with true for closed. A page samples its costly figures
 	 * only while the panel is open.
@@ -71,8 +98,8 @@ export interface StatsPanelFrame {
 }
 
 /**
- * The stats overlay's header and card over the top-right corner of a canvas, in the overlay's own
- * look. The engine's overlay is one; a page that draws with another engine makes its own and fills
+ * The stats overlay's header and card over the top-right or bottom-right corner of a canvas, in the
+ * overlay's own look. The engine's overlay is one; a page that draws with another engine makes its own and fills
  * it with its figures, so both show the same figures in the same place and look. The header's
  * button opens and closes the card. Collapsed, the panel formats nothing but the frame rate.
  *
@@ -80,19 +107,25 @@ export interface StatsPanelFrame {
  */
 export class StatsPanel {
 	private readonly host: HTMLDivElement;
+	private readonly panel: HTMLDivElement;
 	private readonly header = new StatsHeader();
 	private readonly card = new StatsCard();
 	private isCollapsed: boolean;
-	/** The offsets that `follow` last wrote, so an unchanged place writes nothing. */
+	private atBottom: boolean;
+	/** What `follow` last wrote, so an unchanged place writes nothing. */
 	private x = Number.NaN;
 	private y = Number.NaN;
+	private room = Number.NaN;
+	private clearOfHomeBar = false;
+	private scrolls = false;
 
-	/** Puts a panel on the canvas's top-right corner. */
+	/** Puts a panel on the canvas's corner that `options.corner` names, the top right by default. */
 	constructor(
 		private readonly canvas: HTMLCanvasElement,
 		private readonly options: StatsPanelOptions = {},
 	) {
 		this.isCollapsed = options.collapsed === true;
+		this.atBottom = options.corner === 'bottom-right';
 		const host = document.createElement('div');
 		host.setAttribute(OVERLAY_ATTRIBUTE, '');
 		Object.assign(host.style, HOST_STYLE);
@@ -109,7 +142,9 @@ export class StatsPanel {
 		panel.append(button, this.card.element);
 		root.append(panel);
 		this.host = host;
+		this.panel = panel;
 		this.showCollapsed();
+		this.showCorner();
 		document.body.append(host);
 		this.follow();
 	}
@@ -125,6 +160,15 @@ export class StatsPanel {
 		this.isCollapsed = collapsed;
 		this.showCollapsed();
 		this.options.onToggle?.(collapsed);
+	}
+
+	/** Moves the panel to another corner of the canvas. */
+	setCorner(corner: StatsCorner): void {
+		const atBottom = corner === 'bottom-right';
+		if (atBottom === this.atBottom) return;
+		this.atBottom = atBottom;
+		this.showCorner();
+		this.follow();
 	}
 
 	/**
@@ -152,15 +196,31 @@ export class StatsPanel {
 	}
 
 	/**
-	 * Keeps the panel on the canvas's top-right corner, and hides it while the canvas is off the
-	 * page. Call it a few times a second, as the figures come.
+	 * Keeps the panel on its corner of the canvas and the card's height within the screen, and hides
+	 * the panel while the canvas is off the page. Call it a few times a second, as the figures come.
 	 */
 	follow(): void {
 		const { canvas, host } = this;
 		host.hidden = !canvas.isConnected;
 		const rect = canvas.getBoundingClientRect();
+		const view = visualViewport;
+		const viewTop = view ? view.offsetTop : 0;
+		const viewBottom = view ? viewTop + view.height : innerHeight;
+		const button = this.header.button.offsetHeight;
 		const x = document.documentElement.clientWidth - rect.right - scrollX;
-		const y = rect.top + scrollY;
+		let edge = rect.top;
+		let room = viewBottom - PANEL_EDGE - (rect.top + PANEL_EDGE + button + PANEL_GAP);
+		let clearOfHomeBar = false;
+		if (this.atBottom) {
+			// The bottom of the canvas, or of the screen where the canvas runs past it, but never
+			// above the room that the button needs at the canvas's top.
+			const block = button + 2 * PANEL_EDGE;
+			edge = Math.min(rect.bottom, Math.max(viewBottom, rect.top + block));
+			clearOfHomeBar = edge >= viewBottom - 1;
+			room = edge - PANEL_EDGE - button - PANEL_GAP - (viewTop + PANEL_EDGE);
+		}
+		const y = edge + scrollY;
+		room = Math.max(MIN_CARD_HEIGHT, Math.floor(room));
 		if (x !== this.x) {
 			this.x = x;
 			host.style.right = `${x}px`;
@@ -168,6 +228,22 @@ export class StatsPanel {
 		if (y !== this.y) {
 			this.y = y;
 			host.style.top = `${y}px`;
+		}
+		if (room !== this.room) {
+			this.room = room;
+			host.style.setProperty('--room', `${room}px`);
+		}
+		if (clearOfHomeBar !== this.clearOfHomeBar) {
+			this.clearOfHomeBar = clearOfHomeBar;
+			this.panel.toggleAttribute('data-home-bar', clearOfHomeBar);
+		}
+		// The figures take the pointer only while they scroll, so drags on a card that fits still
+		// reach the canvas.
+		const { scroller } = this.card;
+		const scrolls = !this.isCollapsed && scroller.scrollHeight > scroller.clientHeight;
+		if (scrolls !== this.scrolls) {
+			this.scrolls = scrolls;
+			scroller.toggleAttribute('data-scrolls', scrolls);
 		}
 	}
 
@@ -183,6 +259,14 @@ export class StatsPanel {
 		// as Space, does not press the button again. A key's click (detail 0) keeps the focus.
 		if (event.detail > 0) this.header.button.blur();
 	};
+
+	private showCorner(): void {
+		const { atBottom } = this;
+		this.panel.dataset.corner = atBottom ? 'bottom-right' : 'top-right';
+		// At the bottom, the host's top is the corner's edge, and the panel hangs above it.
+		this.host.style.transform = atBottom ? 'translateY(-100%)' : '';
+		this.y = Number.NaN;
+	}
 
 	private showCollapsed(): void {
 		this.header.button.setAttribute('aria-expanded', this.isCollapsed ? 'false' : 'true');

@@ -3,6 +3,7 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { type Accessor, Document, NodeIO } from '@gltf-transform/core';
+import { sameModel } from '../../../../tests/lib/glb-bytes.ts';
 import { scaledBudget } from '../../../../tests/lib/run-budget.ts';
 import { parseGltf, readContainer } from '../../../engine/src/scene/gltf-parse.ts';
 import {
@@ -514,7 +515,7 @@ describe('the tree of a large mesh', () => {
 		async () => {
 			const built = await buildClusterFixture();
 			const committed = readFileSync(join(MODELS_DIR, CLUSTER_FILE));
-			expect(Buffer.from(built).equals(committed)).toBe(true);
+			expect(sameModel(built, committed)).toBe(true);
 		},
 		scaledBudget(180_000),
 	);
@@ -524,7 +525,7 @@ describe('the tree of a large mesh', () => {
 		async () => {
 			const built = await buildStagedClusterModel();
 			const committed = readFileSync(join(MODELS_DIR, CLUSTER_STAGED_FILE));
-			expect(Buffer.from(built.glb).equals(committed)).toBe(true);
+			expect(sameModel(built.glb, committed)).toBe(true);
 			for (const [name, bytes] of built.stages) {
 				const file = readFileSync(join(MODELS_DIR, name));
 				expect(Buffer.from(bytes).equals(file), name).toBe(true);

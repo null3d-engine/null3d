@@ -3,9 +3,10 @@
 // looks, so a new design changes this file alone.
 //
 // The header is a dark pill: a ring gauge of the frame rate as a share of the target, the frame
-// rate, and a chevron. Under it, a card of 360 pixels wide holds four tabs, and its height follows
-// the tab that shows, so a short tab leaves no empty card and a long one scrolls no page. The
-// header of the card keeps the target and its interval in view on every tab. One tab shows at a
+// rate, and a chevron that points the way the card opens. Under it, or above it at the canvas's
+// bottom corner, a card of 360 pixels wide holds four tabs. Its height follows the tab that shows,
+// so a short tab leaves no empty card, up to the room on screen, past which the tab's figures
+// scroll. The header of the card keeps the target and its interval in view on every tab. One tab shows at a
 // time: Frame holds the work bars and the geometry figures, Memory the parts of the memory bar,
 // Steps the add-ons and the GPU's timed passes, and Systems the memory register.
 //
@@ -51,6 +52,10 @@ const SHOWN_STEP_MS = 0.005;
 
 /** The card's width in CSS pixels, which every tab shares. Its height follows the tab it shows. */
 export const STATS_PANEL_WIDTH = 360;
+/** The space between the canvas's edges and the panel's header and card, in CSS pixels. */
+export const PANEL_EDGE = 12;
+/** The space between the header and the card, in CSS pixels. */
+export const PANEL_GAP = 8;
 /** The card's tabs, in reading order. */
 export const STATS_TABS = ['frame', 'memory', 'steps', 'systems'] as const;
 export type StatsTab = (typeof STATS_TABS)[number];
@@ -113,8 +118,8 @@ const CSS = `
 	display: flex;
 	flex-direction: column;
 	align-items: flex-end;
-	gap: 8px;
-	padding: 12px;
+	gap: ${PANEL_GAP}px;
+	padding: ${PANEL_EDGE}px;
 	font: 12px/1.35 ${FONT};
 	font-variant-numeric: tabular-nums;
 	letter-spacing: normal;
@@ -124,6 +129,8 @@ const CSS = `
 	pointer-events: none;
 }
 [hidden] { display: none !important; }
+.panel[data-corner='bottom-right'] { flex-direction: column-reverse; }
+.panel[data-home-bar] { padding-bottom: calc(${PANEL_EDGE}px + env(safe-area-inset-bottom, 0px)); }
 button {
 	margin: 0;
 	font: inherit;
@@ -156,11 +163,14 @@ button {
 .ring[data-level='bad'] .arc { stroke: var(--bad); }
 .fps { font-family: ${MONO}; letter-spacing: -0.02em; }
 .chevron { width: 10px; height: 10px; flex: none; color: var(--amber); transition: transform 0.18s ease; }
-.header[aria-expanded='true'] .chevron { transform: rotate(180deg); }
+.header[aria-expanded='true'] .chevron,
+[data-corner='bottom-right'] .header[aria-expanded='false'] .chevron { transform: rotate(180deg); }
+[data-corner='bottom-right'] .header[aria-expanded='true'] .chevron { transform: none; }
 .card {
 	display: flex;
 	flex-direction: column;
 	width: min(${STATS_PANEL_WIDTH}px, 92vw);
+	max-height: var(--room, none);
 	box-sizing: border-box;
 	border: 1px solid rgba(255, 255, 255, 0.09);
 	border-radius: 14px;
@@ -255,7 +265,16 @@ button {
 .tabs button:hover { color: var(--dim); }
 .tabs button[aria-selected='true'] { color: var(--text); box-shadow: inset 0 -2px 0 var(--amber); }
 .tabs button:focus-visible { outline: 1px solid var(--amber); outline-offset: -3px; border-radius: 4px; }
-.panes { display: flex; flex: 1; min-height: 0; }
+.panel[data-home-bar] .card { max-height: calc(var(--room, 100vh) - env(safe-area-inset-bottom, 0px)); }
+.panes {
+	display: flex;
+	flex: 1;
+	align-items: flex-start;
+	min-height: 0;
+	overflow-y: auto;
+	overscroll-behavior: contain;
+}
+.panes[data-scrolls] { pointer-events: auto; }
 .pane { flex: 1; flex-direction: column; min-height: 0; padding: 12px; overflow: hidden; }
 .pane:not([hidden]) { display: flex; }
 .block { display: flex; flex: none; flex-direction: column; }
@@ -1080,6 +1099,8 @@ export class StatsCard {
 	private readonly mode: ModeNote;
 	private readonly tabButtons: HTMLButtonElement[] = [];
 	private readonly panes = new Map<StatsTab, HTMLElement>();
+	/** The element that holds the tabs' figures, which scrolls when the card's height stops it. */
+	readonly scroller: HTMLElement;
 	private readonly selection = new TabSelection();
 	private readonly both: Lane;
 	private readonly sketch: Lane;
@@ -1146,6 +1167,7 @@ export class StatsCard {
 			this.tabButtons.push(button);
 		}
 		const panes = element('div', 'panes', card);
+		this.scroller = panes;
 		for (const tab of STATS_TABS) {
 			const pane = element('section', 'pane', panes);
 			pane.id = `pane-${tab}`;

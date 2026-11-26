@@ -189,6 +189,21 @@ describe('parseSwitches', () => {
 		expect(parseSwitches('?gpu=webgl2').stats).toBeUndefined();
 	});
 
+	it('puts the stats overlay in a corner with ?stats=top-right or ?stats=bottom-right', () => {
+		expect(parseSwitches('?stats=bottom-right').stats).toEqual({ corner: 'bottom-right' });
+		expect(parseSwitches('?stats=top-right').stats).toEqual({ corner: 'top-right' });
+		expect(parseSwitches('?stats=collapsed,bottom-right').stats).toEqual({
+			collapsed: true,
+			corner: 'bottom-right',
+		});
+		expect(parseSwitches('?stats=bottom-right,open').stats).toEqual({
+			collapsed: false,
+			corner: 'bottom-right',
+		});
+		expect(parseSwitches('?stats=bottom-left').stats).toBeUndefined();
+		expect(parseSwitches('?stats=collapsed,maybe').stats).toBeUndefined();
+	});
+
 	it('reads ?replay-delay, a whole number of ms up to a second', () => {
 		expect(parseSwitches('?replay-delay=40').replayDelay).toBe(40);
 		for (const value of ['0', '2.5', '-3', '5000', 'x'])
