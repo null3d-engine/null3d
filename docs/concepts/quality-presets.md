@@ -229,7 +229,9 @@ When room returns, 5% under the budget, the engine loads the dropped levels agai
 
 Low smooths edges with FXAA, and the other presets with MSAA. MSAA draws 4 samples per pixel, which costs a phone's GPU memory and bandwidth. FXAA draws one sample and smooths edges in the final pass, at a small cost in sharpness.
 
-The `antialias` option of `createEngine` replaces the preset's mode. The mode stays fixed while the engine runs, because the scene's targets and pipelines depend on it. Two cases move it. When the start-up preset check lowers the preset, the engine draws with the lower preset's mode. In compatibility mode with MSAA, the first effect that needs HDR color moves the engine to FXAA ([The post-processing chain](post-processing.md#effects-on-devices-without-hdr-color)). A sketch's own preset change never moves it. [GPU tiers and backends](backends.md#color-and-anti-aliasing-on-each-tier) compares the modes.
+The `antialias` option of `createEngine` replaces the preset's mode. The mode stays fixed while the engine runs, because the scene's targets and pipelines depend on it. Two cases move it. When the start-up preset check lowers the preset, the engine draws with the lower preset's mode. In compatibility mode with MSAA, the first effect that needs HDR color moves the engine to FXAA ([The post-processing chain](post-processing.md#effects-on-devices-without-hdr-color)).
+
+A sketch's own preset change never moves it. [GPU tiers and backends](backends.md#color-and-anti-aliasing-on-each-tier) compares the modes.
 
 ### Moment transparency
 

@@ -255,7 +255,9 @@ A level of detail keeps one draw and one mesh per object. Far past the last leve
 
 The picture should come from a bake of several views with the engine's baker, so the card holds the object from every side. A hand-painted side view belongs only on a card that never covers more than a few pixels. The `@null3d/impostors` add-on draws those cards, and a distance band on the meshes hands the object over to them. [Impostors](../api/impostors.md#bake-several-views-not-one-side) shows the bake.
 
-The card's light comes from the scene, through the stored normal, so a sun that moves relights the cards exactly as it relights the meshes. A copy's turn about the world's up turns its views and its light too, so a turned tree hands over to a card whose crown matches it. A camera that moves around the tree does not turn its light: the card turns to the eye, and the stored normal turns only with the tree. A card casts the crown's shape, and takes the shadows that fall on the surface it shows, when the sketch asks for it.
+The card's light comes from the scene, through the stored normal, so a sun that moves relights the cards exactly as it relights the meshes. A copy's turn about the world's up turns its views and its light too, so a turned tree hands over to a card whose crown matches it.
+
+A camera that moves around the tree does not turn its light. The card turns to the eye, and the stored normal turns only with the tree. A card casts the crown's shape, and takes the shadows that fall on the surface it shows, when the sketch asks for it.
 
 <details>
 <summary>Technical details: how a card stores the object</summary>
