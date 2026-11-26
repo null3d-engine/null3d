@@ -142,6 +142,7 @@ URL switches for the dev server and other development builds, such as the CDN bu
 | `?gpu-samples=every` | Time every drawn frame on the GPU, not one in eleven, to find the parts of a single long frame. It costs the timing's own GPU time |
 | `?still-camera=off` | Draw every frame of a view that holds still, as `createEngine({ still: false })` does |
 | `?stats=collapsed`, `?stats=open`, `?stats=off` | Show the stats overlay collapsed to its header or open, or hide it whatever the `stats` option says |
+| `?stats=top-right`, `?stats=bottom-right` | Show the stats overlay in that corner of the canvas. A comma joins a start state and a corner: `?stats=collapsed,bottom-right` |
 | `?queue=3` | Let this many frames wait unfinished on the GPU instead of 2; `?queue=off` sets no limit, as browsers do on their own (`guides/performance`) |
 | `?hold=1.5` | Hold mode: step the sketch to 1.5 seconds, draw that one frame and publish it as `window.__null3dHold`; a bare `?hold` holds at the `hold` option's time, or at 0 |
 | `?bench` | Publish the running engine as `window.__null3dEngine`, where a benchmark tool calls `measure`; `bunx @null3d/cli bench` adds it |

@@ -6,7 +6,7 @@ summary: "debug.line, box, sphere, arrow, axes, grid, frustum, light and skeleto
 
 # Debug drawing and stats
 
-Debug drawing shows where things are in the scene: lines, boxes, spheres, arrows, axes, grids, camera frustums, lights and skeletons. Debug views draw the whole scene with one debug shading, such as its normals, its wireframe or its shadows. The overlay of `debug.stats` shows the engine's frame figures over the top-right corner of the canvas, and `debug.frameStats` gives them to the sketch. On the page, `engine.measure` measures the running engine.
+Debug drawing shows where things are in the scene: lines, boxes, spheres, arrows, axes, grids, camera frustums, lights and skeletons. Debug views draw the whole scene with one debug shading, such as its normals, its wireframe or its shadows. The overlay of `debug.stats` shows the engine's frame figures over the top-right or bottom-right corner of the canvas, and `debug.frameStats` gives them to the sketch. On the page, `engine.measure` measures the running engine.
 
 ## Debug drawing
 
@@ -181,11 +181,11 @@ flowchart LR
     page["The page's own meters:<br/>heap, page memory"] --> card
 ```
 
-The stats overlay sits over the top-right corner of the canvas. Its header is a button with a ring gauge and the frame rate, such as `58 fps`. A click on it, or Enter or Space while it has the focus, opens a card of figures under it and closes the card again. The card holds four tabs, which show one group of figures at a time. Four calls show the overlay:
+The stats overlay sits over the top-right corner of the canvas, or over its bottom-right corner when the `corner` option asks. Its header is a button with a ring gauge and the frame rate, such as `58 fps`. A click on it, or Enter or Space while it has the focus, opens a card of figures and closes the card again. At the top right the card opens under the header, and at the bottom right above it. The card holds four tabs, which show one group of figures at a time. Four calls show the overlay:
 
 - `createEngine({ stats: true })` shows it from the first frame.
 - `engine.stats(true)` on the page shows it, and `engine.stats(false)` hides it.
-- The `?stats` switch in the page's address shows it, and `?stats=off` hides it. `?stats=collapsed` and `?stats=open` show it with its card closed or open. Production builds read the switch only when the Vite plugin's `urlSwitches` option is on.
+- The `?stats` switch in the page's address shows it, and `?stats=off` hides it. `?stats=collapsed` and `?stats=open` show it with its card closed or open. The switches `?stats=top-right` and `?stats=bottom-right` show it in that corner. A comma joins a start state and a corner: `?stats=collapsed,bottom-right`. Production builds read the switch only when the Vite plugin's `urlSwitches` option is on.
 - `debug.stats(true)` in the sketch shows it, and `debug.stats(false)` hides it.
 
 Each call also takes options in place of `true`:
@@ -193,18 +193,21 @@ Each call also takes options in place of `true`:
 | Option | What it sets | Default |
 | --- | --- | --- |
 | `collapsed` | True starts the overlay with its card closed, so only the header shows | `false` |
+| `corner` | The canvas's corner that the header sits in: `'top-right'` or `'bottom-right'` | `'top-right'` |
 
 ```ts
 const engine = await createEngine({
   canvas,
   sketch: new URL('./sketch.ts', import.meta.url),
-  stats: { collapsed: true },
+  stats: { collapsed: true, corner: 'bottom-right' },
 });
 ```
 
 The page and the sketch show and hide the same overlay, and the last call wins, from either side. So the sketch's `debug.stats(false)` hides an overlay that the page showed, and the page's `engine.stats(false)` hides one that the sketch showed. Options add up: a call changes only the options that it names, and an overlay that shows again keeps them. Each `debug.stats` call sends a message to the page, so call it when the choice changes, not in every frame. The page draws the overlay and updates it four times a second. A held engine for image tests shows no overlay.
 
-The header stays in the corner when the card opens, and the card opens under it, aligned to the right. Only the header button, the card's two symbols and its tab buttons take the pointer. Drags anywhere else on the overlay reach the canvas.
+The header stays in the corner when the card opens, and the card opens under it or above it, aligned to the right. At the bottom right, the header sits at the bottom of the part of the canvas that is on screen. So a canvas taller than the screen, or a full-screen canvas under a phone browser's toolbar, still shows it. There it keeps clear of a phone's home bar, on a page whose viewport reaches under it (`viewport-fit=cover`).
+
+The card's height stops at the room on screen beside the header, and the figures under its tabs scroll past that. The header of the card and its tabs always show. The room is the screen's, so a card over a small canvas can run past the canvas onto the page. Only the header button, the card's two symbols, its tab buttons and figures that scroll take the pointer. Drags anywhere else on the overlay reach the canvas.
 
 ### The card
 
@@ -337,12 +340,12 @@ A texture counts every mip level of every layer, as the GPU stores it. A compres
 
 `@null3d/engine/stats` exports the overlay's panel, its figure types, a text layout of the figures and the page's meters. A page that draws with another engine, such as three.js, shows its own figures in the same panel. The same code measures both engines' page figures, so a comparison of the two stays fair.
 
-`new StatsPanel(canvas, options)` puts the panel over the canvas's top-right corner, as the engine puts its overlay. Its header button opens and closes the card. `collapsed: true` starts it closed. `onToggle` tells the page when it opens or closes, so the page measures its costly figures only while the card is open.
+`new StatsPanel(canvas, options)` puts the panel over the canvas's top-right corner, as the engine puts its overlay. Its header button opens and closes the card. The option `collapsed: true` starts it closed. The option `corner: 'bottom-right'` puts it over the canvas's bottom-right corner. The callback `onToggle` tells the page when it opens or closes, so the page measures its costly figures only while the card is open.
 
 - `showRate(frames, fps, refreshHz, maxTargetFps?)` shows the frame rate in the header.
 - `update(figures, frame)` shows a set of figures in the card. `frame` gives the display's refresh rate, whether the GPU's work is timed, and how the threads share each frame. A renderer that prepares and draws each frame on one thread passes `mode: 'one-thread'`. It names that thread in `bothSteps`.
-- `follow()` keeps the panel on the canvas's corner. Call it as the figures come.
-- `setCollapsed(collapsed)` opens or closes the card from code, and `remove()` takes the panel off the page.
+- `follow()` keeps the panel on the canvas's corner and the card within the screen. Call it as the figures come.
+- `setCollapsed(collapsed)` opens or closes the card from code, `setCorner(corner)` moves the panel to the other corner, and `remove()` takes the panel off the page.
 
 The panel judges the figures against the engine's own target: the display's refresh rate, at most 60 frames a second. A page that sets null3D's `targetFps` to a higher rate passes the same highest target as `maxTargetFps`, in `showRate` and in `frame`. A figure that the page does not know is `null`, and the card leaves it out.
 
