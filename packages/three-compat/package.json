@@ -1,6 +1,6 @@
 {
 	"name": "@null3d/three-compat",
-	"version": "0.0.0",
+	"version": "0.1.0",
 	"description": "three.js looks for null3D sketches: Reinhard and Cineon tone curves through the engine's tone-curve setting, and an outline with three.js OutlinePass's glow, pulse and blurred edge, built on the engine's public API.",
 	"license": "MIT OR Apache-2.0",
 	"author": "Ramesh Nair (https://hiddentao.com)",
