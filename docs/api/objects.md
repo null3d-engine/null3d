@@ -135,9 +135,11 @@ A click that outlines the picked object rebuilds them once, which is fine. The [
 
 On WebGL2, software occlusion culling is off in every preset. Mark large, solid meshes of up to 4,096 triangles, such as buildings. A model that `assets optimize` gave blockers starts with those meshes blocking, and each draws its blocker in place of its mesh. Meshes that blend, use an alpha mask or a custom material, or are skinned never block on WebGL2.
 
-The center that `setBounds` takes is relative to the object's origin, and both values are before the object's scale. A group has no sphere of its own, so it needs one wherever a sphere is read, such as a directional light's hero shadow. A negative radius throws E1108 in development builds.
+The center that `setBounds` takes is relative to the object's origin, and both values are before the object's scale. A group has no sphere of its own, so it needs one wherever a sphere is read, such as a directional light's hero shadow.
 
 </details>
+
+The radius that `setBounds` takes must be 0 or more. A negative radius throws [E1108](../errors/E1108.md) in development builds.
 
 ## Animation
 

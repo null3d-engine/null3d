@@ -120,12 +120,12 @@ A terrain draws one mesh per visible block. The blocks near the camera are the m
 
 A higher camera or a wider field of view draws fewer and coarser blocks, and the Low preset draws coarser blocks than High. A block splits or merges only when the camera moves far enough to need other blocks.
 
-The quadtree selection and the block build run in the add-on's own WebAssembly module. The module runs on the engine's job workers, so `update` only asks for the work. A crossing can need tens of new blocks. The ground draws its last complete selection until the new one is built, and `terrain.building` is true meanwhile.
+The quadtree selection and the block build run in the add-on's own WebAssembly module. The module runs on the engine's job workers, so `update` only asks for the work. A crossing can need tens of new blocks. The ground draws its last complete selection until the new one is built, and `terrain.building` is true meanwhile. `blocksPerUpdate` caps each task's blocks, at 16 by default.
 
 <details>
 <summary>Technical details: how blocks build on the job workers</summary>
 
-One task builds at most `blocksPerUpdate` of them, 16 by default. The first selection builds every block that it needs, over a few tasks. The arrays that the tasks fill are made once and shared, so the frame path allocates nothing. A block that the view leaves gives up its mesh to the next block that the ground needs. A terrain that follows a moving camera therefore builds meshes only until it holds `maxBlocks` of them.
+The first selection builds every block that it needs, over a few tasks. The arrays that the tasks fill are made once and shared, so the frame path allocates nothing. A block that the view leaves gives up its mesh to the next block that the ground needs. A terrain that follows a moving camera therefore builds meshes only until it holds `maxBlocks` of them.
 
 </details>
 

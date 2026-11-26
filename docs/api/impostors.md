@@ -87,12 +87,12 @@ A card's light comes from the scene's lights, as a mesh's does. The surface atla
 
 The cards cast a shadow only if you ask. Give the batch `castShadows: true` and a layer that the sun draws. To keep the caster off the camera's layers, make a second batch from the same options and rows on a layer that only the sun draws, and add that layer to the sun's mask. A caster that no camera draws pays nothing on the camera. When you use a second batch, keep the rows of both batches in step: write and mark the other too.
 
-In the shadow pass each card turns toward the sun and cuts the crown's shape from its stored coverage. A batch with `receiveShadows: true` takes the shadows of other objects at the surface that the stored depth shows, not at its own plane, so a card does not darken itself.
+In the shadow pass each card turns toward the sun and cuts the crown's shape from its stored coverage. A batch with `receiveShadows: true` takes the shadows of other objects at the surface that the stored depth shows, not at its own plane, so a card does not darken itself. The default `castsStill` holds the caster still while the sun stands still, so the far shadow cascades stay cached. Pass `castsStill: false` when the scene turns cards from frame to frame, and their casters draw whenever their maps do.
 
 <details>
 <summary>Technical details: how cards cast and receive shadows</summary>
 
-A card takes the shadow map's shadows alone: the contact shadows' march takes a flat card for a solid wall, as it takes a leaf card. The default `castsStill` holds the caster still while the sun stands still, so the far shadow cascades stay cached. Pass `castsStill: false` when the scene turns cards from frame to frame, and their casters draw whenever their maps do.
+A card takes the shadow map's shadows alone: the contact shadows' march takes a flat card for a solid wall, as it takes a leaf card.
 
 </details>
 

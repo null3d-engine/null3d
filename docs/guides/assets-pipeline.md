@@ -545,7 +545,9 @@ An app whose content is all in the build can ship a list. Keep the list complete
 bunx @null3d/cli shaders record --page / --live /
 ```
 
-A held page (`--page`) loads in hold mode at the low and high quality presets, on WebGPU and on WebGL2. A preset turns on a few bits, and each GPU path lists bits of its own. WebGL2 has the morph targets, and WebGPU has the instance index. A live page (`--live`) loads on both GPU paths and draws for five seconds. The recorder presses every button of the page's controls HUD, when it has one, so the words of those states reach the list. Without either option, the command records `/` both ways. It writes `shader-permutations.txt`, or the file that `--out` names. [The `null3d` command](../cli/null3d.md#shaders-record) lists every option.
+A held page (`--page`) loads in hold mode at the low and high quality presets, on WebGPU and on WebGL2. A preset turns on a few bits, and each GPU path lists bits of its own. WebGL2 has the morph targets, and WebGPU has the instance index.
+
+A live page (`--live`) loads on both GPU paths and draws for five seconds. The recorder presses every button of the page's controls HUD, when it has one, so the words of those states reach the list. Without either option, the command records `/` both ways. It writes `shader-permutations.txt`, or the file that `--out` names. [The `null3d` command](../cli/null3d.md#shaders-record) lists every option.
 
 A page that builds more of its scene as the visitor scrolls needs `--scroll`. The recorder then scrolls each live page down to its end, one window's height at a time. After each step, it waits until the page has asked for nothing for half a second. So each stage that a scroll reveals has loaded its shaders, and its pipelines have asked for their words.
 

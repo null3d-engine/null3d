@@ -75,9 +75,11 @@ A call on a destroyed object never changes the object that takes its slot, in an
 
 Slot 0 is never used, so handle 0 means no object. When you destroy an object, its wrapper's setters switch to row 0. Its handle gets a generation that no live object gets, so it never matches a later object in its slot. In a release build, its setters then write to that unused row, and its light setters reach no light. A second `destroy()` frees nothing.
 
-The engine core checks the generation of each change that waits for the next frame, and logs E1101 for a change to a destroyed object. An instance batch's arrays throw E1101 in every build once the batch is gone. The world getters throw it in every build from the frame after the destroy, and at once in development builds.
+The engine core checks the generation of each change that waits for the next frame, and logs E1101 for a change to a destroyed object.
 
 </details>
+
+An instance batch's arrays throw [E1101](../errors/E1101.md) in every build once the batch is gone. The world getters throw it in every build from the frame after the destroy, and at once in development builds.
 
 ## Keep per-object data in your own arrays
 

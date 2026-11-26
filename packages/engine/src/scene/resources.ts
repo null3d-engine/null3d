@@ -2141,8 +2141,8 @@ export interface StandardMaps {
 	/**
 	 * The thickness of the volume under the surface, in green, in linear color. Its green
 	 * multiplies `thickness`. Only a material created with `transmission` takes it. It keeps a row
-	 * slot of its own and samples the specular color map's texture array at its own layer, so a
-	 * specular color map may draw beside it when the two textures share an array. A material with
+	 * slot of its own and samples the specular color map's texture array at its own layer, so it
+	 * takes no specular color map, whose sRGB texture never shares that array. A material with
 	 * layers keeps it unless a layer map fills that slot: the sheen's maps and an anisotropy map do.
 	 */
 	thicknessMap?: Texture;

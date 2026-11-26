@@ -28,7 +28,7 @@ Read what the original shader does, then pick the smallest null3D form that can 
 | Changes color, roughness, emission or alpha of a lit surface | Surface function |
 | Moves vertices | `vertexOffset`, plus a surface function if needed |
 | Ignores lighting (unlit effects, holograms, fresnel glows) | Unlit function, `fn unlit(input: SurfaceInput) -> vec4f`, in place of `surface`: it returns the linear color and opacity, with no lights, shadows, reflections or ambient occlusion (engine docs `shaders/surface-functions`, unlit surfaces) |
-| Changes how each light lights the surface, such as toon bands or a rim | A lobe function, `fn lobe(input: LobeInput) -> vec3f`, for the main directional light and each point and spot light; the base lighting stays |
+| Adds a specular lobe for each light, such as a rim or a banded highlight | A lobe function, `fn lobe(input: LobeInput) -> vec3f`, for the main directional light and each point and spot light; the base lighting stays |
 | Lights the surface its own way with fixed lights | Full shader with `null3d::lighting` helpers; it gets no scene lights, no standard values and no material uniforms |
 | Is a full-screen pass | `post.addEffect`, or `render.addPass({ kind: 'fullscreen' })` when it writes a render target of its own (`references/post-processing.md`, section 6) |
 | Renders to a texture for another material | Custom pass (`render.addPass`) |
