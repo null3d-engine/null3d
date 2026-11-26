@@ -20,10 +20,14 @@ export interface ErrorEntry {
 	cases?: string[];
 	/** Dense detail for implementers: limits, figures and how the engine checks. Docs only. */
 	details?: string;
+	/** What the details block holds, for its summary line. Docs only. */
+	detailsSummary?: string;
 	/** One line for each case's fix, such as "If <case>: <step>". Docs only. */
 	fixCases?: string[];
 	/** Dense detail of the fixes that apply to one case each. Docs only. */
 	fixDetails?: string;
+	/** What the fixes block holds, for its summary line. Docs only. */
+	fixDetailsSummary?: string;
 	/** How the error reaches the page's code, when it is not a call that throws it. Docs only. */
 	reaches?: string;
 	/** The docs pages that explain the feature, by page ID. Docs only. */
@@ -39,7 +43,8 @@ const DOCS = {
 		example:
 			'E1101: setPosition() was called on "Crate" (slot 7), which was destroyed in frame 120.',
 		details:
-			"Development builds check every call on a scene object. Release builds skip that check: a destroyed object's setters write to a row that no object uses, and a second `destroy()` frees nothing. The engine core checks each change that waits for the next frame and logs E1101 for a change to a destroyed object, such as a destroyed parent. Meshes, textures, color tables, probes, environments and instance batches throw E1101 in every build. A batch's array getters do too. An array that you read from a batch before its destroy can point at memory that another batch now uses.",
+			"Development builds check every call on a scene object. Release builds skip that check: a destroyed object's setters write to a row that no object uses, and a second `destroy()` frees nothing.\n\nThe engine core checks each change that waits for the next frame and logs E1101 for a change to a destroyed object, such as a destroyed parent. Meshes, textures, color tables, probes, environments and instance batches throw E1101 in every build. A batch's array getters do too. An array that you read from a batch before its destroy can point at memory that another batch now uses.",
+		detailsSummary: 'which builds check',
 		see: ['concepts/handles'],
 	},
 	E1102: {
@@ -90,7 +95,8 @@ const DOCS = {
 			'The engine could not create or grow its WebAssembly memory. A page with worker threads gives the engine 1 GiB by default, and up to 4 GiB through the memory option of createEngine. Many instance rows, a mesh of millions of vertices, or the first frame, which copies every mesh, can fill it. A browser can refuse memory sooner, as phones often do, or while an engine that stopped before still holds its memory.',
 		example: 'E1109: createInstances() failed: the engine could not get 1282 MB more memory.',
 		details:
-			'Each instance row takes about 210 bytes, or about 300 with per-row colors or values. About 5 million rows fill 1 GiB, along with the rest of the scene. Building a mesh with normals to compute takes about 100 bytes per vertex for a moment. The first frame copies every mesh of the scene. A scene with 84 MiB of meshes peaks at about 270 MiB on the direct path. It peaks at about 205 MiB on the indirect path. The engine keeps the last 8 MiB under the limit for its own small requests. It tries again for about 45 seconds before it fails, and reports memory-wait through onProgress after 10 seconds.',
+			'Each instance row takes about 210 bytes, or about 300 with per-row colors or values. About 5 million rows fill 1 GiB, along with the rest of the scene. Building a mesh with normals to compute takes about 100 bytes per vertex for a moment.\n\nThe first frame copies every mesh of the scene. A scene with 84 MiB of meshes peaks at about 270 MiB on the direct path. It peaks at about 205 MiB on the indirect path.\n\nThe engine keeps the last 8 MiB under the limit for its own small requests. It tries again for about 45 seconds before it fails, and reports memory-wait through onProgress after 10 seconds.',
+		detailsSummary: 'memory figures and the retry',
 		see: ['guides/performance'],
 	},
 	E1110: {
@@ -195,7 +201,8 @@ const DOCS = {
 		see: ['api/materials', 'api/lines'],
 		example: `E1217: materials.standard() got the alpha mode "cutout"; it takes 'opaque', 'mask' or 'blend'.`,
 		details:
-			"A material factory or scene.createLines() received an option value that it does not take, such as an unknown alpha mode, blending or line mode. Custom materials refuse the 'weighted' blending, and take alpha to coverage or the hash mode only where their WGSL sets or reads the surface's alpha. A material that lets light through refuses the hash alpha mode and the weighted blending. A layered material, with a clear coat, a sheen, iridescence or anisotropy, refuses a light map, specular maps, and two textures for a pair of layer maps that glTF packs into one. It refuses a transmission or a thickness map only where one of its layer maps fills the array that the map samples: the clear coat's normal map and iridescence's thickness map fill the array that the transmission map samples, and the sheen's maps and the anisotropy map fill the array that the thickness map samples. A material with transmission refuses a thickness map beside a specular color map, whose sRGB texture never shares the thickness map's array, and other materials refuse those two maps. A material that lets light through to its other side refuses the specular maps, whose places its diffuse transmission maps take, a clear coat, a sheen and the weighted blending, and other materials refuse the diffuse transmission maps. A custom material refuses subsurfaceRadius, which only a standard material takes. A custom material whose WGSL declares a coverage function takes the mask mode, or the blend mode with the cutoff that its shadow caster tests.",
+			"A material factory or scene.createLines() received an option value that it does not take, such as an unknown alpha mode, blending or line mode. Custom materials refuse the 'weighted' blending, and take alpha to coverage or the hash mode only where their WGSL sets or reads the surface's alpha. A material that lets light through refuses the hash alpha mode and the weighted blending.\n\nA layered material, with a clear coat, a sheen, iridescence or anisotropy, refuses a light map, specular maps, and two textures for a pair of layer maps that glTF packs into one. It refuses a transmission or a thickness map only where one of its layer maps fills the array that the map samples: the clear coat's normal map and iridescence's thickness map fill the array that the transmission map samples, and the sheen's maps and the anisotropy map fill the array that the thickness map samples.\n\nA material with transmission refuses a thickness map beside a specular color map, whose sRGB texture never shares the thickness map's array, and other materials refuse those two maps.\n\nA material that lets light through to its other side refuses the specular maps, whose places its diffuse transmission maps take, a clear coat, a sheen and the weighted blending, and other materials refuse the diffuse transmission maps. A custom material refuses subsurfaceRadius, which only a standard material takes. A custom material whose WGSL declares a coverage function takes the mask mode, or the blend mode with the cutoff that its shadow caster tests.",
+		detailsSummary: 'the rules for each material option',
 	},
 	E1218: {
 		title: 'Invalid animation call',
@@ -402,6 +409,7 @@ const DOCS = {
 			'E1416: assets.loadGltf() could not read https://example.com/ship.glb: accessor 3 reads 4800 bytes from bufferView 1, which holds 2400.',
 		details:
 			"- A broken file: a broken JSON or binary chunk, an offset or count past the data, a missing buffer or image, a node loop, a skin or clip that breaks glTF's rules, or Draco data that does not decode to the counts its accessors give.\n- Decoded data for one file: 64 MiB, plus 32 bytes for each byte of the file and its buffers, up to 1 GiB. A block of meshopt data counts too.\n- One array: 256 MiB.\n- Nodes moved by skins and clips: 1,024.\n- Keys in one clip, its frames times its tracks: 4,194,304.\n- Sides of one PNG or JPEG image: 4,096. Decoded images: 1 GiB.",
+		detailsSummary: 'the limits for one model file',
 		see: ['api/assets'],
 	},
 	E1417: {

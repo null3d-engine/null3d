@@ -495,7 +495,13 @@ export function errorPage(
 		for (const one of entry.cases) parts.push(`- ${one}`);
 	}
 	if (entry.details)
-		parts.push('', detailsBlock('Technical details: limits and edge cases', entry.details));
+		parts.push(
+			'',
+			detailsBlock(
+				`Technical details: ${entry.detailsSummary ?? 'limits and edge cases'}`,
+				entry.details,
+			),
+		);
 	parts.push('', '## How to fix it', '', entry.fix);
 	if (/\breport (it|the error)\b/i.test(entry.fix)) {
 		parts.push(
@@ -508,7 +514,13 @@ export function errorPage(
 		for (const one of entry.fixCases) parts.push(`- ${one}`);
 	}
 	if (entry.fixDetails)
-		parts.push('', detailsBlock('Technical details: fixes for each case', entry.fixDetails));
+		parts.push(
+			'',
+			detailsBlock(
+				`Technical details: ${entry.fixDetailsSummary ?? 'fixes for each case'}`,
+				entry.fixDetails,
+			),
+		);
 	parts.push(
 		'',
 		'[Where problems appear](../guides/debugging.md#where-problems-appear) says where each kind of error reaches your code.',
