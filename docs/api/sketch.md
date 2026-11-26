@@ -150,7 +150,7 @@ The engine reads the size at the start of each frame, so it stays the same throu
 
 `engine.capabilities` holds the values of `engine.capabilities` on the page: the GPU path, its optional features and limits, the depth mode, and the most objects the device draws. [Page API: createEngine](engine.md#what-the-engine-reports) describes them. Check a capability before you use an optional feature, and never check GPU or browser names.
 
-`engine.held` is true when the engine steps the sketch itself, as hold mode and a replay do. It is false when the sketch runs live.
+`engine.held` is true when the engine steps the sketch itself, as hold mode and a replay do. It is false when the sketch runs live. Unlike `time.held`, it is true for the whole session, the setup included, and in a replay too.
 
 A sketch that returns before its scene is complete waits for it when this is true. A held frame or a replay then shows the finished scene. A live page starts the work without awaiting it, and the result appears as it lands.
 
