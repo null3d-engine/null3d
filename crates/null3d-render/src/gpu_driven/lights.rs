@@ -11,6 +11,10 @@
 //! other pass, fills each view's grid with three dispatches. The pass runs in frames that upload
 //! nothing too, because the thread that draws skips the dispatches of pipelines that it is still
 //! building: the grid then fills in the first frame after they are built.
+//!
+//! The pass's pipelines come with the first frame whose scene holds a point, spot or area light.
+//! A first frame without one leaves them out, and they build behind it, so a scene that starts
+//! without such lights never waits for them.
 
 use null3d_gpu::drawlist::{
     DrawList, Op, buffer_usage as usage, layout as bind_layout, resource_kind, sizes, template,
@@ -28,14 +32,6 @@ const PIPELINES: [(u32, u32); 4] = [
     (ids::LIGHT_PLACE, template::LIGHT_PLACE),
     (ids::LIGHT_WRITE, template::LIGHT_WRITE),
 ];
-
-/// Records the creation of the light clustering pass's compute pipelines.
-pub(super) fn create_pipelines(list: &mut DrawList) -> Result<(), RecordError> {
-    for (id, template) in PIPELINES {
-        list.push(Op::CreateComputePipeline, &[id, template, 0])?;
-    }
-    Ok(())
-}
 
 /// Records the creation of camera view `view`'s two buffers, as large as its grid `lights` can
 /// fill, of the parameters of its light clustering dispatches, and of their bind group.
@@ -84,17 +80,38 @@ pub(super) struct LightClusters {
     /// The workgroups of each camera view's counting and writing dispatches, or `None` for a view
     /// whose grid lists no light in the frame.
     workgroups: [Option<[u32; 3]>; MAX_VIEWS],
+    /// True once the pass's pipelines exist.
+    pipelines: bool,
 }
 
 impl Default for LightClusters {
     fn default() -> Self {
         Self {
             workgroups: [None; MAX_VIEWS],
+            pipelines: false,
         }
     }
 }
 
 impl LightClusters {
+    /// Records the creation of the pass's compute pipelines, once. Returns true when it recorded
+    /// them.
+    pub(super) fn create_pipelines(&mut self, list: &mut DrawList) -> Result<bool, RecordError> {
+        if self.pipelines {
+            return Ok(false);
+        }
+        for (id, template) in PIPELINES {
+            list.push(Op::CreateComputePipeline, &[id, template, 0])?;
+        }
+        self.pipelines = true;
+        Ok(true)
+    }
+
+    /// Forgets the pipelines, after the thread that draws replaced the GPU.
+    pub(super) fn forget_gpu(&mut self) {
+        self.pipelines = false;
+    }
+
     /// Uploads each grid's light list and the parameters of its dispatches when they differ from
     /// what its buffers hold, and has the pass fill each grid that lists lights in the frame. A
     /// view whose GPU objects are not made yet, outside `made`, a mask of camera views, waits.

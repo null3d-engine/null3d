@@ -1,10 +1,11 @@
 // A click on an earlier frame of the setup, for the object events test. The setup draws a frame of
 // a box. Once that frame is on screen, it says so on a broadcast channel and waits for the page's
 // answer there: the engine's start waits for the setup, so the page cannot message the sketch yet.
-// The test clicks the box during the wait. Then the setup turns its camera away from the box and draws more frames, and
-// the preset check may draw many more. The click must still reach what its own frame showed: the
-// box's click handler writes a line, and the first update writes the object that a ray from
-// `camera.screenToRay` through the click hits. Each message from the page asks for the lines.
+// The test clicks the box during the wait. Then the setup turns its camera away from the box and
+// returns, so play draws more frames there and the preset check may draw many more. The click must
+// still reach what its own frame showed: the box's click handler writes a line, and the first update
+// writes the object that a ray from `camera.screenToRay` through the click hits. Each message from
+// the page asks for the lines.
 import { defineSketch, type ObjectPointerEvent, type RaycastHit } from '@null3d/engine';
 import { presentedFrame } from '../lib/shown-frame';
 
@@ -43,8 +44,6 @@ export default defineSketch(async ({ scene, geometry, materials, input, page }) 
 	// The frames from here look away from the box, so their camera would miss it.
 	camera.setPosition(0, 0, -8);
 	camera.lookAt(0, 0, -16);
-	await scene.warmUp();
-	await scene.warmUp();
 	const ray = { origin: [0, 0, 0], direction: [0, 0, 0] };
 	const hit: RaycastHit = {
 		object: null,

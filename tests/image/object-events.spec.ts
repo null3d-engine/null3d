@@ -36,9 +36,10 @@ const OUTSIDE = { x: 400, y: 300 };
 /**
  * How long a test waits for the sketch to read the input and its handlers to run. CI's software
  * GPU on a busy runner can take more than a second for a frame, and a step can take several frames
- * and messages.
+ * and messages. The setup's scene grows and warms up before its first frame, which takes tens of
+ * seconds there.
  */
-const WAIT_MS = 30_000;
+const WAIT_MS = 60_000;
 /** A test's time limit, which holds many waits on a slow runner. */
 const TEST_MS = 120_000;
 
@@ -249,9 +250,12 @@ for (const mode of ENGINE_MODES)
 		// The setup waits with its frame of the box on screen.
 		await page.waitForFunction(
 			() => (globalThis as { objectEventsSetup?: unknown }).objectEventsSetup,
+			null,
+			{ timeout: WAIT_MS },
 		);
 		await page.mouse.click(RIGHT.x, RIGHT.y);
-		// The setup then turns its camera away and draws more frames before the sketch reads the click.
+		// The setup then turns its camera away and lets play draw more frames before the sketch reads
+		// the click.
 		await page.evaluate(() =>
 			(globalThis as { objectEventsSetup?: { go: () => void } }).objectEventsSetup?.go(),
 		);

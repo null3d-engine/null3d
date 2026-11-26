@@ -1,6 +1,6 @@
 // Checks of the warm-up page's result, shared by the Playwright test and the real-browser runner:
-// the first frame builds every pipeline of the pipelines sketch, play builds none, and an object
-// added during play shows once its warm-up has built its pipeline.
+// the first frame builds the pipelines that it draws with, play builds none, and an object added
+// during play shows once its warm-up has built its pipeline.
 
 /** What the warm-up page publishes. */
 export interface WarmUpResult {
@@ -46,15 +46,18 @@ export interface WarmUpResult {
  *
  * WebGL2 also builds each scene pipeline with a prepass pair, so ten materials give twenty; WebGPU
  * builds them once each, with a depth pipeline for each of the scene's four vertex formats where the
- * screen texture reads depth, and the GPU-driven path's nine compute steps; and every path builds the
- * final pass's two builds, its full-precision one and the 8-bit variant that a dropped render scale
- * adds. GPU occlusion culling, which WebGPU draws from High up, adds seven more there, and one to
- * each object that warms up later.
+ * screen texture reads depth, and the GPU-driven path's culling step. The light clustering's four
+ * compute pipelines and its depth reduction's four build behind the first frame, because this scene
+ * holds no point, spot or area light. Every path also builds the final pass's full-precision build;
+ * its 8-bit upscale variant comes after the first frame when the frame draws at the whole scale and
+ * does not sharpen, which this scene does. A frame whose render scale drops before it ends builds
+ * the upscale too, which the check's one-more allowance covers (D-402). GPU occlusion culling, which
+ * WebGPU draws from High up, adds seven more there, and one to each object that warms up later.
  */
 const FIRST_FRAME_PIPELINES: Readonly<Record<string, Readonly<Record<string, number>>>> = {
-	webgl2: { low: 22, medium: 28, high: 28, ultra: 28 },
-	webgpu: { low: 21, medium: 21, high: 38, ultra: 38 },
-	'webgpu-compat': { low: 21, medium: 21, high: 21, ultra: 21 },
+	webgl2: { low: 21, medium: 27, high: 27, ultra: 27 },
+	webgpu: { low: 12, medium: 12, high: 29, ultra: 29 },
+	'webgpu-compat': { low: 12, medium: 12, high: 12, ultra: 12 },
 };
 /** Pixels the added quad covers at the least, in the page's 320 x 180 capture. */
 const ADDED_PIXELS = 100;

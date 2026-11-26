@@ -281,6 +281,13 @@ Chrome on Android keeps about 2 MB of a site's compiled WebGPU pipelines between
 - Warm up behind the loading screen, so play builds no pipeline ([Loading screens and warm-up](loading-screens.md#pipelines-and-warm-up)).
 - Time the start on the phones and tablets of your audience. A desktop browser that emulates a phone builds pipelines at the computer's speed.
 
+The engine's own passes add pipelines too, and the first frame builds only those that it draws with:
+
+- On WebGPU, the pass that lists each cluster's point, spot and area lights takes 4 compute pipelines. Where the GPU fits the clusters to the measured depth (`lightFit`), it takes 4 more. A first frame whose scene holds none of these lights leaves them out.
+- The final pass's second step scales a lower render scale up to the canvas, and takes 1 pipeline on both paths. A first frame at the whole render scale that does not sharpen leaves it out.
+
+The pipelines that the first frame leaves out build in the background once it shows. So a light or a lower render scale that comes later finds them built. In the engine's start bench, a small lit page's first frame at Low builds 4 pipelines on each path. With the light clustering and the second step, it would build 13 on WebGPU and 5 on WebGL2. A light that comes while they still build lights nothing until they are built. A lower render scale draws at the whole scale meanwhile. So create the lights of the first view in the setup.
+
 The engine keeps a list of the pipelines that a sketch's first frame built, in the page's `localStorage`. On the next start, the thread that draws builds each of those pipelines as soon as its shader arrives. The engine downloads and the setup runs meanwhile. Hold mode, replays and recordings neither read nor store the list, and `?builds=fresh` turns it off ([Repeat visits](loading-screens.md#repeat-visits)).
 
 <details>

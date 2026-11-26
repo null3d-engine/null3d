@@ -952,6 +952,9 @@ pub(crate) struct FrameGraph {
     /// True when the render scale may drop below the whole canvas, so the final pass runs to scale
     /// the image up even where the scene could resolve into the canvas.
     scales: bool,
+    /// The render scale that the frame being recorded asks for, which the frame draws at once the
+    /// second step's pipeline is built.
+    asked_scale: RenderScale,
     /// True when the declarations hold the two-step pass: the render scale can drop below the whole
     /// canvas. A frame draws the two steps only below it, so a crossing declares nothing again.
     two_step_declared: bool,
@@ -1417,6 +1420,7 @@ impl FrameGraph {
             scene_color,
             resolves: !scene_color.is_hdr() && antialias == Antialias::Msaa,
             scales: false,
+            asked_scale: RenderScale::FULL,
             two_step_declared: false,
             two_step_built: false,
             grades: false,
@@ -2185,10 +2189,12 @@ impl FrameGraph {
             || self.particle_depth_declared
     }
 
-    /// Says whether the render scale may drop below the whole canvas. Where the scene could
-    /// resolve into the canvas, that switches the final pass on in place of the resolve pass, and
-    /// the graph compiles again.
-    pub(crate) fn set_scaling(&mut self, scales: bool) {
+    /// Says whether the render scale may drop below the whole canvas, and the scale `asked` that
+    /// the frame being recorded asks for. Where the scene could resolve into the canvas, the
+    /// first switches the final pass on in place of the resolve pass, and the graph compiles
+    /// again.
+    pub(crate) fn set_scaling(&mut self, scales: bool, asked: RenderScale) {
+        self.asked_scale = asked;
         if scales != self.scales {
             // The declarations hold the two-step pass only while the render scale can drop below
             // the whole canvas, so a change declares them again. This is a sketch setting, so it
@@ -5069,12 +5075,19 @@ impl FrameGraph {
         // scale. The first step draws the final pass's builds, which are built with it, so the
         // second step's plain build alone decides when the two steps can draw. The wish holds the
         // answer, not the declaration: the passes of a frame are declared after its pipelines are
-        // asked for, so the first frame that wants the steps draws them too.
-        self.two_step_built = self.two_step_wanted() && {
-            self.output_pass.request_pipeline(pipelines, wanted);
-            let present = self.final_pass.request_present(pipelines);
-            pipelines.built(present, pipelines_built)
-        };
+        // asked for, so the first frame that wants the steps draws them too. A first frame that
+        // draws at the whole scale and does not sharpen leaves the second step out, so it never
+        // waits for that build: it builds behind the first frame, and the frames draw at the whole
+        // scale until it is built.
+        self.two_step_built = self.two_step_wanted()
+            && (pipelines_built != 0
+                || self.asked_scale != RenderScale::FULL
+                || self.sharpen.is_some())
+            && {
+                self.output_pass.request_pipeline(pipelines, wanted);
+                let present = self.final_pass.request_present(pipelines);
+                pipelines.built(present, pipelines_built)
+            };
         if let Some(pass) = self.effect_pass.as_mut() {
             pass.request_pipelines(
                 pipelines,
@@ -7614,7 +7627,7 @@ mod tests {
     #[test]
     fn a_mirror_views_texture_is_made_again_at_each_new_render_scale() {
         let mut frames = frame_graph(format::RGBA16_FLOAT, Antialias::Fxaa, true, false);
-        frames.set_scaling(true);
+        frames.set_scaling(true, RenderScale::from_thousandths(500));
         let mirror = crate::mirror::Mirror::new([0.0, 1.0, 0.0], [0.0; 3]).unwrap();
         let mut reflection = View::mirror(mirror, None, None).with_target(ViewTarget {
             shown: true,
@@ -8365,7 +8378,7 @@ mod tests {
     #[test]
     fn a_full_screen_pass_fills_a_share_of_the_render_size_before_the_camera_that_shows_it() {
         let mut frames = frame_graph(format::RGBA16_FLOAT, Antialias::Fxaa, true, false);
-        frames.set_scaling(true);
+        frames.set_scaling(true, RenderScale::from_thousandths(500));
         frames.sync(&[View::default(), fullscreen(PassSource::None, true)]);
         // A device's first frame counts the second step's build as built, so the frame may drop.
         frames.request_pipelines(&mut PipelineCache::default(), 0);
@@ -9026,7 +9039,7 @@ mod tests {
             // reads has a pass before it that makes it.
             for step in 0..3 {
                 match step {
-                    1 => frames.set_scaling(true),
+                    1 => frames.set_scaling(true, RenderScale::FULL),
                     2 => frames.declared = false,
                     _ => {}
                 }
@@ -9110,7 +9123,7 @@ mod tests {
         assert!(graph.is_enabled(graph.find_pass("Resolve").unwrap()));
 
         // A render scale that can drop needs the final pass to scale the image up.
-        frames.set_scaling(true);
+        frames.set_scaling(true, RenderScale::FULL);
         let graph = frames.graph();
         assert!(graph.is_enabled(graph.find_pass("Final").unwrap()));
         assert!(!graph.is_enabled(graph.find_pass("Resolve").unwrap()));
@@ -9128,7 +9141,7 @@ mod tests {
         // draws its first step, and the second, with the curve's builds and not the pass's own.
         let mut frames = frame_graph(format::RGBA16_FLOAT, Antialias::Msaa, true, false);
         frames.sync(&[View::default()]);
-        frames.set_scaling(true);
+        frames.set_scaling(true, RenderScale::from_thousandths(500));
         frames.set_bloom(Some(Bloom::default()), ChainFrame::default());
         frames.set_tone_curve(Some(CUSTOM));
         let mut pipelines = PipelineCache::default();
@@ -9140,6 +9153,32 @@ mod tests {
         assert!(!templates.contains(&template::FINAL_BLOOM));
         // The second step always scales plainly.
         assert!(templates.contains(&template::FINAL));
+    }
+
+    #[test]
+    fn a_first_frame_at_the_whole_scale_leaves_the_second_steps_build_behind_it() {
+        let upscales = |pipelines: &PipelineCache| {
+            pipelines.keys().iter().any(|key| {
+                key.template == template::FINAL && key.permutation & permutation::UPSCALE != 0
+            })
+        };
+        let asked = |scale: RenderScale, sharpen: Option<f32>, pipelines_built: u32| {
+            let mut frames = frame_graph(format::RGBA16_FLOAT, Antialias::Fxaa, true, false);
+            frames.sync(&[View::default()]);
+            frames.set_scaling(true, scale);
+            frames.set_sharpen(sharpen);
+            let mut pipelines = PipelineCache::default();
+            frames.request_pipelines(&mut pipelines, pipelines_built);
+            upscales(&pipelines)
+        };
+        let half = RenderScale::from_thousandths(500);
+        // A first frame at the whole scale draws no second step, so it does not wait for its build.
+        assert!(!asked(RenderScale::FULL, None, 0));
+        // A first frame below the whole scale, or one that sharpens, draws both steps.
+        assert!(asked(half, None, 0));
+        assert!(asked(RenderScale::FULL, Some(0.5), 0));
+        // Once the first frame has drawn, the frames ask for it, so it is built before a drop.
+        assert!(asked(RenderScale::FULL, None, 3));
     }
 
     #[test]
@@ -9533,7 +9572,7 @@ mod tests {
         // The final pass takes over from the resolve pass, so the multisampled targets that
         // resolved into the canvas are made again, and so are they when the resolve pass returns.
         for scales in [true, false] {
-            frames.set_scaling(scales);
+            frames.set_scaling(scales, RenderScale::FULL);
             list.clear();
             frames
                 .prepare(&mut list, (64, 64), RenderScale::FULL)
@@ -9684,7 +9723,7 @@ mod tests {
         frames
             .upload(&mut list, &mut arena, output, Grading::default())
             .unwrap();
-        frames.set_scaling(true);
+        frames.set_scaling(true, RenderScale::from_thousandths(500));
         frames.request_pipelines(&mut PipelineCache::default(), 0);
         let only_uploads =
             |frames: &mut FrameGraph, list: &mut DrawList, arena: &mut UploadArena| {
@@ -10846,7 +10885,7 @@ mod tests {
         // the pass that writes it.
         let mut frames = frame_graph(format::RGBA16_FLOAT, Antialias::Msaa, true, true);
         frames.sync(&[View::default()]);
-        frames.set_scaling(true);
+        frames.set_scaling(true, RenderScale::FULL);
         let mut list = DrawList::with_capacity(4096);
         frames
             .prepare(&mut list, (320, 180), RenderScale::FULL)

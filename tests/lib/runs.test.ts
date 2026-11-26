@@ -2270,10 +2270,10 @@ describe('the startup plan', () => {
 		};
 		const lines = startupSummary(items, (id) => results[id])?.split('\n') ?? [];
 		expect(lines.slice(0, 4)).toEqual([
-			'| Thread mode | Load | GPU | Loads | Script, ms | Probe, ms | Core, ms | Device, ms | Shaders, ms | Renderer, ms | Ready, ms | Frame, ms | Frame done, ms | Requests | KB |',
-			'| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |',
-			'| pipelined | cold | webgpu | 2 | 40 | 70 | 100 | 75 | 90 | 115 | 130 | 790 | 800 | 11 | 2.0 |',
-			'| pipelined | warm | webgpu | 2 | 40 | 70 | 100 | 75 | 90 | 115 | 130 | 390 | 400 | 11 | 2.0 |',
+			'| Thread mode | Load | GPU | Loads | Script, ms | Probe, ms | Core, ms | Device, ms | Shaders, ms | Renderer, ms | Ready, ms | Frame, ms | Frame done, ms | Pipelines | Requests | KB |',
+			'| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |',
+			'| pipelined | cold | webgpu | 2 | 40 | 70 | 100 | 75 | 90 | 115 | 130 | 790 | 800 | - | 11 | 2.0 |',
+			'| pipelined | warm | webgpu | 2 | 40 | 70 | 100 | 75 | 90 | 115 | 130 | 390 | 400 | - | 11 | 2.0 |',
 		]);
 		expect(lines[5]).toStartWith('Each time is a median');
 		expect(startupSummary(benchPlan({ runs: 1 }), () => loaded(1))).toBeUndefined();

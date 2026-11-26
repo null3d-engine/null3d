@@ -154,6 +154,7 @@ mod transparent;
 use std::collections::TryReserveError;
 
 use null3d_core::levels::LevelRule;
+use null3d_core::lights::LightTable;
 use null3d_gpu::caps::{BUDGET, Limit, MAX_WORKGROUPS_PER_DIMENSION};
 use null3d_gpu::drawlist::{
     DrawList, MAX_WORDS, Op, buffer_usage as usage, format, layout as bind_layout, resource_kind,
@@ -2149,12 +2150,23 @@ impl GpuDrivenRenderer {
             .feature_rows
             .request_pipeline(list, self.settings.feature_instances())?;
         let occlusion = self.graph.occlusion();
-        if !self.created {
-            if !self.config.direct_draws {
-                cull::create_pipeline(list)?;
+        if !self.created && !self.config.direct_draws {
+            cull::create_pipeline(list)?;
+        }
+        // The light clustering pass dispatches only while the scene holds a point, spot or area
+        // light, and its depth reduction only while the GPU fits the slices too. A first frame
+        // without them leaves their pipelines out, so it never waits for them. They build behind
+        // the first frame instead, once the thread that draws has drawn it, so a light that comes
+        // later finds them built.
+        let first_drawn = input.pipelines_built != 0;
+        let clustered = first_drawn
+            || !input.lights.is_empty()
+            || input.light_table.is_some_and(LightTable::has_local_lights);
+        if clustered {
+            created_pipelines |= self.light_clusters.create_pipelines(list)?;
+            if first_drawn || self.settings.light_fit() {
+                created_pipelines |= self.depths.create_pipelines(list)?;
             }
-            lights::create_pipelines(list)?;
-            self.depths.create_pipelines(list)?;
         }
         // The cluster pass's shader loads on first use, so its pipeline is made with the first
         // frame that draws a tree of cluster patches. A page whose scene holds no tree never
@@ -2236,8 +2248,10 @@ impl GpuDrivenRenderer {
             self.settings.particles().wants_depth() || materials_read_depth,
             materials_read_depth,
         );
-        // The render scale's range decides which of the final pass's pipelines the frame asks for.
-        self.graph.set_scaling(self.settings.render_scaling());
+        // The render scale's range, and the scale that the frame asks for, decide which of the final
+        // pass's pipelines the frame asks for.
+        self.graph
+            .set_scaling(self.settings.render_scaling(), input.render_scale);
         self.graph
             .request_pipelines(&mut self.pipelines, input.pipelines_built);
         self.graph.request_fullscreen_pipelines(
@@ -4560,6 +4574,7 @@ impl FrameBuilder for GpuDrivenRenderer {
         self.lines.forget_gpu();
         self.lights.forget_gpu();
         self.depths.forget_gpu();
+        self.light_clusters.forget_gpu();
         self.lights_made = 0;
         self.skinning.forget_gpu();
         self.transparent.forget_gpu();

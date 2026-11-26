@@ -10,7 +10,8 @@
 // memory option of createEngine, and reports the maximum of each shared memory that the engine
 // asked the browser for. With ?downloads, it reports when the page asked for each file and when the
 // file arrived, from the browser's resource timing. ?sketch=busy runs a scene whose instance
-// batch gives the job workers work in every frame. ?nomeasure skips the measurement, so the page
+// batch gives the job workers work in every frame, and ?sketch=lit a small lit scene whose first
+// frame builds the pipelines of a plain page. ?nomeasure skips the measurement, so the page
 // reads none of the frame figures.
 import { createEngine, type Engine, type FrameMetrics } from '@null3d/engine';
 import type { FrameCounts } from '../lib/engine-checks';
@@ -37,6 +38,13 @@ const MAX_RESUMED_DOUBLINGS = 3;
 const resumedFrames = Number(params.get('resumed-frames') ?? '0');
 /** The maximum that ?memory-option= asks the page to pass in createEngine's memory option. */
 const memoryOption = params.has('memory-option') ? Number(params.get('memory-option')) : undefined;
+
+/** The sketch that `?sketch=` names: the busy one, the lit one, or else the empty one. */
+function sketchUrl(name: string | null): URL {
+	if (name === 'busy') return new URL('./sketches/busy-sketch.ts', import.meta.url);
+	if (name === 'lit') return new URL('./sketches/lit-sketch.ts', import.meta.url);
+	return new URL('./sketches/empty-sketch.ts', import.meta.url);
+}
 
 /**
  * Records the maximum in MiB of each shared memory that the page creates from now on, as the
@@ -90,10 +98,7 @@ run('engine', async () => {
 	const createEngineAtMs = performance.now();
 	const engine = await createEngine({
 		canvas,
-		sketch:
-			params.get('sketch') === 'busy'
-				? new URL('./sketches/busy-sketch.ts', import.meta.url)
-				: new URL('./sketches/empty-sketch.ts', import.meta.url),
+		sketch: sketchUrl(params.get('sketch')),
 		onProgress: (stage) => {
 			// A stage that reports figures comes again with each figure: the page keeps its order.
 			if (stages[stages.length - 1] !== stage) stages.push(stage);

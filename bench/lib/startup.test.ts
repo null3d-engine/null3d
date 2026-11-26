@@ -45,6 +45,7 @@ function result(frameDoneMs: number, overrides: Partial<StartupResult> = {}): St
 				engineStartMs: 300,
 				firstFrameMs: frameDoneMs - 20,
 				firstFrameDoneMs: frameDoneMs,
+				firstFramePipelines: 7,
 				drawingStart: { deviceMs: null, shadersMs: 250, rendererMs: 350 },
 			},
 		},
@@ -66,6 +67,7 @@ describe('a startup load', () => {
 			readyMs: 400,
 			frameMs: 580,
 			frameDoneMs: 600,
+			pipelines: 7,
 			requests: 12,
 			bytes: 102_400,
 		});
@@ -152,11 +154,11 @@ describe('the startup table', () => {
 			],
 		);
 		expect(lines).toEqual([
-			'| Thread mode | Load | GPU | Loads | Script, ms | Probe, ms | Core, ms | Device, ms | Shaders, ms | Renderer, ms | Ready, ms | Frame, ms | Frame done, ms | Requests | KB |',
-			'| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |',
-			'| pipelined | cold | webgl2 | 3 | 100 | 150 | 300 | - | 250 | 350 | 400 | 680 | 700 | 12 | 100.0 |',
-			'| pipelined | warm | webgl2, webgpu | 2 | 100 | 150 | 300 | 200 | 250 | 350 | 400 | 330 | 350 | 1.5 | 100.0 |',
-			'| single-threaded | cold | - | 0 | - | - | - | - | - | - | - | - | - | - | - |',
+			'| Thread mode | Load | GPU | Loads | Script, ms | Probe, ms | Core, ms | Device, ms | Shaders, ms | Renderer, ms | Ready, ms | Frame, ms | Frame done, ms | Pipelines | Requests | KB |',
+			'| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |',
+			'| pipelined | cold | webgl2 | 3 | 100 | 150 | 300 | - | 250 | 350 | 400 | 680 | 700 | 7 | 12 | 100.0 |',
+			'| pipelined | warm | webgl2, webgpu | 2 | 100 | 150 | 300 | 200 | 250 | 350 | 400 | 330 | 350 | 7 | 1.5 | 100.0 |',
+			'| single-threaded | cold | - | 0 | - | - | - | - | - | - | - | - | - | - | - | - |',
 		]);
 		expect(STARTUP_LEGEND[0]).toStartWith('Each time is a median, in milliseconds from navigation');
 	});

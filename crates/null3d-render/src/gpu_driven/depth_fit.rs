@@ -11,6 +11,9 @@
 //! upload writes when the render size changes. The pass costs one dispatch and one bind group per
 //! view. Its output, the nearest and farthest reversed depth, is one buffer that the next frame's
 //! light clustering reads, and the frame zeroes before this dispatch fills it.
+//!
+//! The pass's pipelines come with the light clustering's, in a first frame that fits the slices,
+//! and otherwise build behind the first frame.
 
 use null3d_gpu::drawlist::{
     DrawList, Op, buffer_usage as usage, layout as bind_layout, resource_kind, template,

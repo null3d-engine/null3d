@@ -623,6 +623,15 @@ impl LightTable {
             .any(|row| matches!(row.kind, kind::RECT | kind::TUBE))
     }
 
+    /// True when the table holds a point, spot, rectangle or tube light: a light that a view's
+    /// light clusters list. A table of directional, hemisphere and ambient lights alone needs no
+    /// clusters.
+    pub fn has_local_lights(&self) -> bool {
+        self.rows
+            .iter()
+            .any(|row| matches!(row.kind, kind::POINT | kind::SPOT | kind::RECT | kind::TUBE))
+    }
+
     /// Sets the number, by [`value`], that each light created from now on starts with, such as the
     /// shadow cascades that the quality preset gives. Lights that exist keep their numbers.
     pub fn set_default(&mut self, which: u32, number: f32) -> Result<(), CoreError> {
@@ -1184,6 +1193,24 @@ mod tests {
         assert_eq!(c, a);
         assert_eq!(table.object(c).unwrap(), Handle::new(6, 0));
         assert_eq!(table.kind(c), kind::AMBIENT);
+    }
+
+    #[test]
+    fn only_point_spot_and_area_lights_count_as_local() {
+        let mut table = LightTable::new();
+        for global in [kind::DIRECTIONAL, kind::HEMISPHERE, kind::AMBIENT] {
+            table.create(Handle::new(1, 0), global).unwrap();
+        }
+        assert!(!table.has_local_lights());
+        for local in [kind::POINT, kind::SPOT, kind::RECT, kind::TUBE] {
+            let light = table.create(Handle::new(2, 0), local).unwrap();
+            assert!(table.has_local_lights(), "kind {local}");
+            table.destroy(light).unwrap();
+            assert!(
+                !table.has_local_lights(),
+                "a destroyed light of kind {local}"
+            );
+        }
     }
 
     #[test]
