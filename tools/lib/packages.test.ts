@@ -239,19 +239,21 @@ describe('packageProblems', () => {
 		const build = { compile: true, shaders: false, docs: false, needs: [], required: [] };
 		const forbidden = repositoryOnlyFiles({ ...build, repositoryOnly: ['internal.ts'] });
 		expect(forbidden).toEqual(['lib/internal.js', 'lib/internal.d.ts']);
-		expect(packageProblems(manifest, files, [], forbidden)).toEqual([]);
+		expect(packageProblems(manifest, files, { forbidden })).toEqual([]);
 		expect(
-			packageProblems(manifest, new Set([...files, 'lib/internal.js']), [], forbidden),
+			packageProblems(manifest, new Set([...files, 'lib/internal.js']), { forbidden }),
 		).toEqual(['it holds lib/internal.js, which only the repository uses']);
 	});
 
 	it('accepts a complete public package', () => {
-		expect(packageProblems(manifest, files, ['docs/index.md'])).toEqual([]);
+		expect(
+			packageProblems(manifest, files, { required: ['docs/index.md'], release: '0.1.0' }),
+		).toEqual([]);
 	});
 
 	it('names a raw shader file that the tarball holds', () => {
 		const holding = new Set([...files, 'lib/glow.wgsl']);
-		expect(packageProblems(manifest, holding, [], [], ['lib/glow.wgsl'])).toEqual([
+		expect(packageProblems(manifest, holding, { rawShaders: ['lib/glow.wgsl'] })).toEqual([
 			'it holds lib/glow.wgsl, whose compiled module must take its place',
 		]);
 	});
@@ -265,12 +267,39 @@ describe('packageProblems', () => {
 		const without = new Set(
 			[...files].filter((file) => !file.startsWith('dist/') && file !== 'bin/demo.js'),
 		);
-		expect(packageProblems(broken, without, ['docs/index.md', 'docs/api.md'])).toEqual([
+		expect(
+			packageProblems(broken, without, { required: ['docs/index.md', 'docs/api.md'] }),
+		).toEqual([
 			'publishConfig must set "access": "public" and "provenance": true',
 			'peerDependencies gives @null3d/engine the version workspace:*, which npm cannot install',
 			'it lacks ./dist/wasm/*, which its manifest names',
 			'it lacks bin/demo.js, which its manifest names',
 			'it lacks docs/api.md',
+		]);
+	});
+
+	it('names each sibling pinned at another version than the package', () => {
+		// A stale bun.lock makes bun pm pack write the sibling's previous version.
+		const stale: Manifest = {
+			...manifest,
+			dependencies: { '@null3d/impostors': '0.0.0', zod: '4.6.7' },
+			peerDependencies: { '@null3d/engine': '0.0.0', vite: '>=8' },
+			optionalDependencies: { '@null3d/cli': '0.1.0' },
+		};
+		expect(packageProblems(stale, files)).toEqual([
+			'dependencies gives @null3d/impostors the version 0.0.0, and the package is 0.1.0',
+			'peerDependencies gives @null3d/engine the version 0.0.0, and the package is 0.1.0',
+		]);
+	});
+
+	it('names a package whose version is not the release', () => {
+		const behind: Manifest = {
+			...manifest,
+			version: '0.0.0',
+			peerDependencies: { '@null3d/engine': '0.0.0' },
+		};
+		expect(packageProblems(behind, files, { release: '0.1.1' })).toEqual([
+			'it has the version 0.0.0, and the release is 0.1.1',
 		]);
 	});
 });

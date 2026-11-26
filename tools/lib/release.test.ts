@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test';
-import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { execFileSync, spawnSync } from 'node:child_process';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { scaledBudget } from '../../tests/lib/run-budget.ts';
@@ -27,6 +27,7 @@ import {
 	type VersionCopy,
 	versionCopies,
 	writeVersion,
+	writeVersionCopies,
 } from './release';
 
 const repoRoot = join(import.meta.dir, '../..');
@@ -495,29 +496,50 @@ describe('releaseProblems', () => {
 	});
 });
 
+/** A repository with one copy of each kind of version, all at 0.0.0. */
+const versionFixture = () =>
+	fixture({
+		'packages/engine/package.json': '{\n\t"name": "e",\n\t"version": "0.0.0"\n}\n',
+		'packages/engine/src/shared/version.ts': "export const VERSION = '0.0.0';\n",
+		'packages/controls/package.json': '{\n\t"name": "c",\n\t"version": "0.0.0"\n}\n',
+		'packages/controls/src/version.ts': "export const VERSION = '0.0.0';\n",
+		'bun.lock': [
+			'{',
+			'  "workspaces": {',
+			'    "packages/controls": {',
+			'      "name": "c",',
+			'      "version": "0.0.0",',
+			'      "devDependencies": { "e": "workspace:*" },',
+			'    },',
+			'    "packages/engine": {',
+			'      "name": "e",',
+			'      "version": "0.0.0",',
+			'    },',
+			'  },',
+			'  "packages": { "x": ["x@0.0.0", "", {}, ""] },',
+			'}',
+			'',
+		].join('\n'),
+		'Cargo.toml': '[workspace]\nmembers = ["crates/*"]\n\n[workspace.package]\nversion = "0.0.0"\n',
+		'crates/core/Cargo.toml': '[package]\nname = "demo-core"\nversion.workspace = true\n',
+		'Cargo.lock':
+			'[[package]]\nname = "demo-core"\nversion = "0.0.0"\n\n[[package]]\nname = "other"\nversion = "0.0.0"\n',
+		'.claude-plugin/marketplace.json':
+			'{ "plugins": [{ "version": "0.0.0", "source": { "path": ".claude", "ref": "0.0.0" } }] }\n',
+	});
+
 describe('version copies', () => {
 	it('rewrites every kind of copy in place', () => {
-		const root = fixture({
-			'packages/engine/package.json': '{\n\t"name": "e",\n\t"version": "0.0.0"\n}\n',
-			'packages/engine/src/shared/version.ts': "export const VERSION = '0.0.0';\n",
-			'packages/controls/package.json': '{\n\t"name": "c",\n\t"version": "0.0.0"\n}\n',
-			'packages/controls/src/version.ts': "export const VERSION = '0.0.0';\n",
-			'Cargo.toml':
-				'[workspace]\nmembers = ["crates/*"]\n\n[workspace.package]\nversion = "0.0.0"\n',
-			'crates/core/Cargo.toml': '[package]\nname = "demo-core"\nversion.workspace = true\n',
-			'Cargo.lock':
-				'[[package]]\nname = "demo-core"\nversion = "0.0.0"\n\n[[package]]\nname = "other"\nversion = "0.0.0"\n',
-			'.claude-plugin/marketplace.json':
-				'{ "plugins": [{ "version": "0.0.0", "source": { "path": ".claude", "ref": "0.0.0" } }] }\n',
-		});
-		for (const copy of versionCopies(root)) {
-			const path = join(root, copy.path);
-			writeFileSync(path, writeVersion(readFileSync(path, 'utf8'), copy, '0.1.0'));
-		}
+		const root = versionFixture();
+		writeVersionCopies(root, '0.1.0');
 		const read = (path: string) => readFileSync(join(root, path), 'utf8');
 		expect(read('packages/engine/package.json')).toContain('"version": "0.1.0"');
 		expect(read('packages/engine/src/shared/version.ts')).toBe("export const VERSION = '0.1.0';\n");
 		expect(read('packages/controls/src/version.ts')).toBe("export const VERSION = '0.1.0';\n");
+		// bun pm pack writes a workspace: dependency as the lockfile's version of the sibling.
+		expect(read('bun.lock')).toContain('"name": "c",\n      "version": "0.1.0",');
+		expect(read('bun.lock')).toContain('"name": "e",\n      "version": "0.1.0",');
+		expect(read('bun.lock')).toContain('"x": ["x@0.0.0"');
 		expect(read('Cargo.toml')).toContain('[workspace.package]\nversion = "0.1.0"');
 		expect(read('Cargo.lock')).toContain('name = "demo-core"\nversion = "0.1.0"');
 		expect(read('Cargo.lock')).toContain('name = "other"\nversion = "0.0.0"');
@@ -530,6 +552,46 @@ describe('version copies', () => {
 		);
 	});
 
+	it('writes only the versions with --set-version, and keeps every other change', () => {
+		const root = versionFixture();
+		// A pull request that reached main while the release ran: a new dependency of the controls.
+		const lock = join(root, 'bun.lock');
+		writeFileSync(
+			lock,
+			readFileSync(lock, 'utf8').replace('"e": "workspace:*"', '"e": "workspace:*", "y": "1.2.3"'),
+		);
+		const manifest = join(root, 'packages/controls/package.json');
+		writeFileSync(
+			manifest,
+			'{\n\t"name": "c",\n\t"version": "0.0.0",\n\t"dependencies": { "y": "1.2.3" }\n}\n',
+		);
+		const release = (version: string) =>
+			spawnSync(process.execPath, [join(repoRoot, 'tools/release.ts'), '--set-version', version], {
+				cwd: root,
+				encoding: 'utf8',
+			});
+		const refused = release('next');
+		expect(refused.status).toBe(1);
+		expect(refused.stderr).toContain('--set-version takes a version such as 0.1.1, not "next"');
+		expect(readFileSync(manifest, 'utf8')).toContain('"version": "0.0.0"');
+
+		const done = release('0.1.1');
+		expect(done.stderr).toBe('');
+		expect(done.status).toBe(0);
+		const read = (path: string) => readFileSync(join(root, path), 'utf8');
+		expect(read('packages/controls/package.json')).toBe(
+			'{\n\t"name": "c",\n\t"version": "0.1.1",\n\t"dependencies": { "y": "1.2.3" }\n}\n',
+		);
+		expect(read('bun.lock')).toContain(
+			'"name": "c",\n      "version": "0.1.1",\n      "devDependencies": { "e": "workspace:*", "y": "1.2.3" },',
+		);
+		expect(read('bun.lock')).toContain('"name": "e",\n      "version": "0.1.1",');
+		expect(read('packages/engine/src/shared/version.ts')).toBe("export const VERSION = '0.1.1';\n");
+		expect(read('Cargo.lock')).toContain('name = "demo-core"\nversion = "0.1.1"');
+		// The changelog section comes from the released commit, not from this mode.
+		expect(existsSync(join(root, 'CHANGELOG.md'))).toBe(false);
+	});
+
 	it('finds every copy in the repository, and they all agree', () => {
 		const copies = versionCopies(repoRoot);
 		const paths = new Set(copies.map((c) => c.path));
@@ -537,6 +599,7 @@ describe('version copies', () => {
 			'packages/engine/package.json',
 			'packages/engine/src/shared/version.ts',
 			'packages/controls/src/version.ts',
+			'bun.lock',
 			'Cargo.toml',
 			'Cargo.lock',
 			'.claude-plugin/marketplace.json',

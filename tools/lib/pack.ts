@@ -70,20 +70,26 @@ export async function buildPackages(root: string, names: readonly string[]): Pro
 
 /**
  * Packs every public package into `out`: it builds each package once (buildPackages), then packs
- * it with `bun pm pack`, which writes the real version in place of each `workspace:` one, without
- * the `prepack` script, whose build is done. Then checks each tarball, and fails with every
- * problem. The WebAssembly builds must exist first (`bun run build`). Afterwards it deletes each
- * `lib/` that the build wrote, so no check in the repository can read built files in place of the
- * source.
+ * it with `bun pm pack`, without the `prepack` script, whose build is done. Bun writes each
+ * `workspace:` version as the version that `bun.lock` gives the sibling's workspace, not the
+ * version in the sibling's manifest, so the release keeps the lockfile in step. Then checks each
+ * tarball, with `release` as the version every package must carry when it is given, and fails with
+ * every problem. The WebAssembly builds must exist first (`bun run build`). Afterwards it deletes
+ * each `lib/` that the build wrote, so no check in the repository can read built files in place of
+ * the source.
  */
-export async function packPackages(root: string, out: string): Promise<PackedPackage[]> {
+export async function packPackages(
+	root: string,
+	out: string,
+	release?: string,
+): Promise<PackedPackage[]> {
 	refuseStaleCore(root);
 	rmSync(out, { recursive: true, force: true });
 	mkdirSync(out, { recursive: true });
 	const folders = publicPackages(root);
 	try {
 		await buildPackages(root, folders);
-		return packEach(root, out, folders);
+		return packEach(root, out, folders, release);
 	} finally {
 		for (const folder of folders)
 			rmSync(join(root, 'packages', folder, LIB_DIR), { recursive: true, force: true });
@@ -91,7 +97,12 @@ export async function packPackages(root: string, out: string): Promise<PackedPac
 }
 
 /** Packs each package in `folders` into `out` and checks each tarball. */
-function packEach(root: string, out: string, folders: readonly string[]): PackedPackage[] {
+function packEach(
+	root: string,
+	out: string,
+	folders: readonly string[],
+	release: string | undefined,
+): PackedPackage[] {
 	const packed: PackedPackage[] = [];
 	const problems: string[] = [];
 	for (const folder of folders) {
@@ -125,7 +136,8 @@ function packEach(root: string, out: string, folders: readonly string[]): Packed
 			if (existsSync(join(root, 'packages', folder, SHADER_ARTIFACT)))
 				required.push(SHADER_ARTIFACT);
 		}
-		for (const problem of packageProblems(manifest, files, required, forbidden, shaders.forbidden))
+		const rules = { required, forbidden, rawShaders: shaders.forbidden, release };
+		for (const problem of packageProblems(manifest, files, rules))
 			problems.push(`${manifest.name}: ${problem}`);
 		packed.push({ folder, name: manifest.name, version: manifest.version, tarball });
 	}
