@@ -90,7 +90,7 @@ The engine gives each surface function and vertex offset the values that three.j
 | `normalMatrix`, in view space | `input.normal` is already in world space. Multiply it by `camera.view` for view space. |
 | Varyings such as `vWorldPosition`, `vViewDir` and `vNormal` | `input.worldPosition`, `input.viewDirection`, `input.normal` |
 | `instanceMatrix`, `instanceColor` | The engine applies each row's transform. A batch made with `colors: true` multiplies each row's color into `input.vertexColor`. |
-| An `InstancedBufferAttribute` such as a phase per instance | `object.values`, four floats per row from a batch made with `values: true` |
+| An `InstancedBufferAttribute` such as a phase per instance | `object.values`, four floats per row from a batch made with `values: true`. For more than four, pack them, or keep the rest in a data texture and read it with `textureLoad` at the row's place, `input.instance` |
 | A `time` uniform that the app updates | `frame.time` |
 | The fog, tone mapping and color space chunks | Nothing: the engine adds fog after the surface function, and the final pass tone maps and encodes once. |
 | The `<common>` and `<packing>` helpers | `null3d::math`, `null3d::depth` |
@@ -109,7 +109,7 @@ The engine works relative to the camera, so positions stay precise far from the 
 
 ## ShaderMaterial and RawShaderMaterial
 
-1. List the uniforms. Each becomes a field of `struct Uniforms`, with its first value in the `uniforms` option. A `sampler2D` uniform becomes `var name: texture_2d<f32>;` and an entry of the `textures` option, and a `sampler2DArray` becomes `var name: texture_2d_array<f32>;`. A material takes up to 6 textures, fixed when you create it.
+1. List the uniforms. Each becomes a field of `struct Uniforms`, with its first value in the `uniforms` option. A `sampler2D` uniform becomes `var name: texture_2d<f32>;` and an entry of the `textures` option, and a `sampler2DArray` becomes `var name: texture_2d_array<f32>;`. A material takes up to 6 textures, fixed when you create it. Textures of one size can join in a texture array, which takes one slot.
 2. Replace each update such as `material.uniforms.uSpeed.value = 2` with `material.set({ speed: 2 })`. A name that `struct Uniforms` lacks fails the type check, and throws [E1216](../errors/E1216.md) when the sketch runs.
 3. Read the vertex shader. When it only places the vertices and passes varyings on, delete it. When it moves vertices, port that part as `vertexOffset`.
 4. Read the fragment shader. Map its varyings to the surface input, and its output to the surface's fields. A lit look goes to `baseColor`, `roughness` and `metalness`. An unlit look goes to the color that `fn unlit` returns, in place of `surface`. Transparency goes to `alpha`, or to the opacity that `fn unlit` returns, with the matching `alphaMode`.
@@ -118,7 +118,7 @@ The engine works relative to the camera, so positions stay precise far from the 
 
 A `RawShaderMaterial` adds nothing by itself, so every matrix and attribute is in its source. The same steps apply.
 
-Uniforms take `f32`, `i32`, `u32`, `vec2f`, `vec3f` and `vec4f`, up to 32 numbers in all. Pass a matrix as `vec4f` rows. Rename a uniform called `color`, `roughness` or another standard value, because those names belong to the material.
+Uniforms take `f32`, `i32`, `u32`, `vec2f`, `vec3f` and `vec4f`, up to 32 numbers in all, less one for each texture. Pass a matrix as `vec4f` rows. Keep more numbers in a data texture from `textures.fromData`, and read them with `textureLoad`. Rename a uniform called `color`, `roughness` or another standard value, because those names belong to the material.
 
 ## onBeforeCompile patches
 

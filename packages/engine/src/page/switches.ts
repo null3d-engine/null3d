@@ -24,7 +24,7 @@
 // stats overlay, and ?view picks a debug view, one of the engine's own or one that an add-on's
 // feature registers.
 
-import type { StatsRequest } from '../debug/stats-options';
+import type { StatsOverlayOptions, StatsRequest } from '../debug/stats-options';
 import { PRESET_CHECK_TIMINGS, type PresetCheckTiming, type TargetFps } from '../quality/check';
 import { QUALITY_PRESETS, QUALITY_SETTINGS, type QualityPreset } from '../quality/presets';
 
@@ -353,8 +353,9 @@ export interface Switches {
 	view: string | undefined;
 	/**
 	 * True when a bare ?stats or ?stats=on shows the stats overlay, false when ?stats=off hides it,
-	 * options when ?stats=collapsed or ?stats=open shows it collapsed or open, and undefined without
-	 * the switch. It wins over the page's option.
+	 * and undefined without the switch. Options when the switch names a start state, `collapsed` or
+	 * `open`, a corner, `top-right` or `bottom-right`, or one of each with a comma between, such as
+	 * ?stats=collapsed,bottom-right. It wins over the page's option.
 	 */
 	stats: StatsRequest | undefined;
 	/**
@@ -412,11 +413,22 @@ function onOff(value: string | null): boolean | undefined {
 	return value === 'on' ? true : value === 'off' ? false : undefined;
 }
 
-/** ?stats: on for a bare switch or `on`, off for `off`, or the start state for `collapsed` or `open`. */
+/**
+ * ?stats: on for a bare switch or `on`, off for `off`, or options from a comma-separated list of a
+ * start state, `collapsed` or `open`, and a corner, `top-right` or `bottom-right`. A word that none
+ * of these is leaves the switch out.
+ */
 function statsSwitch(value: string | null): StatsRequest | undefined {
-	return value === 'collapsed' || value === 'open'
-		? { collapsed: value === 'collapsed' }
-		: value === '' || onOff(value);
+	if (value === '') return true;
+	const on = onOff(value);
+	if (on !== undefined || value === null) return on;
+	const options: StatsOverlayOptions = {};
+	for (const word of value.split(',')) {
+		if (word === 'collapsed' || word === 'open') options.collapsed = word === 'collapsed';
+		else if (word === 'top-right' || word === 'bottom-right') options.corner = word;
+		else return undefined;
+	}
+	return options;
 }
 
 /** A number above 0, or undefined for a missing or unusable value. */

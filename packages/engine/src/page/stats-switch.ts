@@ -29,6 +29,7 @@ export class StatsSwitch {
 		}
 		if (show !== true) {
 			if (show.collapsed !== undefined) this.options.collapsed = show.collapsed;
+			if (show.corner !== undefined) this.options.corner = show.corner;
 			this.overlay?.configure(show);
 		}
 		this.load ??= import('../debug/overlay');

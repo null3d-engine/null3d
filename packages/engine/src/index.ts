@@ -9,7 +9,7 @@ export type {
 	DebugViewName,
 } from './debug/debug';
 export type { FrameStats, FrameStatsStep, FrameStatsThread } from './debug/stats';
-export type { StatsOverlayOptions } from './debug/stats-options';
+export type { StatsCorner, StatsOverlayOptions } from './debug/stats-options';
 export type { EngineDebugView } from './debug/view-names';
 export { EngineError } from './errors/engine-error';
 export type { ErrorCode } from './errors/fixes';

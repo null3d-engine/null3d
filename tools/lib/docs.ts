@@ -113,7 +113,7 @@ export const PAGES: readonly PageEntry[] = [
 	{ id: 'api/cameras', title: 'Cameras', since: '0.1', summary: 'Perspective and orthographic cameras; screenToRay; worldToScreen; layers.' },
 	{ id: 'api/lights', title: 'Lights', since: '0.1', summary: 'Directional, point, spot, hemisphere and ambient lights; shadow options.' },
 	{ id: 'api/geometry', title: 'Geometry', since: '0.1', summary: 'Generators of common shapes; extra shapes in @null3d/geometry; meshes from arrays; vertices that change; vertex formats; large meshes.' },
-	{ id: 'api/three-compat', title: 'three.js compatibility (@null3d/three-compat)', since: '0.3', summary: "Reinhard and Cineon tone curves for post.set, and an outline with three.js OutlinePass's glow, pulse and blurred edge." },
+	{ id: 'api/three-compat', title: 'three.js looks (@null3d/three-compat)', since: '0.3', summary: "Reinhard and Cineon tone curves for post.set, and an outline with three.js OutlinePass's glow, pulse and blurred edge. It runs no three.js code." },
 	{ id: 'api/materials', title: 'Materials', since: '0.1', summary: 'standard, unlit, shader, shadowCatcher; every option.' },
 	{ id: 'api/textures', title: 'Textures', since: '0.1', summary: 'loadTexture options; KTX2 files; fromData; fromImageBitmap; fromCanvas; fromVideo; fromPass.' },
 	{ id: 'api/assets', title: 'Assets', since: '0.1', summary: 'loadTexture, loadImageBitmap, loadJson, loadBinary, preload, onProgress; glTF models and environments.' },
@@ -177,7 +177,7 @@ export const PAGES: readonly PageEntry[] = [
 	{ id: 'shaders/builtins', title: 'Built-in shader inputs', since: '0.1', summary: 'Camera, time, object, instance and light values available to custom shaders.' },
 	{ id: 'shaders/library', title: 'Shader library and imports', since: '0.1', summary: 'The WGSL modules that ship with the engine: math, noise, color, lighting, fog, vertex, depth and signed distance helpers, and how to import them.' },
 
-	{ id: 'porting/threejs-overview', title: 'Porting from three.js', since: '0.3', summary: 'The porting workflow; what gets faster; what needs rewriting.' },
+	{ id: 'porting/threejs-overview', title: 'Porting from three.js', since: '0.3', summary: 'A port is a rewrite; the limits a port meets; the porting workflow; what gets faster; what needs rewriting.' },
 	{ id: 'porting/threejs-materials', title: 'Porting materials and textures', since: '0.3', summary: 'Parameter-by-parameter conversion; color spaces; approximations.' },
 	{ id: 'porting/threejs-shaders', title: 'Porting shaders: GLSL, onBeforeCompile and TSL', since: '0.3', summary: 'GLSL to WGSL; three.js built-ins to engine built-ins; worked examples.' },
 	{ id: 'porting/threejs-postprocessing', title: 'Porting post-processing', since: '0.2', summary: 'EffectComposer passes and pmndrs effects to post.set settings; ShaderPass to post.addEffect; three.js tone mappings to custom tone curves.' },

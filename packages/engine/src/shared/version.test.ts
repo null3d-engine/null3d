@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it } from 'bun:test';
+import { otherVersion } from '../../../../tests/lib/other-version.ts';
 import { EngineError, setErrorFixes } from '../errors/engine-error';
 import { ERROR_FIXES } from '../errors/fixes';
 import {
@@ -19,9 +20,10 @@ describe('checkAddonVersion', () => {
 	});
 
 	it('throws E1432, which names the add-on and both versions, and gives the fix', () => {
+		const other = otherVersion(VERSION);
 		let error: unknown;
 		try {
-			checkAddonVersion('@null3d/controls', '0.1.0');
+			checkAddonVersion('@null3d/controls', other);
 		} catch (caught) {
 			error = caught;
 		}
@@ -29,7 +31,7 @@ describe('checkAddonVersion', () => {
 		const { code, message } = error as EngineError;
 		expect(code).toBe('E1432');
 		expect(message).toStartWith(
-			`E1432: @null3d/controls 0.1.0 was built for null3D 0.1.0, and this page runs null3D ${VERSION}. `,
+			`E1432: @null3d/controls ${other} was built for null3D ${other}, and this page runs null3D ${VERSION}. `,
 		);
 		expect(message).toContain(ERROR_FIXES.E1432);
 		expect(message).toContain('/docs/errors/E1432.md');
