@@ -978,12 +978,156 @@ export function referenceLinkProblems(
 		);
 }
 
+/** The file that lists every docs shot: the source files, pages and picture of each. */
+export const SHOTS_FILE = 'docs/images/shots.json';
+/** The folder that holds each shot's picture. */
+export const SHOTS_DIR = 'docs/images';
+/** The reference images that a shot may name, from the real GPU's set. */
+const SHOT_REFERENCES = 'tests/image/references/chrome-real-gpu';
+
+/** One shot of the docs: its picture, the pages that show it, and what decides what it shows. */
+export interface ShotEntry {
+	/** The path under docs/images, without its .webp suffix. */
+	id: string;
+	/** Each page that shows the shot, with the place on the page after `#`. */
+	pages: readonly string[];
+	/** `reference`, `scripted` or `manual`. */
+	source: string;
+	/** The reference images under tests/image/references/chrome-real-gpu/ that the shot uses. */
+	images?: readonly string[];
+	/** How the shot is captured or composed. */
+	steps?: string;
+	alt: string;
+	caption: string;
+	/** The source files that decide what the picture shows. */
+	files: readonly string[];
+	verdict: string;
+	note?: string;
+}
+
+/** A shot's ID: words joined by dashes, in folders of the same shape. An error page's ID holds E1234. */
+const SHOT_ID = /^[A-Za-z0-9]+(?:[-_][A-Za-z0-9]+)*(?:\/[A-Za-z0-9]+(?:[-_][A-Za-z0-9]+)*)*$/;
+/** The values that `source` takes. */
+const SHOT_SOURCES = ['reference', 'scripted', 'manual'];
+
+/** Every shot that the file lists, with the problems that keep the list from being usable. */
+export function readShots(root: string): { entries: ShotEntry[]; problems: string[] } {
+	const text = readIfExists(root, SHOTS_FILE);
+	if (text === null)
+		return { entries: [], problems: [`${SHOTS_FILE} is missing; it lists every docs shot`] };
+	let parsed: unknown;
+	try {
+		parsed = JSON.parse(text);
+	} catch (e) {
+		return {
+			entries: [],
+			problems: [`${SHOTS_FILE} is not valid JSON (${(e as Error).message})`],
+		};
+	}
+	if (!Array.isArray(parsed))
+		return { entries: [], problems: [`${SHOTS_FILE} must hold an array of shots`] };
+	const problems: string[] = [];
+	const entries: ShotEntry[] = [];
+	const seen = new Set<string>();
+	for (const [at, raw] of parsed.entries()) {
+		const shot = raw as Partial<ShotEntry>;
+		const where = `${SHOTS_FILE}: entry ${at}`;
+		if (typeof shot.id !== 'string' || !SHOT_ID.test(shot.id)) {
+			problems.push(`${where} needs an id of lowercase words joined by dashes`);
+			continue;
+		}
+		if (seen.has(shot.id)) problems.push(`${SHOTS_FILE}: ${shot.id} is listed twice`);
+		seen.add(shot.id);
+		if (!Array.isArray(shot.pages) || shot.pages.some((page) => typeof page !== 'string'))
+			problems.push(`${where} (${shot.id}) needs a pages array of strings`);
+		if (!SHOT_SOURCES.includes(shot.source as string))
+			problems.push(`${where} (${shot.id}) needs a source of ${SHOT_SOURCES.join(', ')}`);
+		for (const key of ['alt', 'caption', 'verdict'] as const)
+			if (typeof shot[key] !== 'string' || shot[key].trim() === '')
+				problems.push(`${where} (${shot.id}) needs a ${key}`);
+		if (!Array.isArray(shot.files) || shot.files.some((file) => typeof file !== 'string'))
+			problems.push(`${where} (${shot.id}) needs a files array of paths`);
+		if (
+			shot.images !== undefined &&
+			(!Array.isArray(shot.images) || shot.images.some((image) => typeof image !== 'string'))
+		)
+			problems.push(`${where} (${shot.id}) needs an images array of paths`);
+		entries.push(shot as ShotEntry);
+	}
+	return { entries, problems };
+}
+
+/** The ID of a docs picture that a Markdown image link names, or undefined for another link. */
+export function shotIdOf(target: string): string | undefined {
+	const clean = (target.split(/\s+/)[0] as string).replace(/^<|>$/g, '');
+	if (/^[a-z][a-z0-9+.-]*:/i.test(clean) || clean.startsWith('//')) return undefined;
+	if (!clean.endsWith('.webp')) return undefined;
+	const at = clean.lastIndexOf('images/');
+	if (at < 0) return undefined;
+	return clean.slice(at + 'images/'.length, -'.webp'.length);
+}
+
+/**
+ * Problems with the pictures that pages show: a page names a shot that the list lacks, and a shot
+ * that a page shows names a picture that is missing. The pages are those under docs/, keyed by
+ * path. A shot that no page shows yet needs no picture, because the pictures land page by page.
+ */
+export function pageShotProblems(
+	pages: ReadonlyMap<string, string>,
+	entries: readonly ShotEntry[],
+	hasPicture: (id: string) => boolean = (id) => existsSync(join(SHOTS_DIR, `${id}.webp`)),
+): string[] {
+	const problems: string[] = [];
+	const known = new Set(entries.map((entry) => entry.id));
+	const link = /!\[[^\]]*\]\(([^)]+)\)/g;
+	for (const [path, text] of pages) {
+		if (!path.startsWith('docs/')) continue;
+		for (const match of text.matchAll(link)) {
+			const id = shotIdOf(match[1] as string);
+			if (id === undefined) continue;
+			if (!known.has(id))
+				problems.push(
+					`${path}: shows ${SHOTS_DIR}/${id}.webp, which has no entry in ${SHOTS_FILE}`,
+				);
+			else if (!hasPicture(id))
+				problems.push(
+					`${path}: shows ${SHOTS_DIR}/${id}.webp, but its entry has no picture there; run bun tools/docs-screenshots.ts`,
+				);
+		}
+	}
+	return problems;
+}
+
+/**
+ * Every problem that keeps the docs screenshots from being right: a page that shows a picture
+ * without an entry, a shown entry without its picture, a reference image that is missing, and a
+ * list that is not valid.
+ */
+export function shotProblems(root: string): string[] {
+	const { entries, problems } = readShots(root);
+	for (const entry of entries)
+		for (const image of entry.images ?? [])
+			if (!existsSync(join(root, SHOT_REFERENCES, image)))
+				problems.push(
+					`${SHOTS_FILE}: ${entry.id} names the reference image ${SHOT_REFERENCES}/${image}, which is missing`,
+				);
+	const pages = new Map(
+		walkFiles(root, 'docs', (path) => path.endsWith('.md')).map((path) => {
+			const text = readIfExists(root, path);
+			return [path, text ?? ''] as const;
+		}),
+	);
+	problems.push(
+		...pageShotProblems(pages, entries, (id) => existsSync(join(root, SHOTS_DIR, `${id}.webp`))),
+	);
+	return problems;
+}
+
 /**
  * Every problem with the docs: exports the API reference cannot show, library items without doc
  * comments, missing pages, bad front matter, broken links, and files of the record of tested
- * devices that break its rules, the inventory's areas and groups, and the moves file. Generated
- * files count with the content the generator gives them now, so the check needs no generated file
- * on disk. `previousMoves` is the moves file on main, whose entries must stay.
+ * devices that break its rules, the inventory's areas and groups, the moves file, and the
+ * screenshots.
  */
 export function checkDocs(root: string, previousMoves: string | null = null): string[] {
 	const problems: string[] = [];
@@ -1028,5 +1172,6 @@ export function checkDocs(root: string, previousMoves: string | null = null): st
 		}
 	}
 	problems.push(...checkLinkTree(linked, (p) => generated.has(p) || existsSync(join(root, p))));
+	problems.push(...shotProblems(root));
 	return problems;
 }
