@@ -12,6 +12,7 @@ import {
 	LEVEL_SCENES,
 } from '../../../../tests/lib/asset-levels-scenes.ts';
 import { ASSET_SCENE, assetSceneGlb } from '../../../../tests/lib/asset-scene.ts';
+import { sameModel } from '../../../../tests/lib/glb-bytes.ts';
 import { shippedDecoder } from '../../../../tests/lib/meshopt-checks.ts';
 import { scaledBudget } from '../../../../tests/lib/run-budget.ts';
 import { FILE_LIMITS, FileBudget } from '../../../engine/src/scene/file-limits.ts';
@@ -259,9 +260,9 @@ describe('assets optimize on the test scene', () => {
 			for (const [name, bytes] of [...model.files, ...lod.files, ...trees.files])
 				writeFileSync(join(at(ASSET_SCENE.textures), name), bytes);
 		}
-		expect(Buffer.from(model.glb).equals(readFileSync(at(ASSET_SCENE.optimized)))).toBe(true);
-		expect(Buffer.from(lod.glb).equals(readFileSync(at(ASSET_SCENE.lodMeshopt)))).toBe(true);
-		expect(Buffer.from(trees.glb).equals(readFileSync(at(ASSET_SCENE.trees)))).toBe(true);
+		expect(sameModel(model.glb, readFileSync(at(ASSET_SCENE.optimized)))).toBe(true);
+		expect(sameModel(lod.glb, readFileSync(at(ASSET_SCENE.lodMeshopt)))).toBe(true);
+		expect(sameModel(trees.glb, readFileSync(at(ASSET_SCENE.trees)))).toBe(true);
 		// Every part of the scene stores its tree.
 		expect(trees.report.spatial).toMatchObject({ trees: 4, blockers: 3 });
 		expect([...trees.files.keys()].sort()).toEqual([...model.files.keys()].sort());
@@ -707,8 +708,8 @@ describe('the level scenes that the pictures draw', () => {
 			for (const [name, bytes] of [...card.files, ...grid.files])
 				writeFileSync(join(at(LEVEL_SCENES.textures), name), bytes);
 		}
-		expect(Buffer.from(card.glb).equals(readFileSync(at(LEVEL_SCENES.cardTreeLod)))).toBe(true);
-		expect(Buffer.from(grid.glb).equals(readFileSync(at(LEVEL_SCENES.bentGridLod)))).toBe(true);
+		expect(sameModel(card.glb, readFileSync(at(LEVEL_SCENES.cardTreeLod)))).toBe(true);
+		expect(sameModel(grid.glb, readFileSync(at(LEVEL_SCENES.bentGridLod)))).toBe(true);
 		expect([...card.files.keys()]).toEqual([]);
 		expect([...grid.files.keys()]).toHaveLength(1);
 		expect(readdirSync(at(LEVEL_SCENES.textures)).sort()).toEqual([...grid.files.keys()].sort());

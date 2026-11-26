@@ -819,7 +819,7 @@ debug.frustum(camera, color);                   // in the canvas's shape
 debug.light(sun, { position, size, color });    // a directional light's direction
 debug.skeleton(hero, color);                    // skin joints: blue at the joint, green at its parent
 
-debug.stats(true);                       // overlay at the canvas's top right: fps, CPU ms per thread and phase, tier, preset, render scale; option { collapsed }, a card of work bars against the target, GPU ms, memory, triangles, objects
+debug.stats(true);                       // overlay at the canvas's top right: fps, CPU ms per thread and phase, tier, preset, render scale; options { collapsed, corner: 'top-right' | 'bottom-right' }, a card of work bars against the target, GPU ms, memory, triangles, objects
 const s = debug.frameStats();            // the same figures: s.presentedFps, s.completedFps, s.cpuMs, s.threads, s.drawCalls; s.gpuMs, s.gpuStepMs, s.triangles, s.objects, s.wasmBytes, s.meshBytes, s.gpuTextureBytes, s.gpuBufferBytes
 debug.view('normals');                   // 'lit' | 'normals' | 'depth' | 'wireframe' | 'overdraw' | 'shadows' | 'motion' | 'levels', or a view that an add-on feature registers; 'lit' draws the materials again
 debug.shadowCamera(player);              // place the sun's shadow cascades from another camera; no argument goes back

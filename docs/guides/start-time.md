@@ -115,9 +115,11 @@ The host's compression decides the size of the start's largest downloads. Send e
 
 | File | As it is | gzip | Brotli |
 | --- | --- | --- | --- |
-| The engine core, `null3d_bg-<hash>.wasm` | 2.0 MB | 0.8 MB | 0.6 MB |
-| The WebGL2 start shader file | 1.2 MB | 0.21 MB | 0.05 MB |
-| The WebGPU start shader file | 0.42 MB | 0.09 MB | 0.04 MB |
+| The engine core, `null3d_bg-<hash>.wasm` | 1.9 MB | 0.8 MB | 0.6 MB |
+| The largest WebGL2 start shader file | 1.4 MB | 0.21 MB | 0.06 MB |
+| The largest WebGPU start shader file | 0.47 MB | 0.09 MB | 0.04 MB |
+
+A device loads one start shader file, picked by what its GPU supports. [Send the files with Brotli](../getting-started/hosting.md#send-the-files-with-brotli) gives the size of the engine's whole start for each kind of compression.
 
 Many servers compress only text, and send `.wasm` files as they are. Open the browser's network panel, and compare the core's transferred size with its size. With nginx, add `application/wasm` to `gzip_types`, or send files that you compress when you deploy, as [Hosting](../getting-started/hosting.md#send-the-files-with-brotli) shows.
 

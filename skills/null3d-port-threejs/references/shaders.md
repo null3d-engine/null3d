@@ -85,7 +85,7 @@ These exist now: the surface input's `relativePosition`, `worldPosition`, `norma
 | `cameraPosition` | `camera.position` |
 | Varyings such as `vWorldPosition`, `vViewDir`, `vNormal` | `input.worldPosition`, `input.relativePosition`, `input.viewDirection`, `input.normal` |
 | `instanceMatrix`, `instanceColor` | The engine applies the instance's transform. A batch made with `colors: true` multiplies each row's color into `input.vertexColor` |
-| Instanced attributes (`InstancedBufferAttribute`), such as a per-instance phase or tint | `object.values`: four floats per row from a batch made with `values: true`, in `vertexOffset` and surface functions. Pack up to four numbers per instance into them |
+| Instanced attributes (`InstancedBufferAttribute`), such as a per-instance phase or tint | `object.values`: four floats per row from a batch made with `values: true`, in `vertexOffset` and surface functions. Pack up to four numbers per instance into them. Keep more in a data texture from `textures.fromData`, read with `textureLoad` at `input.instance`, the row's place |
 | Uniform `time` passed by the app | `frame.time` |
 | `#include <fog_fragment>` and fog uniforms | Nothing: fog is applied after the surface function |
 | `#include <tonemapping_fragment>`, `<colorspace_fragment>` | Delete: the final pass does both, once |
@@ -269,7 +269,7 @@ The null3D version is the dissolve example in the null3d-develop skill's `refere
 - three.js `normalMatrix` is view space; null3D normals are world space.
 - WGSL does not mix `f32` and `i32` in arithmetic: cast explicitly.
 - A surface function shares its file with the engine's template. Rename GLSL helpers and variables that clash with its names, such as `frame`, `camera`, `object`, `material`, `shade`, `finish` or `vs`. The null3d-develop skill's `references/shaders.md` (section 2) lists them all.
-- Uniforms take `f32`, `i32`, `u32`, `vec2f`, `vec3f` and `vec4f`, 32 numbers in all. Pass a matrix as `vec4f` rows, and rename a uniform called `color`, `roughness` or another standard value.
+- Uniforms take `f32`, `i32`, `u32`, `vec2f`, `vec3f` and `vec4f`, 32 numbers in all, less one for each texture. Keep more in a data texture read with `textureLoad`. Pass a matrix as `vec4f` rows, and rename a uniform called `color`, `roughness` or another standard value.
 - Use only the three WGSL language features every browser shares, and `@interpolate(flat, either)` for flat values (null3d-develop `references/shaders.md`, section 8).
 - Test on WebGL2 (`?gpu=webgl2`): the translated GLSL can hit limits the WGSL did not.
 - A full shader loses the engine's lighting, shadows and fog, and takes no uniforms. Port to a surface function where the look allows it.
