@@ -13,8 +13,84 @@
 // reads faster than an object literal of the same size, and which the transforms after the plugin
 // leave on one line. The function makes no code from strings, so a strict Content Security Policy
 // allows it.
-/** The function that the plugin adds to a module, which rebuilds the module's compiled shaders. */
+/**
+ * The function that the plugin adds to a module, which rebuilds the module's compiled shaders.
+ */
 export const UNPACK = '__null3dShader';
+
+/**
+ * The two tables of an unpacked module in its text: the WGSL table and the GLSL table, each the
+ * JavaScript string literal that `JSON.stringify(JSON.stringify(...))` writes.
+ */
+const PATHS_TABLES =
+	/__null3dShader\.paths = \[\s*("(?:[^"\\]|\\.)*")\s*,\s*("(?:[^"\\]|\\.)*")\s*\]/;
+
+/** The call that a module makes to unpack each compiled shader, and its first argument. */
+const PACK_CALL = /__null3dShader\(\s*("(?:[^"\\]|\\.)*")/g;
+
+/** The entries of a build-set loader that hold the sets of one GPU path, one on each line. */
+const SET_ENTRY =
+	/[ \t]*"(?:material|effect|toneCurve) glsl \d+": \(\) => import\("[^"]*"\),\r?\n/g;
+
+/** The JSON text of a table that holds no text, in the form that the module's tables take. */
+const EMPTY_TABLE = JSON.stringify(JSON.stringify({ blocks: [], lists: [] }));
+
+/** Why a packed shader module cannot be narrowed: its text is not the form that the pack writes. */
+function unreadablePack(file: string): Error {
+	return new Error(
+		`null3D cannot drop the WebGL2 builds of ${file}: the module is not in the form that the null3D plugin packs a compiled shader in. Install the same version of @null3d/vite-plugin as the package that wrote it.`,
+	);
+}
+
+/**
+ * Sets every `glsl` and `webgl2` field of a packed record to null, at any depth, so that no getter
+ * ever asks for a source of a table that no longer holds any. A material's variants, an effect's
+ * pieces and a whole shader's records all name their WebGL2 output that way.
+ */
+function dropWebgl2(value: unknown): void {
+	if (Array.isArray(value)) {
+		for (const item of value) dropWebgl2(item);
+		return;
+	}
+	if (value === null || typeof value !== 'object') return;
+	const record = value as Record<string, unknown>;
+	for (const key of Object.keys(record)) {
+		if (key === 'glsl' || key === 'webgl2') record[key] = null;
+		else dropWebgl2(record[key]);
+	}
+}
+
+/**
+ * The text of a packed shader module with its WebGL2 builds removed, for a build that ships WebGPU
+ * alone: each record keeps no WebGL2 output, the module keeps no table of GLSL text, and the loader
+ * of build sets loses the entries of the GLSL sets, so their modules are never imported or emitted.
+ * Throws when the text is not in the form that `ShaderPack` writes, so a build never ships a module
+ * that it misread.
+ */
+export function narrowShaderPack(text: string, file: string): string {
+	const tables = PATHS_TABLES.exec(text);
+	if (tables === null) throw unreadablePack(file);
+	let narrowed = text.replace(
+		PATHS_TABLES,
+		(_match, wgsl: string, _glsl: string) => `__null3dShader.paths = [${wgsl}, ${EMPTY_TABLE}]`,
+	);
+	let calls = 0;
+	narrowed = narrowed.replace(PACK_CALL, (match, literal: string) => {
+		let packed: string;
+		let records: unknown;
+		try {
+			packed = JSON.parse(literal) as string;
+			records = JSON.parse(packed);
+		} catch {
+			throw unreadablePack(file);
+		}
+		dropWebgl2(records);
+		calls++;
+		return match.replace(literal, () => JSON.stringify(JSON.stringify(records)));
+	});
+	if (calls === 0) throw unreadablePack(file);
+	return narrowed.replace(SET_ENTRY, '');
+}
 
 /**
  * The function of a module whose custom materials' builds load on first use, which imports the

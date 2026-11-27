@@ -16,7 +16,7 @@
 // own WebGPU modules, does not split these sets.
 import { createHash } from 'node:crypto';
 import { LOAD_BUILDS, ShaderPack } from './pack.ts';
-import type { CompiledWgsl, ShaderVariant } from './shader-types.ts';
+import type { CompiledWgsl, EffectPieces, ShaderPiece, ShaderVariant } from './shader-types.ts';
 
 /** The prefix of the virtual modules that hold sets of custom materials' builds. */
 export const MATERIAL_BUILDS = 'virtual:null3d/builds/';
@@ -40,6 +40,9 @@ export const HALF = 8192;
 
 /** A GPU path, as a build's field of its output names it. */
 type Target = 'wgsl' | 'glsl';
+
+/** The GPU paths, in the order that a build takes them. */
+const TARGETS: readonly Target[] = ['wgsl', 'glsl'];
 
 /** The permutation bits that a device of each GPU path fixes, which split its builds into sets. */
 const FIXED: Readonly<Record<Target, number>> = { wgsl: TONE_MAP, glsl: TONE_MAP | DRAW_INDEX };
@@ -129,17 +132,23 @@ export class ModuleBuilds {
 	private readonly counts = new Map<BuildKind, number>();
 
 	/**
+	 * `glsl` false keeps the WebGPU path alone: each shader loses its WebGL2 builds and pieces
+	 * before it is packed, so their text reaches neither the module nor a set of builds.
+	 */
+	constructor(private readonly glsl = true) {}
+
+	/**
 	 * The JavaScript expression of `shader` in a module that `pack` packs, as `ShaderPack.value`
 	 * gives it. The value of a shader whose builds load on first use keeps none: it gets a
 	 * function that imports a set.
 	 */
 	value(pack: ShaderPack, shader: CompiledWgsl, hot?: string): string {
-		const kind = shader.kind;
+		const kept = this.glsl ? shader : withoutGlsl(shader);
+		const kind = kept.kind;
 		const variants = isBuildKind(kind)
-			? (shader as { readonly variants?: Builds }).variants
+			? (kept as { readonly variants?: Builds }).variants
 			: undefined;
-		if (variants === undefined || Object.keys(variants).length === 0)
-			return pack.value(shader, hot);
+		if (variants === undefined || Object.keys(variants).length === 0) return pack.value(kept, hot);
 		const index = this.counts.get(kind as BuildKind) ?? 0;
 		this.counts.set(kind as BuildKind, index + 1);
 		this.sources.push({ kind: kind as BuildKind, variants });
@@ -147,7 +156,7 @@ export class ModuleBuilds {
 		// own joins a host as the first member of a group or of the fold. The shader build gives no
 		// pieces to an effect that declares textures or reads bloom's chain, which draws its own pass.
 		return pack.value(
-			{ ...shader, variants: {}, permutations: permutationsOf(variants) },
+			{ ...kept, variants: {}, permutations: permutationsOf(variants) },
 			hot,
 			index,
 			kind as BuildKind,
@@ -180,6 +189,48 @@ function onlyTarget(variants: Builds, target: Target): Builds {
 	return kept;
 }
 
+/** The builds of `variants` for the WebGPU path alone: those with no WebGPU output go. */
+function webgpuOnly(variants: Builds): Builds {
+	return onlyTarget(variants, 'wgsl');
+}
+
+/** The pieces of `pieces` without their WebGL2 additions. */
+function withoutGlslPieces(pieces: EffectPieces): EffectPieces {
+	const strip = (group: Readonly<Record<string, ShaderPiece>>): Record<string, ShaderPiece> =>
+		Object.fromEntries(
+			Object.entries(group).map(([name, piece]) => [name, { ...piece, glsl: null }]),
+		);
+	return { group: strip(pieces.group), fold: strip(pieces.fold) };
+}
+
+/**
+ * The compiled WGSL of `shader` with every build and piece of the WebGL2 path removed, for a build
+ * that ships WebGPU alone: a whole shader keeps no WebGL2 variant, a material keeps no GLSL
+ * variants, and an effect or a tone curve keeps no GLSL pieces. The text of the other path then
+ * never reaches the module or a set that the build writes.
+ */
+export function withoutGlsl(shader: CompiledWgsl): CompiledWgsl {
+	switch (shader.kind) {
+		case 'shader':
+			return { ...shader, webgl2: null };
+		case 'material':
+			return { ...shader, variants: webgpuOnly(shader.variants) };
+		case 'effect':
+		case 'toneCurve':
+			return {
+				...shader,
+				variants: webgpuOnly(shader.variants),
+				pieces: withoutGlslPieces(shader.pieces),
+			};
+		case 'skyLayer':
+			return {
+				...shader,
+				variants: webgpuOnly(shader.variants),
+				map: webgpuOnly(shader.map),
+			};
+	}
+}
+
 /** The builds of the shaders of `kind` in `sources`, in the module's order. */
 function variantsOf(sources: readonly BuildSource[], kind: BuildKind): Builds[] {
 	return sources.filter((source) => source.kind === kind).map((source) => source.variants);
@@ -195,11 +246,12 @@ function setOf(bits: string, key: string, records: readonly Builds[]): BuildSet 
 /**
  * The sets that hold `sources`' builds: for a material one for each GPU path and value of its fixed
  * bits, and for an effect or a tone curve one for each GPU path. Each set holds the builds of every
- * shader of its kind that the set serves.
+ * shader of its kind that the set serves. With `glsl` false, the sets of the WebGL2 path are left
+ * out, for a build that ships WebGPU alone.
  */
-export function buildSets(sources: readonly BuildSource[]): BuildSet[] {
+export function buildSets(sources: readonly BuildSource[], glsl = true): BuildSet[] {
 	const sets: BuildSet[] = [];
-	for (const target of ['wgsl', 'glsl'] as const) {
+	for (const target of glsl ? TARGETS : (['wgsl'] as const)) {
 		const materials = variantsOf(sources, 'material');
 		if (materials.length > 0)
 			for (const set of setsOf(target)) {
@@ -250,13 +302,16 @@ export class MaterialBuilds {
 	/** The names of the sets of each module, so a module's new compile drops its old sets. */
 	private readonly owners = new Map<string, Set<string>>();
 
+	/** `glsl` says whether the WebGL2 sets are made; a build that ships WebGPU alone says false. */
+	constructor(private readonly glsl: () => boolean = () => true) {}
+
 	/**
 	 * The code that ends module `file`, whose shaders `builds` holds: the function that imports
 	 * each set, or nothing for a module without such shaders. The sets of the module's previous
 	 * compile go, unless another module has the same.
 	 */
 	finish(file: string, builds: ModuleBuilds): string {
-		const sets = buildSets(builds.sources);
+		const sets = buildSets(builds.sources, this.glsl());
 		const names = new Set(sets.map((set) => set.name));
 		for (const set of sets) this.sets.set(set.name, [...set.records]);
 		const before = this.owners.get(file);
