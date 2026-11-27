@@ -1,6 +1,6 @@
 {
 	"name": "@null3d/controls",
-	"version": "0.1.0",
+	"version": "0.1.1",
 	"description": "Orbit, map, fly and first-person camera controls, and drag, rotate and scale gizmos, for null3D sketches, with three.js's option names and behavior.",
 	"license": "MIT OR Apache-2.0",
 	"author": "Ramesh Nair (https://hiddentao.com)",

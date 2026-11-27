@@ -12,7 +12,7 @@ import { DEV } from './dev';
  *
  * @category api/engine
  */
-export const VERSION = '0.1.0';
+export const VERSION = '0.1.1';
 
 /**
  * The version of the plugin interface that an add-on from another developer builds against. It is

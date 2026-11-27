@@ -1,6 +1,6 @@
 {
 	"name": "@null3d/grass",
-	"version": "0.1.0",
+	"version": "0.1.1",
 	"description": "GPU grass for null3D sketches: tufts of bent blades over a ground, placed by integer hashes, built in a compute pass on WebGPU with near shadows, swaying in the wind add-on's field, built on the engine's public API.",
 	"license": "MIT OR Apache-2.0",
 	"author": "Ramesh Nair (https://hiddentao.com)",

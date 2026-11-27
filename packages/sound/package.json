@@ -1,6 +1,6 @@
 {
 	"name": "@null3d/sound",
-	"version": "0.1.0",
+	"version": "0.1.1",
 	"description": "Positional sound for null3D sketches: loops, groups of many emitters that share a few voices, and one-shots, placed in the scene and played with the browser's audio on the audio thread, built on the engine's public API.",
 	"license": "MIT OR Apache-2.0",
 	"author": "Ramesh Nair (https://hiddentao.com)",

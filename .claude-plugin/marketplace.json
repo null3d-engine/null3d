@@ -9,12 +9,12 @@
 		{
 			"name": "null3d",
 			"description": "Build, debug and speed up null3D projects, and port three.js projects to null3D.",
-			"version": "0.1.0",
+			"version": "0.1.1",
 			"source": {
 				"source": "git-subdir",
 				"url": "null3d-engine/null3d",
 				"path": ".claude",
-				"ref": "0.1.0"
+				"ref": "0.1.1"
 			},
 			"strict": false
 		}

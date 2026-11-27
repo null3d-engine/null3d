@@ -1,5 +1,59 @@
 # Changelog
 
+## 0.1.1 - 2026-11-27
+
+### Features
+
+#### @null3d/engine
+
+- Add a lens shift to perspective and orthographic cameras ([#586](https://github.com/null3d-engine/null3d/pull/586), [47488a89a](https://github.com/null3d-engine/null3d/commit/47488a89a3c55c11e252cefe84b56eba957bd851))
+- Give the sketch's setup start data from the page ([#584](https://github.com/null3d-engine/null3d/pull/584), [f618bff93](https://github.com/null3d-engine/null3d/commit/f618bff935a394d1f1b86b3c5563ebdfb2788ac8))
+
+#### @null3d/vite-plugin
+
+- Copy only the shader builds of a project's recorded words ([#583](https://github.com/null3d-engine/null3d/pull/583), [46ed60384](https://github.com/null3d-engine/null3d/commit/46ed60384a22f4c7575ba4f7c488fc78e10dd531))
+
+#### Other parts
+
+- **stats:** Put the stats overlay at the canvas's bottom right on request ([#577](https://github.com/null3d-engine/null3d/pull/577), [b4fdcda21](https://github.com/null3d-engine/null3d/commit/b4fdcda212f0ac6ed1b92bc5712be73cf1d256bf))
+
+#### Repository and tooling
+
+- Warn on a long paragraph in the docs style check ([#588](https://github.com/null3d-engine/null3d/pull/588), [4fc59a101](https://github.com/null3d-engine/null3d/commit/4fc59a101d3a0c5db667527d3dabec17c84f5a59))
+
+### Bug fixes
+
+#### Repository and tooling
+
+- Pin sibling packages at the release version ([#585](https://github.com/null3d-engine/null3d/pull/585), [c6fba70fe](https://github.com/null3d-engine/null3d/commit/c6fba70fef1f13af7fd65c918d72beaaf1a5dcfa))
+- Build the npm job from the shader caches, and add a publish-only run ([#580](https://github.com/null3d-engine/null3d/pull/580), [a4fcf784d](https://github.com/null3d-engine/null3d/commit/a4fcf784df16a0ba1ed1326845ed8c2f137522c1))
+- Push the tag with the release App, and let a rerun land nothing ([#578](https://github.com/null3d-engine/null3d/pull/578), [7f9ced939](https://github.com/null3d-engine/null3d/commit/7f9ced93954fae37391b82be0f9bb2ad0625425f))
+
+### Performance
+
+#### @null3d/engine
+
+- Build the first frame's light and culling pipelines only when it draws them ([#590](https://github.com/null3d-engine/null3d/pull/590), [954185f14](https://github.com/null3d-engine/null3d/commit/954185f1455994fc44e6ce0ff1458aa62a5da8d1))
+
+### Documentation
+
+- Link each page to its demo ([#592](https://github.com/null3d-engine/null3d/pull/592), [4285335cc](https://github.com/null3d-engine/null3d/commit/4285335cc377ae20add3e0d74597a5115569b497))
+- Show screenshots beside the pages they explain ([#593](https://github.com/null3d-engine/null3d/pull/593), [23effa480](https://github.com/null3d-engine/null3d/commit/23effa4805be6fd3b967712501d1274168103e3b))
+- Restructure the docs and add the reviewed content ([#579](https://github.com/null3d-engine/null3d/pull/579), [d0cf8a720](https://github.com/null3d-engine/null3d/commit/d0cf8a720c87ca16586b8834d7c169f43a6dcb84))
+- Give the start's measured download sizes, and say that a three.js port is a rewrite ([#581](https://github.com/null3d-engine/null3d/pull/581), [c64cff52e](https://github.com/null3d-engine/null3d/commit/c64cff52ef65bc1b8e3829641a838f67a9421cea))
+
+### Build and tooling
+
+#### Repository and tooling
+
+- Reuse CI's shader caches and the packed shader set ([#576](https://github.com/null3d-engine/null3d/pull/576), [bb90bcdfa](https://github.com/null3d-engine/null3d/commit/bb90bcdfa3f3f3fbbd297d16a793b974fe9af3d9))
+
+#### Across the project
+
+- Retune the browser shards to 52 at a 12-minute target ([#591](https://github.com/null3d-engine/null3d/pull/591), [d87e84e64](https://github.com/null3d-engine/null3d/commit/d87e84e648147b19fa60206ab10a0f8b0910a029))
+
+**Full changelog**: https://github.com/null3d-engine/null3d/compare/0.1.0...0.1.1
+
 ## 0.1.0 - 2026-11-26
 
 ### Breaking changes

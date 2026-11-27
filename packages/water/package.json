@@ -1,6 +1,6 @@
 {
 	"name": "@null3d/water",
-	"version": "0.1.0",
+	"version": "0.1.1",
 	"description": "Water for null3D sketches: a river and a lake from one description, with waves, ripples, caustics, foam, soft shores that read the scene's depth, a reflection pass whose cadence follows the quality preset, the view from under the surface, and waterfalls with spray and mist, built on the engine's public API.",
 	"license": "MIT OR Apache-2.0",
 	"author": "Ramesh Nair (https://hiddentao.com)",
