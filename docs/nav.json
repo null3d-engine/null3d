@@ -1,0 +1,300 @@
+{
+  "areas": [
+    {
+      "id": "getting-started",
+      "title": "Getting started",
+      "groups": [
+        {
+          "title": "First steps",
+          "pages": [
+            "getting-started/install",
+            "getting-started/first-scene",
+            "getting-started/project-structure"
+          ]
+        },
+        {
+          "title": "Hosting and licenses",
+          "pages": [
+            "getting-started/hosting",
+            "getting-started/cdn",
+            "getting-started/network-use",
+            "getting-started/third-party-notices"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "concepts",
+      "title": "Concepts",
+      "groups": [
+        {
+          "title": "How the engine runs",
+          "pages": [
+            "concepts/architecture",
+            "concepts/handles",
+            "concepts/static-dynamic",
+            "concepts/instances",
+            "concepts/particle-buffer",
+            "concepts/assets",
+            "concepts/backends",
+            "concepts/quality-presets",
+            "concepts/quality-preset-tables"
+          ]
+        },
+        {
+          "title": "Drawing a frame",
+          "pages": [
+            "concepts/color-management",
+            "concepts/materials",
+            "concepts/lighting",
+            "concepts/shadows",
+            "concepts/render-layers",
+            "concepts/render-graph"
+          ]
+        },
+        {
+          "title": "Large scenes",
+          "pages": [
+            "concepts/large-worlds",
+            "concepts/culling",
+            "concepts/lod"
+          ]
+        },
+        {
+          "title": "Effects after the scene",
+          "pages": [
+            "concepts/post-processing"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "guides",
+      "title": "Guides",
+      "groups": [
+        {
+          "title": "Performance and loading",
+          "pages": [
+            "guides/performance",
+            "guides/phones",
+            "guides/loading-screens",
+            "guides/first-use-shaders",
+            "guides/start-time"
+          ]
+        },
+        {
+          "title": "Shaders and rendering",
+          "pages": [
+            "guides/custom-shaders",
+            "guides/custom-passes",
+            "guides/baked-light-data"
+          ]
+        },
+        {
+          "title": "Pages and UI",
+          "pages": [
+            "guides/ui-overlays",
+            "guides/content-pages",
+            "guides/accessibility",
+            "guides/multiple-views",
+            "guides/video-textures"
+          ]
+        },
+        {
+          "title": "Game systems",
+          "pages": [
+            "guides/physics",
+            "guides/deterministic-simulation",
+            "guides/audio"
+          ]
+        },
+        {
+          "title": "Example add-ons",
+          "pages": [
+            "guides/car-paint",
+            "guides/lens-kit",
+            "guides/screens"
+          ]
+        },
+        {
+          "title": "Testing and debugging",
+          "pages": [
+            "guides/testing",
+            "guides/debugging"
+          ]
+        },
+        {
+          "title": "Building and shipping",
+          "pages": [
+            "guides/assets-pipeline",
+            "guides/deploying"
+          ]
+        },
+        {
+          "title": "Agents and add-ons",
+          "pages": [
+            "guides/agents",
+            "guides/add-ons"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cookbook",
+      "title": "Cookbook",
+      "groups": [
+        {
+          "title": null,
+          "pages": [
+            "cookbook/index"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "shaders",
+      "title": "Shaders",
+      "groups": [
+        {
+          "title": null,
+          "pages": [
+            "shaders/surface-functions",
+            "shaders/builtins",
+            "shaders/library",
+            "shaders/wgsl-rules"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "porting",
+      "title": "Porting from three.js",
+      "groups": [
+        {
+          "title": null,
+          "pages": [
+            "porting/threejs-overview",
+            "porting/threejs-mapping",
+            "porting/threejs-loop-and-threads",
+            "porting/threejs-materials",
+            "porting/threejs-shaders",
+            "porting/threejs-postprocessing",
+            "porting/react-three-fiber",
+            "porting/threejs-unsupported",
+            "porting/verification"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "api",
+      "title": "API reference",
+      "groups": [
+        {
+          "title": "Page and sketch",
+          "pages": [
+            "api/engine",
+            "api/sketch",
+            "api/page"
+          ]
+        },
+        {
+          "title": "Scene and objects",
+          "pages": [
+            "api/scene",
+            "api/objects",
+            "api/cameras",
+            "api/lights",
+            "api/geometry",
+            "api/materials",
+            "api/textures",
+            "api/assets",
+            "api/animation"
+          ]
+        },
+        {
+          "title": "Sprites, points, lines and vertex draws",
+          "pages": [
+            "api/sprites",
+            "api/points",
+            "api/lines",
+            "api/vertex-draws"
+          ]
+        },
+        {
+          "title": "Interaction",
+          "pages": [
+            "api/input",
+            "api/raycast",
+            "api/ui",
+            "api/controls"
+          ]
+        },
+        {
+          "title": "Rendering and quality",
+          "pages": [
+            "api/post",
+            "api/render",
+            "api/quality",
+            "api/debug"
+          ]
+        },
+        {
+          "title": "Utilities",
+          "pages": [
+            "api/time",
+            "api/math"
+          ]
+        },
+        {
+          "title": "Add-on packages",
+          "pages": [
+            "api/particles",
+            "api/impostors",
+            "api/terrain",
+            "api/grass",
+            "api/splats",
+            "api/water",
+            "api/wind",
+            "api/sound",
+            "api/three-compat"
+          ]
+        },
+        {
+          "title": "Building add-ons",
+          "pages": [
+            "api/features",
+            "api/feature-draws",
+            "api/feature-effects",
+            "api/feature-instances",
+            "api/tasks"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cli",
+      "title": "Command-line tool",
+      "groups": [
+        {
+          "title": null,
+          "pages": [
+            "cli/null3d"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "errors",
+      "title": "Errors",
+      "groups": [
+        {
+          "title": null,
+          "pages": [
+            "errors/index"
+          ]
+        }
+      ]
+    }
+  ]
+}
