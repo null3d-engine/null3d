@@ -13,12 +13,12 @@ null3D comes with two agent skills. A skill is a folder of instructions that a c
 | `null3d-develop` | Builds, debugs and speeds up null3D projects, including product and marketing pages |
 | `null3d-port-threejs` | Ports three.js and React Three Fiber projects to null3D |
 
-Install the skills that match the engine version your project uses. Each release of the engine has its own skills.
+Each release of the engine has its own skills. The links in this page give the latest release's skills. [Other agent tools](#other-agent-tools) shows how to pin an older release.
 
 ## Claude Code
 
 ```sh
-claude plugin marketplace add https://raw.githubusercontent.com/null3d-engine/null3d/main/.claude-plugin/marketplace.json
+claude plugin marketplace add null3d-engine/null3d
 claude plugin install null3d@null3d
 ```
 
@@ -26,20 +26,23 @@ The plugin holds the skills of the latest release, and Claude Code downloads onl
 
 ## claude.ai and the Claude desktop app
 
-Each release's page on GitHub has `null3d-develop.zip` and `null3d-port-threejs.zip` attached. Upload each zip where the app lets you add skills.
+Download each skill as a zip and upload it where the app lets you add skills:
+
+- [null3d-develop](https://null3d.dev/skills/null3d-develop)
+- [null3d-port-threejs](https://null3d.dev/skills/null3d-port-threejs)
 
 ## Other agent tools
 
-The [`skills` command](https://github.com/vercel-labs/skills) installs a skill into many agent tools, including Claude Code, Cursor and OpenCode. Give it the folder of each skill in the release that your project uses:
+The [`skills` command](https://github.com/vercel-labs/skills) installs a skill into many agent tools, including Claude Code, Cursor and OpenCode:
 
 ```sh
-bunx skills add https://github.com/null3d-engine/null3d/tree/0.1.0/.claude/skills/null3d-develop
-bunx skills add https://github.com/null3d-engine/null3d/tree/0.1.0/.claude/skills/null3d-port-threejs
+bunx skills add https://null3d.dev/skills/null3d-develop
+bunx skills add https://null3d.dev/skills/null3d-port-threejs
 ```
 
-Replace `0.1.0` with your engine version. The command asks which agents to install into, and `-a` names them.
+The command asks which agents to install into, and `-a` names them. These links give the latest release. For an older engine, add its release tag as a last path segment, such as `/skills/null3d-develop/<tag>`.
 
-To install by hand, copy each skill's folder from `.claude/skills/` in the release into your agent's skills folder, and keep the folder's name. Use those copies: the repository's `skills/` folder also holds test material for the skills.
+To install by hand, unzip a skill into your agent's skills folder and keep the folder's name.
 
 ## Docs by ID
 

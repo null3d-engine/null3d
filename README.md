@@ -246,7 +246,7 @@ The full [three.js to null3D mapping](https://github.com/null3d-engine/null3d/bl
 Install the skills in Claude Code as a plugin:
 
 ```sh
-claude plugin marketplace add https://raw.githubusercontent.com/null3d-engine/null3d/main/.claude-plugin/marketplace.json
+claude plugin marketplace add null3d-engine/null3d
 claude plugin install null3d@null3d
 ```
 
