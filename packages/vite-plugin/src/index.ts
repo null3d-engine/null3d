@@ -814,6 +814,8 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin[] {
 			copiedTables.files = 0;
 			copiedTables.bytes = 0;
 			heldWords.clear();
+			// A rebuild reads the dropped files again, so the scan must answer the new list too.
+			scannedWords.clear();
 			if (narrowedFolder !== undefined) rmSync(narrowedFolder, { recursive: true, force: true });
 			narrowedFolder = undefined;
 			shaderList = undefined;
@@ -1340,6 +1342,25 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin[] {
 		},
 	};
 
+	/** The device files whose words this build has read for the project's shader list. */
+	const scannedWords = new Set<string>();
+	/**
+	 * Adds to `heldWords` the words of every device file that a generated module names. A build
+	 * that drops the module must still answer the project's list with its words, which the module's
+	 * own text does not hold: a table of combined builds names them through the addresses below.
+	 */
+	const holdNamedWords = (text: string, file: string): void => {
+		if (shaderList === undefined) return;
+		for (const match of text.matchAll(SCRIPT_URL)) {
+			const address = match[2] ?? '';
+			if (!isGeneratedShaderFile(file, address)) continue;
+			const named = resolve(dirname(file), address);
+			if (scannedWords.has(named) || !existsSync(named)) continue;
+			scannedWords.add(named);
+			for (const word of moduleWords(readFileSync(named, 'utf8'))) holdWord(heldWords, word);
+		}
+	};
+
 	/**
 	 * Names the generated shader files' copies before Vite's own asset step sees them, which runs
 	 * after the plugins that declare no order. A generated module loads each of its builds by
@@ -1434,6 +1455,7 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin[] {
 				const file = [named, `${named}.ts`, `${named}.js`].find((path) => existsSync(path));
 				if (file === undefined) return;
 				const text = readFileSync(file, 'utf8');
+				holdNamedWords(text, file);
 				return `${NO_SHADER_ID}${exportNamesOf(text, file).join(',')}`;
 			},
 		},
@@ -1462,6 +1484,7 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin[] {
 				const text = readFileSync(file, 'utf8');
 				if (shaderList !== undefined)
 					for (const word of moduleWords(text)) holdWord(heldWords, word);
+				holdNamedWords(text, file);
 				return stubModule(exportNamesOf(text, file));
 			},
 		},

@@ -585,10 +585,24 @@ ${words.map((word) => `\t\tbuild_${word}: {\n\t\t\tpermutation: ${word},\n\t\t\t
 				'shaders.ts': `export const SHADERS = { test: { a: {\n\t\tpermutation: 32,\n\t} } };
 export const start = () => new URL('./shaders-glsl.js', import.meta.url);
 export const skin = () => new URL('./shaders-skinning-glsl.js', import.meta.url);
+export const combined = () => import('./shaders-glsl-combos-morph').then((module) => module.FILES);
 `,
 				'shaders-glsl.js': deviceModule([0, 4, 16, 18]),
 				'shaders-skinning-glsl.js': deviceModule([64]),
-				'shader-paragraphs-glsl.js': [0, 4, 16, 18, 64]
+				// A table of combined builds names its device module only through the address below,
+				// and that module holds a word that no other file of the set holds.
+				'shaders-glsl-combos-morph.ts': `function importShaders(url: URL): Promise<unknown> {
+	return import(/* @vite-ignore */ url.href);
+}
+export const FILES = {
+	morph: {
+		bits: 0,
+		modules: { 0: () => importShaders(new URL('./shaders-morph-glsl.js', import.meta.url)) },
+	},
+};
+`,
+				'shaders-morph-glsl.js': deviceModule([128]),
+				'shader-paragraphs-glsl.js': [0, 4, 16, 18, 64, 128]
 					.map((word) => `export const SHARED_${word} = \`// paragraph ${word}\`;\n`)
 					.join(''),
 				'shader-permutations.ts':
@@ -602,7 +616,11 @@ export const skin = () => new URL('./shaders-skinning-glsl.js', import.meta.url)
 		 * Builds the project with the list that `list` names, or with none for null, and gives its
 		 * output folder and the messages it logged.
 		 */
-		async function buildListed(root: string, list: string | null = 'list.txt') {
+		async function buildListed(
+			root: string,
+			list: string | null = 'list.txt',
+			gpuPaths?: readonly ('webgpu' | 'webgl2')[],
+		) {
 			const messages: string[] = [];
 			const logger = createLogger('info');
 			logger.info = (message) => {
@@ -615,7 +633,13 @@ export const skin = () => new URL('./shaders-skinning-glsl.js', import.meta.url)
 				root,
 				customLogger: logger,
 				configFile: false,
-				plugins: [null3d(list === null ? {} : { shaders: { list } })],
+				plugins: [
+					null3d(
+						list === null
+							? {}
+							: { shaders: { list, ...(gpuPaths === undefined ? {} : { gpuPaths }) } },
+					),
+				],
 			});
 			return { out: join(root, 'dist'), messages };
 		}
@@ -690,8 +714,27 @@ export const skin = () => new URL('./shaders-skinning-glsl.js', import.meta.url)
 			expect(names.some((name) => name.startsWith('shaders-skinning-glsl-'))).toBe(true);
 			expect(names.some((name) => name.startsWith('shaders-unlisted'))).toBe(false);
 			expect(messages.join('\n')).toMatch(
-				/copied 3 shader files, 0 MB: every build.*shaders\.list.*assets-pipeline\.md#build-only-the-shader-permutations-you-draw-with/,
+				/copied 4 shader files, 0 MB: every build.*shaders\.list.*assets-pipeline\.md#build-only-the-shader-permutations-you-draw-with/,
 			);
+		});
+
+		it('holds a word that only a dropped table of combined builds names, for one GPU path', async () => {
+			// The module of word 0x80 is named only by the table that the build drops, so the table's
+			// own text must answer the list. A build that read no such file rejects the word.
+			const { out } = await buildListed(listedProject('0x00000000\n0x00000080\n'), 'list.txt', [
+				'webgpu',
+			]);
+			const names = [...assetsOf(out).keys()];
+			expect(names.some((name) => name.includes('glsl'))).toBe(false);
+		});
+
+		it('holds those words again on a rebuild of the same plugin instance', async () => {
+			// A watch rebuild clears the words it held, so the scan that answers them must run again.
+			const root = listedProject('0x00000000\n0x00000080\n');
+			const plugins = null3d({ shaders: { list: 'list.txt', gpuPaths: ['webgpu'] } });
+			const buildOnce = () => build({ root, configFile: false, logLevel: 'silent', plugins });
+			await buildOnce();
+			await buildOnce();
 		});
 	});
 
