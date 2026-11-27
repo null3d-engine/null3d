@@ -814,6 +814,8 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin[] {
 			copiedTables.files = 0;
 			copiedTables.bytes = 0;
 			heldWords.clear();
+			// A rebuild reads the dropped files again, so the scan must answer the new list too.
+			scannedWords.clear();
 			if (narrowedFolder !== undefined) rmSync(narrowedFolder, { recursive: true, force: true });
 			narrowedFolder = undefined;
 			shaderList = undefined;

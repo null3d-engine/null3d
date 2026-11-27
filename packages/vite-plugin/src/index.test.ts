@@ -727,6 +727,15 @@ export const FILES = {
 			const names = [...assetsOf(out).keys()];
 			expect(names.some((name) => name.includes('glsl'))).toBe(false);
 		});
+
+		it('holds those words again on a rebuild of the same plugin instance', async () => {
+			// A watch rebuild clears the words it held, so the scan that answers them must run again.
+			const root = listedProject('0x00000000\n0x00000080\n');
+			const plugins = null3d({ shaders: { list: 'list.txt', gpuPaths: ['webgpu'] } });
+			const buildOnce = () => build({ root, configFile: false, logLevel: 'silent', plugins });
+			await buildOnce();
+			await buildOnce();
+		});
 	});
 
 	it('runs in the worker builds, which name the copies they load', () => {
