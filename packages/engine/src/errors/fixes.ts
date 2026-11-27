@@ -82,6 +82,8 @@ export const ERROR_FIXES = {
 		'Update Safari to version 18 or later. On iPhone and iPad, update iOS or iPadOS to 18 or later, which updates the engine of every browser there.',
 	E1307:
 		"Read the message: it names the pipeline and quotes the driver. If it names a custom material, shorten that material's WGSL, with fewer texture reads, loops and calls. On a device with little memory, use a lower quality preset, smaller textures and fewer objects. Update the browser and the device's system software, and report an engine template with the device.",
+	E1308:
+		"Add 'webgl2' to the Vite plugin's shaders.gpuPaths option and build the page again, for a deployment whose devices may lack WebGPU. A build that ships one GPU path must always offer it.",
 	E1401:
 		'End the sketch module with export default defineSketch(...), and pass that module to createEngine.',
 	E1402:
