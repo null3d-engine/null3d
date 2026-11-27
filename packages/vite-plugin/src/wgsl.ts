@@ -276,10 +276,13 @@ function pipelinesOf(
 }
 
 /** The builds of a shader from a project: one for WebGPU, and one for WebGL2. */
-const BUILDS = {
+const ALL_BUILDS = {
 	webgpu: { targets: ['wgsl'] },
 	webgl2: { defs: ['WEBGL2'], targets: ['glsl'] },
 } as const satisfies Record<string, ShaderVariantSpec>;
+
+/** The build that a compile of whole shaders makes when it ships the WebGPU path alone. */
+const WEBGPU_BUILD = { webgpu: ALL_BUILDS.webgpu } as const;
 
 /**
  * The result of compiling WGSL from a project: the shader with its warnings, or the problems that
@@ -320,7 +323,7 @@ type CompilePlan =
  * shader, one that the engine's mesh calls or a draw shader. `hint` ends the message about WGSL
  * that is none of these.
  */
-function planOf(path: string, source: string, hint: string): CompilePlan {
+function planOf(path: string, source: string, hint: string, glsl: boolean): CompilePlan {
 	const noEntryPoints = entryPoints(source).length === 0;
 	if (noEntryPoints && declaresFunction(source, SKY_LAYER_FUNCTIONS)) return { kind: 'skyLayer' };
 	if (noEntryPoints && declaresFunction(source, POST_FUNCTIONS)) return { kind: 'effect' };
@@ -334,14 +337,14 @@ function planOf(path: string, source: string, hint: string): CompilePlan {
 	const shape = pipelinesOf(path, source, hint);
 	if ('problem' in shape) return { kind: 'problem', problem: shape.problem };
 	const render = Object.keys(shape.pipelines).length > 0;
-	const variants = render ? BUILDS : { webgpu: BUILDS.webgpu };
+	const variants = render && glsl ? ALL_BUILDS : WEBGPU_BUILD;
 	return { kind: 'shader', pipelines: shape.pipelines, variants, builds: Object.keys(variants) };
 }
 
 /** An effect's or a tone curve's compile as the result of compiling WGSL from a project. */
-function effectOutcome(result: EffectResult): WgslCompile {
-	// Effects and tone curves build for both GPU paths.
-	const builds = ['webgpu', 'webgl2'];
+function effectOutcome(result: EffectResult, glsl: boolean): WgslCompile {
+	// Effects and tone curves build for the paths that the compile ships.
+	const builds = glsl ? ['webgpu', 'webgl2'] : ['webgpu'];
 	if (!result.ok) return { ok: false, problems: result.problems, builds };
 	const { warnings } = result;
 	const {
@@ -365,9 +368,9 @@ function effectOutcome(result: EffectResult): WgslCompile {
 }
 
 /** A sky layer's compile as the result of compiling WGSL from a project. */
-function skyLayerOutcome(result: SkyLayerResult): WgslCompile {
-	// A sky layer builds for both GPU paths.
-	const builds = ['webgpu', 'webgl2'];
+function skyLayerOutcome(result: SkyLayerResult, glsl: boolean): WgslCompile {
+	// A sky layer builds for the paths that the compile ships.
+	const builds = glsl ? ['webgpu', 'webgl2'] : ['webgpu'];
 	if (!result.ok) return { ok: false, problems: result.problems, builds };
 	return {
 		ok: true,
@@ -378,9 +381,9 @@ function skyLayerOutcome(result: SkyLayerResult): WgslCompile {
 }
 
 /** A custom material's compile as the result of compiling WGSL from a project. */
-function materialOutcome(result: MaterialResult, draw: boolean): WgslCompile {
-	// Custom materials build for both GPU paths.
-	const builds = ['webgpu', 'webgl2'];
+function materialOutcome(result: MaterialResult, draw: boolean, glsl: boolean): WgslCompile {
+	// Custom materials build for the paths that the compile ships.
+	const builds = glsl ? ['webgpu', 'webgl2'] : ['webgpu'];
 	if (!result.ok) return { ok: false, problems: result.problems, builds };
 	const shader = {
 		kind: 'material',
@@ -401,27 +404,29 @@ function shaderOutcome(result: CompileResult, builds: readonly string[]): WgslCo
 
 /**
  * Compiles WGSL from a project with the engine's shader library. A whole shader builds for WebGPU,
- * and for WebGL2 when it has a render pipeline. A custom material's functions build into every
- * variant of the engine's standard material, and a custom effect's or tone curve's into its
- * template. `path` names the file in messages, and `hint` ends the message about WGSL that is
- * none of these. `compiler` runs the compile, on this thread by default.
+ * and for WebGL2 when it has a render pipeline and the compile ships that path. A custom material's
+ * functions build into every variant of the engine's standard material, and a custom effect's or
+ * tone curve's into its template. `path` names the file in messages, and `hint` ends the message
+ * about WGSL that is none of these. `compiler` runs the compile, on this thread by default. `glsl`
+ * false builds the WebGPU path alone, for a project whose build ships no WebGL2 shaders.
  */
 export async function compileWgsl(
 	path: string,
 	source: string,
 	hint: string,
 	compiler: ShaderCompiler = compileHere,
+	glsl = true,
 ): Promise<WgslCompile> {
-	const plan = planOf(path, source, hint);
+	const plan = planOf(path, source, hint, glsl);
 	switch (plan.kind) {
 		case 'problem':
 			return { ok: false, problems: [plan.problem], builds: [] };
 		case 'effect':
-			return effectOutcome(await compiler.effect({ path, source }));
+			return effectOutcome(await compiler.effect({ path, source }), glsl);
 		case 'skyLayer':
-			return skyLayerOutcome(await compiler.skyLayer({ path, source }));
+			return skyLayerOutcome(await compiler.skyLayer({ path, source }), glsl);
 		case 'material':
-			return materialOutcome(await compiler.material({ path, source }), plan.draw);
+			return materialOutcome(await compiler.material({ path, source }), plan.draw, glsl);
 		case 'shader':
 			return shaderOutcome(
 				await compiler.shader({ path, source, pipelines: plan.pipelines, variants: plan.variants }),
@@ -549,16 +554,17 @@ function fileOutcome(
 
 /**
  * Compiles a `.wgsl` file. `path` names the file in messages, `id` is its module id, and `text` its
- * content as read from disk.
+ * content as read from disk. `glsl` false builds the WebGPU path alone.
  */
 export async function compileWgslFile(
 	path: string,
 	id: string,
 	text: string,
 	compiler: ShaderCompiler = compileHere,
+	glsl = true,
 ): Promise<ShaderOrError> {
 	const source = text.replaceAll('\r\n', '\n');
-	const compiled = await compileWgsl(path, source, FILE_HINT, compiler);
+	const compiled = await compileWgsl(path, source, FILE_HINT, compiler, glsl);
 	return fileOutcome(compiled, source, { path, line: 1, column: 1 }, id);
 }
 
@@ -572,6 +578,7 @@ export async function compileLiteral(
 	id: string,
 	path: string,
 	compiler: ShaderCompiler = compileHere,
+	glsl = true,
 ): Promise<ShaderOrError> {
 	if (literal.substitution !== null) {
 		const problem = problemAt(path, code, literal.substitution, SUBSTITUTION);
@@ -579,7 +586,7 @@ export async function compileLiteral(
 		return { error: wgslError(failed, code, { path, line: 1, column: 1 }, id, code) };
 	}
 	const origin = { path, ...placeOf(code, literal.start + 1) };
-	const compiled = await compileWgsl(path, literal.source, TAG_HINT, compiler);
+	const compiled = await compileWgsl(path, literal.source, TAG_HINT, compiler, glsl);
 	if (compiled.ok)
 		return { shader: compiled.shader, warnings: warningLines(compiled, literal.source, origin) };
 	return { error: wgslError(compiled, literal.source, origin, id, code) };
@@ -601,13 +608,14 @@ export async function compileTaggedWgsl(
 	id: string,
 	path: string,
 	compiler: ShaderCompiler = compileHere,
+	glsl = true,
 ): Promise<
 	| { readonly shaders: readonly TaggedShader[]; readonly warnings: readonly string[] }
 	| { readonly error: WgslError }
 > {
 	const literals = findTaggedWgsl(code, id);
 	const results = await Promise.all(
-		literals.map((literal) => compileLiteral(literal, code, id, path, compiler)),
+		literals.map((literal) => compileLiteral(literal, code, id, path, compiler, glsl)),
 	);
 	const shaders: TaggedShader[] = [];
 	const warnings: string[] = [];

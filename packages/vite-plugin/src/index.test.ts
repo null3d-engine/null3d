@@ -592,7 +592,7 @@ export const skin = () => new URL('./shaders-skinning-glsl.js', import.meta.url)
 					.map((word) => `export const SHARED_${word} = \`// paragraph ${word}\`;\n`)
 					.join(''),
 				'shader-permutations.ts':
-					'export const LISTED_PERMUTATIONS: readonly number[] | null = null;\n',
+					"export const LISTED_PERMUTATIONS: readonly number[] | null = null;\nexport const SHIPPED_GPU_PATHS: readonly ('webgpu' | 'webgl2')[] | null = null;\n",
 				'main.js':
 					"import { SHADERS, start, skin } from './shaders.ts';\nimport { LISTED_PERMUTATIONS } from './shader-permutations.ts';\nconsole.log(start(), skin(), SHADERS, LISTED_PERMUTATIONS);\n",
 			});

@@ -1100,6 +1100,15 @@ fn permutations_module(output: &Output) -> String {
             words.join(", ")
         ));
     }
+    ts.line("");
+    ts.line("/**");
+    ts.line(" * The GPU paths whose shaders this build ships, or null when it ships both. A build");
+    ts.line(
+        " * that ships one path drops the other path's shader files, and the engine names this",
+    );
+    ts.line(" * build's choice when a device would need a path that it lacks.");
+    ts.line(" */");
+    ts.line("export const SHIPPED_GPU_PATHS: readonly ('webgpu' | 'webgl2')[] | null = null;");
     ts.out
 }
 
@@ -1987,6 +1996,10 @@ mod tests {
             modules(&output())["shader-permutations.ts"]
                 .contains("export const LISTED_PERMUTATIONS: readonly number[] | null = null;")
         );
+        // A build without narrowed GPU paths names every path as shipped, which is the default.
+        assert!(rendered["shader-permutations.ts"].contains(
+            "export const SHIPPED_GPU_PATHS: readonly ('webgpu' | 'webgl2')[] | null = null;"
+        ));
     }
 
     #[test]

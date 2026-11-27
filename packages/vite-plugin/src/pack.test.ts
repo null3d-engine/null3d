@@ -5,10 +5,17 @@ import { join } from 'node:path';
 import { scaledBudget } from '../../../tests/lib/run-budget.ts';
 import { moduleShare, wgslModules } from '../../../tools/lib/wgsl-modules';
 import { CompilerPool } from './compile-pool';
-import { LOAD_BUILDS, ShaderPack, UNPACK } from './pack';
+import { buildSets, loadBuilds, setModule } from './material-builds';
+import { LOAD_BUILDS, narrowShaderPack, ShaderPack, UNPACK } from './pack';
 import { ShaderCache, shaderCacheOff } from './shader-cache';
 import type { ShaderCompiler } from './shader-compiler';
-import type { CompiledMaterial, CompiledWgsl, GlslProgram, ShaderVariant } from './shader-types';
+import type {
+	CompiledMaterial,
+	CompiledShader,
+	CompiledWgsl,
+	GlslProgram,
+	ShaderVariant,
+} from './shader-types';
 import { compileLiteral, compileWgslFile, findTaggedWgsl } from './wgsl';
 
 /** Library text that every build shares, as the engine's standard material's builds do. */
@@ -129,6 +136,53 @@ describe('ShaderPack', () => {
 		pack.value(material(1));
 		expect(pack.empty).toBe(false);
 		expect(pack.unpacker()).toContain(`function ${UNPACK}(`);
+	});
+});
+
+describe('narrowShaderPack', () => {
+	/** A whole shader with both paths, as the compiler gives one before the build drops a path. */
+	function whole(permutation: number): CompiledShader {
+		return { kind: 'shader', webgpu: variant(permutation), webgl2: variant(permutation) };
+	}
+
+	it('drops the WebGL2 record and the GLSL text of a whole shader', async () => {
+		const pack = new ShaderPack();
+		const shader = whole(0);
+		const code = `export default ${pack.value(shader)};\n${pack.unpacker()}`;
+		const narrowed = narrowShaderPack(code, 'sky.wgsl');
+		expect(narrowed).not.toContain('#version 300 es');
+		const loaded = (await run(narrowed)) as CompiledShader;
+		expect(loaded.webgl2).toBeNull();
+		expect(loaded.webgpu.wgsl?.source).toBe(shader.webgpu.wgsl?.source);
+	});
+
+	it('drops the GLSL builds of every record of a set', async () => {
+		const records: Record<string, ShaderVariant>[] = [
+			{ standard_0: variant(0) },
+			{ standard_1: variant(1) },
+		];
+		const narrowed = narrowShaderPack(setModule(records), 'materials.js');
+		expect(narrowed).not.toContain('#version 300 es');
+		const loaded = (await run(narrowed)) as Record<string, ShaderVariant>[];
+		expect(loaded[0]?.standard_0?.glsl).toBeNull();
+		expect(loaded[0]?.standard_0?.wgsl).toEqual(records[0]?.standard_0?.wgsl);
+	});
+
+	it('removes the loader entries of the GLSL sets, so their modules are never imported', () => {
+		const sets = buildSets([{ kind: 'material', variants: material(2).variants }]);
+		const loader = loadBuilds(sets, (name) => `./${name}.js`);
+		expect(loader).toContain('"material glsl ');
+		const pack = new ShaderPack();
+		const code = `export default ${pack.value(material(1))};\n${pack.unpacker()}${loader}`;
+		const narrowed = narrowShaderPack(code, 'materials.js');
+		expect(narrowed).not.toContain('"material glsl ');
+		expect(narrowed).toContain('"material wgsl ');
+	});
+
+	it('refuses a module that is not in the packed form', () => {
+		expect(() => narrowShaderPack('export default 1;\n', 'yours.js')).toThrow(
+			/cannot drop the WebGL2 builds of yours\.js/,
+		);
 	});
 });
 

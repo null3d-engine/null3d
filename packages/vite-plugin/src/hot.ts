@@ -27,14 +27,21 @@ export const PERMUTATION_WORD_EVENT = 'null3d:permutation';
 /** The event that carries the dev server's warning about a word that the project's list lacks. */
 export const UNLISTED_WORD_EVENT = 'null3d:unlisted';
 
+/** The event that carries the GPU path that a page's engine started on, from the page to the server. */
+export const GPU_PATH_EVENT = 'null3d:gpu-path';
+
+/** The event that carries the dev server's warning about a GPU path that a build does not ship. */
+export const UNSHIPPED_PATH_EVENT = 'null3d:unshipped-path';
+
 /**
  * The hot client's code. It also closes Vite's overlay, which may show an earlier WGSL error. In a
  * project with a shader list (`listed`), it also sends the dev server each permutation word that
  * the page's engines draw with, once, and shows the server's warning about a word that the list
  * lacks in the browser's console. A recording run adds its page's words to the list, so it sends
- * none.
+ * none. With `paths`, it sends the GPU path that each engine started on, and shows the server's
+ * warning about a path that a production build does not ship.
  */
-export function hotClientCode(listed: boolean): string {
+export function hotClientCode(listed: boolean, paths = false): string {
 	const wgsl = `	import.meta.hot.on(${JSON.stringify(WGSL_UPDATE_EVENT)}, ({ updates }) => {
 		for (const overlay of document.querySelectorAll('vite-error-overlay')) overlay.close();
 		globalThis.dispatchEvent(new CustomEvent(${JSON.stringify(WGSL_UPDATE_EVENT)}, { detail: updates }));
@@ -51,7 +58,17 @@ export function hotClientCode(listed: boolean): string {
 		import.meta.hot.on(${JSON.stringify(UNLISTED_WORD_EVENT)}, ({ message }) => console.warn('[null3D] ' + message));
 	}
 `;
-	return `if (import.meta.hot) {\n${wgsl}${listed ? words : ''}}\n`;
+	const gpuPaths = `	{
+		const sent = new Set();
+		globalThis.addEventListener(${JSON.stringify(GPU_PATH_EVENT)}, ({ detail: path }) => {
+			if (sent.has(path)) return;
+			sent.add(path);
+			import.meta.hot.send(${JSON.stringify(GPU_PATH_EVENT)}, { path, page: location.pathname });
+		});
+		import.meta.hot.on(${JSON.stringify(UNSHIPPED_PATH_EVENT)}, ({ message }) => console.warn('[null3D] ' + message));
+	}
+`;
+	return `if (import.meta.hot) {\n${wgsl}${listed ? words : ''}${paths ? gpuPaths : ''}}\n`;
 }
 
 /** One hot update: the new compiled WGSL under its key. */
@@ -158,4 +175,18 @@ export class HotState {
 		const after = contractOf(shader);
 		return before !== undefined && before !== null && before === after;
 	}
+}
+
+/**
+ * The dev server's warning when a page draws a GPU path that a production build does not ship, or
+ * undefined when the page draws a path that the build ships. Only the WebGL2 path can be left out:
+ * the shader compiler builds every shader for WebGPU.
+ */
+export function unshippedPathWarning(
+	path: string,
+	page: string,
+	glsl: boolean,
+): string | undefined {
+	if (glsl || path !== 'webgl2') return undefined;
+	return `${page} draws with WebGL2, which a production build with shaders.gpuPaths: ['webgpu'] does not ship. That build stops the page with E1308. Run the page's tests on WebGPU, or build with both GPU paths.`;
 }

@@ -9,6 +9,7 @@ import { EngineError, errorFixesReady, errorOfMessage } from '../errors/engine-e
 import { messageOf } from '../errors/message';
 import { FORMAT_CANVAS, PERMUTATION_HALF } from '../generated/gpu';
 import { SHADER_FEATURES, type ShaderFeature } from '../generated/shader-features';
+import { SHIPPED_GPU_PATHS } from '../generated/shader-permutations';
 import { recordPermutations, reportPermutations, stopRecordingPermutations } from '../gpu/variants';
 import type { DrawPathReason } from '../gpu/webgpu/draw-path-probe';
 import {
@@ -57,10 +58,11 @@ import { KEY_CODES } from '../shared/key-codes';
 import { memoryBytes } from '../shared/memory-views';
 import { createMetricsBuffer, MetricsReader, threadRoles } from '../shared/metrics';
 import { addMeasurementRelease } from '../shared/page-measurement';
-import { PERMUTATION_WORD_EVENT } from '../shared/permutation-words';
+import { GPU_PATH_EVENT, PERMUTATION_WORD_EVENT } from '../shared/permutation-words';
 import type { ReplayProgram, ReplayResult } from '../shared/recording';
 import { sketchDataText } from '../shared/sketch-data';
 import { clearJobTasks, type JobTaskHost, jobAsker, setJobTasks } from '../shared/task-host';
+import { type GpuPath, pathOfTier } from '../shared/tier';
 import { hearAddonsEarly, onAddonChecked } from '../shared/version';
 import { VIDEO_FOLLOW, type VideoFollowMessage } from '../shared/videos';
 import { notifySlot, setWakeByMessage } from '../shared/wake';
@@ -943,16 +945,37 @@ interface TierChoice {
 	forceCompat: boolean;
 }
 
-/** Picks the GPU tier from feature tests, never from browser or GPU names. */
+/** The GPU paths whose shaders this build ships, or null for both, as the plugin's build wrote it. */
+const SHIPPED_PATHS: ReadonlySet<GpuPath> | null =
+	SHIPPED_GPU_PATHS === null ? null : new Set(SHIPPED_GPU_PATHS);
+
+/** True when this build holds the shaders of `path`. */
+export function shipsPath(path: GpuPath): boolean {
+	return SHIPPED_PATHS === null || SHIPPED_PATHS.has(path);
+}
+
+/** The path that a page's GPU switch draws with, or undefined for the engine's own choice. */
+function pathOfSwitch(wanted: GpuSwitch): GpuPath | undefined {
+	return wanted === 'auto' ? undefined : pathOfTier(wanted === 'webgl2' ? 'webgl2' : 'webgpu');
+}
+
+/**
+ * Picks the GPU tier from feature tests, never from browser or GPU names. A path whose shaders this
+ * build does not ship counts as unavailable, whether or not the browser offers it.
+ */
 export function chooseTier(
 	report: CapabilityReport,
 	wanted: GpuSwitch,
 	inWorker: boolean,
+	ships: (path: GpuPath) => boolean = shipsPath,
 ): TierChoice | null {
 	const worker = 'failure' in report.worker ? undefined : report.worker;
 	const webgpu =
-		report.webgpu.compatibilityAdapter && (!inWorker || worker?.offscreenWebGPU === true);
-	const webgl2 = inWorker ? worker?.offscreenWebGL2 === true : report.webgl2.available;
+		ships('webgpu') &&
+		report.webgpu.compatibilityAdapter &&
+		(!inWorker || worker?.offscreenWebGPU === true);
+	const webgl2 =
+		ships('webgl2') && (inWorker ? worker?.offscreenWebGL2 === true : report.webgl2.available);
 	if (wanted === 'webgl2') return webgl2 ? { tier: 'webgl2', forceCompat: false } : null;
 	if (wanted === 'compat') return webgpu ? { tier: 'webgpu-compat', forceCompat: true } : null;
 	if (wanted === 'webgpu')
@@ -965,6 +988,51 @@ export function chooseTier(
 			forceCompat: false,
 		};
 	return webgl2 ? { tier: 'webgl2', forceCompat: false } : null;
+}
+
+/** The name of a GPU path, as the error messages carry it. */
+function pathName(path: GpuPath): string {
+	return path === 'webgl2' ? 'WebGL2' : 'WebGPU';
+}
+
+/** The GPU paths that this build ships, as the error messages carry them. */
+function shippedNames(ships: (path: GpuPath) => boolean): string {
+	if (ships('webgpu') && ships('webgl2')) return 'WebGPU and WebGL2';
+	return ships('webgpu') ? 'WebGPU' : 'WebGL2';
+}
+
+/**
+ * The error for a start that found no usable GPU tier. When the build holds the shaders of one path
+ * and this start would draw with the other, it names the build's choice (E1308), because no browser
+ * or setting can fix that page. Otherwise the browser offers no path the engine can draw with, or
+ * none that the page asked for (E1301).
+ */
+export function noTierError(
+	report: CapabilityReport,
+	requested: GpuSwitch,
+	inWorker: boolean,
+	ships: (path: GpuPath) => boolean = shipsPath,
+): EngineError {
+	const named = pathOfSwitch(requested);
+	if (named !== undefined && !ships(named))
+		return new EngineError(
+			'E1308',
+			`this build ships only the ${shippedNames(ships)} shaders, and ?gpu=${requested} asks for ${pathName(named)}. Build the project with both GPU paths, or remove the switch.`,
+		);
+	if (named !== undefined)
+		return new EngineError('E1301', `no usable GPU path for ?gpu=${requested} in this browser.`);
+	const worker = 'failure' in report.worker ? undefined : report.worker;
+	const offered: GpuPath | undefined = report.webgpu.compatibilityAdapter
+		? 'webgpu'
+		: (inWorker ? worker?.offscreenWebGL2 === true : report.webgl2.available)
+			? 'webgl2'
+			: undefined;
+	if (offered !== undefined && !ships(offered))
+		return new EngineError(
+			'E1308',
+			`this build ships only the ${shippedNames(ships)} shaders, and this device would draw with ${pathName(offered)}. The Vite plugin's shaders.gpuPaths option left ${pathName(offered)} out. Build the project with both GPU paths, or run the page in a browser that offers ${pathName(ships('webgpu') ? 'webgpu' : 'webgl2')}.`,
+		);
+	return new EngineError('E1301', `no usable GPU path for ?gpu=${requested} in this browser.`);
 }
 
 type Pending = { resolve: (reply: WorkerReply) => void; reject: (error: Error) => void };
@@ -1935,6 +2003,12 @@ function announcePermutationWord(word: number): void {
 	globalThis.dispatchEvent?.(new CustomEvent(PERMUTATION_WORD_EVENT, { detail: word }));
 }
 
+/** In a development build, tells the dev server the GPU path that this engine draws with. */
+function announceGpuPath(tier: Tier): void {
+	if (!DEV) return;
+	globalThis.dispatchEvent?.(new CustomEvent(GPU_PATH_EVENT, { detail: pathOfTier(tier) }));
+}
+
 /** How a start runs: a live page, a hold at a sketch time, or a replay of a recording. */
 interface StartModes {
 	/** Hold mode's sketch time in seconds, or undefined for a live page or a replay. */
@@ -2653,9 +2727,9 @@ async function startEngine(
 			if (threads) threads.render = undefined;
 			drawModule ??= loadDrawModule();
 		}
-		if (!choice)
-			throw new EngineError('E1301', `no usable GPU path for ?gpu=${requested} in this browser.`);
+		if (!choice) throw noTierError(report, requested, renderThread !== 'main');
 		tier = choice.tier;
+		announceGpuPath(tier);
 		const { forceCompat } = choice;
 		// Where the page draws, it moves the label elements right after each frame it draws.
 		const labels = new PageLabels(views, renderThread === 'main');

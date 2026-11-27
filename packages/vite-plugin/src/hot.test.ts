@@ -1,13 +1,19 @@
 import { describe, expect, it } from 'bun:test';
-import { PERMUTATION_WORD_EVENT as ENGINE_WORD_EVENT } from '../../engine/src/shared/permutation-words';
+import {
+	GPU_PATH_EVENT as ENGINE_GPU_PATH_EVENT,
+	PERMUTATION_WORD_EVENT as ENGINE_WORD_EVENT,
+} from '../../engine/src/shared/permutation-words';
 import { WGSL_UPDATE_EVENT as ENGINE_EVENT } from '../../engine/src/shared/wgsl-updates';
 import {
 	changedLiterals,
 	contractOf,
+	GPU_PATH_EVENT,
 	HotState,
 	hotClientCode,
 	PERMUTATION_WORD_EVENT,
 	UNLISTED_WORD_EVENT,
+	UNSHIPPED_PATH_EVENT,
+	unshippedPathWarning,
 	WGSL_UPDATE_EVENT,
 } from './hot';
 import type {
@@ -124,11 +130,36 @@ describe('the hot client', () => {
 		expect(code).toContain("get('permutations') !== 'record'");
 	});
 
+	it("sends each engine's GPU path to the dev server in a build that ships one path", () => {
+		expect(GPU_PATH_EVENT).toBe(ENGINE_GPU_PATH_EVENT);
+		const code = hotClientCode(false, true);
+		expect(code).toContain(`globalThis.addEventListener("${GPU_PATH_EVENT}"`);
+		expect(code).toContain(`import.meta.hot.send("${GPU_PATH_EVENT}"`);
+		expect(code).toContain(`import.meta.hot.on("${UNSHIPPED_PATH_EVENT}"`);
+		// A project that ships both paths asks for none of it.
+		expect(hotClientCode(false, false)).not.toContain(GPU_PATH_EVENT);
+	});
+
 	it('parses as JavaScript', () => {
 		// The page's module parses the same code, so a stray quote or brace would stop it there.
 		for (const listed of [false, true])
-			expect(
-				() => new Function(hotClientCode(listed).replaceAll('import.meta', 'meta')),
-			).not.toThrow();
+			for (const paths of [false, true])
+				expect(
+					() => new Function(hotClientCode(listed, paths).replaceAll('import.meta', 'meta')),
+				).not.toThrow();
+	});
+});
+
+describe("the dev server's GPU path warning", () => {
+	it('names the page and the option when the page draws WebGL2', () => {
+		const message = unshippedPathWarning('webgl2', '/play', false);
+		expect(message).toContain('/play');
+		expect(message).toContain("shaders.gpuPaths: ['webgpu']");
+		expect(message).toContain('E1308');
+	});
+
+	it('says nothing for a path that the build ships', () => {
+		expect(unshippedPathWarning('webgl2', '/', true)).toBeUndefined();
+		expect(unshippedPathWarning('webgpu', '/', false)).toBeUndefined();
 	});
 });

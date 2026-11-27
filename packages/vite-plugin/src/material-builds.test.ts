@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import * as gpu from '../../engine/src/generated/gpu';
 import {
+	buildSets,
 	buildsOfSet,
 	DRAW_INDEX,
 	HALF,
@@ -14,6 +15,7 @@ import {
 	SKIN,
 	setsOf,
 	TONE_MAP,
+	withoutGlsl,
 } from './material-builds';
 import { ShaderPack } from './pack';
 import type {
@@ -297,5 +299,34 @@ describe("a module's custom materials", () => {
 		const shader = { kind: 'shader', webgpu: build('wgsl', 0), webgl2: null } as const;
 		expect(moduleBuilds.value(pack, shader)).toBe(new ShaderPack().value(shader));
 		expect(new MaterialBuilds().finish('c.ts', moduleBuilds)).toBe('');
+	});
+});
+
+describe('a build that ships WebGPU alone', () => {
+	it('makes no set of the WebGL2 path', () => {
+		const sets = buildSets([{ kind: 'material', variants: builds() }], false);
+		expect(sets.length).toBeGreaterThan(0);
+		expect(sets.every((set) => set.key.includes(' wgsl '))).toBe(true);
+	});
+
+	it('keeps no WebGL2 build of a material, an effect or a tone curve', () => {
+		const kept = withoutGlsl(material(builds())) as CompiledMaterial;
+		for (const variant of Object.values(kept.variants)) {
+			expect(variant.glsl).toBeNull();
+			expect(variant.wgsl).not.toBeNull();
+		}
+		const marker = 'fn marker() {}';
+		const piece = {
+			permutation: 0,
+			wgsl: { items: [marker], run: 'run' },
+			glsl: { items: [marker], run: 'run', uniformBlocks: [], textures: [] },
+		} as const;
+		const pieces = { group: { a: piece }, fold: { b: piece } };
+		for (const shader of [effect({ ...builds() }), curve({ ...builds() })]) {
+			const keptPieces = withoutGlsl({ ...shader, pieces });
+			if (keptPieces.kind !== 'effect' && keptPieces.kind !== 'toneCurve') continue;
+			for (const group of [keptPieces.pieces.group, keptPieces.pieces.fold])
+				for (const one of Object.values(group)) expect(one.glsl).toBeNull();
+		}
 	});
 });

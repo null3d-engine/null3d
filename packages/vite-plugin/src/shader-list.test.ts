@@ -11,11 +11,14 @@ import {
 	builtWords,
 	DEVICE_BITS,
 	holdWord,
-	listedPermutationsModule,
 	moduleWords,
 	narrowShaderModule,
 	parseShaderList,
 	ShaderList,
+	shaderMarkersModule,
+	shippedTargets,
+	targetOfModule,
+	targetOfPath,
 	UnlistedWords,
 	wordText,
 } from './shader-list';
@@ -179,11 +182,55 @@ describe('wordText', () => {
 	});
 });
 
-describe('the module of listed words', () => {
-	it('names the words in order', () => {
-		expect(listedPermutationsModule(new Set([16, 0, 4]))).toBe(
-			'export const LISTED_PERMUTATIONS = [0, 4, 16];\n',
+describe('the module of markers', () => {
+	it('names the listed words and the shipped paths, in order', () => {
+		expect(shaderMarkersModule(new Set([16, 0, 4]), null)).toBe(
+			"export const LISTED_PERMUTATIONS: readonly number[] | null = [0, 4, 16];\nexport const SHIPPED_GPU_PATHS: readonly ('webgpu' | 'webgl2')[] | null = null;\n",
 		);
+		expect(shaderMarkersModule(null, ['webgpu'])).toBe(
+			"export const LISTED_PERMUTATIONS: readonly number[] | null = null;\nexport const SHIPPED_GPU_PATHS: readonly ('webgpu' | 'webgl2')[] | null = ['webgpu'];\n",
+		);
+	});
+});
+
+describe('the target of a generated module', () => {
+	it('reads the last target token of the name', () => {
+		expect(targetOfModule('shaders-wgsl.js')).toBe('wgsl');
+		expect(targetOfModule('shaders-glsl-draw-index.js')).toBe('glsl');
+		expect(targetOfModule('shaders-sprites-and-weighted-wgsl-tone-map.js')).toBe('wgsl');
+		expect(targetOfModule('shaders-environment-glsl.ts')).toBe('glsl');
+		expect(targetOfModule('shader-paragraphs-glsl-half-bump.js')).toBe('glsl');
+		expect(targetOfModule('shaders-glsl-combos-bump.ts')).toBe('glsl');
+	});
+
+	it('maps a GPU path to the shader language that it draws', () => {
+		expect(targetOfPath('webgpu')).toBe('wgsl');
+		expect(targetOfPath('webgl2')).toBe('glsl');
+	});
+
+	it('reads no target from a shared module or a list stand-in', () => {
+		expect(targetOfModule('shaders.ts')).toBeNull();
+		expect(targetOfModule('shader-features.ts')).toBeNull();
+		expect(targetOfModule('shader-permutations.ts')).toBeNull();
+		expect(targetOfModule('shaders-unlisted-a1b2c3d4.js')).toBeNull();
+	});
+});
+
+describe('shippedTargets', () => {
+	it('ships both paths unless the options name one', () => {
+		expect(shippedTargets(undefined)).toEqual({ wgsl: true, glsl: true });
+		expect(shippedTargets({})).toEqual({ wgsl: true, glsl: true });
+		expect(shippedTargets({ gpuPaths: ['webgpu', 'webgl2'] })).toEqual({
+			wgsl: true,
+			glsl: true,
+		});
+		expect(shippedTargets({ gpuPaths: ['webgpu'] })).toEqual({ wgsl: true, glsl: false });
+	});
+
+	it('refuses an empty list, an unknown path and a build without WebGPU', () => {
+		expect(() => shippedTargets({ gpuPaths: [] })).toThrow(/gpuPaths is empty/);
+		expect(() => shippedTargets({ gpuPaths: ['webgl3' as 'webgl2'] })).toThrow(/takes 'webgpu'/);
+		expect(() => shippedTargets({ gpuPaths: ['webgl2'] })).toThrow(/must include 'webgpu'/);
 	});
 });
 

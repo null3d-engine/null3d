@@ -44,6 +44,7 @@ import { buildEngineShadersLocally } from './engine-shaders-local.ts';
 import { HashPool } from './hash-pool.ts';
 import {
 	changedLiterals,
+	GPU_PATH_EVENT,
 	HOT_CLIENT,
 	HOT_CLIENT_ADDRESS,
 	HOT_CLIENT_ID,
@@ -52,6 +53,8 @@ import {
 	hotKey,
 	PERMUTATION_WORD_EVENT,
 	UNLISTED_WORD_EVENT,
+	UNSHIPPED_PATH_EVENT,
+	unshippedPathWarning,
 	WGSL_UPDATE_EVENT,
 	type WgslUpdate,
 } from './hot.ts';
@@ -66,18 +69,21 @@ import {
 	type WorkerFile,
 	workerFilesPlugin,
 } from './offline.ts';
-import { ShaderPack } from './pack.ts';
+import { narrowShaderPack, ShaderPack, UNPACK } from './pack.ts';
 import { null3dPackages } from './package-files.ts';
 import { emitParagraphTables, shaderParagraphsPlugin, tableImportsOfFile } from './paragraphs.ts';
 import { ShaderCache, shaderCacheOff } from './shader-cache.ts';
 import {
 	builtWords,
 	holdWord,
-	listedPermutationsModule,
+	moduleWords,
 	narrowParagraphTable,
 	narrowShaderModule,
 	ShaderList,
 	type ShaderOptions,
+	shaderMarkersModule,
+	shippedTargets,
+	targetOfModule,
 	UNLISTED_MODULE,
 	UnlistedWords,
 	wordText,
@@ -93,7 +99,7 @@ import { directImports, workerPreloadPlugin } from './worker-preload.ts';
 
 export type { AssetOptions } from './assets.ts';
 export { FILES_LIST, type OfflineFiles } from './offline.ts';
-export type { ShaderOptions } from './shader-list.ts';
+export type { GpuPath, ShaderOptions } from './shader-list.ts';
 export type * from './shader-types.ts';
 
 /** Headers that make a page cross-origin isolated, which shared memory and worker threads need. */
@@ -423,6 +429,48 @@ const LISTED_MODULE = /^shader-permutations\.[cm]?[jt]s$/;
 /** The start of the name of the module that stands for every device file a list leaves out. */
 const UNLISTED_STEM = 'shaders-unlisted';
 
+/**
+ * The module id that stands for a generated module of a GPU path that a build does not ship. The
+ * names that the module exports follow it, so one stub serves every table that exports the same
+ * names, such as the tables of builds that need several features.
+ */
+const NO_SHADER_MARK = 'null3d:no-shader/';
+const NO_SHADER_ID = `\0${NO_SHADER_MARK}`;
+
+/** The start of the id of a stub module, with or without Vite's null byte. */
+const NO_SHADER_PATTERN = /^\0?null3d:no-shader\//;
+
+/** The code of a stub module, which exports each name that it stands for as an empty object. */
+function stubModule(names: readonly string[]): string {
+	return `${names.map((name) => `export const ${name} = {};`).join('\n')}\n`;
+}
+
+/**
+ * True for the folder of a generated shader set, which holds the marker module that every set has.
+ * Only a module of such a folder takes a stub, so a project's own file that happens to share a name
+ * never does.
+ */
+function inShaderSet(folder: string): boolean {
+	return ['shader-permutations.ts', 'shader-permutations.js'].some((name) =>
+		existsSync(join(folder, name)),
+	);
+}
+
+/**
+ * The names that a generated shader module exports, in the order the shader build writes them. The
+ * stub of a module that a build drops exports the same names, so every import of it resolves.
+ */
+function exportNamesOf(text: string, file: string): string[] {
+	const names = [...text.matchAll(/^export (?:const|function|class) ([A-Za-z_$][\w$]*)/gm)].map(
+		(match) => match[1] as string,
+	);
+	if (names.length === 0)
+		throw new Error(
+			`null3D cannot read the exports of the engine's shader module ${file}, so it cannot stand an empty one in its place. Install the same version of @null3d/vite-plugin as of @null3d/engine, or run bun run shaders in a checkout.`,
+		);
+	return names;
+}
+
 /** The docs on a project's list of permutation words, which the build's report names. */
 const SHADER_LIST_DOCS =
 	'https://github.com/null3d-engine/null3d/blob/generated/docs/guides/assets-pipeline.md#build-only-the-shader-permutations-you-draw-with';
@@ -528,6 +576,11 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin[] {
 	let building = false;
 	/** True for a production build of pages, which gets the early script. */
 	let buildingPages = false;
+	/**
+	 * The GPU paths whose shaders a build ships. The dev server keeps both, so a developer can test
+	 * the other path, and a build narrows the set and the project's own shaders to this.
+	 */
+	const shipped = shippedTargets(options.shaders);
 	/** The early script's module, once a build of pages that imports the engine has added it. */
 	let earlyCoreId: string | undefined;
 	/** True once the build has looked for the early script. */
@@ -579,12 +632,21 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin[] {
 		return { name, bytes, source: source ?? bytes };
 	};
 	/**
-	 * The copy of a generated shader file. Without a list it is the file itself, named by its hash.
-	 * With one, a file whose builds the list all names stays whole, a file of which it names some
-	 * keeps only those, and a file of which it names none gives way to one module without builds.
+	 * The copy of a generated shader file. A file of a GPU path that this build does not ship gives
+	 * way to one module without builds, and the build copies it for every such file. With a list, a
+	 * file whose builds the list all names stays whole, a file of which it names some keeps only
+	 * those, and a file of which it names none gives way to one module without builds.
 	 */
 	const copyOf = async (file: string): Promise<ShaderCopy> => {
 		const stem = file.slice(file.lastIndexOf('/') + 1).replace(/\.js$/, '');
+		const target = targetOfModule(file);
+		if (target !== null && !shipped[target]) {
+			// The words of a dropped file still answer the project's list, which may hold a word that
+			// only the other GPU path builds, such as a morph target's.
+			if (shaderList !== undefined)
+				for (const word of (await hasher.scan(file)).words) holdWord(heldWords, word);
+			return narrowedCopy(UNLISTED_STEM, UNLISTED_MODULE);
+		}
 		const list = shaderList;
 		if (list === undefined)
 			return { name: `${stem}-${await hasher.hash(file)}.js`, bytes: file, source: file };
@@ -618,7 +680,7 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin[] {
 	/** Keeps each compiled shader in the project's cache, so a later build skips the compile. */
 	const shaders = new ShaderCache(() => root, compiler, { disabled: () => noShaderCache });
 	/** Custom materials' builds, which load on first use from modules of their own by device. */
-	const materialBuilds = new MaterialBuilds();
+	const materialBuilds = new MaterialBuilds(() => !building || shipped.glsl);
 	/** What the dev server's pages run, to judge each change of WGSL. */
 	const hot = new HotState();
 	/** The key of a project module's WGSL on the dev server, which builds and packages lack. */
@@ -659,9 +721,14 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin[] {
 	 */
 	const reportShaderCopies = (files: number, bytes: number) => {
 		const copied = `null3D: copied ${files.toLocaleString('en-US')} shader files, ${megabytes(bytes)}`;
+		const paths = shipped.glsl ? '' : ' for the WebGPU path alone';
 		if (shaderList !== undefined)
 			logger?.info(
-				`${copied}: the builds of the ${shaderList.words.size} permutation words of ${shaderList.file}.`,
+				`${copied}${paths}: the builds of the ${shaderList.words.size} permutation words of ${shaderList.file}.`,
+			);
+		else if (!shipped.glsl)
+			logger?.info(
+				`${copied}: every build of every permutation word of the WebGPU path. A page downloads only the few that its device needs. Record the words that your pages draw with in a list, and name it in the plugin's shaders.list option, to copy only their builds: ${SHADER_LIST_DOCS}`,
 			);
 		else
 			logger?.warn(
@@ -830,7 +897,8 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin[] {
 				},
 			},
 			async handler(id) {
-				if (id === HOT_CLIENT_ID) return hotClientCode(options.shaders?.list !== undefined);
+				if (id === HOT_CLIENT_ID)
+					return hotClientCode(options.shaders?.list !== undefined, !shipped.glsl);
 				if (MATERIAL_BUILDS_ADDRESS.test(id))
 					return (
 						materialBuilds.module(id) ??
@@ -870,7 +938,13 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin[] {
 					return `export default new URL(import.meta.ROLLUP_FILE_URL_${ref}, import.meta.url).href;\n`;
 				}
 				const path = projectPath(root, id);
-				const compiled = await compileWgslFile(path, id, readFileSync(id, 'utf8'), shaders);
+				const compiled = await compileWgslFile(
+					path,
+					id,
+					readFileSync(id, 'utf8'),
+					shaders,
+					!building || shipped.glsl,
+				);
 				if ('error' in compiled) return this.error(compiled.error);
 				for (const warning of compiled.warnings) this.warn(warning);
 				const key = keyOf(id, path);
@@ -885,7 +959,7 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin[] {
 					}
 				}
 				const pack = new ShaderPack();
-				const builds = new ModuleBuilds();
+				const builds = new ModuleBuilds(!building || shipped.glsl);
 				const value = builds.value(pack, compiled.shader, key);
 				return {
 					code: `export default ${value};\n${pack.unpacker()}${materialBuilds.finish(id, builds)}`,
@@ -904,11 +978,17 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin[] {
 				let out: MagicString | undefined;
 				if (SCRIPT_FILE.test(file) && WGSL_TAG.test(code)) {
 					const path = projectPath(root, file);
-					const tagged = await compileTaggedWgsl(code, file, path, shaders);
+					const tagged = await compileTaggedWgsl(
+						code,
+						file,
+						path,
+						shaders,
+						!building || shipped.glsl,
+					);
 					if ('error' in tagged) return this.error(tagged.error);
 					for (const warning of tagged.warnings) this.warn(warning);
 					const pack = new ShaderPack();
-					const builds = new ModuleBuilds();
+					const builds = new ModuleBuilds(!building || shipped.glsl);
 					for (const [literal, { start, end, shader }] of tagged.shaders.entries()) {
 						const key = keyOf(file, path, literal);
 						if (key !== undefined) hot.remember(key, shader);
@@ -955,7 +1035,13 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin[] {
 			if (!modules.some((module) => module.id === file)) return;
 			const path = projectPath(root, file);
 			if (WGSL_FILE.test(file)) {
-				const compiled = await compileWgslFile(path, file, await read(), shaders);
+				const compiled = await compileWgslFile(
+					path,
+					file,
+					await read(),
+					shaders,
+					!building || shipped.glsl,
+				);
 				if ('error' in compiled) {
 					showError(environment, compiled.error);
 					return otherModules(modules, file);
@@ -974,7 +1060,9 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin[] {
 			const changed = changedLiterals(before, code, file);
 			if (!changed) return;
 			const results = await Promise.all(
-				changed.map(({ literal }) => compileLiteral(literal, code, file, path, shaders)),
+				changed.map(({ literal }) =>
+					compileLiteral(literal, code, file, path, shaders, !building || shipped.glsl),
+				),
 			);
 			const updates: WgslUpdate[] = [];
 			for (const [k, result] of results.entries()) {
@@ -1209,6 +1297,21 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin[] {
 					client.send(UNLISTED_WORD_EVENT, { message: warning.message });
 				});
 			}
+			// The dev server draws with both GPU paths. It warns when a page draws with a path that a
+			// production build with these options does not ship, because that build stops the page.
+			if (!shipped.glsl) {
+				const warned = new Set<string>();
+				server.environments.client.hot.on(GPU_PATH_EVENT, (data, client) => {
+					const { path, page } = (data ?? {}) as { path?: unknown; page?: unknown };
+					if (typeof path !== 'string' || typeof page !== 'string') return;
+					if (warned.has(page)) return;
+					const message = unshippedPathWarning(path, page, shipped.glsl);
+					if (message === undefined) return;
+					warned.add(page);
+					server.config.logger.warn(`null3D: ${message}`, { timestamp: true });
+					client.send(UNSHIPPED_PATH_EVENT, { message });
+				});
+			}
 			server.middlewares.use(`${server.config.base}${ASSET_FOLDER}/`, (req, res, next) => {
 				const path = decodeURIComponent((req.url ?? '').split('?')[0]?.slice(1) ?? '');
 				const bytes = cachedFile(root, path);
@@ -1244,7 +1347,8 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin[] {
 	 * memory to emit it as an asset; here a pool of worker threads hashes each file and the build
 	 * copies it on its own, and the module names the copy, so the build never holds the whole set
 	 * at once. With a list of words, each copy holds only the listed builds, and the set's module of
-	 * listed words names the project's list.
+	 * listed words names the project's list. With a GPU path set, a file of the other path gives way
+	 * to one module without builds, so the build copies none of that path's text.
 	 *
 	 * The argument is a mark rather than an address: where a copy lands is fixed, but the file that
 	 * names it can sit anywhere in the output, and only `generateBundle` knows where.
@@ -1259,22 +1363,41 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin[] {
 			// The engine names a missing word as one that the list lacks, and the list to record.
 			const name = file.slice(file.lastIndexOf('/') + 1);
 			if (
-				shaderList !== undefined &&
+				(shaderList !== undefined || !shipped.glsl) &&
 				LISTED_MODULE.test(name) &&
+				inShaderSet(dirname(file)) &&
 				code.includes('LISTED_PERMUTATIONS')
-			)
-				return { code: listedPermutationsModule(shaderList.words), map: null };
-			if (!code.includes('import.meta.url')) return;
+			) {
+				// The engine reads the shipped paths from the same module. A set that predates the
+				// constant would keep both paths, so the build refuses rather than ship one silently.
+				if (!code.includes('SHIPPED_GPU_PATHS'))
+					this.error(
+						"null3D: the engine's shader set is older than the plugin: its shader-permutations module has no SHIPPED_GPU_PATHS. Install the same version of @null3d/engine as of @null3d/vite-plugin, or run bun run shaders in a checkout.",
+					);
+				return {
+					code: shaderMarkersModule(shaderList?.words ?? null, shipped.glsl ? null : ['webgpu']),
+					map: null,
+				};
+			}
+			let text = code;
+			let changed = false;
+			// An add-on package's compiled shaders keep both GPU paths, which a build that ships one
+			// path drops here, including the modules of the other path's build sets.
+			if (!shipped.glsl && text.includes(UNPACK)) {
+				text = narrowShaderPack(text, file);
+				changed = true;
+			}
+			if (!text.includes('import.meta.url')) return changed ? { code: text, map: null } : undefined;
 			// The files this module names.
 			const named: { match: RegExpExecArray; target: string }[] = [];
-			for (const match of code.matchAll(SCRIPT_URL)) {
+			for (const match of text.matchAll(SCRIPT_URL)) {
 				const address = match[2] ?? '';
 				if (!isGeneratedShaderFile(file, address)) continue;
 				const target = resolve(dirname(file), address);
 				if (!existsSync(target)) continue;
 				named.push({ match, target });
 			}
-			if (named.length === 0) return;
+			if (named.length === 0) return changed ? { code: text, map: null } : undefined;
 			// The pool reads each file in chunks and hashes it, so the build's own thread reads none
 			// of the files and holds none of their bytes; only a file that a list narrows is read
 			// here, to write the copy of its listed builds.
@@ -1284,16 +1407,63 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin[] {
 			let out: MagicString | undefined;
 			for (const { match, copy } of copies) {
 				copiedShaders.set(copy.name, copy);
-				out ??= new MagicString(code);
+				out ??= new MagicString(text);
 				out.overwrite(
 					match.index,
 					match.index + match[0].length,
 					`((u) => new URL(u, import.meta.url))(${JSON.stringify(SHADER_URL_MARK + copy.name)})`,
 				);
 			}
-			return out
-				? { code: out.toString(), map: out.generateMap({ hires: 'boundary' }) }
-				: undefined;
+			if (out === undefined) return changed ? { code: text, map: null } : undefined;
+			return { code: out.toString(), map: out.generateMap({ hires: 'boundary' }) };
+		},
+		// A generated module of a GPU path that this build does not ship, named by a module of the
+		// set itself, such as a table of builds that need several features, takes the place of one
+		// stub module. The stub exports the names of the module it stands for, so every import of it
+		// resolves, and the lookups find no build rather than failing to load the module.
+		resolveId: {
+			filter: { id: /^\.\/shaders(?:-[a-z0-9-]+)+$/ },
+			handler(source, importer) {
+				if (shipped.glsl || importer === undefined) return;
+				const importerFile = importer.split('?')[0] ?? importer;
+				const importerName = importerFile.slice(importerFile.lastIndexOf('/') + 1);
+				if (!GENERATED_MODULE.test(importerName)) return;
+				if (!inShaderSet(dirname(importerFile))) return;
+				if (targetOfModule(source) !== 'glsl') return;
+				const named = resolve(dirname(importerFile), source);
+				const file = [named, `${named}.ts`, `${named}.js`].find((path) => existsSync(path));
+				if (file === undefined) return;
+				const text = readFileSync(file, 'utf8');
+				return `${NO_SHADER_ID}${exportNamesOf(text, file).join(',')}`;
+			},
+		},
+		// A dropped generated module that a module imports by name, such as a whole shader that loads
+		// on first use, gives way to a stub of the same exports. Its words still answer a project's
+		// shader list, which may hold a word that only the other GPU path builds.
+		load: {
+			filter: {
+				id: { include: [/shaders(?:-[a-z0-9-]+)?\.[cm]?[jt]s$/, NO_SHADER_PATTERN] },
+			},
+			handler(id) {
+				const bare = id.startsWith('\0') ? id.slice(1) : id;
+				if (bare.startsWith(NO_SHADER_MARK))
+					return stubModule(
+						bare
+							.slice(NO_SHADER_MARK.length)
+							.split(',')
+							.filter((name) => name !== ''),
+					);
+				if (shipped.glsl) return;
+				const file = id.split('?')[0] ?? id;
+				const name = file.slice(file.lastIndexOf('/') + 1);
+				if (!GENERATED_MODULE.test(name)) return;
+				if (!inShaderSet(dirname(file))) return;
+				if (targetOfModule(name) !== 'glsl') return;
+				const text = readFileSync(file, 'utf8');
+				if (shaderList !== undefined)
+					for (const word of moduleWords(text)) holdWord(heldWords, word);
+				return stubModule(exportNamesOf(text, file));
+			},
 		},
 	};
 

@@ -1,9 +1,11 @@
 // A project's list of the permutation words that its pages draw with, and the narrowing of the
-// engine's shader set to that list. The set holds every build of every word, gigabytes in
-// thousands of files, and a page downloads the few that its device needs. With a list, a build
-// copies only the builds of the listed words: a device file keeps the listed builds and drops the
-// others, and a file that holds no listed build is replaced by one module without builds. A page
-// that then asks for a word outside the list gets the engine's message that names the word.
+// engine's shader set: to that list, and to the GPU paths that the project's build ships. The set
+// holds every build of every word for both paths, gigabytes in thousands of files, and a page
+// downloads the few that its device needs. With a list, a build copies only the builds of the
+// listed words: a device file keeps the listed builds and drops the others, and a file that holds
+// no listed build is replaced by one module without builds. A page that then asks for a word
+// outside the list gets the engine's message that names the word. With a path set, a build drops
+// the other path's files, and the engine refuses that path on a device that needs it.
 
 import { readFileSync, statSync } from 'node:fs';
 import MagicString from 'magic-string';
@@ -15,6 +17,65 @@ import { DRAW_INDEX, HALF, TONE_MAP } from './material-builds.ts';
  * list serves every device module, and a build matches a word with those bits cleared.
  */
 export const DEVICE_BITS = DRAW_INDEX | TONE_MAP | HALF;
+
+/**
+ * A GPU path that a build can ship: WGSL builds for WebGPU, or GLSL ES 3.00 builds for WebGL2.
+ * WebGPU's compatibility mode draws with the WebGPU builds, so it counts as `webgpu`.
+ */
+export type GpuPath = 'webgpu' | 'webgl2';
+
+/** The shader language of a GPU path: WGSL for WebGPU, GLSL for WebGL2. */
+export type ShaderTarget = 'wgsl' | 'glsl';
+
+/** The shader target of a GPU path. */
+export function targetOfPath(path: GpuPath): ShaderTarget {
+	return path === 'webgl2' ? 'glsl' : 'wgsl';
+}
+
+/**
+ * The shader target of a generated shader module, from its name, or null for the modules that both
+ * paths share, such as the main module and the marker module. A name that no longer names a target
+ * cannot slip through: the build only drops a module whose target it read here.
+ */
+export function targetOfModule(name: string): ShaderTarget | null {
+	const base = name.slice(name.lastIndexOf('/') + 1).replace(/\.(?:[cm]?[jt]s)$/, '');
+	const tokens = base.split('-');
+	if (tokens.includes('glsl')) return 'glsl';
+	if (tokens.includes('wgsl')) return 'wgsl';
+	return null;
+}
+
+/** The shader targets that a project's build keeps. */
+export interface ShippedTargets {
+	readonly wgsl: boolean;
+	readonly glsl: boolean;
+}
+
+/**
+ * The shader targets that the plugin's options ship. Both unless `gpuPaths` names one. Throws for
+ * a list that names no GPU path, an unknown path, or one without WebGPU: the shader compiler builds
+ * every shader for WebGPU, and a build that leaves it out would have no form for the shaders that a
+ * project's own modules and its add-ons declare.
+ */
+export function shippedTargets(options: ShaderOptions | undefined): ShippedTargets {
+	const paths = options?.gpuPaths;
+	if (paths === undefined) return { wgsl: true, glsl: true };
+	const known = paths.filter((path) => path !== 'webgpu' && path !== 'webgl2');
+	if (known.length > 0)
+		throw new Error(
+			`null3D: shaders.gpuPaths takes 'webgpu' or 'webgl2', not ${known.map((path) => `"${path}"`).join(', ')}.`,
+		);
+	if (paths.length === 0)
+		throw new Error(
+			"null3D: shaders.gpuPaths is empty. Name the GPU paths to ship, such as ['webgpu'], or leave it out for both.",
+		);
+	if (!paths.includes('webgpu'))
+		throw new Error(
+			"null3D: shaders.gpuPaths must include 'webgpu'. The shader compiler builds every shader for WebGPU, so a build without it has no form for your own shaders and your add-ons' shaders. Ship both GPU paths instead.",
+		);
+	if (!paths.includes('webgl2')) return { wgsl: true, glsl: false };
+	return { wgsl: true, glsl: true };
+}
 
 /** The shader options of the plugin. */
 export interface ShaderOptions {
@@ -28,6 +89,14 @@ export interface ShaderOptions {
 	 * with and the list lacks.
 	 */
 	list?: string;
+	/**
+	 * The GPU paths whose shaders the build ships, such as `['webgpu']` for an app whose browser
+	 * frame always offers WebGPU, as an Electron desktop app's does. A build then drops the other
+	 * path's shader files and fails with E1308 on a device that would need them. The default is
+	 * both paths. `webgpu` is required, because the shader compiler builds every shader for it. The
+	 * dev server keeps both paths. Docs: guides/assets-pipeline.md#ship-a-subset-of-the-gpu-paths.
+	 */
+	gpuPaths?: readonly GpuPath[];
 }
 
 /** The largest permutation word: the shader build keeps a word in 32 bits. */
@@ -222,10 +291,18 @@ export function builtWords(text: string): number[] {
  */
 export const UNLISTED_MODULE = `// The builds of a device module that the project's shader list leaves out.\nexport const SHADERS = {};\n`;
 
-/** The generated module that names the listed words, in place of the set's own. */
-export function listedPermutationsModule(words: ReadonlySet<number>): string {
-	const sorted = [...words].sort((a, b) => a - b);
-	return `export const LISTED_PERMUTATIONS = [${sorted.join(', ')}];\n`;
+/**
+ * The generated marker module's text for a build: the listed words, or null for a build that copies
+ * the whole set, and the shipped GPU paths, or null for a build that ships both. The module that
+ * the shader build writes declares both names, so the engine reads one shape either way.
+ */
+export function shaderMarkersModule(
+	words: ReadonlySet<number> | null,
+	paths: readonly GpuPath[] | null,
+): string {
+	const listed = words === null ? 'null' : `[${[...words].sort((a, b) => a - b).join(', ')}]`;
+	const shipped = paths === null ? 'null' : `[${paths.map((path) => `'${path}'`).join(', ')}]`;
+	return `export const LISTED_PERMUTATIONS: readonly number[] | null = ${listed};\nexport const SHIPPED_GPU_PATHS: readonly ('webgpu' | 'webgl2')[] | null = ${shipped};\n`;
 }
 
 /** A node of the module's syntax tree, as far as the narrowing reads it. */

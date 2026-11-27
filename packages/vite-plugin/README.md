@@ -70,6 +70,12 @@ null3d({ shaders: { list: 'shader-permutations.txt' } });
   copies only the builds of the listed words, and fails when the engine's shader set lacks a listed
   word. Without it, a build copies the whole set, thousands of files and gigabytes, and warns with
   the size that it copied.
+- `shaders.gpuPaths` names the GPU paths whose shaders a build ships, such as `['webgpu']` for an
+  app whose browser always offers WebGPU. A build then copies no WebGL2 shader files, and compiles
+  your own shaders for WebGPU alone. A page on a device that would need WebGL2 fails with E1308,
+  and the value must include `webgpu` (the default is both paths). The dev server keeps both paths
+  and warns when a page draws the one that a build drops, and the option combines with
+  `shaders.list`.
 - `urlSwitches` lets the page's address set the engine's test switches, such as `?gpu=`, in a
   production build too. Leave it out for a shipped game. Development builds then read the
   switches and production builds do not, so a link cannot change how the game runs. An explicit

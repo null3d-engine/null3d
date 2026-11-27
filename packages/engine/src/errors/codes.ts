@@ -349,6 +349,13 @@ const DOCS = {
 			'The driver refused the pipeline among the other builds, and again when the engine built it alone. A driver does this when it runs short of memory as it compiles the shader, or when its compiler fails on the shader.\n\nOn WebGL2, a program that the driver refuses to link twice counts the same. The engine reports the first failure of each kind on each GPU device.',
 		detailsSummary: 'how the engine builds the pipeline',
 	},
+	E1308: {
+		title: 'GPU path not in this build',
+		cause:
+			"This page's build holds the shaders of one GPU path, and this device would draw with the other. The Vite plugin's shaders.gpuPaths option left the other path out, for a deployment whose browser always offers the shipped one, such as an Electron app whose Chromium draws with WebGPU.",
+		example:
+			"E1308: this build ships only the WebGPU shaders, and this device would draw with WebGL2. The Vite plugin's shaders.gpuPaths option left WebGL2 out.",
+	},
 	E1401: {
 		title: 'Not a sketch module',
 		cause:

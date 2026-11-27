@@ -11,7 +11,9 @@
 // address holds. Last, the project's service worker caches the build on a first visit, and the page
 // must start the threaded engine again with the server stopped, on both GPU paths. The tool then
 // records the permutation words that the page draws with, and a build with that list must copy only
-// those words' shader builds, and start on both GPU paths. A build with a shorter list must stop the
+// those words' shader builds, and start on both GPU paths. A build of the list with the WebGPU path
+// alone must copy no WebGL2 shader file, start on WebGPU, and stop a page that forces WebGL2 with
+// the engine's message that names the plugin's option. A build with a shorter list must stop the
 // page with the engine's message that names a word the list lacks, and the dev server with that
 // list must name such a word in the browser's console and its own output. Once the
 // production build has ended, the project also builds a page of its own layout around a copy of
@@ -564,6 +566,17 @@ function listedConfig(list: string, outDir: string): string {
 	].join('\n');
 }
 
+/** The Vite config of a build with a list of words and the WebGPU path alone, into `outDir`. */
+function gpuPathsConfig(list: string, outDir: string): string {
+	return [
+		"import null3d from '@null3d/vite-plugin';",
+		"import { defineConfig } from 'vite';",
+		'',
+		`export default defineConfig({ plugins: [null3d({ shaders: { list: '${list}', gpuPaths: ['webgpu'] } })], build: { outDir: '${outDir}' } });`,
+		'',
+	].join('\n');
+}
+
 /**
  * The engine's shader files that a build copied: their number and bytes, and the word of each
  * build that they hold. A copy keeps the shader build's own form, whose lines the words come from,
@@ -636,6 +649,7 @@ async function narrowsShaders(project: string, cli: string): Promise<void> {
 			await page.close();
 		}
 	});
+	await shipsOnePath(project, vite, listed);
 	// The engine's own passes draw with the word without any bit, so the shorter list keeps that
 	// word alone, and the page's scene draws with words that it lacks.
 	writeFileSync(join(project, 'short-permutations.txt'), `${wordText(0)}\n`);
@@ -676,6 +690,78 @@ async function narrowsShaders(project: string, cli: string): Promise<void> {
 		console.log(`  the engine said: ${said?.slice(0, 300)}`);
 	});
 	await devServerWarns(project, vite, list);
+}
+
+/**
+ * Builds the project with its list and the WebGPU path alone. The build must copy no WebGL2 shader
+ * file and far fewer bytes than the build of both paths, its page must start on WebGPU, and a page
+ * that forces WebGL2 must stop with the error that names the plugin's option.
+ */
+async function shipsOnePath(
+	project: string,
+	vite: string,
+	both: { files: number; bytes: number },
+): Promise<void> {
+	writeFileSync(
+		join(project, 'vite.webgpu.config.ts'),
+		gpuPathsConfig('shader-permutations.txt', 'dist-webgpu'),
+	);
+	step('Build with the list and the WebGPU path alone', project, vite, [
+		'build',
+		'--config',
+		'vite.webgpu.config.ts',
+	]);
+	const dist = join(project, 'dist-webgpu');
+	const webgpu = copiedShaderFiles(dist);
+	// The stand-in modules of the dropped path keep its name in theirs, so the text decides.
+	const assets = join(dist, 'assets');
+	const glsl = readdirSync(assets).filter(
+		(name) =>
+			name.includes('glsl') && readFileSync(join(assets, name), 'utf8').includes('#version 300 es'),
+	);
+	console.log(
+		`  WebGPU alone: ${webgpu.files} shader files, ${webgpu.bytes.toLocaleString('en-US')} bytes, against ${both.files} files, ${both.bytes.toLocaleString('en-US')} bytes on both paths`,
+	);
+	if (glsl.length > 0)
+		throw new Error(
+			`the build that ships WebGPU alone copied ${glsl.length} WebGL2 shader files, such as ${glsl[0]}`,
+		);
+	if (webgpu.bytes * 4 > both.bytes)
+		throw new Error(
+			`the build that ships WebGPU alone copied ${webgpu.bytes} bytes of shaders, not a quarter of the ${both.bytes} on both paths`,
+		);
+	console.log('\nStart the build that ships WebGPU alone');
+	await withBrowser(dist, true, async (browser, server) => {
+		const page = await browser.newPage();
+		const errors = pageErrors(page);
+		await page.goto(server.url.href);
+		const { start, tier } = await startOf(page, 'with the WebGPU path alone', errors);
+		if (start !== 'threaded' || tier?.startsWith('webgpu') !== true)
+			throw new Error(
+				`the build that ships WebGPU alone did not start on it: start ${start}, tier ${tier}, page errors ${JSON.stringify(errors)}`,
+			);
+		await page.goto(`${server.url.href}?path=webgl2`);
+		const refused = await within(
+			page
+				.waitForFunction(
+					() => (globalThis as unknown as PageGlobals).document.documentElement.dataset.start,
+					undefined,
+					{ timeout: PAGE_LIMIT_MS },
+				)
+				.then((handle) => handle.jsonValue())
+				.catch(() => undefined),
+			PAGE_LIMIT_MS + 5_000,
+			() => 'the page that forces WebGL2 neither started nor failed',
+		);
+		// The fix text with the option's name loads after the first error, so this start may hold
+		// the code and the detail alone. The unit tests hold the message's option name.
+		if (!String(refused).includes('E1308') || !String(refused).includes('WebGL2'))
+			throw new Error(
+				`the page that forces WebGL2 did not name the build's choice: ${String(refused).slice(0, 300)}`,
+			);
+		console.log(`  the engine said: ${String(refused).slice(0, 300)}`);
+		await page.close();
+	});
 }
 
 /**
