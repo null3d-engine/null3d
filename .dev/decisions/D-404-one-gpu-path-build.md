@@ -58,7 +58,9 @@ A build with the option does these things:
 - The engine's marker module names the shipped paths. `chooseTier` treats a path that the build lacks as unavailable. That covers a crashed start and a `?gpu=` switch.
 - The dev server keeps both paths. The page tells it the path that each engine started on, through the client that also sends a shader list's words. The server warns once for each page that draws the dropped path.
 
-A list recorded on both paths holds words that only WebGL2 builds. A morphed mesh's word is one. The list's build check would fail for them, so a build with a list still reads each dropped file for its words. It does not copy the file.
+A list recorded on both paths holds words that only WebGL2 builds. A morphed mesh's word is one, and a combined build of several features adds more. The list's build check would fail for them.
+
+So a build with a list still reads each dropped file for its words. It also reads the device files that a dropped table of combined builds names. It copies none of them.
 
 Options rejected:
 
