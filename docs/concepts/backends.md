@@ -187,6 +187,10 @@ Some laptops have a separate graphics chip next to the one built into the proces
 
 Other switches make one device test the paths of other devices. They cover copied uploads, shader compiles without the parallel compile extension, the 8-bit color path, each WebGL2 depth mode and each compressed texture family. The engine reads them in development builds, or in a production build with the Vite plugin's `urlSwitches` option on.
 
+A production build can ship the shaders of one path alone. It suits a deployment whose browser always offers that path. The engine then refuses a tier that the build lacks, with [E1308](../errors/E1308.md), even where the browser offers it.
+
+`engine.report` still describes the browser, and `engine.capabilities.tier` still names the path that the page draws with. The Vite plugin's `shaders.gpuPaths` option makes such a build, and the build is smaller than one of both paths ([Ship a subset of the GPU paths](../guides/assets-pipeline.md#ship-a-subset-of-the-gpu-paths)).
+
 On WebGL2, uploads read straight from the engine's shared memory. A browser that refuses to read shared memory gets a copy of each upload instead.
 
 The switch `?depth=` forces a WebGL2 depth mode: `reversed`, `reversed-gl` or `standard`, where the near plane stores 0 and the far plane 1. A browser without `EXT_clip_control` cannot draw `reversed`, so it draws its own mode instead. Shadow maps hold the same depth values as on WebGPU in `reversed` and `reversed-gl`. In `standard` they would hold them the other way around, so WebGL2 draws no shadows in that mode.

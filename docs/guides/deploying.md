@@ -73,6 +73,10 @@ A page's start downloads the engine, then the files of the first view. Keep each
 
 So the engine's start takes about 844 KB after Brotli, before the page's own code and the scene's files. The JavaScript counts the engine's code for the page and its workers and the GPU path's renderer. It also counts the largest shader file that a start can load. [Send the files with Brotli](../getting-started/hosting.md#send-the-files-with-brotli) gives the figures for gzip and for files as they are.
 
+The host stores the shader files of both GPU paths, and a page downloads one path's. A build that ships a subset copies no files of the paths it leaves out. That saves most of the shader set's size in the app package, the installer and the host. The start stays the same.
+
+A visitor who downloads the whole app also downloads less: an Electron installer, a zip of the site, or the files that a service worker caches. [Ship a subset of the GPU paths](assets-pipeline.md#ship-a-subset-of-the-gpu-paths) gives the measured sizes.
+
 `assets optimize` makes models and their textures smaller, and its report warns for each quality preset whose texture memory a model passes ([The budget report](assets-pipeline.md#the-budget-report)). Phones and tablets start at the Low and Medium presets, which give textures less memory.
 
 To shorten the start, begin the first view's downloads at the top of the setup. Draw the first frame before the large models arrive ([A fast start](start-time.md)).

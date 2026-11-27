@@ -679,3 +679,49 @@ NULL3D_SHADER_PERMUTATIONS=examples/shader-permutations.txt bun run build
 Without the variable, or with it empty, `bun run build` compiles every permutation. `bun run examples:build` reads the examples' list this way. With it, the build's cache keys and its input hash include the list, so a changed list builds again.
 
 The file that the asset command writes into a model, `asset.extras.NULL3D_shaders`, names the bits that the model turns on. The list here is different: it holds the whole words that your scenes draw with. [Loading screens](loading-screens.md#loading-everything-up-front) describes the model's list.
+
+## Ship a subset of the GPU paths
+
+The engine draws with WebGPU where the browser offers it, and with WebGL2 everywhere else ([GPU tiers and backends](../concepts/backends.md)). A production build copies the shaders of both paths, so a host or a desktop app stores both. Most of that is the WebGL2 half: GLSL text is about nine tenths of the shader set's bytes.
+
+A deployment that knows which paths its devices offer can ship a subset of them. An Electron app ships Chromium, and Chromium draws with WebGPU where the device lets it. A kiosk, a game inside a WebView, and a game that requires Chrome all know the same. Such a build drops the other path's shader files, and its app package holds no WebGL2 shader files.
+
+The build, the app package and the installer get smaller. The download shrinks too, wherever a visitor downloads the whole app. That covers an Electron installer, an archive of the site, and the files that a service worker caches for offline play. A page's own start download does not change, because a page already downloads one path's files.
+
+Ship a subset only when every device that runs the app offers the paths it keeps. A page on a device without WebGPU stops with [E1308](../errors/E1308.md), and the engine cannot fall back. Check the devices and the operating systems that the app ships on, with a run of `navigator.gpu` or `engine.capabilities.tier` on each.
+
+```ts
+// vite.config.ts
+import null3d from '@null3d/vite-plugin';
+import { defineConfig } from 'vite';
+
+export default defineConfig({
+  plugins: [null3d({ shaders: { gpuPaths: ['webgpu'] } })],
+});
+```
+
+The option takes `'webgpu'` and `'webgl2'`, and it must include `'webgpu'`. The shader compiler builds every shader for WebGPU, so a project's own shaders and its add-ons' shaders have no other form. That leaves `['webgpu']` as the one path a build can ship, and leaving the option out ships both.
+
+A build with the option does these things:
+
+- It copies only the WebGPU files of the engine's shader set. The set keeps its module of loader tables, which name the WebGL2 files, so those tables resolve to one empty module instead.
+- It compiles your own custom shaders and their materials for WebGPU alone, and drops the WebGL2 sets of a custom material, effect or sky layer.
+- It drops the WebGL2 builds of an add-on package's compiled shaders.
+- It writes the shipped paths into the engine's marker module, which is how the engine knows its build's choice.
+
+The examples' production build, with the whole set and no list, shows the difference:
+
+| GPU paths that the build ships | Shader files | Size |
+| --- | --- | --- |
+| Both, the default | 8,689 | 4,118 MB |
+| WebGPU alone | 1,967 | 330 MB |
+
+The files that remain of the dropped path are eight stub modules of about 60 bytes. Each stands in for a module that a page would load by name, and a page never reads one on the WebGPU path.
+
+The option combines with `shaders.list`: a build with both copies only the listed words' builds of the shipped path.
+
+The dev server keeps both paths, so you can test the other one with `?gpu=webgl2`. When a page draws with a path that a production build does not ship, the dev server warns. It warns in its terminal and in the browser's console, once for each page.
+
+Test the production build on the shipped path before you ship it. Run your browser tests against it, and check that each page draws. A test that forces the other path with `?gpu=webgl2` fails with E1308, which is the message that a device without WebGPU shows.
+
+The build still holds the JavaScript of both GPU paths, which is a small part of the engine's code. It also holds the engine's own passes' GLSL text, which is in the shared shader module. An add-on that a page loads from a CDN at run time keeps both paths, because the plugin narrows only what the build bundles.

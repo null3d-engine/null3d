@@ -194,6 +194,8 @@ The `startsWith` check refuses an address that points outside `dist/`. The game'
 
 To check the app, open its developer tools and read `crossOriginIsolated` in the console, or read `engine.capabilities.threaded` in the page's code. Both are `true` when the engine runs threaded.
 
+An app that controls its browser frame can ship a subset of the GPU paths, which saves most of the shader set's size in its package and installer. Electron's Chromium draws with WebGPU where the device and its driver allow it, and that differs by operating system and Chromium version. Check each system that the app ships on, and test the built app there, before you rely on WebGPU alone ([Ship a subset of the GPU paths](../guides/assets-pipeline.md#ship-a-subset-of-the-gpu-paths)).
+
 ## Send the files with Brotli
 
 The engine's shader text compresses well with Brotli, which finds text that repeats far apart. gzip finds only repeats that are close together. So the host's compression changes what a page downloads at its start. On a threaded page, in the default latency mode ([Architecture](../concepts/architecture.md#latency-modes)), the engine's part of the start downloads about:
