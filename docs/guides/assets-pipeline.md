@@ -549,7 +549,11 @@ bunx @null3d/cli shaders record --page / --live /
 
 A held page (`--page`) loads in hold mode at the low and high quality presets, on WebGPU and on WebGL2. A preset turns on a few bits, and each GPU path lists bits of its own. WebGL2 has the morph targets, and WebGPU has the instance index.
 
-A live page (`--live`) loads on both GPU paths and draws for five seconds. The recorder presses every button of the page's controls HUD, when it has one, so the words of those states reach the list. Without either option, the command records `/` both ways. It writes `shader-permutations.txt`, or the file that `--out` names. [The `null3d` command](../cli/null3d.md#shaders-record) lists every option.
+A live page (`--live`) loads on both GPU paths and draws for fifteen seconds. The recorder presses every button of the page's controls HUD, when it has one, so the words of those states reach the list. Without either option, the command records `/` both ways. It writes `shader-permutations.txt`, or the file that `--out` names. [The `null3d` command](../cli/null3d.md#shaders-record) lists every option.
+
+Some states arrive only after the page has drawn for a while. An idle camera can turn a mesh into a level of detail's fading band. A day and night cycle can change the look. A stage can load after the first frame. `--live-ms` sets the time each live page draws, so give such a page a longer time.
+
+A state that waits for a visitor's action needs a person or a test. Play it with `--manual`, or drive it from a browser test, as [Record by hand](#record-by-hand) and [Record from your browser tests](#record-from-your-browser-tests) show.
 
 A page that builds more of its scene as the visitor scrolls needs `--scroll`. The recorder then scrolls each live page down to its end, one window's height at a time. After each step, it waits until the page has asked for nothing for half a second. So each stage that a scroll reveals has loaded its shaders, and its pipelines have asked for their words.
 

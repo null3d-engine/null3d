@@ -12,6 +12,7 @@ import { defaultEnvironment, launchBrowser } from './browser.js';
 import { switchedPath } from './page.js';
 import { startDevServer } from './server.js';
 import {
+	LIVE_MS,
 	RECORD_GPUS,
 	readExtraWords,
 	recordingUrl,
@@ -30,6 +31,7 @@ const OPTIONS = /** @type {const} */ ({
 	base: { type: 'string' },
 	page: { type: 'string', multiple: true },
 	live: { type: 'string', multiple: true },
+	'live-ms': { type: 'string' },
 	scroll: { type: 'boolean', default: false },
 	click: { type: 'string' },
 	out: { type: 'string', default: 'shader-permutations.txt' },
@@ -50,10 +52,10 @@ shader builds of those words. Without a list, it copies the engine's whole shade
 thousands of files and gigabytes.
 
 Each page loads with the engine's recording switch. A held page loads in hold mode at the low and
-high quality presets, on WebGPU and on WebGL2. A live page loads on both GPU paths, draws for five
-seconds, and the recorder presses every button of its controls HUD, when it has one. Without
---page or --live, it records / both ways. The words join those that the list holds already, so
-each level or mode can be recorded in a run of its own.
+high quality presets, on WebGPU and on WebGL2. A live page loads on both GPU paths, draws for
+fifteen seconds by default, and the recorder presses every button of its controls HUD, when it has
+one. Without --page or --live, it records / both ways. The words join those that the list holds
+already, so each level or mode can be recorded in a run of its own.
 
 Options:
   --base <url>              The address of a server that serves the pages with a development
@@ -64,6 +66,10 @@ Options:
                             each page. A path that names its own hold= time keeps it
   --live <path>             A page to record live, which the recorder drives through its states.
                             Repeat it for each page
+  --live-ms <ms>            The time each live page draws before its recording ends, in
+                            milliseconds (15000). A state that arrives with time, such as an idle
+                            camera that turns a mesh into a level of detail's fading band, needs a
+                            longer time
   --scroll                  Scroll each live page down to its end, one window's height at a time.
                             After each step the recorder waits until the page asks for nothing for
                             half a second, so a page that builds its later scenes as a visitor
@@ -81,10 +87,11 @@ Options:
   --gpu <path>              With --manual: webgpu or webgl2 (the engine's own choice)
   --preset <name>           With --manual: low, medium, high or ultra (the engine's own choice)
 
-Record again after the project gains a feature that draws with a new word. A production build that
-lacks a word fails its pipeline with a message that names the word. It draws with Chrome for
-Testing on this computer's GPU, and downloads it on first use. When the CI variable is set, it draws
-with Playwright's Chromium on SwiftShader, the software GPU of machines without a GPU.`;
+Record again after the project gains a feature that draws with a new word, or after a state that
+arrives with time. A production build that lacks a word fails its pipeline with a message that
+names the word. It draws with Chrome for Testing on this computer's GPU, and downloads it on first
+use. When the CI variable is set, it draws with Playwright's Chromium on SwiftShader, the software
+GPU of machines without a GPU.`;
 
 /**
  * @typedef {object} RecordOptions
@@ -92,6 +99,7 @@ with Playwright's Chromium on SwiftShader, the software GPU of machines without 
  *   the project's own dev server.
  * @property {string[]} held The pages to record in hold mode.
  * @property {string[]} live The pages to record live.
+ * @property {number} liveMs The time each live page draws before its recording ends.
  * @property {boolean} scroll True to scroll each live page to its end.
  * @property {string | undefined} click The element to press after each page loads.
  * @property {number[]} extra The words to add by hand.
@@ -142,6 +150,16 @@ export function parseRecordArgs(args) {
 		throw new UsageError(`--gpu takes ${RECORD_GPUS.join(' or ')}, not "${gpu}"`);
 	if (preset !== undefined && !PRESETS.includes(preset))
 		throw new UsageError(`--preset takes ${PRESETS.join(', ')}, not "${preset}"`);
+	const liveMsText = values['live-ms'];
+	const liveMs = liveMsText === undefined ? LIVE_MS : Number(liveMsText);
+	if (!Number.isFinite(liveMs) || liveMs < 0)
+		throw new UsageError(
+			`--live-ms takes a number of milliseconds from 0, such as 45000, not "${liveMsText}"`,
+		);
+	if (manual && liveMsText !== undefined)
+		throw new UsageError('--live-ms times the automatic run, so it goes without --manual');
+	if (liveMsText !== undefined && live.length === 0 && held.length > 0)
+		throw new UsageError('--live-ms times the live pages, and no --live page is named');
 	let extra = /** @type {number[]} */ ([]);
 	try {
 		extra = readExtraWords(values.extra ?? '');
@@ -153,6 +171,7 @@ export function parseRecordArgs(args) {
 		base,
 		held: none && !manual ? ['/'] : held,
 		live: none ? ['/'] : live,
+		liveMs,
 		scroll,
 		click,
 		extra,
@@ -273,7 +292,13 @@ export async function run(args) {
 			console.log(`Recording ${targets.length} pages from ${base}`);
 			const browser = await launchBrowser(defaultEnvironment());
 			try {
-				words = await recordWords({ browser, base, targets, click: options.click });
+				words = await recordWords({
+					browser,
+					base,
+					targets,
+					click: options.click,
+					liveMs: options.liveMs,
+				});
 			} finally {
 				await browser.close();
 			}

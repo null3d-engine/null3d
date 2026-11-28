@@ -581,6 +581,7 @@ flowchart LR
 bunx @null3d/cli shaders record
 bunx @null3d/cli shaders record --page / --page /level-2.html --live /
 bunx @null3d/cli shaders record --live / --scroll
+bunx @null3d/cli shaders record --live / --live-ms 60000
 bunx @null3d/cli shaders record --base http://localhost:8080 --live /game.html --click "#play"
 bunx @null3d/cli shaders record --manual --gpu webgl2 --preset low
 ```
@@ -589,7 +590,8 @@ bunx @null3d/cli shaders record --manual --gpu webgl2 --preset low
 | --- | --- | --- |
 | `--base <url>` | The address of a server that serves the pages with a development build of the engine | The command starts the project's own Vite dev server in the current folder |
 | `--page <path>` | A page to record in hold mode, at the low and high presets on WebGPU and on WebGL2. Repeat it for each page. A path that names its own `hold=` time keeps it | `/`, when no `--live` page is named either |
-| `--live <path>` | A page to record live on both GPU paths. It draws for five seconds, and the recorder presses every button of its controls HUD. Repeat it for each page | `/`, when no `--page` is named either |
+| `--live <path>` | A page to record live on both GPU paths. It draws for fifteen seconds by default, and the recorder presses every button of its controls HUD. Repeat it for each page | `/`, when no `--page` is named either |
+| `--live-ms <ms>` | The time each live page draws before its recording ends, in milliseconds. A state that arrives with time, such as an idle camera turning a mesh into a fading band, needs a longer time. It does not reach a state that waits for a visitor's action, which `--manual` or a browser test does | 15000 |
 | `--scroll` | Scrolls each live page down to its end, one window's height at a time. After each step it waits until the page has asked for nothing for half a second, at least one second and at most fifteen | The live pages stay at their top |
 | `--click <selector>` | An element to press after each page loads, for a page whose engine starts on a click | No element is pressed |
 | `--extra <words>` | Words to add by hand, as hexadecimal numbers joined by commas, such as `0x10,0x14` | Only the recorded words |
@@ -613,7 +615,7 @@ A page that fails gets a second try. A second failure stops the run with the pag
 
 With `--manual`, the command opens one page in a window on your screen. Play through its menus, settings and levels, then press Enter in the terminal. Run it on both GPU paths at the low and high presets, as the automatic run records them. A reload starts a new recording, so record each page in a run of its own. A project's browser tests can write the list too, with `saveRecordedWords` from `@null3d/cli/shaders`, as [Record from your browser tests](../guides/assets-pipeline.md#record-from-your-browser-tests) shows.
 
-A production build ignores the recording switch, so a page that `--base` names must come from a development build: the dev server, or `vite build --mode development`. The plugin's `urlSwitches` option also lets a production build read it. Record again after the project gains a feature that draws with a new word. A build whose list lacks a word stops the pipeline that needs it, with a message that names the word.
+A production build ignores the recording switch, so a page that `--base` names must come from a development build: the dev server, or `vite build --mode development`. The plugin's `urlSwitches` option also lets a production build read it. Record again after the project gains a feature that draws with a new word, or a state that arrives later. A build whose list lacks a word stops the pipeline that needs it, with a message that names the word.
 
 ## upgrade
 

@@ -25,8 +25,8 @@ export const RECORD_GPUS = /** @type {const} */ (['webgpu', 'webgl2']);
 /** How long to wait after a HUD pick before the next one, in ms, so its frames ask for the word. */
 const PICK_MS = 600;
 
-/** How long a live page may draw before its recording ends, in ms, so its scene and camera move. */
-const LIVE_MS = 5000;
+/** How long a live page draws before its recording ends, in ms, unless an option sets another. */
+export const LIVE_MS = 15_000;
 
 /** How long a page may take to load, and to start or publish its words, in ms. */
 const LOAD_MS = 120_000;
@@ -228,10 +228,10 @@ export async function scrollToEnd(page, watch) {
  * @param {Browser} browser
  * @param {string} base
  * @param {RecordTarget} target
- * @param {{ click?: string, log: (line: string) => void }} options
+ * @param {{ click?: string, liveMs: number, log: (line: string) => void }} options
  * @returns {Promise<number[]>}
  */
-async function recordPage(browser, base, target, { click, log }) {
+async function recordPage(browser, base, target, { click, liveMs, log }) {
 	// A server of the project may serve a local certificate, which this browser does not trust.
 	const tab = await browser.newPage({ ignoreHTTPSErrors: true });
 	/** @type {string[]} */
@@ -256,8 +256,9 @@ async function recordPage(browser, base, target, { click, log }) {
 				undefined,
 				{ timeout: LOAD_MS, polling: 250 },
 			);
-			// The first frames draw and the camera moves before the sweep.
-			await tab.waitForTimeout(LIVE_MS);
+			// The first frames draw, the camera moves, and a state that arrives with time reaches
+			// the recording before the sweep.
+			await tab.waitForTimeout(liveMs);
 			const picks = await sweepHud(tab);
 			if (picks > 0) log(`${target.path}: pressed ${picks} controls`);
 			if (target.scroll) log(`${target.path}: scrolled ${await scrollToEnd(tab, watch)} steps`);
@@ -280,7 +281,7 @@ async function recordPage(browser, base, target, { click, log }) {
  * times out beside others is often slow rather than broken; a second failure ends the run, so no
  * list leaves out a page's words. Gives every word that a page asked for, with `extra`, in order.
  *
- * @param {{ browser: Browser, base: string, targets: readonly RecordTarget[], workers?: number, click?: string, extra?: readonly number[], log?: (line: string) => void }} options
+ * @param {{ browser: Browser, base: string, targets: readonly RecordTarget[], workers?: number, click?: string, liveMs?: number, extra?: readonly number[], log?: (line: string) => void }} options
  * @returns {Promise<number[]>}
  */
 export async function recordWords({
@@ -289,6 +290,7 @@ export async function recordWords({
 	targets,
 	workers = 4,
 	click,
+	liveMs = LIVE_MS,
 	extra = [],
 	log = console.log,
 }) {
@@ -300,7 +302,7 @@ export async function recordWords({
 		while (failure === undefined) {
 			const target = targets[next++];
 			if (target === undefined) return;
-			const record = () => recordPage(browser, base, target, { click, log });
+			const record = () => recordPage(browser, base, target, { click, liveMs, log });
 			try {
 				for (const word of await record().catch(record)) words.add(word >>> 0);
 			} catch (error) {
