@@ -10,7 +10,12 @@ import { messageOf } from '../errors/message';
 import { FORMAT_CANVAS, PERMUTATION_HALF } from '../generated/gpu';
 import { SHADER_FEATURES, type ShaderFeature } from '../generated/shader-features';
 import { SHIPPED_GPU_PATHS } from '../generated/shader-permutations';
-import { recordPermutations, reportPermutations, stopRecordingPermutations } from '../gpu/variants';
+import {
+	receiveMissingVariants,
+	recordPermutations,
+	reportPermutations,
+	stopRecordingPermutations,
+} from '../gpu/variants';
 import type { DrawPathReason } from '../gpu/webgpu/draw-path-probe';
 import {
 	maxTargetFps,
@@ -26,6 +31,7 @@ import {
 	gpuOcclusionChoice,
 	memoryPreset,
 	type PresetRequest,
+	presetCapped,
 	textureMemoryCap,
 	withinTier,
 } from '../quality/chooser';
@@ -689,6 +695,33 @@ let warnedFallback = false;
 /** True once an engine on the page has warned that a service worker's page lost its isolation. */
 let warnedIsolation = false;
 
+/** The words that the loaded shader set lacks on this page, for a production build's check. */
+const missingWords = new Set<number>();
+
+/**
+ * Publishes a word that the loaded shader set lacks, once per word, and warns. A production
+ * build's check reads `window.__null3dMissingWords`, which also holds the words in a release.
+ */
+function publishMissingWord(pipeline: string, word: number): void {
+	if (missingWords.has(word)) return;
+	missingWords.add(word);
+	(globalThis as { __null3dMissingWords?: number[] }).__null3dMissingWords = [...missingWords].sort(
+		(a, b) => a - b,
+	);
+	console.warn(
+		`null3D: ${pipeline} asks for the permutation word 0x${word.toString(16).padStart(8, '0')}, which the shader list lacks. Its draws are skipped. Record the pages again with bunx @null3d/cli shaders record.`,
+	);
+}
+
+/** Starts a new engine's record of missing words, and publishes an empty list for its check. */
+function resetMissingWords(): void {
+	missingWords.clear();
+	(globalThis as { __null3dMissingWords?: number[] }).__null3dMissingWords = [];
+}
+
+/** True once an engine on the page has warned that a named preset ran on WebGL2 without WebGPU. */
+let warnedCappedPreset = false;
+
 /**
  * The page's video calls. The video support's code loads at the first call, and the calls that come
  * before it lands run in their order once it does.
@@ -1239,6 +1272,12 @@ export class EngineWorker {
 						return;
 					case 'permutation':
 						if (DEV) announcePermutationWord(reply.word);
+						return;
+					case 'recorded-word':
+						this.recording?.heard(reply.word);
+						return;
+					case 'missing-word':
+						publishMissingWord(reply.pipeline, reply.word);
 						return;
 					case 'sketch-message':
 						events.sketchMessage(reply.name, reply.data);
@@ -1892,6 +1931,7 @@ function prefetch(url: string): void {
  */
 export async function createEngine(options: EngineOptions): Promise<Engine> {
 	const switches = parseSwitches(URL_SWITCHES ? (globalThis.location?.search ?? '') : '');
+	resetMissingWords();
 	const holding =
 		options.hold !== undefined || switches.hold !== undefined || switches.replay !== undefined;
 	const place = placement(options, switches);
@@ -2754,6 +2794,21 @@ async function startEngine(
 		const stored = switches.freshCheck ? undefined : checkStore?.read();
 		const storedCheck = stored && checkEnded(stored) ? stored : undefined;
 		const preset = stored ? checkedPreset(stored) : chosen;
+		// A page that names a heavier preset than WebGL2 can run gets Medium with no other sign. When
+		// the browser reports WebGPU but offers no adapter, the browser's start switch is the cause.
+		if (
+			DEV &&
+			!warnedCappedPreset &&
+			tier === 'webgl2' &&
+			presetCapped(presetRequest.wanted, tier) &&
+			report.webgpu.available &&
+			!report.webgpu.compatibilityAdapter
+		) {
+			warnedCappedPreset = true;
+			console.warn(
+				`null3D: this page asked for the ${presetRequest.wanted} preset, and runs ${preset} on WebGL2. The browser reports WebGPU but offers no adapter: Chromium offers one only when it starts with --enable-unsafe-webgpu. Start the browser with that switch to draw the WebGPU presets.`,
+			);
+		}
 		// Occlusion culling on the GPU needs WebGPU's compute passes. Phones and tablets run it only
 		// when the page asks.
 		const gpuOcclusion =
@@ -2846,7 +2901,8 @@ async function startEngine(
 		// page's stop once the page has shown every state that it offers.
 		if (recording && hold === undefined)
 			(globalThis as { __null3dStopRecording?: () => void }).__null3dStopRecording = stopRecording;
-		if (recording && renderThread === 'main') recordPermutations();
+		if (recording && renderThread === 'main') recordPermutations((word) => recording.heard(word));
+		if (renderThread === 'main') receiveMissingVariants(publishMissingWord);
 		// The dev server compares each word that the page draws with against the project's list.
 		if (DEV && renderThread === 'main') reportPermutations(announcePermutationWord);
 		// What the thread that draws needs besides its canvas, whichever thread that is.

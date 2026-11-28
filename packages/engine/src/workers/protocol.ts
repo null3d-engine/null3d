@@ -194,6 +194,16 @@ export type WorkerReply =
 	 */
 	| { type: 'recorded'; role: 'sketch' | 'render'; permutations: number[] }
 	/**
+	 * A permutation word that the drawing thread's pipelines reached while it recorded, sent as it
+	 * arrives so a live page streams its growing set to the tool that records it.
+	 */
+	| { type: 'recorded-word'; role: 'sketch' | 'render'; word: number }
+	/**
+	 * An object pipeline whose shader variant the loaded set lacks. Its draws draw nothing, and the
+	 * page publishes the word for a production build's check.
+	 */
+	| { type: 'missing-word'; role: 'sketch' | 'render'; pipeline: string; word: number }
+	/**
 	 * In a development build, a permutation word that the drawing thread's pipelines found for the
 	 * first time, which the page hands to the dev server to compare with the project's shader list.
 	 */

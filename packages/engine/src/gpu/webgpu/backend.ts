@@ -21,7 +21,7 @@ import {
 import { floatOfBits } from '../float-bits';
 import { GpuMemory, textureBytes } from '../memory';
 import type { ReadSink } from '../readback';
-import { variantFor } from '../variants';
+import { MissingVariantError, reportMissingVariant, variantFor } from '../variants';
 import { BufferReads } from './buffer-reads';
 import type { CulledCounts } from './culled-counts';
 import type { CubeGenerator } from './environment';
@@ -1329,12 +1329,18 @@ export class WebGPUBackend {
 			return;
 		}
 		if (!background && !joined) {
-			this.renderPipelines[id] =
-				(this.takeAhead(op, words, a) as GPURenderPipeline | undefined) ??
-				device.createRenderPipeline(this.renderDescriptor(words, a));
+			const ahead = this.takeAhead(op, words, a) as GPURenderPipeline | undefined;
+			if (ahead) {
+				this.renderPipelines[id] = ahead;
+				return;
+			}
+			const descriptor = this.describedRender(words, a);
+			if (descriptor === null) return;
+			this.renderPipelines[id] = device.createRenderPipeline(descriptor);
 			return;
 		}
-		const descriptor = this.renderDescriptor(words, a);
+		const descriptor = this.describedRender(words, a);
+		if (descriptor === null) return;
 		this.renderPipelines[id] = null;
 		this.builds++;
 		this.running++;
@@ -1353,6 +1359,25 @@ export class WebGPUBackend {
 				this.joins.failed(template, error);
 			},
 		);
+	}
+
+	/**
+	 * The render pipeline's descriptor, or null when a narrowed shader set lacks the word of a
+	 * template that draws the scene's meshes. Its draws then draw nothing, as a pipeline that the
+	 * driver refused twice does. A full-screen pass has no draw to skip, so its missing shader
+	 * stays fatal.
+	 */
+	private describedRender(words: Uint32Array, a: number): GPURenderPipelineDescriptor | null {
+		const template = words[a + 1] as number;
+		try {
+			return this.renderDescriptor(words, a);
+		} catch (error) {
+			if (!(error instanceof MissingVariantError) || !this.pipelines.drawsObjects(template))
+				throw error;
+			this.renderPipelines[words[a] as number] = null;
+			reportMissingVariant(this.pipelines.describe(template, words[a + 2] as number), error.word);
+			return null;
+		}
 	}
 
 	/**

@@ -122,7 +122,9 @@ The plugin sends the two headers that let the engine's threads share memory, and
 bunx vite
 ```
 
-Open the address that Vite prints. `bunx vite build` writes the production files, and `bunx vite preview` serves them with the same headers.
+Open the address that Vite prints. Serve the page over HTTPS or open it as `localhost`, and give the browser WebGPU.
+
+[Hosting and cross-origin isolation](hosting.md#during-development) gives the certificate, and [Testing your sketch](../guides/testing.md#the-browser-must-take-the-webgpu-path) gives the browser switch. `bunx vite build` writes the production files, and `bunx vite preview` serves them with the same headers.
 
 ## Next steps
 

@@ -221,12 +221,13 @@ The game's module then imports `createEngine` and `SKETCH` from the folder's `en
 The shader modules decide most of the folder's size. Copy only the builds of the shader permutation words that the game draws with:
 
 1. Build a development copy of the folder (`bunx vite build --mode development`). A production build ignores `?permutations`, `?gpu` and `?preset`, so a recording of it holds nothing.
-2. Record the words from a run of the game's page, as [Build only the shader permutations you draw with](assets-pipeline.md#build-only-the-shader-permutations-you-draw-with) shows. The game's engine starts on a click, so name its page with `--live` and give the recorder the start control. Serve the game with its development folder, and give the recorder its address: `bunx @null3d/cli shaders record --base http://localhost:8080 --live /game.html --click "#play"`.
+2. Record the words from a run of the game's page, as [Build only the shader permutations you draw with](assets-pipeline.md#build-only-the-shader-permutations-you-draw-with) shows. The game's engine starts on a click, so name its page with `--live` and give the recorder the start control. Serve the game with its development folder, and give the recorder its address: `bunx @null3d/cli shaders record --base http://localhost:8080 --live /game.html --click "#play"`. The recorder's browser takes the WebGPU path where the device offers it.
 3. Name the list in the engine folder's config, as `null3d({ shaders: { list: 'shader-permutations.txt' } })`, and build the folder in production again. The build copies only the listed builds, from the release asset, and compiles nothing.
+4. Record the states that a player opens, such as each level and menu. Use `--steps` with the game's own steps, `--manual`, or a browser test, as the assets guide shows. A single load of the game reaches only its first state.
 
 With null3D 0.1.0's shader set, a small scene drew with 6 words. Its build copied 218 shader files and 17 MB, against 7,597 files and 4,115 MB without a list. Build the set again after each engine upgrade.
 
-The shader modules in a release asset are the full set. A game that builds against that asset without a list copies every module into its files folder. The build then warns with the size that it copied. That can exceed the folder's file and byte limits. Record again after the game gains a feature that turns on a new word. The engine names a word that the list lacks the first time a pipeline needs it.
+The shader modules in a release asset are the full set. A game that builds against that asset without a list copies every module into its files folder. The build then warns with the size that it copied. That can exceed the folder's file and byte limits. Record again after the game gains a feature that turns on a new word. Check the production build with `bunx @null3d/cli shaders verify`, which drives the pages on both GPU paths and fails on a word that the list lacks. The engine skips the draws of a mesh pipeline whose word is missing, and a full-screen pass stops with the word in its error.
 
 ## API reference
 

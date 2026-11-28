@@ -329,6 +329,8 @@ Judge a start only on a production build that a host serves as above. The Vite d
 
 A phone or tablet that tests the page must trust its certificate. Chrome keeps no file in its cache from a site whose certificate it accepted after a warning. Every load then downloads every file again: a reload of the dev server took 30 seconds instead of 15. Install the certificate's root on the device, as [During development](../getting-started/hosting.md#during-development) shows.
 
+A browser that drives the test must also start with `--enable-unsafe-webgpu`, or it measures WebGL2. [Testing your sketch](testing.md#the-browser-must-take-the-webgpu-path) gives the browser setup.
+
 ## Measure a start
 
 `engine.measure()` gives the start's times in its `load` figures ([Performance guide](performance.md#measure)):

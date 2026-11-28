@@ -6,7 +6,12 @@
 
 import { DEV } from '../errors/checks';
 import { messageOf } from '../errors/message';
-import { recordPermutations, reportPermutations, stopRecordingPermutations } from '../gpu/variants';
+import {
+	receiveMissingVariants,
+	recordPermutations,
+	reportPermutations,
+	stopRecordingPermutations,
+} from '../gpu/variants';
 import { captureFrame, captureImage, startDrawing, startEarly } from '../render/draw';
 import type { EarlyStart } from '../render/renderer';
 import { controlViews } from '../shared/control';
@@ -55,8 +60,15 @@ startWorker(
 				canvas = message.canvas ?? canvas;
 				if (!canvas) throw new Error('the page gave the render worker no canvas');
 				// A recording starts here, before the scene's draws ask for their pipelines, and the
-				// page stops it once the held frame has drawn them.
-				if (message.recordPermutations) recordPermutations();
+				// page stops it once the held frame has drawn them. Each word reaches the page as it
+				// arrives, so a live page streams its growing set to the tool that records it.
+				if (message.recordPermutations)
+					recordPermutations((word) =>
+						replyToPage({ type: 'recorded-word', role: 'render', word }),
+					);
+				receiveMissingVariants((pipeline, word) =>
+					replyToPage({ type: 'missing-word', role: 'render', pipeline, word }),
+				);
 				if (DEV) reportPermutations((word) => replyToPage({ type: 'permutation', word }));
 				host = new DrawingHost();
 				imagePort = message.imagePort;

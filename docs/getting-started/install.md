@@ -68,6 +68,26 @@ The built file of your sketch, and of each add-on's task, names every file that 
 
 The build's files may come from a CDN, with the HTML page on your own origin. [The engine's files on a CDN](hosting.md#the-engines-files-on-a-cdn) gives the headers and the policy that this needs.
 
+## Serve over HTTPS
+
+WebGPU and the High and Ultra presets need a secure page. `localhost` and `127.0.0.1` are secure already. A phone or tablet on your network is not, so serve it over HTTPS with a local certificate.
+
+Make a certificate for `localhost` and your computer's network name:
+
+```sh
+mkdir certs
+mkcert -cert-file certs/cert.pem -key-file certs/key.pem localhost my-computer.local
+```
+
+Turn on the plugin's `https` option, and keep `certs` out of version control because it holds a private key:
+
+```ts
+// vite.config.ts
+export default defineConfig({ plugins: [null3d({ https: true, certDir: 'certs' })] });
+```
+
+Install mkcert's root certificate on every device that opens the page. A browser that drives a test must also start with `--enable-unsafe-webgpu`, or it draws WebGL2. [Hosting and cross-origin isolation](hosting.md#during-development) gives the certificate steps, and [Testing your sketch](../guides/testing.md#the-browser-must-take-the-webgpu-path) gives the browser setup.
+
 ## Run the sketch
 
 Write `page.ts` and `sketch.ts` as [Your first scene](first-scene.md) shows, then start Vite:

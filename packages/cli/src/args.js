@@ -80,6 +80,21 @@ export function readSeconds(option, text, { above = false } = {}) {
 }
 
 /**
+ * A number of milliseconds from an option's text: at least 0, or above 0 when `above` is set.
+ *
+ * @param {string} option The option's name, such as `--live-ms`.
+ * @param {string} text
+ * @param {{ above?: boolean }} [rule]
+ */
+export function readMilliseconds(option, text, { above = false } = {}) {
+	const ms = text.trim() === '' ? Number.NaN : Number(text);
+	if (Number.isFinite(ms) && (above ? ms > 0 : ms >= 0)) return ms;
+	throw new UsageError(
+		`${option} takes a number of milliseconds ${above ? 'above 0' : 'from 0'}, such as 15000, not "${text}"`,
+	);
+}
+
+/**
  * The GPU tiers that an option lists, joined by commas, such as `webgpu,webgl2`. Throws a
  * UsageError for a tier it does not know, a repeated tier and an empty list.
  *

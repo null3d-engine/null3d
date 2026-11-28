@@ -412,9 +412,13 @@ The dev server compresses its answers to every request from another device, and 
 
 </details>
 
-Shared memory and WebGPU also need a secure context: HTTPS, or `localhost`. WebGPU, and so the High and Ultra presets, only exist there. A page served over plain HTTP on a network address silently falls back to WebGL2 at Medium. An Android phone connected by USB can reach your computer's `localhost` through `adb reverse tcp:5173 tcp:5173`.
+Serve every development page and every preview over HTTPS. The exception is a page on `localhost` or `127.0.0.1`, which is a secure context already. A phone or tablet reaches the page over a network address, and that address needs HTTPS. Without a secure context the engine runs single-threaded and falls back to WebGL2 at Medium, with no error.
 
-To test on a phone or tablet over your local network, serve HTTPS with a local certificate. Make one with [mkcert](https://github.com/FiloSottile/mkcert), for `localhost` and your computer's network name:
+A browser that drives a test must also start with `--enable-unsafe-webgpu`. Playwright's Chromium reports `navigator.gpu` but offers no adapter without that switch, so the engine draws WebGL2. HTTPS alone does not give a test suite WebGPU. [Testing your sketch](../guides/testing.md#the-browser-must-take-the-webgpu-path) gives the browser setup.
+
+An Android phone connected by USB can reach your computer's `localhost` through `adb reverse tcp:5173 tcp:5173`.
+
+To test on a phone or tablet over your local network, add a local certificate. Make one with [mkcert](https://github.com/FiloSottile/mkcert), for `localhost` and your computer's network name:
 
 ```sh
 mkdir certs

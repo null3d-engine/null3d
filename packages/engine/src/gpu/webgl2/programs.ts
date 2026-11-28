@@ -108,7 +108,7 @@ import {
 import type { CustomShader } from '../../shared/images';
 import { LINE_VERTICES } from '../line-vertices';
 import { PARTICLE_RECORDS } from '../particle-records';
-import { missingVariant, variantFor } from '../variants';
+import { listedWord, MissingVariantError, missingVariant, variantFor } from '../variants';
 import type { DepthSetup } from './depth';
 
 declare const __NULL3D_DEV__: boolean | undefined;
@@ -504,7 +504,11 @@ export function createProgram(
 	const shading = variantFor(template.shader, build, 'glsl')?.glsl?.[template.pipeline];
 	const source =
 		shading && build !== permutation ? { ...shading, fragment: PREPASS_FRAGMENT } : shading;
-	if (!source) throw new Error(`a render pipeline template: ${missingVariant(build)}`);
+	if (!source)
+		throw new MissingVariantError(
+			listedWord(build),
+			`a render pipeline template: ${missingVariant(build)}`,
+		);
 	const { program, shaders } = link(gl, source, '');
 	return {
 		program,
@@ -515,6 +519,33 @@ export function createProgram(
 		textureUnits: [],
 		ready: false,
 		background: false,
+	};
+}
+
+/**
+ * A stand-in for a program of a mesh template whose shader variant the loaded set lacks. Its draws
+ * draw nothing, as a program that the driver refused twice does, so the rest of the scene draws.
+ */
+export function refusedProgram(
+	gl: WebGL2RenderingContext,
+	template: number,
+	permutation: number,
+): Program {
+	const program = gl.createProgram();
+	if (!program) throw new Error('WebGL2 could not create a program');
+	return {
+		program,
+		source: {
+			vertex: { source: '', uniformBlocks: [], textures: [] },
+			fragment: { source: '', uniformBlocks: [], textures: [] },
+		} as unknown as GlslProgram,
+		shaders: [],
+		firstInstance: null,
+		firstInstanceValue: 0,
+		textureUnits: [],
+		ready: true,
+		background: false,
+		objects: { template, permutation, refused: true },
 	};
 }
 

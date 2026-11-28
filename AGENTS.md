@@ -95,6 +95,14 @@ These ten principles decide design conflicts, and a higher one wins over a lower
 9. Both backends are first-class. A feature ships only when it works on WebGPU and WebGL2, or when its WebGL2 fallback is documented.
 10. Simple for people and agents. There is one clear way to do each task, and every error message says how to fix the problem.
 
+## Agent teams
+
+Every task runs in subagents. A builder makes the change, and a separate adversarial reviewer tries to disprove it before the pull request merges. Start the reviewer with the builder, not after it. The reviewer reads the diff, runs the checks and gives its own verdict, not the builder's summary.
+
+The coordinator sets a timer that checks in every five minutes while agents run. A check-in judges progress by evidence: new commits, files or logs that grow, and CI checks or jobs that move. An agent's own message is not evidence. A stall is recorded and unblocked, and a stuck agent is replaced.
+
+[Coordinating helper agents](.dev/pull-requests.md#coordinating-helper-agents) gives the detail.
+
 ## Hard rules
 
 Each piece of work lands through a pull request of its own, and CI's run of that pull request judges it ([D-379](.dev/decisions/D-379-one-pull-request-per-piece-of-work.md)). CI cannot check every rule, so the author checks each rule before opening the pull request. The check or test that a rule names guards it. A rule keeps its number for good, because code and decision records cite rules by number.

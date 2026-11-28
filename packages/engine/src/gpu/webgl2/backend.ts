@@ -37,7 +37,7 @@ import { floatOfBits } from '../float-bits';
 import { GpuMemory, textureBytes } from '../memory';
 import { pipelineName } from '../pipeline-name';
 import type { ReadSink } from '../readback';
-import { variantFor } from '../variants';
+import { MissingVariantError, reportMissingVariant, variantFor } from '../variants';
 import {
 	forEachFallbackAttribute,
 	forEachVertexAttribute,
@@ -63,6 +63,7 @@ import {
 	type ProgramHost,
 	prepareProgram,
 	programHost,
+	refusedProgram,
 	relink,
 	slotOf,
 	UPLOAD_UNIT,
@@ -1484,7 +1485,17 @@ export class WebGL2Backend {
 		let program = this.programs.get(key);
 		if (!program) {
 			const glsl = this.need(this.templates, template, 'render pipeline template');
-			program = createProgram(this.gl, glsl, permutation);
+			try {
+				program = createProgram(this.gl, glsl, permutation);
+			} catch (error) {
+				// A mesh pipeline whose word the loaded set lacks skips its draws, as one the driver
+				// refused twice does. A full-screen pass has no draws to skip, so it stays fatal.
+				if (!(error instanceof MissingVariantError) || !glsl.meshPrepass) throw error;
+				program = refusedProgram(this.gl, template, permutation);
+				reportMissingVariant(pipelineName(template, permutation), error.word);
+				this.programs.set(key, program);
+				return program;
+			}
 			this.programs.set(key, program);
 			const joined = this.joins.joined(template)
 				? { template, start: performance.now(), failed: false }

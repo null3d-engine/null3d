@@ -145,7 +145,7 @@ describe('UnlistedWords', () => {
 		const warning = unlisted.check(0x1000, '/level.html');
 		expect(warning?.first).toBe(true);
 		expect(warning?.message).toBe(
-			'/level.html draws with the permutation word 0x00001000, which the shader list list.txt lacks. The dev server draws it, but a production build with this list stops the page with an error that names the word. Record the page again with bunx @null3d/cli shaders record, or add the word by hand with bunx @null3d/cli shaders record --extra 0x00001000.',
+			"/level.html draws with the permutation word 0x00001000, which the shader list list.txt lacks. The dev server draws it, but a production build with this list skips a mesh pipeline's draws and reports the word, and a full-screen pass stops with the word in its error. Record the page again with bunx @null3d/cli shaders record, add the word by hand with bunx @null3d/cli shaders record --extra 0x00001000, or check the build with bunx @null3d/cli shaders verify.",
 		);
 		// Every page that draws the word hears of it, and the terminal hears once.
 		expect(unlisted.check(0x1000, '/')?.first).toBe(false);

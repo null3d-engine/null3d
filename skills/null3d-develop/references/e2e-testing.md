@@ -26,6 +26,7 @@ Engine docs: `guides/testing`, `guides/deterministic-simulation`, `api/page`, `a
 - Run the suite with `bunx playwright test`. Playwright's launcher asks for Node, so its runner runs under Node.
 - A Bun script that drives Playwright itself needs Bun 1.4.3 or newer. Older Bun can close Playwright's pipe to the browser, and the calls then wait forever.
 - Headless Chromium on a machine with no GPU draws with SwiftShader, a software GPU. Give it the flags in section 8, or WebGPU is missing.
+- Start the browser with `--enable-unsafe-webgpu`, or Playwright's Chromium offers no WebGPU adapter and the engine draws WebGL2 at Medium. Set `ignoreHTTPSErrors: true` to open a page on a local certificate. That setting does not turn on WebGPU; the switch does.
 
 ## 2. Start the real app
 
@@ -35,7 +36,7 @@ Engine docs: `guides/testing`, `guides/deterministic-simulation`, `api/page`, `a
 - Let CI test the production build. It is what players get, and it has no development checks.
 - A production build ignores the engine's URL switches, such as `?gpu=` and `?hold=`, so a link cannot change a shipped game. A build that the suite drives with them sets the Vite plugin's `urlSwitches: true`. Section 8 turns it on only for the build that the suite starts.
 - Keep the null3D Vite plugin in the config. It sends the cross-origin isolation headers on the dev server and on `vite preview`. Without them the engine runs single-threaded.
-- Serve the page from `localhost` or over HTTPS. WebGPU needs a secure page. A network address over plain HTTP falls back to WebGL2 (`getting-started/hosting`).
+- Serve the page from `localhost` or over HTTPS. WebGPU needs a secure page. `http://localhost` and `http://127.0.0.1` are secure already, so HTTPS is needed only for another device on the network. A network address over plain HTTP falls back to WebGL2 (`getting-started/hosting`).
 - When the engine is a linked checkout outside the project, add its folder to Vite's `server.fs.allow`. Otherwise the dev server refuses the engine's WebAssembly file with 403.
 - With a linked checkout, set `NULL3D_ENGINE_SHADERS` to the checkout's built shader modules for a production build. Without it, the plugin falls back to a download or to a build of the whole shader set from the engine's sources (`getting-started/network-use`).
 
@@ -158,6 +159,7 @@ export default defineConfig({
     browserName: 'chromium',
     baseURL: `http://localhost:${port}/`,
     trace: 'on-first-retry',
+    ignoreHTTPSErrors: true,
     launchOptions: { args: softwareGpu },
   },
   webServer: {
@@ -245,4 +247,8 @@ bunx @null3d/cli test
 
 A production build with the Vite plugin's `shaders.list` copies only the shader builds of the listed permutation words. The suite drives the states that the game offers, so it can write that list. Open the page with `withRecordingSwitch('/?gpu=webgl2&preset=low')` from `@null3d/cli/shaders`, drive it, then `await saveRecordedWords(page, 'shader-permutations.txt')`. The call ends the page's recording and adds its words to the list. The page must run a development build, or a production build with `urlSwitches: true`. Run it on both GPU paths at the low and high presets.
 
-Run the suite against the production build with the list too. A page that asks for a word that the list lacks stops with an error that names the word, so the suite fails. Record again after you add a feature, a material or a level. Some apps get their content while they run: models that users upload, a CMS catalogue, glTF files from another server. No recording sees their words, so build them without a list. Docs: `guides/assets-pipeline`, sections "When to ship the full set" and "Record from your browser tests".
+Run the suite against the production build with the list too. A page that asks for a word that the list lacks draws without the mesh pipelines that need it, and the engine reports the word on `window.__null3dMissingWords`. Run `bunx @null3d/cli shaders verify` to fail on it, and a full-screen pass stops with the word in its error. Record again after you add a feature, a material or a level.
+
+Give the recorder the suite's own steps with `--steps ./steps.mjs`, so an action-gated state needs no hand-added word. The module's default export takes `{ page, log, path }`, where `page` is the Playwright page, and drives the states. `shaders verify --steps ./steps.mjs` runs the same steps against the production build.
+
+Some apps get their content while they run: models that users upload, a CMS catalogue, glTF files from another server. No recording sees their words, so build them without a list. Docs: `guides/assets-pipeline`, sections "When to ship the full set" and "Record from your browser tests".

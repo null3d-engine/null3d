@@ -225,7 +225,7 @@ export class UnlistedWords {
 		this.warned.add(word >>> 0);
 		const text = wordText(word);
 		return {
-			message: `${page} draws with the permutation word ${text}, which the shader list ${this.name} lacks. The dev server draws it, but a production build with this list stops the page with an error that names the word. Record the page again with bunx @null3d/cli shaders record, or add the word by hand with bunx @null3d/cli shaders record --extra ${text}.`,
+			message: `${page} draws with the permutation word ${text}, which the shader list ${this.name} lacks. The dev server draws it, but a production build with this list skips a mesh pipeline's draws and reports the word, and a full-screen pass stops with the word in its error. Record the page again with bunx @null3d/cli shaders record, add the word by hand with bunx @null3d/cli shaders record --extra ${text}, or check the build with bunx @null3d/cli shaders verify.`,
 			first,
 		};
 	}

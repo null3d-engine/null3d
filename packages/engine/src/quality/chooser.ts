@@ -112,6 +112,11 @@ export function withinTier(preset: QualityPreset, tier: Tier): QualityPreset {
 	return presetIndex(preset) <= presetIndex(ceiling) ? preset : ceiling;
 }
 
+/** True when the page asked for a heavier preset than the GPU path can run. */
+export function presetCapped(wanted: QualityPreset | 'auto', tier: Tier): boolean {
+	return wanted !== 'auto' && withinTier(wanted, tier) !== wanted;
+}
+
 /** The preset that the hints give: the device's own, one lower when its memory reads under 4 GB. */
 export function hintedPreset(hints: DeviceHints): QualityPreset {
 	const preset = DEVICE_PRESETS[deviceKind(hints)];

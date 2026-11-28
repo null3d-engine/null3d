@@ -50,7 +50,7 @@ Cross-Origin-Embedder-Policy: require-corp
 
 [Headers on common hosts](../getting-started/hosting.md#headers-on-common-hosts) gives each file. Without the headers, the engine loads its single-threaded build. The page still runs, with the same API and features, on one thread. Files from other sites need CORS or `Cross-Origin-Resource-Policy` headers under isolation ([Files from other sites](../getting-started/hosting.md#files-from-other-sites)).
 
-Serve the page over HTTPS. WebGPU and shared memory need a secure page. Over plain HTTP, the engine draws with WebGL2.
+Serve the page over HTTPS. WebGPU and shared memory need a secure page. Over plain HTTP, the engine draws with WebGL2. A browser that drives a test must also start with `--enable-unsafe-webgpu`: [Testing your sketch](testing.md#the-browser-must-take-the-webgpu-path) gives the setup.
 
 ## Let browsers keep the files
 

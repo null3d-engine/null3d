@@ -20,8 +20,6 @@ declare global {
 /** Gathers the words of the thread that draws, and publishes them once it answers. */
 export class PermutationRecording {
 	private readonly words = new Set<number>();
-	/** True once the words are published, so a later answer changes nothing. */
-	private published = false;
 
 	constructor(private readonly drawing: DrawingThread) {}
 
@@ -30,14 +28,24 @@ export class PermutationRecording {
 	 * no pipelines for a variant, so its words wait for the drawing thread.
 	 */
 	answered(role: 'sketch' | 'render' | 'page', words: readonly number[]): void {
-		for (const word of words) this.words.add(word >>> 0);
+		for (const word of words) this.add(word);
 		if (role === this.drawing) this.publish();
 	}
 
-	/** Publishes the words gathered so far, once. */
+	/** Takes a word as the drawing thread finds it, and publishes the growing set at once. */
+	heard(word: number): void {
+		if (this.add(word)) this.publish();
+	}
+
+	/** Adds a word, and says whether it was new. */
+	private add(word: number): boolean {
+		const held = this.words.has(word >>> 0);
+		this.words.add(word >>> 0);
+		return !held;
+	}
+
+	/** Publishes the words gathered so far. A live page's set grows until its tool stops it. */
 	private publish(): void {
-		if (this.published) return;
-		this.published = true;
 		window.__null3dPermutations = [...this.words].sort((a, b) => a - b);
 	}
 }

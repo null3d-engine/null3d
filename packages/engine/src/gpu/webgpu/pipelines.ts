@@ -235,7 +235,13 @@ import type { CustomShader } from '../../shared/images';
 import { LINE_VERTICES } from '../line-vertices';
 import { PARTICLE_RECORDS } from '../particle-records';
 import { pipelineName } from '../pipeline-name';
-import { missingShader, missingVariant, variantFor } from '../variants';
+import {
+	listedWord,
+	MissingVariantError,
+	missingShader,
+	missingVariant,
+	variantFor,
+} from '../variants';
 import {
 	plainScale,
 	type VertexAttribute,
@@ -2134,7 +2140,11 @@ export class Pipelines {
 		const build =
 			ownPrepass && !cutoutPrepass ? (permutation & ~PERMUTATION_PREPASS) >>> 0 : permutation;
 		const shader = variantFor(t.shader, build, 'wgsl')?.wgsl;
-		if (!shader) throw new Error(`render template ${template}: ${missingVariant(build)}`);
+		if (!shader)
+			throw new MissingVariantError(
+				listedWord(build),
+				`render template ${template}: ${missingVariant(build)}`,
+			);
 		const module = this.module(t.label, shader);
 		const entryPoints = shader.pipelines[t.pipeline];
 		const skins = (permutation & PERMUTATION_SKIN) !== 0;

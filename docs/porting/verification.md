@@ -118,7 +118,7 @@ Write each accepted difference down, with its reason.
 
 ## Compare performance
 
-Measure both apps on the same device, browser, window size and pixel ratio, with the display at 60 Hz. Time a production build of each app: `bunx vite build`, then `bunx vite preview`. Never time null3D on the dev server. The dev server runs the engine's development checks in every frame, so the port looks slower than it ships.
+Measure both apps on the same device, browser, window size and pixel ratio, with the display at 60 Hz. Time a production build of each app: `bunx vite build`, then `bunx vite preview`. Never time null3D on the dev server. The dev server runs the engine's development checks in every frame, so the port looks slower than it ships. Give the browser WebGPU, as [Testing your sketch](../guides/testing.md#the-browser-must-take-the-webgpu-path) shows, or both apps run their WebGL2 path.
 
 `bunx @null3d/cli bench` makes a production build of the null3D app, and measures it ([The `null3d` command](../cli/null3d.md#bench)):
 
