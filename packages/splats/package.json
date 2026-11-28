@@ -1,6 +1,6 @@
 {
 	"name": "@null3d/splats",
-	"version": "0.1.1",
+	"version": "0.1.2",
 	"description": "Gaussian splats for null3D sketches: SPZ and KHR_gaussian_splatting files, detail levels, a per-device budget and depth mixing with meshes, built on the engine's public API.",
 	"license": "MIT OR Apache-2.0",
 	"author": "Ramesh Nair (https://hiddentao.com)",

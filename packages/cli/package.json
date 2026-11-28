@@ -1,6 +1,6 @@
 {
 	"name": "@null3d/cli",
-	"version": "0.1.1",
+	"version": "0.1.2",
 	"description": "The command-line tool for null3D, a high-performance browser 3D engine for agents. It optimizes glTF models and their textures for the engine, draws frames of a project's scenes in headless Chrome, tests them against reference images, measures the engine on a project's page, and serves the running scene to coding agents over the Model Context Protocol.",
 	"license": "MIT OR Apache-2.0",
 	"author": "Ramesh Nair (https://hiddentao.com)",

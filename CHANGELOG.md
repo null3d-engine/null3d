@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.1.2 - 2026-11-28
+
+### Features
+
+#### @null3d/vite-plugin
+
+- Ship the shaders of one GPU path in a build ([#594](https://github.com/null3d-engine/null3d/pull/594), [3db752932](https://github.com/null3d-engine/null3d/commit/3db752932b02c6b768b302030a60a9bc3fab3d50))
+
+### Bug fixes
+
+#### @null3d/vite-plugin
+
+- Keep a shader list's words from a dropped table ([#595](https://github.com/null3d-engine/null3d/pull/595), [b457df29b](https://github.com/null3d-engine/null3d/commit/b457df29bf894111cca55d8274a3457aaa380b99))
+
+### Documentation
+
+#### Docs and skills
+
+- Keep a content page's taps on its subject on every device ([#598](https://github.com/null3d-engine/null3d/pull/598), [ba5a3c94c](https://github.com/null3d-engine/null3d/commit/ba5a3c94c26c6524ff7ff33cc5976a54ea13f1ca))
+- Reveal a content page's scene at its first frame while stages build ([#597](https://github.com/null3d-engine/null3d/pull/597), [2c1aa49a4](https://github.com/null3d-engine/null3d/commit/2c1aa49a4eb58321b5c79f7f16ddb8c82c8dbc59))
+- Give the agent skills short install links ([#596](https://github.com/null3d-engine/null3d/pull/596), [7e4adcd3d](https://github.com/null3d-engine/null3d/commit/7e4adcd3dd898c08a1ef46ce87ad8469da04e641))
+
+**Full changelog**: https://github.com/null3d-engine/null3d/compare/0.1.1...0.1.2
+
 ## 0.1.1 - 2026-11-27
 
 ### Features

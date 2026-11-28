@@ -295,7 +295,7 @@ dependencies = [
 
 [[package]]
 name = "null3d-assets-wasm"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "exr",
  "half",
@@ -304,7 +304,7 @@ dependencies = [
 
 [[package]]
 name = "null3d-core"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "atomic-wait",
  "null3d-core",
@@ -312,11 +312,11 @@ dependencies = [
 
 [[package]]
 name = "null3d-gpu"
-version = "0.1.1"
+version = "0.1.2"
 
 [[package]]
 name = "null3d-render"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "null3d-core",
  "null3d-gpu",
@@ -324,7 +324,7 @@ dependencies = [
 
 [[package]]
 name = "null3d-shaders"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "naga",
  "naga_oil",
@@ -336,7 +336,7 @@ dependencies = [
 
 [[package]]
 name = "null3d-shaders-wasm"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "null3d-shaders",
  "serde",
@@ -345,28 +345,28 @@ dependencies = [
 
 [[package]]
 name = "null3d-sound"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "libm",
 ]
 
 [[package]]
 name = "null3d-splats"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "libm",
 ]
 
 [[package]]
 name = "null3d-terrain"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "libm",
 ]
 
 [[package]]
 name = "null3d-wasm"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "dlmalloc",
  "null3d-core",
@@ -377,7 +377,7 @@ dependencies = [
 
 [[package]]
 name = "null3d-wind-wasm"
-version = "0.1.1"
+version = "0.1.2"
 
 [[package]]
 name = "num-complex"

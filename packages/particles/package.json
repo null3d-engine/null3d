@@ -1,6 +1,6 @@
 {
 	"name": "@null3d/particles",
-	"version": "0.1.1",
+	"version": "0.1.2",
 	"description": "GPU particle systems for null3D sketches: emitters, bursts and sub-emitters, soft particles and flipbooks made in code, with closed-form motion that costs no simulation pass.",
 	"license": "MIT OR Apache-2.0",
 	"author": "Ramesh Nair (https://hiddentao.com)",

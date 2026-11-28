@@ -1,6 +1,6 @@
 {
 	"name": "@null3d/geometry",
-	"version": "0.1.1",
+	"version": "0.1.2",
 	"description": "Geometry generators for null3D: torus knots, polyhedra, lathes, shapes, extrusions and tubes, with three.js's option names and output.",
 	"license": "MIT OR Apache-2.0",
 	"author": "Ramesh Nair (https://hiddentao.com)",
