@@ -44,6 +44,7 @@ Product pages, marketing pages and landing pages that show a 3D scene next to te
 - After the deadline, the poster shows the finished scene. Reveal the canvas then only once it shows as much as the poster does.
 - Light words that stand over the scene need the page's own ink while the loader stands on a plain background.
 - A fill light that only a plain first view needs fades with that view. A directional light lights every view, and a device that skips the rich stage keeps it.
+- A part that an interaction needs builds in an early stage that every device gets. A device that skips a later stage loses the interactions of its parts.
 - Report success and failure once per page load, with `error.code` or `engine.capabilities.tier`. In a single-page app, keep the flag that says so at module level, so a return to the view does not report again.
 - Never call the loading wait "hold": in null3D, hold mode is the fixed-frame mode of image tests.
 
@@ -57,6 +58,7 @@ Product pages, marketing pages and landing pages that show a 3D scene next to te
 - The field of view is vertical, so a canvas taller than wide shows less from side to side. Widen it with `camera.setFov` when `ctx.engine.viewport` turns portrait.
 - To put the subject beside the text, shift the lens with `camera.setLensShift(x, y)`, never turn the camera: a turn makes upright lines lean. Drop the shift when the text moves above the canvas, as on a phone held upright (`api/cameras`).
 - Give text panels over an interactive scene `pointer-events: auto`. A panel with `pointer-events: none` passes taps to the scene, so a tap on its text selects an object.
+- A panel's padding or background band can reach over the subject on a phone, and then takes the taps meant for it. Give such a panel `pointer-events: none`, and its words, links and buttons `auto`.
 - Labels that `engine.labels.bind` places need the same content as an HTML list, with its own heading, in the fallback page.
 
 ### Motion and power
