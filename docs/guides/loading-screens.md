@@ -223,6 +223,10 @@ An object of a new kind can need more than one pipeline. Where the scene draws t
 
 In hold mode, the engine draws one frame, which waits for its pipelines, so `scene.warmUp()` resolves at once.
 
+A warm-up shares the GPU with the frames that the scene draws while it waits. So warm up the stages of cheap objects before a heavy stage shows. On a slow GPU, each frame of a heavy stage can take seconds, and every warm-up after it waits that long too.
+
+In SwiftShader, a software GPU, a hero object's richer materials warmed up in 1.3 seconds before a city showed. After the city showed, the same warm-up took more than 20 seconds.
+
 ## Loading everything up front
 
 Most shaders come with the engine's start. The shaders of a feature that many games leave out download the first time the sketch uses it. So a page that never uses the feature never downloads them. [Shaders that load on first use](first-use-shaders.md) lists every such feature and the moment its shaders download. For example, `'skinning'` downloads with the first skinned mesh, and `'bloom'` when `post.set` turns bloom on.

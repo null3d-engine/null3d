@@ -83,6 +83,38 @@ For a game, the late state has no page content to show. There it changes the mes
 
 Later page blocks run after a successful start, inside that `try`.
 
+### A scene that builds in stages
+
+A scene whose later stages build after the first frame still reveals its canvas at the first frame. A canvas held back for a later stage makes the visitor wait for that stage's whole build.
+
+On a Galaxy S24 on the WebGL2 path, a page whose canvas waits for its city stage shows it 6.4 seconds into a repeat visit. Revealed at the first frame, the same canvas shows after 1.8 seconds, and after 3.2 seconds on a first visit.
+
+Hide the place of a stage that has not built yet. Fog that lies thick on the ground and thins with height hides empty ground, and leaves a subject high above it in clear air. Once the stage shows, clear the fog over a second or two. Clear it by the clock, because the next warm-up can hold the frames back.
+
+```ts
+// sketch.ts: fog over the place of the city, which builds after the first frame.
+const mist = { color: '#5a6472', density: 0.2, height: 0, heightFalloff: 0.03, background: 1 };
+scene.setFog(mist);
+let clearFrom = 0;
+void engine.firstFrame.then(async () => {
+  await buildCity(); // creates the city hidden, warms it up, then shows it
+  clearFrom = performance.now();
+});
+return {
+  onUpdate() {
+    if (clearFrom === 0 || mist.density === 0) return;
+    mist.density = 0.2 * Math.max(0, 1 - (performance.now() - clearFrom) / 2000);
+    scene.setFog(mist);
+  },
+};
+```
+
+- Give the fog the tone of what it hides. Light words over a pale fog do not read, and a darker fog keeps the page's contrast.
+- Start every value that the sketch eases at the page's own state, such as the hour of a day cycle. The first frame shows the ease. Pass the page's state in `sketchData`.
+- After the deadline, the poster shows the finished scene. When the first frame comes later, keep the poster until the canvas shows as much as the poster does.
+- Words styled to stand over the scene need the page's own ink while a loader stands on a plain background. Fade them to their color as the canvas comes in.
+- A fill light that only a plain first view needs fades with that view. A directional light lights every view, and a device that skips the richer stage keeps it.
+
 ## Mark a decorative canvas
 
 A scene that only decorates gets `aria-hidden="true"`, so screen readers skip it. It takes no keyboard focus. Give it `pointer-events: none` when it does not react to the pointer, so clicks reach the page. [Accessibility](accessibility.md) covers a canvas the visitor operates.

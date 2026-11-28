@@ -281,6 +281,12 @@ Chrome on Android keeps about 2 MB of a site's compiled WebGPU pipelines between
 - Warm up behind the loading screen, so play builds no pipeline ([Loading screens and warm-up](loading-screens.md#pipelines-and-warm-up)).
 - Time the start on the phones and tablets of your audience. A desktop browser that emulates a phone builds pipelines at the computer's speed.
 
+A phone on the WebGL2 path pays more for each later stage. On a Galaxy S24 with Samsung's Xclipse GPU, Chrome has no WebGPU, so a page draws with WebGL2. There, a city stage of a content page took 5.3 seconds to warm up, on a repeat visit too.
+
+Chrome drew nothing on the page during that warm-up, so the screen froze for 2 to 4 seconds at a time. No loading animation can move through such a freeze.
+
+So on that path, leave the optional effects out at the lightest preset, such as bloom, depth of field and lit fog. Each one adds programs to every warm-up. Show the canvas at the first frame, and let the later stages arrive behind it ([3D scenes on content pages](content-pages.md#a-scene-that-builds-in-stages)).
+
 The engine's own passes add pipelines too, and the first frame builds only those that it draws with:
 
 - On WebGPU, the pass that lists each cluster's point, spot and area lights takes 4 compute pipelines. Where the GPU fits the clusters to the measured depth (`lightFit`), it takes 4 more. A first frame whose scene holds none of these lights leaves them out.

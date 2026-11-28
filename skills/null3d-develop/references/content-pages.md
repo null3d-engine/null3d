@@ -39,6 +39,11 @@ Product pages, marketing pages and landing pages that show a 3D scene next to te
 - No loading indicator in the first half second. Progress never moves back, and never comes from elapsed time: a bar driven by a clock stalls near its end. For a wait of seconds, a sketch of the scene that fills in one part per loading step says more than a spinner.
 - Under reduced motion, the loading states change at once, with no fades, staggers or moving dots. The deadline stays the same.
 - Reveal the canvas after `engine.firstFrame`, never on a message the sketch sends from setup.
+- Reveal at the first frame even while later stages build, and hold the canvas for no stage. Hide the place of a stage that has not built yet, such as with ground fog. Clear the fog by the clock once the stage shows (`guides/content-pages`).
+- Start every value that the sketch eases, such as the hour of a day cycle, at the page's state. The first frame shows it.
+- After the deadline, the poster shows the finished scene. Reveal the canvas then only once it shows as much as the poster does.
+- Light words that stand over the scene need the page's own ink while the loader stands on a plain background.
+- A fill light that only a plain first view needs fades with that view. A directional light lights every view, and a device that skips the rich stage keeps it.
 - Report success and failure once per page load, with `error.code` or `engine.capabilities.tier`. In a single-page app, keep the flag that says so at module level, so a return to the view does not report again.
 - Never call the loading wait "hold": in null3D, hold mode is the fixed-frame mode of image tests.
 
