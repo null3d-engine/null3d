@@ -235,6 +235,26 @@ The engine reads these switches from the page's address in development builds: t
 
 To use them in a production build of test pages, turn on the Vite plugin's `urlSwitches` option: `null3d({ urlSwitches: true })`. For a benchmark page that loads the CDN build, `bun run build:cdn --url-switches` does the same ([Try null3D from a CDN](../getting-started/cdn.md#production-and-development-entries)).
 
+### The browser must take the WebGPU path
+
+A browser that drives a test must start with `--enable-unsafe-webgpu`. Playwright's Chromium reports `navigator.gpu`, but its adapter request resolves to null without that switch. The engine then draws WebGL2 at Medium.
+
+```ts
+// playwright.config.ts
+import { defineConfig } from '@playwright/test';
+
+export default defineConfig({
+  use: {
+    ignoreHTTPSErrors: true,
+    launchOptions: { args: ['--enable-unsafe-webgpu'] },
+  },
+});
+```
+
+`ignoreHTTPSErrors` lets the test browser open a page on a local certificate. It does not turn on WebGPU: the switch does that, and a plain `http://localhost` page is a secure context already.
+
+A suite on WebGL2 at Medium passes while the shipped WebGPU path stays untested. High and Ultra exist only on WebGPU, with their larger shadow settings and higher render scale. Read `engine.capabilities.tier` in the page, or the `tier` field of `window.__null3dHold`, to prove which path drew the frame.
+
 ### Common switches
 
 | Switch | Effect |

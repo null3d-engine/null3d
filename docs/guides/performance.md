@@ -14,6 +14,8 @@ This guide covers the frames. [A fast start](start-time.md) covers the wait befo
 
 Measure before you change anything, so you know which cost matters. Add `?stats` to the page's address for a live overlay, or call `debug.stats(true)` in the sketch. Call `engine.measure(5)` for figures over a window. Run `bunx @null3d/cli bench` to measure a production build with no test code. Measure in every rendering mode and preset, over the whole camera path, with repeats: [Testing your sketch](testing.md#check-every-rendering-mode) says how. [Measure](#measure) below gives each figure.
 
+The figures here name the path and preset that each one measured. On a page that fell back to WebGL2 they mean nothing: that path runs different code at Medium at most. [Testing your sketch](testing.md#the-browser-must-take-the-webgpu-path) keeps a test browser on the WebGPU path.
+
 ## Where frame time goes
 
 ```mermaid

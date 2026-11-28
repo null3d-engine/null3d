@@ -3,7 +3,9 @@
 // the words that its pipelines ask for, and publishes them once a held frame has drawn, or once
 // the recorder stops a live page that it has driven through its states. `null3d shaders record`
 // and the repository's own recorder both run this module.
+import { resolve } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
+import { pathToFileURL } from 'node:url';
 import { switchedPath } from './page.js';
 import { recordedWords } from './shader-words.js';
 
@@ -25,8 +27,17 @@ export const RECORD_GPUS = /** @type {const} */ (['webgpu', 'webgl2']);
 /** How long to wait after a HUD pick before the next one, in ms, so its frames ask for the word. */
 const PICK_MS = 600;
 
-/** How long a live page may draw before its recording ends, in ms, so its scene and camera move. */
-const LIVE_MS = 5000;
+/**
+ * The least time that a live page draws before its recording ends, in ms, so its scene and camera
+ * move. A page that adds a word keeps drawing, and a page that adds none still gets this long.
+ */
+export const LIVE_MS = 15_000;
+
+/** How long a live page's word set must stay unchanged before the recorder stops it, in ms. */
+const SETTLE_MS = 5_000;
+
+/** The longest time that a live page draws before its recording ends, in ms. */
+const MAX_MS = 60_000;
 
 /** How long a page may take to load, and to start or publish its words, in ms. */
 const LOAD_MS = 120_000;
@@ -151,7 +162,7 @@ export async function sweepHud(page) {
  *
  * @param {Page} page
  */
-function requestWatch(page) {
+export function requestWatch(page) {
 	let open = 0;
 	let last = Date.now();
 	const touch = () => {
@@ -197,7 +208,7 @@ function requestWatch(page) {
  * @param {{ quiet(): Promise<void> }} watch
  * @returns {Promise<number>} The steps that moved the page.
  */
-export async function scrollToEnd(page, watch) {
+export async function scrollToEnd(page, watch, dwell = 0) {
 	const { width, height } = page.viewportSize() ?? { width: 1280, height: 720 };
 	await page.mouse.move(width / 2, height / 2);
 	// The distance scrolled: the window's and every scrolling element's, so a page that scrolls an
@@ -214,9 +225,61 @@ export async function scrollToEnd(page, watch) {
 		const before = await scrolled();
 		await page.mouse.wheel(0, height);
 		await watch.quiet();
+		// A state that a scroll reveals can arrive with time, so a stop can rest before the next step.
+		if (dwell > 0) await sleep(dwell);
 		if ((await scrolled()) <= before) break;
 		steps++;
 	}
+	return steps;
+}
+
+/**
+ * Waits until a live page's word set has stopped growing. It waits at least `minMs`, then until
+ * `settleMs` has passed with no new word, and gives up at `maxMs`. A fixed wait is a sample; a set
+ * that stopped growing is evidence that the page has shown every state that adds a word.
+ *
+ * @param {Page} page
+ * @param {{ minMs?: number, settleMs?: number, maxMs?: number }} [options]
+ * @returns {Promise<number>} The words that the page reached.
+ */
+export async function waitForStableWords(
+	page,
+	{ minMs = LIVE_MS, settleMs = SETTLE_MS, maxMs = MAX_MS } = {},
+) {
+	const start = Date.now();
+	let count = -1;
+	let changed = start;
+	for (;;) {
+		const found = await page.evaluate(() => {
+			const recorded = /** @type {{ __null3dPermutations?: number[] }} */ (globalThis);
+			return recorded.__null3dPermutations?.length ?? 0;
+		});
+		const now = Date.now();
+		if (found !== count) {
+			count = found;
+			changed = now;
+		}
+		const elapsed = now - start;
+		if (elapsed >= maxMs || (elapsed >= minMs && now - changed >= settleMs)) return count;
+		await sleep(250);
+	}
+}
+
+/**
+ * Loads the module that `--steps` names: its default export, or its `steps` export. The function
+ * takes `{ page, log, path }`, where `page` is the Playwright page, and drives the project through
+ * the states that add shader words.
+ *
+ * @param {string} file
+ * @returns {Promise<(context: { page: Page, log: (line: string) => void, path: string }) => Promise<void> | void>}
+ */
+export async function loadSteps(file) {
+	const module = await import(pathToFileURL(resolve(file)).href);
+	const steps = module.default ?? module.steps;
+	if (typeof steps !== 'function')
+		throw new Error(
+			`${file} exports no function to drive the page. Export one as default, or as steps.`,
+		);
 	return steps;
 }
 
@@ -228,10 +291,23 @@ export async function scrollToEnd(page, watch) {
  * @param {Browser} browser
  * @param {string} base
  * @param {RecordTarget} target
- * @param {{ click?: string, log: (line: string) => void }} options
+ * @param {{
+ *   click?: string,
+ *   log: (line: string) => void,
+ *   liveMs?: number,
+ *   settleMs?: number,
+ *   maxMs?: number,
+ *   scrollDwell?: number,
+ *   steps?: (context: { page: Page, log: (line: string) => void, path: string }) => Promise<void> | void,
+ * }} options
  * @returns {Promise<number[]>}
  */
-async function recordPage(browser, base, target, { click, log }) {
+async function recordPage(
+	browser,
+	base,
+	target,
+	{ click, log, liveMs = LIVE_MS, settleMs = SETTLE_MS, maxMs = MAX_MS, scrollDwell = 0, steps },
+) {
 	// A server of the project may serve a local certificate, which this browser does not trust.
 	const tab = await browser.newPage({ ignoreHTTPSErrors: true });
 	/** @type {string[]} */
@@ -256,11 +332,19 @@ async function recordPage(browser, base, target, { click, log }) {
 				undefined,
 				{ timeout: LOAD_MS, polling: 250 },
 			);
-			// The first frames draw and the camera moves before the sweep.
-			await tab.waitForTimeout(LIVE_MS);
-			const picks = await sweepHud(tab);
-			if (picks > 0) log(`${target.path}: pressed ${picks} controls`);
-			if (target.scroll) log(`${target.path}: scrolled ${await scrollToEnd(tab, watch)} steps`);
+			// The first frames draw and the camera moves before the sweep. A project that gives its
+			// own steps drives its states instead, so an action-gated state needs no --extra word.
+			if (steps !== undefined) {
+				await steps({ page: tab, log, path: target.path });
+				await waitForStableWords(tab, { minMs: 0, settleMs, maxMs });
+			} else {
+				await waitForStableWords(tab, { minMs: liveMs, settleMs, maxMs });
+				const picks = await sweepHud(tab);
+				if (picks > 0) log(`${target.path}: pressed ${picks} controls`);
+				if (target.scroll)
+					log(`${target.path}: scrolled ${await scrollToEnd(tab, watch, scrollDwell)} steps`);
+				await waitForStableWords(tab, { minMs: 0, settleMs, maxMs });
+			}
 		}
 		const found = await recordedWords(tab);
 		log(`${target.path}: ${found.length} words`);
@@ -280,7 +364,20 @@ async function recordPage(browser, base, target, { click, log }) {
  * times out beside others is often slow rather than broken; a second failure ends the run, so no
  * list leaves out a page's words. Gives every word that a page asked for, with `extra`, in order.
  *
- * @param {{ browser: Browser, base: string, targets: readonly RecordTarget[], workers?: number, click?: string, extra?: readonly number[], log?: (line: string) => void }} options
+ * @param {{
+ *   browser: Browser,
+ *   base: string,
+ *   targets: readonly RecordTarget[],
+ *   workers?: number,
+ *   click?: string,
+ *   extra?: readonly number[],
+ *   liveMs?: number,
+ *   settleMs?: number,
+ *   maxMs?: number,
+ *   scrollDwell?: number,
+ *   steps?: (context: { page: Page, log: (line: string) => void, path: string }) => Promise<void> | void,
+ *   log?: (line: string) => void,
+ * }} options
  * @returns {Promise<number[]>}
  */
 export async function recordWords({
@@ -290,6 +387,11 @@ export async function recordWords({
 	workers = 4,
 	click,
 	extra = [],
+	liveMs = LIVE_MS,
+	settleMs,
+	maxMs,
+	scrollDwell,
+	steps,
 	log = console.log,
 }) {
 	const words = new Set(extra.map((word) => word >>> 0));
@@ -300,7 +402,16 @@ export async function recordWords({
 		while (failure === undefined) {
 			const target = targets[next++];
 			if (target === undefined) return;
-			const record = () => recordPage(browser, base, target, { click, log });
+			const record = () =>
+				recordPage(browser, base, target, {
+					click,
+					log,
+					liveMs,
+					settleMs,
+					maxMs,
+					scrollDwell,
+					steps,
+				});
 			try {
 				for (const word of await record().catch(record)) words.add(word >>> 0);
 			} catch (error) {

@@ -35,7 +35,7 @@ bun install
 bunx vite
 ```
 
-`create` writes the template's files, and it writes the version of the command into each package pin. It installs nothing, so run `bun install` in the new folder.
+`create` writes the template's files, and it writes the version of the command into each package pin. It installs nothing, so run `bun install` in the new folder. `bunx vite` serves the project on `localhost`, which is a secure context, so WebGPU is available. A browser that drives a test needs `--enable-unsafe-webgpu` ([Testing your sketch](../guides/testing.md#the-browser-must-take-the-webgpu-path)).
 
 | Option | Effect | Without it |
 | --- | --- | --- |

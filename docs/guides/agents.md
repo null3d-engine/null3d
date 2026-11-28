@@ -57,7 +57,7 @@ An agent checks its work with the `null3d` command, which prints short lines of 
 3. Read the lines that it prints: pass or fail for each check, the reason, and the image files.
 4. When an image test fails, open the image and its diff. Fix the code, or keep the new image with `bunx @null3d/cli test --update-references` when the change was on purpose.
 
-`bunx @null3d/cli shot` draws one frame of a page, to look at a change that has no test yet.
+`bunx @null3d/cli shot` draws one frame of a page, to look at a change that has no test yet. The command's browser draws the WebGPU path where the device offers it. A browser of your own needs `--enable-unsafe-webgpu` ([Testing your sketch](testing.md#the-browser-must-take-the-webgpu-path)).
 
 ## The MCP server
 

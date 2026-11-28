@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'bun:test';
 import { parseShaderList } from '../../vite-plugin/src/shader-list.ts';
 import {
+	LIVE_MS,
 	RECORD_GPUS,
 	RECORD_PRESETS,
 	readExtraWords,
@@ -144,6 +145,53 @@ describe('parseRecordArgs', () => {
 		]);
 		expect(parseRecordArgs(['--manual', '--live', '/game.html']).live).toEqual(['/game.html']);
 		expect(parseRecordArgs(['--replace']).replace).toBe(true);
+	});
+
+	it('times each live page at fifteen seconds unless --live-ms sets another', () => {
+		expect(parseRecordArgs([]).liveMs).toBe(LIVE_MS);
+		expect(parseRecordArgs(['--live', '/', '--live-ms', '90000']).liveMs).toBe(90_000);
+		expect(parseRecordArgs(['--live-ms', '0']).liveMs).toBe(0);
+	});
+
+	it('records until the word set settles, and can rest at each scroll step', () => {
+		const options = parseRecordArgs([
+			'--live',
+			'/',
+			'--settle-ms',
+			'1000',
+			'--max-ms',
+			'20000',
+			'--scroll',
+			'--scroll-dwell',
+			'250',
+		]);
+		expect([options.settleMs, options.maxMs, options.scrollDwell]).toEqual([1000, 20_000, 250]);
+	});
+
+	it('keeps a live time above the default maximum, and takes a steps module', () => {
+		const options = parseRecordArgs([
+			'--live',
+			'/',
+			'--live-ms',
+			'90000',
+			'--steps',
+			'./steps.mjs',
+		]);
+		expect(options.maxMs).toBe(90_000);
+		expect(options.stepsFile).toBe('./steps.mjs');
+	});
+
+	it('refuses a settle time that is not a number of milliseconds', () => {
+		expect(() => parseRecordArgs(['--live', '/', '--settle-ms', 'soon'])).toThrow(/--settle-ms/);
+		expect(() => parseRecordArgs(['--live', '/', '--max-ms', '0'])).toThrow(/--max-ms/);
+	});
+
+	it('refuses a live time that is not a number of milliseconds, and one with --manual', () => {
+		expect(() => parseRecordArgs(['--live-ms', 'soon'])).toThrow(/--live-ms takes a number/);
+		expect(() => parseRecordArgs(['--manual', '--live-ms', '1000'])).toThrow(
+			/goes without --manual/,
+		);
+		expect(() => parseRecordArgs(['--page', '/', '--live-ms', '1000'])).toThrow(/no --live page/);
 	});
 
 	it('refuses a manual run of several pages, and a GPU path or preset without one', () => {

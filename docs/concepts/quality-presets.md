@@ -71,6 +71,8 @@ In the S4 benchmark, an 11-inch iPad Pro held 60 frames per second at Medium whi
 
 The GPU path then caps the preset, because WebGL2 and WebGPU's compatibility mode lack features that the heavier presets use. For example, compatibility mode cannot draw multisampled float targets.
 
+High and Ultra need WebGPU. A WebGL2 page runs Medium at most.
+
 The [highest preset of each GPU path](quality-preset-tables.md#highest-preset-of-each-gpu-path) gives each cap.
 
 A page can name a preset instead, such as a preset that a player picked in a menu. The GPU path still caps it:

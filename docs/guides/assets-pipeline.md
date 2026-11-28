@@ -536,7 +536,8 @@ Build such an app without a list. The build copies the whole set, and each page 
 
 An app whose content is all in the build can ship a list. Keep the list complete:
 
-- Run your browser tests against the production build with the list. A page that asks for a word that the list lacks stops with an error that names the word, so the suite fails. [Record from your browser tests](#record-from-your-browser-tests) shows how the same tests can write the list.
+- Run `bunx @null3d/cli shaders verify` against the production build with the list. It drives every page on both GPU paths and fails when the engine reports a missing word. [Check the production build](#check-the-production-build) shows the command.
+- Run your browser tests against the production build with the list too. A missing word leaves a mesh pipeline's draws drawing nothing, and the engine reports the word. [Record from your browser tests](#record-from-your-browser-tests) shows how the same tests can write the list.
 - Record again after you add a feature, a material or a level. The dev server also warns about a word that the list lacks, as [When the list lacks a word](#when-the-list-lacks-a-word) says.
 
 ### Record the list
@@ -549,9 +550,13 @@ bunx @null3d/cli shaders record --page / --live /
 
 A held page (`--page`) loads in hold mode at the low and high quality presets, on WebGPU and on WebGL2. A preset turns on a few bits, and each GPU path lists bits of its own. WebGL2 has the morph targets, and WebGPU has the instance index.
 
-A live page (`--live`) loads on both GPU paths and draws for five seconds. The recorder presses every button of the page's controls HUD, when it has one, so the words of those states reach the list. Without either option, the command records `/` both ways. It writes `shader-permutations.txt`, or the file that `--out` names. [The `null3d` command](../cli/null3d.md#shaders-record) lists every option.
+A live page (`--live`) loads on both GPU paths and draws until its word set stops growing. It draws at least fifteen seconds, then until five seconds pass with no new word, and at most sixty seconds. `--live-ms`, `--settle-ms` and `--max-ms` set those times. The recorder presses every button of the page's controls HUD, when it has one, so the words of those states reach the list. Without either option, the command records `/` both ways. It writes `shader-permutations.txt`, or the file that `--out` names. [The `null3d` command](../cli/null3d.md#shaders-record) lists every option.
 
-A page that builds more of its scene as the visitor scrolls needs `--scroll`. The recorder then scrolls each live page down to its end, one window's height at a time. After each step, it waits until the page has asked for nothing for half a second. So each stage that a scroll reveals has loaded its shaders, and its pipelines have asked for their words.
+Some states arrive only after the page has drawn for a while. An idle camera can turn a mesh into a level of detail's fading band. A day and night cycle can change the look. A stage can load after the first frame. Give such a page a longer `--live-ms`, and a longer `--max-ms`, so the recorder is still drawing when the state arrives.
+
+A state that waits for a visitor's action needs a person or a test. Play it with `--manual`, or drive it from a browser test, as [Record by hand](#record-by-hand) and [Record from your browser tests](#record-from-your-browser-tests) show. A project can also give the recorder its own steps with `--steps <file>`: a module whose function of `{ page, log, path }` drives the page, so the same steps record and verify its states.
+
+A page that builds more of its scene as the visitor scrolls needs `--scroll`. The recorder then scrolls each live page down to its end, one window's height at a time. After each step, it waits until the page has asked for nothing for half a second. `--scroll-dwell <ms>` also rests each step for a state that arrives with time. So each stage that a scroll reveals has loaded its shaders, and its pipelines have asked for their words.
 
 A game page that starts its engine on a click needs `--live` pages and `--click <selector>`, such as `--click "#play"`. Pages that another server serves take `--base <url>`. That server must serve a development build, because a production build ignores the recording switch. The [deterministic simulation guide](deterministic-simulation.md#a-production-build-of-a-games-engine-files) gives the full sequence for a game.
 
@@ -602,6 +607,8 @@ test('plays the first level', async ({ page }) => {
 
 The `saveRecordedWords` call ends the page's recording, waits until the engine publishes its words, and adds them to the list. With `{ replace: true }` it writes them alone. The page must run a development build, such as the dev server. A production build ignores the recording switch, unless the plugin's `urlSwitches` option is on. Run the tests on both GPU paths at the low and high presets, as the switches in the address above do for one of them.
 
+The test browser must take the WebGPU path, or the WebGPU words never reach the list. [Testing your sketch](testing.md#the-browser-must-take-the-webgpu-path) gives the setup.
+
 ### Build with the list
 
 Name the list in the plugin's options. The path is relative to Vite's root:
@@ -642,16 +649,28 @@ With null3D 0.1.0's shader set, the builds copied these shader files:
 
 A listed word that no shader build of the project holds stops the build, and the message names the word. The builds are those of the engine's set and of the project's own shaders, such as its custom materials and its add-ons' shaders. Such a word comes from a typing mistake, or from a list that another version of the engine recorded. Record the list again.
 
-A page that asks for a word that the list lacks fails the pipeline that needs it. The message names the word, as the list writes it:
+A page that asks for a word that the list lacks draws without it. A mesh pipeline's draws draw nothing, and the engine reports the word once, with the rest of the scene still drawing. A full-screen pass has no draw to skip, so its missing word stops the page with an error that names it.
+
+The engine publishes each missing word on `window.__null3dMissingWords`, and logs it once:
 
 ```text
-the shader set holds only the permutation words of the project's shader list, and this pipeline asks for 0x00000010, which the list lacks. Record the pages again with bunx @null3d/cli shaders record so that the word reaches the list, or add 0x00000010 to the list by hand, and build again.
+null3D: engine template 7 asks for the permutation word 0x00000010, which the shader list lacks. Its draws are skipped. Record the pages again with bunx @null3d/cli shaders record.
 ```
+
+### Check the production build
+
+`shaders verify` builds your project for production with its shader list, serves the build, and drives each page on both GPU paths. It fails when the engine reports a word that the list lacks:
+
+```sh
+bunx @null3d/cli shaders verify --live / --live /game.html --steps ./steps.mjs
+```
+
+`--base <url>` checks a build that another server holds. `--gpu` narrows the paths, and `--click`, `--scroll` and `--steps` drive a page's states. The command names each missing word, the page and the path. Run it in CI after the build that ships, so a missed word fails there and not in front of a player. [The null3D command](../cli/null3d.md#shaders-verify) lists every option.
 
 The dev server names such a word before a build ships the page. It still draws with the whole set. When a page first draws with a word that the list lacks, the terminal and the browser's console show a warning:
 
 ```text
-null3D: /level.html draws with the permutation word 0x00000010, which the shader list shader-permutations.txt lacks. The dev server draws it, but a production build with this list stops the page with an error that names the word. Record the page again with bunx @null3d/cli shaders record, or add the word by hand with bunx @null3d/cli shaders record --extra 0x00000010.
+null3D: /level.html draws with the permutation word 0x00000010, which the shader list shader-permutations.txt lacks. The dev server draws it, but a production build with this list skips a mesh pipeline's draws and reports the word, and a full-screen pass stops with the word in its error. Record the page again with bunx @null3d/cli shaders record, add the word by hand with bunx @null3d/cli shaders record --extra 0x00000010, or check the build with bunx @null3d/cli shaders verify.
 ```
 
 The terminal shows each word once, until the list changes. The dev server reads the list again after each change, so a word that a new recording adds stops the warning at once. A recording run shows no warning, because it adds its words to the list.

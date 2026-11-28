@@ -139,6 +139,8 @@ A bug that shows at one moment is easier to fix when every run reaches it. Hold 
 Drew no frame of /: E1408: hold mode stopped at 1 seconds, in frame 61: E1203: setPosition() got NaN for x on an object (slot 2). ...
 ```
 
+The command's browser draws the WebGPU path where the device offers it. [Testing your sketch](testing.md#the-browser-must-take-the-webgpu-path) gives the setup for a browser of your own.
+
 It also saves the errors and warnings that the page logged, with their stacks, in a JSON file. [Testing your sketch](testing.md) explains hold mode.
 
 ## Measure

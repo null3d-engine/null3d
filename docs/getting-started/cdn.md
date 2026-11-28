@@ -71,7 +71,7 @@ A benchmark page may time a production build and still set switches, such as `?g
 
 ## One HTML file
 
-Save this page, change the CDN address to your own, and serve it from a web server. A browser refuses the modules and workers of a page opened from a file on disk.
+Save this page, change the CDN address to your own, and serve it from a web server. A browser refuses the modules and workers of a page opened from a file on disk. Serve it over HTTPS or open it as `localhost`; a browser that drives a test needs `--enable-unsafe-webgpu` ([Testing your sketch](../guides/testing.md#the-browser-must-take-the-webgpu-path)).
 
 ```html
 <!doctype html>

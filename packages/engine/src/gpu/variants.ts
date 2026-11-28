@@ -27,24 +27,66 @@ function exactly<Pipeline extends string>(
  */
 let recorded: Set<number> | undefined;
 
+/** Hears each word that a recording adds, so a live page streams its growing set to its tool. */
+let recordedSink: ((word: number) => void) | undefined;
+
 /**
  * The bits that a device fixes when it starts, which a recorded word leaves out. One list then
  * serves every device module, and a build makes the word's builds for each value of those bits.
  */
 const DEVICE_BITS = PERMUTATION_DRAW_INDEX | PERMUTATION_TONE_MAP | PERMUTATION_HALF;
 
+/** The word as a list writes it: without the bits that a device fixes. */
+export function listedWord(permutation: number): number {
+	return (permutation & ~DEVICE_BITS) >>> 0;
+}
+
+/**
+ * The error for a pipeline whose loaded shader set has no variant that it asks for. Its `word` is
+ * the word as a list writes it, which names the entry to add.
+ */
+export class MissingVariantError extends Error {
+	constructor(
+		readonly word: number,
+		message: string,
+	) {
+		super(message);
+		this.name = 'MissingVariantError';
+	}
+}
+
+/** Hears each object pipeline whose variant the loaded shader set lacks, so its draws can skip. */
+let missingSink: ((pipeline: string, word: number) => void) | undefined;
+
+/**
+ * @internal Hears each object pipeline whose shader variant the loaded set lacks. The drawing
+ * thread sets this to publish the word, and the page logs one warning for it. A production build
+ * keeps the report, because a narrowed production build is where it matters.
+ */
+export function receiveMissingVariants(sink?: (pipeline: string, word: number) => void): void {
+	missingSink = sink;
+}
+
+/** Reports an object pipeline whose shader variant the loaded set lacks, for its draws to skip. */
+export function reportMissingVariant(pipeline: string, word: number): void {
+	missingSink?.(pipeline, word);
+}
+
 /**
  * @internal Starts collecting the permutation words that the pipelines ask for, until
- * [`stopRecordingPermutations`]. A word that a pipeline found is added once.
+ * [`stopRecordingPermutations`]. A word that a pipeline found is added once, and `onWord` hears
+ * each one as it arrives so a live page streams its growing set to its tool.
  */
-export function recordPermutations(): void {
+export function recordPermutations(onWord?: (word: number) => void): void {
 	recorded = new Set();
+	recordedSink = onWord;
 }
 
 /** @internal Stops collecting, and gives the words collected since, in order. */
 export function stopRecordingPermutations(): number[] {
 	const words = [...(recorded ?? [])].sort((a, b) => a - b);
 	recorded = undefined;
+	recordedSink = undefined;
 	return words;
 }
 
@@ -82,8 +124,11 @@ export function variantFor<Pipeline extends string>(
 	// bits a device fixes are left out, so one list holds the words of every device module.
 	// A development build reports the same words to the dev server.
 	if (found !== undefined) {
-		const word = (permutation & ~DEVICE_BITS) >>> 0;
-		recorded?.add(word);
+		const word = listedWord(permutation);
+		if (recorded !== undefined && !recorded.has(word)) {
+			recorded.add(word);
+			recordedSink?.(word);
+		}
 		if (DEV && reporting !== undefined && !reporting.words.has(word)) {
 			reporting.words.add(word);
 			reporting.report(word);
@@ -101,7 +146,7 @@ export function variantFor<Pipeline extends string>(
 export function missingVariant(permutation: number, listed = LISTED_PERMUTATIONS !== null): string {
 	if (!listed)
 		return `the shader set has no variant for the permutation word 0x${(permutation >>> 0).toString(16)}.`;
-	const word = `0x${((permutation & ~DEVICE_BITS) >>> 0).toString(16).padStart(8, '0')}`;
+	const word = `0x${listedWord(permutation).toString(16).padStart(8, '0')}`;
 	return `the shader set holds only the permutation words of the project's shader list, and this pipeline asks for ${word}, which the list lacks. Record the pages again with bunx @null3d/cli shaders record so that the word reaches the list, or add ${word} to the list by hand, and build again.`;
 }
 

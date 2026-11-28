@@ -1,8 +1,12 @@
 import { afterEach, describe, expect, it } from 'bun:test';
 import {
+	listedWord,
+	MissingVariantError,
 	missingShader,
 	missingVariant,
+	receiveMissingVariants,
 	recordPermutations,
+	reportMissingVariant,
 	reportPermutations,
 	stopRecordingPermutations,
 	variantFor,
@@ -18,6 +22,41 @@ const variants = {
 afterEach(() => {
 	// A recording that a test leaves running collects the words of later tests' lookups.
 	stopRecordingPermutations();
+	receiveMissingVariants();
+});
+
+describe('the live recording sink', () => {
+	it('hears each new word as the drawing thread finds it, once', () => {
+		const heard: number[] = [];
+		recordPermutations((word) => heard.push(word));
+		variantFor(variants, 4, 'wgsl');
+		variantFor(variants, 4, 'wgsl');
+		variantFor(variants, 2, 'wgsl');
+		expect(heard).toEqual([4, 0]);
+	});
+});
+
+describe('listedWord', () => {
+	it('leaves out the bits that a device fixes', () => {
+		expect(listedWord(4)).toBe(4);
+		// The tone mapping bit belongs to the device, so it leaves the word.
+		expect(listedWord(2)).toBe(0);
+	});
+});
+
+describe('a missing variant', () => {
+	it('carries the word as a list writes it', () => {
+		const error = new MissingVariantError(0x124, 'the list lacks a word');
+		expect(error).toBeInstanceOf(Error);
+		expect(error.word).toBe(0x124);
+	});
+
+	it('reaches the sink that the drawing thread sets', () => {
+		const heard: [string, number][] = [];
+		receiveMissingVariants((pipeline, word) => heard.push([pipeline, word]));
+		reportMissingVariant('engine template 7', 0x124);
+		expect(heard).toEqual([['engine template 7', 0x124]]);
+	});
 });
 
 describe('variantFor', () => {

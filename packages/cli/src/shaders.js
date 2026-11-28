@@ -7,17 +7,20 @@
 // saved when they say so.
 import { resolve } from 'node:path';
 import { createInterface } from 'node:readline';
-import { readArguments, UsageError } from './args.js';
+import { readArguments, readMilliseconds, UsageError } from './args.js';
 import { defaultEnvironment, launchBrowser } from './browser.js';
 import { switchedPath } from './page.js';
 import { startDevServer } from './server.js';
 import {
+	LIVE_MS,
+	loadSteps,
 	RECORD_GPUS,
 	readExtraWords,
 	recordingUrl,
 	recordTargets,
 	recordWords,
 } from './shader-record.js';
+import { parseVerifyArgs, runVerify, HELP as VERIFY_HELP } from './shader-verify.js';
 import { recordedWords, writeWordList } from './shader-words.js';
 import { shownPath } from './text.js';
 
@@ -30,8 +33,13 @@ const OPTIONS = /** @type {const} */ ({
 	base: { type: 'string' },
 	page: { type: 'string', multiple: true },
 	live: { type: 'string', multiple: true },
+	'live-ms': { type: 'string' },
 	scroll: { type: 'boolean', default: false },
 	click: { type: 'string' },
+	'settle-ms': { type: 'string' },
+	'max-ms': { type: 'string' },
+	'scroll-dwell': { type: 'string' },
+	steps: { type: 'string' },
 	out: { type: 'string', default: 'shader-permutations.txt' },
 	extra: { type: 'string' },
 	replace: { type: 'boolean', default: false },
@@ -43,6 +51,9 @@ const OPTIONS = /** @type {const} */ ({
 
 export const HELP = `Usage: bunx @null3d/cli shaders record [options]
 
+Its subcommands are record and verify. This page shows record; run
+bunx @null3d/cli shaders verify --help for the production check.
+
 Records the permutation words that the project's pages draw with, and adds them to a list, one
 hexadecimal word on each line. Name the list in the Vite plugin's options, as
 null3d({ shaders: { list: 'shader-permutations.txt' } }). A production build then copies only the
@@ -50,10 +61,16 @@ shader builds of those words. Without a list, it copies the engine's whole shade
 thousands of files and gigabytes.
 
 Each page loads with the engine's recording switch. A held page loads in hold mode at the low and
-high quality presets, on WebGPU and on WebGL2. A live page loads on both GPU paths, draws for five
-seconds, and the recorder presses every button of its controls HUD, when it has one. Without
---page or --live, it records / both ways. The words join those that the list holds already, so
-each level or mode can be recorded in a run of its own.
+high quality presets, on WebGPU and on WebGL2. A live page loads on both GPU paths and draws until
+its word set stops growing: at least 15 seconds, and until 5 seconds pass with no new word, within
+60 seconds. The recorder presses every button of its controls HUD, when it has one. Without --page
+or --live, it records / both ways. The words join those that the list holds already, so each level
+or mode can be recorded in a run of its own.
+
+A project with action-gated or time-based states gives its own steps with --steps, so those states
+need no --extra word by hand. Record again after the project gains a feature that draws with a new
+word, or after a state that arrives with time, and check the production build with
+bunx @null3d/cli shaders verify.
 
 Options:
   --base <url>              The address of a server that serves the pages with a development
@@ -64,12 +81,23 @@ Options:
                             each page. A path that names its own hold= time keeps it
   --live <path>             A page to record live, which the recorder drives through its states.
                             Repeat it for each page
+  --live-ms <ms>            The least time that a live page draws (15000). A state that arrives
+                            with time, such as an idle camera that turns a mesh into a level of
+                            detail's fading band, needs a longer time
   --scroll                  Scroll each live page down to its end, one window's height at a time.
                             After each step the recorder waits until the page asks for nothing for
                             half a second, so a page that builds its later scenes as a visitor
                             scrolls records their words too
+  --scroll-dwell <ms>       Rest after each scroll step, so a state that arrives with time reaches
+                            its word (0)
   --click <selector>        An element to press after each page loads, for a page whose engine
                             starts on a click, such as "#play"
+  --steps <file>            A module whose default export, or steps export, is a function of
+                            { page, log, path } that drives the page through its states. Use it
+                            for action-gated and time-based states, instead of the HUD sweep
+  --settle-ms <ms>          How long the word set must stay unchanged before the recorder stops the
+                            page (5000)
+  --max-ms <ms>             The longest time that a live page draws (60000)
   --extra <words>           Words to add by hand, as hexadecimal numbers joined by commas, such as
                             0x10,0x14, for a state that no page reaches while it records
   --out <file>              The list to write (shader-permutations.txt)
@@ -81,10 +109,12 @@ Options:
   --gpu <path>              With --manual: webgpu or webgl2 (the engine's own choice)
   --preset <name>           With --manual: low, medium, high or ultra (the engine's own choice)
 
-Record again after the project gains a feature that draws with a new word. A production build that
-lacks a word fails its pipeline with a message that names the word. It draws with Chrome for
-Testing on this computer's GPU, and downloads it on first use. When the CI variable is set, it draws
-with Playwright's Chromium on SwiftShader, the software GPU of machines without a GPU.`;
+Record again after the project gains a feature that draws with a new word, or after a state that
+arrives with time. A production build that lacks a word skips the draws of a mesh pipeline and
+reports the word, and a full-screen pass stops with the word in its error. Check the build with
+bunx @null3d/cli shaders verify. It draws with Chrome for Testing on this computer's GPU, and
+downloads it on first use. When the CI variable is set, it draws with Playwright's Chromium on
+SwiftShader, the software GPU of machines without a GPU.`;
 
 /**
  * @typedef {object} RecordOptions
@@ -93,7 +123,12 @@ with Playwright's Chromium on SwiftShader, the software GPU of machines without 
  * @property {string[]} held The pages to record in hold mode.
  * @property {string[]} live The pages to record live.
  * @property {boolean} scroll True to scroll each live page to its end.
+ * @property {number} scrollDwell How long each scroll step rests, in ms.
  * @property {string | undefined} click The element to press after each page loads.
+ * @property {string | undefined} stepsFile The module that drives a page's states, or undefined.
+ * @property {number} liveMs The least time a live page draws, in ms.
+ * @property {number} settleMs How long the word set stays unchanged before a live page stops, in ms.
+ * @property {number} maxMs The longest time a live page draws, in ms.
  * @property {number[]} extra The words to add by hand.
  * @property {string} out The list to write, from the current folder.
  * @property {boolean} replace True to write the recorded words alone.
@@ -128,12 +163,34 @@ export function parseRecordArgs(args) {
 		throw new UsageError(`--base takes an address such as https://localhost:5173, not "${base}"`);
 	const held = (values.page ?? []).map((path) => readPath('--page', path));
 	const live = (values.live ?? []).map((path) => readPath('--live', path));
+	const liveMs =
+		values['live-ms'] === undefined ? LIVE_MS : readMilliseconds('--live-ms', values['live-ms']);
+	const settleMs =
+		values['settle-ms'] === undefined
+			? 5_000
+			: readMilliseconds('--settle-ms', values['settle-ms']);
+	const maxMs = Math.max(
+		values['max-ms'] === undefined
+			? 60_000
+			: readMilliseconds('--max-ms', values['max-ms'], { above: true }),
+		liveMs,
+	);
+	const scrollDwell =
+		values['scroll-dwell'] === undefined
+			? 0
+			: readMilliseconds('--scroll-dwell', values['scroll-dwell']);
 	if (scroll && live.length === 0 && held.length > 0)
 		throw new UsageError('--scroll scrolls the live pages, and no --live page is named');
 	if (manual && (held.length > 0 || live.length > 1 || scroll))
 		throw new UsageError(
 			'--manual opens one page for you to play through: name it with one --live, without --page or --scroll',
 		);
+	if (manual && values.steps !== undefined)
+		throw new UsageError('--steps drives an automatic run: leave it out with --manual');
+	if (manual && values['live-ms'] !== undefined)
+		throw new UsageError('--live-ms times the automatic run, so it goes without --manual');
+	if (values['live-ms'] !== undefined && live.length === 0 && held.length > 0)
+		throw new UsageError('--live-ms times the live pages, and no --live page is named');
 	if (!manual && (gpu !== undefined || preset !== undefined))
 		throw new UsageError(
 			'--gpu and --preset go with --manual: the automatic run records both GPU paths at the low and high presets',
@@ -153,8 +210,13 @@ export function parseRecordArgs(args) {
 		base,
 		held: none && !manual ? ['/'] : held,
 		live: none ? ['/'] : live,
+		liveMs,
 		scroll,
+		scrollDwell,
 		click,
+		stepsFile: values.steps,
+		settleMs,
+		maxMs,
 		extra,
 		out,
 		replace,
@@ -256,8 +318,16 @@ export async function run(args) {
 		console.log(HELP);
 		return 0;
 	}
+	if (subcommand === 'verify') {
+		const verify = parseVerifyArgs(rest);
+		if (verify.help) {
+			console.log(VERIFY_HELP);
+			return 0;
+		}
+		return runVerify(verify);
+	}
 	if (subcommand !== 'record')
-		throw new UsageError(`its one subcommand is record, not "${subcommand}"`);
+		throw new UsageError(`its subcommands are record and verify, not "${subcommand}"`);
 	const options = parseRecordArgs(rest);
 	if (options.help) {
 		console.log(HELP);
@@ -270,10 +340,22 @@ export async function run(args) {
 		if (options.manual) words = await recordByHand(options, base);
 		else {
 			const targets = recordTargets(options);
+			const steps =
+				options.stepsFile === undefined ? undefined : await loadSteps(options.stepsFile);
 			console.log(`Recording ${targets.length} pages from ${base}`);
 			const browser = await launchBrowser(defaultEnvironment());
 			try {
-				words = await recordWords({ browser, base, targets, click: options.click });
+				words = await recordWords({
+					browser,
+					base,
+					targets,
+					click: options.click,
+					liveMs: options.liveMs,
+					settleMs: options.settleMs,
+					maxMs: options.maxMs,
+					scrollDwell: options.scrollDwell,
+					steps,
+				});
 			} finally {
 				await browser.close();
 			}

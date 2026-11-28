@@ -40,7 +40,7 @@ The sizes are the apparent bytes of every file in `packages/engine/src/generated
 
 ## Look
 
-The two sets draw the same pixels, because a word's shader text does not change: the narrowing removes words that no page asks for, and a missing word fails its pipeline instead of drawing another. Every demo's picture passes on the listed set, 183 of 183 on the Mac's real GPU, and the three showcase scenes pass 9 of 9 on WebGPU, in compatibility mode and on WebGL2. The four controls-HUD tests pass too, and they turn the shadows, bloom, quality, sky, fog and environment light on at run time. The recording that wrote the list pressed the same buttons, so those words are in it.
+The two sets draw the same pixels, because a word's shader text does not change: the narrowing removes words that no page asks for, and a missing word leaves a mesh pipeline's draws drawing nothing while the rest of the scene draws, with the word reported ([D-405](D-405-shader-word-missing.md)). Every demo's picture passes on the listed set, 183 of 183 on the Mac's real GPU, and the three showcase scenes pass 9 of 9 on WebGPU, in compatibility mode and on WebGL2. The four controls-HUD tests pass too, and they turn the shadows, bloom, quality, sky, fog and environment light on at run time. The recording that wrote the list pressed the same buttons, so those words are in it.
 
 ## Decision
 
@@ -48,7 +48,7 @@ The shader build takes `--permutations <file>`, one hexadecimal word on each lin
 
 A word leaves out the bits that a device fixes: the draw index, tone mapping in the shader and half precision. One list then serves every device module, and the build makes each listed word's builds for every value of those bits. A build matches a listed word with those bits cleared, so one list serves every template.
 
-The list comes from a recording run of the pages. `?permutations=record` makes the drawing thread record the word of every variant that a pipeline asks for. The recorder of the command-line tool ([D-400](D-400-plugin-shader-list.md)) loads each page in hold mode at the low and high presets on both GPU paths. A preset sets a few of the bits, and a path lists bits that the other does not. It also loads every page live, and presses every button of a showcase's controls HUD, because a held frame never turns those on. It writes the union to `examples/shader-permutations.txt`.
+The list comes from a recording run of the pages. `?permutations=record` makes the drawing thread record the word of every variant that a pipeline asks for. The recorder of the command-line tool ([D-400](D-400-plugin-shader-list.md)) loads each page in hold mode at the low and high presets on both GPU paths. A preset sets a few of the bits, and a path lists bits that the other does not. It also loads every page live, and presses every button of a showcase's controls HUD, because a held frame never turns those on. A live page draws until its word set stops growing: at least fifteen seconds, then five seconds with no new word, within sixty seconds. `--live-ms`, `--settle-ms` and `--max-ms` set those times, and `--steps` runs a project's own steps for an action-gated state. It writes the union to `examples/shader-permutations.txt`. `shaders verify` then checks a production build with the list, and fails on a word that it lacks ([D-405](D-405-shader-word-missing.md)).
 
 The examples' production build reads that file. The engine's release asset is built without a list, because it serves every project rather than one project's pages. D-188's 684 MiB release asset does not change. A list made from one project's pages would leave another project's pipeline without a shader. The figure that falls is the set that a production build of the showcases writes and ships, because those pages are known. A project that builds against the release asset narrows its copies with the plugin's `shaders.list`, which reads the same list and compiles nothing ([D-400](D-400-plugin-shader-list.md)). The set at this tree is larger than D-188's, at 3.48 GB, as more features joined the manifest since that record.
 
@@ -60,6 +60,6 @@ The variants that load on a feature's first use stay in modules of their own. Th
 
 - `crates/null3d-shaders` filters each variant's builds to the list, and the list joins the cache key.
 - `tools/shader-modules.ts` reads `NULL3D_SHADER_PERMUTATIONS`. `tools/shader-permutations.ts` records the demos' list with the recorder of the command-line tool, `packages/cli/src/shader-record.js`.
-- `packages/engine` records the words and names a missing word at the pipeline that needs it.
+- `packages/engine` records the words, streams them as they arrive, skips a mesh pipeline whose word the loaded set lacks, and publishes the word ([D-405](D-405-shader-word-missing.md)).
 - `examples/vite.build.config.ts` reads `examples/shader-permutations.txt`; a full build sets the variable empty.
 - `guides/assets-pipeline` describes the recording, the plugin's list and the build. D-162 describes the model's own list, which is a different list.

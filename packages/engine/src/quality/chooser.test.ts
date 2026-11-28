@@ -12,6 +12,7 @@ import {
 	MOBILE_TEXTURE_MEMORY_MIB,
 	memoryPreset,
 	type PresetRequest,
+	presetCapped,
 	TABLET_MIN_EDGE,
 	textureMemoryCap,
 	withinTier,
@@ -218,6 +219,20 @@ describe('withinTier', () => {
 		expect(withinTier('ultra', 'webgl2')).toBe('medium');
 		expect(withinTier('high', 'webgpu-compat')).toBe('medium');
 		expect(withinTier('low', 'webgl2')).toBe('low');
+	});
+});
+
+describe('presetCapped', () => {
+	it('reports a page that asked for a heavier preset than the path runs', () => {
+		expect(presetCapped('high', 'webgl2')).toBe(true);
+		expect(presetCapped('ultra', 'webgl2')).toBe(true);
+		expect(presetCapped('ultra', 'webgpu-compat')).toBe(true);
+	});
+
+	it('reports no cap for a preset the path runs, or for the engine choice', () => {
+		expect(presetCapped('medium', 'webgl2')).toBe(false);
+		expect(presetCapped('high', 'webgpu')).toBe(false);
+		expect(presetCapped('auto', 'webgl2')).toBe(false);
 	});
 });
 
