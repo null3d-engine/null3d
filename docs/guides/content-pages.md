@@ -114,6 +114,7 @@ return {
 - After the deadline, the poster shows the finished scene. When the first frame comes later, keep the poster until the canvas shows as much as the poster does.
 - Words styled to stand over the scene need the page's own ink while a loader stands on a plain background. Fade them to their color as the canvas comes in.
 - A fill light that only a plain first view needs fades with that view. A directional light lights every view, and a device that skips the richer stage keeps it.
+- Build each part that an interaction needs in an early stage that every device gets. A part that a lighter device skips takes the interaction with it. For example, a cube that opens round a glowing heart never opens where the heart is missing.
 
 ## Mark a decorative canvas
 
